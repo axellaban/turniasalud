@@ -27,8 +27,7 @@ Actualización: 21/10/2026 (Argentina). Este registro prevalece sobre los pendie
 ## Prioridad 2b: lead magnet "Probá la demo con tu web" (después de WAHA)
 
 - [x] Landing `/probar-demo`, flujo por WhatsApp, lectura de la web, ficha con Claude, clínica temporal y modos llamada/audio/chat. Tests de integración con servicios simulados. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
-- [ ] Correr `schema.sql` en Neon y cargar `DEMO_WHATSAPP_NUMBER` y `ANTHROPIC_API_KEY` en Vercel (opcional `ELEVENLABS_PHONE_NUMBER_ID`).
-- [ ] Prueba en vivo de los tres modos con un celular y la web de un consultorio real.
+- [ ] **Puesta en marcha pendiente, la hace la próxima IA** con computer use cuando el usuario lo pida: unir la rama `claude/zealous-hamilton-qw7l41` a `main`, correr el SQL en Neon, cargar `ANTHROPIC_API_KEY` y `DEMO_WHATSAPP_NUMBER` en Vercel, revisar los permisos de ElevenLabs y probar los tres modos. Checklist paso a paso en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-pendiente-para-la-próxima-ia).
 
 ## Prioridad 3: primera clínica y ampliaciones
 

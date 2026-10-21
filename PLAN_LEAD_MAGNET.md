@@ -15,13 +15,27 @@
    - **Llamada**: con `ELEVENLABS_PHONE_NUMBER_ID` (Twilio importado en ElevenLabs), el agente **llama al celular** (`/v1/convai/twilio/outbound-call`). Sin número, o si la llamada falla, manda un link `/probar-demo/llamada/<token>` para hablar desde el navegador (WebRTC, el mismo agente con las variables de la demo; el token vence con la demo).
 7. **Límites**: 3 demos por número por día; una demo queda activa 24 h desde el último mensaje; si la lectura no termina en 4 min se avisa y se puede reenviar la web.
 
-## Qué tiene que hacer el usuario
+## Puesta en marcha (pendiente; para la próxima IA)
 
-1. Volver a correr `supabase/schema.sql` en Neon (agrega `clinics.is_demo`, `demo_sessions`, `channel_conversations.reply_with_voice` y deja `leads.email` opcional). No hace falta `seed.sql`.
-2. Terminar WAHA (chip, sesión, webhook, Custom Channel y variables: `PLAN_WHATSAPP.md`).
-3. Vercel: `DEMO_WHATSAPP_NUMBER` (el número del chip) y `ANTHROPIC_API_KEY` (recomendada). Opcional: `ELEVENLABS_PHONE_NUMBER_ID`.
-4. La clave de ElevenLabs (o `ELEVENLABS_TTS_API_KEY`) necesita **Text to Speech** para el modo audio y **Speech to Text** para escuchar audios.
-5. Probar con un celular: abrir `/probar-demo`, mandar la web de un consultorio real y recorrer los tres modos, MENU y SALIR.
+> El usuario prefirió no hacerlo ahora: **lo hace la próxima IA**, con computer use o la extensión del navegador, cuando él lo pida. Reglas: no mostrar ni copiar claves en el chat (se copian de un sitio y se pegan directo en el otro), tocar solo el proyecto Turnia, no contratar planes ni cargar saldo, y frenar y preguntar ante cualquier diferencia. Al terminar, marcar cada paso acá como hecho y actualizar `ESTADO_Y_PRIORIDADES.md`.
+
+**Antes de empezar:** WAHA tiene que estar conectado con el chip (`PLAN_WHATSAPP.md`). Sin WAHA se pueden hacer los pasos 1 a 5 sin `DEMO_WHATSAPP_NUMBER`; el 6 queda para después.
+
+- [ ] **1. Publicar el código.** Está en la rama `claude/zealous-hamilton-qw7l41` (commit "Lead magnet: probar la demo…") y Vercel publica desde `main`. Abrir el PR desde https://github.com/axellaban/turniasalud/compare/main...claude/zealous-hamilton-qw7l41, esperar el check **CI** en verde y unirlo. Si el CI falla, no unir: revisar el log.
+- [ ] **2. Base (Neon).** En el proyecto de Turnia (rama `br-cold-wildflower-b6ubnhi1`, base `neondb`, rol `neondb_owner`), SQL Editor: correr el `supabase/schema.sql` completo de `main` (es idempotente) o solo el bloque final "Lead magnet" (`clinics.is_demo`, `demo_source_url`, `channel_conversations.reply_with_voice`, `leads.email` opcional y la tabla `demo_sessions`). Si falla porque no existe `channel_conversations`, antes hay que correr el schema completo. Verificar: `select (select count(*) from demo_sessions) as demos, exists (select 1 from information_schema.columns where table_name = 'clinics' and column_name = 'is_demo') as columna_ok;` → `0, true`. **No** correr `seed.sql`.
+- [ ] **3. Clave de Claude.** En https://console.anthropic.com → Settings → API Keys, crear `turnia-demo-web` y pegarla en Vercel como `ANTHROPIC_API_KEY` (Sensitive, Production y Preview). Revisar que la cuenta tenga saldo; si no tiene, avisar al usuario (sin clave o sin saldo la demo funciona con un perfil básico de la clínica).
+- [ ] **4. Vercel → proyecto `turniasalud` → Settings → Environment Variables.**
+  - `DEMO_WHATSAPP_NUMBER`: el número del chip de WAHA con código de país, sin `+` ni espacios (ej. `5491122223333`). **Preguntárselo al usuario.** Sin esta variable la landing muestra "se habilita en breve".
+  - Opcional, solo si el usuario lo pide: `ELEVENLABS_PHONE_NUMBER_ID` (número de Twilio importado en ElevenLabs) para que la opción "Llamada" llame al celular. Sin esto manda un link para hablar desde el navegador.
+  - Después: **Redeploy** del último deploy de Production y esperar "Ready".
+- [ ] **5. Permisos de ElevenLabs.** En Developers → API Keys, la clave de `ELEVENLABS_API_KEY` necesita **Text to Speech** (respuestas en audio) y **Speech to Text** (escuchar audios). Si falta alguno y se puede editar, agregarlo. Si hay que crear una clave nueva, preguntarle al usuario.
+- [ ] **6. Verificación y prueba real.**
+  - `https://turniasalud.vercel.app/api/health` → `database: "ok"`.
+  - `https://turniasalud.vercel.app/probar-demo`: escribir "mi clinica" → tiene que pedir revisar la dirección; escribir una web válida → abre WhatsApp con «¡Hola! Quiero probar la demo de Turnia. Te paso mi web: …» dirigido al número del chip.
+  - Con el WhatsApp del usuario (no el del chip) mandar la demo con la web de un consultorio real. Esperar las opciones 1/2/3 (hasta ~1 minuto).
+  - Probar los tres modos con datos ficticios ("Prueba Turnia", DNI 11111111, particular): **3** chat hasta reservar un turno; `MENU` → **2** audio (¿llega nota de voz o texto?); `MENU` → **1** llamada (¿llama o manda link?; si es link, probar la llamada en el navegador); `SALIR` → mensaje final.
+  - En `/panel/demos` tiene que aparecer el interesado con origen `demo-whatsapp`, su teléfono y su web.
+  - Anotar acá lo que haya que verificar en vivo (sección siguiente).
 
 ## A verificar en vivo
 
