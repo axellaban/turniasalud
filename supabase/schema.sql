@@ -283,3 +283,22 @@ alter table waitlist enable row level security;
 alter table campaigns enable row level security;
 alter table campaign_recipients enable row level security;
 alter table schedule_blocks enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Web pública: pedidos de demo (formulario /pedi-una-demo).
+-- ---------------------------------------------------------------------------
+create table if not exists leads (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null,
+  phone text,
+  organization text,
+  role text,
+  specialty text,
+  size text,
+  message text,
+  source text,
+  created_at timestamptz not null default now()
+);
+create index if not exists leads_created_idx on leads (created_at desc);
+alter table leads enable row level security;

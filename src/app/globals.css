@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
+/* Key visual inspirado en assorthealth.com: azul cobalto, navy profundo, acentos aqua,
+   esmeralda, lila y naranja, tipografía Geist en titulares. */
 :root {
-  --background: #fbfaf7;
-  --foreground: #13211f;
+  --background: #ffffff;
+  --foreground: #171729;
 }
 
 @theme inline {
@@ -10,24 +12,32 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-fraunces);
+  --font-display: var(--font-geist-sans);
 
-  --color-brand-50: #eef8f5;
-  --color-brand-100: #d5eee6;
-  --color-brand-200: #acdccd;
-  --color-brand-300: #78c3ad;
-  --color-brand-400: #46a48b;
-  --color-brand-500: #2a8771;
-  --color-brand-600: #1d6c5b;
-  --color-brand-700: #19574a;
-  --color-brand-800: #16463d;
-  --color-brand-900: #123a33;
-  --color-brand-950: #08211d;
+  --color-brand-50: #ebf1ff;
+  --color-brand-100: #d7e3ff;
+  --color-brand-200: #afc7ff;
+  --color-brand-300: #86a9fd;
+  --color-brand-400: #618df3;
+  --color-brand-500: #3b70ea;
+  --color-brand-600: #2157e1;
+  --color-brand-700: #0e3ca7;
+  --color-brand-800: #002a7b;
+  --color-brand-900: #08183f;
+  --color-brand-950: #171729;
+
+  --color-navy: #0b0d1a;
+  --color-dust: #e3e8f7;
+  --color-tinta: #4b5671;
+  --color-aqua: #32d5d8;
+  --color-emerald: #4eb49e;
+  --color-lila: #b3b1ff;
+  --color-cielo: #cce6ff;
 
   --color-sun-100: #fff1dc;
   --color-sun-300: #ffc97a;
-  --color-sun-500: #f39a2b;
-  --color-sun-600: #d97b12;
+  --color-sun-500: #ff9a1f;
+  --color-sun-600: #e67e00;
 }
 
 body {
@@ -36,5 +46,44 @@ body {
 }
 
 .font-display {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Animaciones de la web pública. */
+@keyframes turnia-rueda {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+@keyframes turnia-marquesina {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes turnia-flotar {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes turnia-pulso {
+  0% { box-shadow: 0 0 0 0 rgb(33 87 225 / 0.35); }
+  100% { box-shadow: 0 0 0 18px rgb(33 87 225 / 0); }
+}
+
+@keyframes turnia-aparecer {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animar-aparecer {
+  animation: turnia-aparecer 0.7s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
