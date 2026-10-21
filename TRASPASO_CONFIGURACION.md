@@ -1,6 +1,6 @@
 # Turnia Salud — traspaso de configuración
 
-Actualizado el 21/10/2026, a la tarde (Argentina). Leer este archivo antes de continuar con `CONTEXTO_PROYECTO.md`.
+Actualizado el 21/10/2026. **Antes del registro histórico, leer [`ESTADO_Y_PRIORIDADES.md`](ESTADO_Y_PRIORIDADES.md)**: audios generados, prueba de voz y webhook confirmados, avisos de demo y bandeja comercial. Luego continuar con `CONTEXTO_PROYECTO.md`.
 
 ## Estado actual: desplegado y funcionando con Postgres directo (21/10/2026)
 

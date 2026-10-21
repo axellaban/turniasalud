@@ -10,6 +10,7 @@ const ITEMS = [
   { href: "/panel/tareas", label: "Tareas", icon: "✅" },
   { href: "/panel/pacientes", label: "Pacientes", icon: "👤" },
   { href: "/panel/campanas", label: "Campañas", icon: "📣" },
+  { href: "/panel/demos", label: "Pedidos de demo", icon: "📩" },
   { href: "/panel/configuracion", label: "Configuración", icon: "⚙️" },
 ];
 
