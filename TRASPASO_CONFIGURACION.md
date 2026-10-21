@@ -15,7 +15,11 @@ El usuario completó los pasos de despliegue con Claude computer use. Todo sali�
 
 Sin tocar, a decisión del usuario: `NEON_DATA_API_URL`, `NEON_SERVER_PRIVATE_KEY` y Data API en Neon (ya no se usan; se pueden borrar o deshabilitar cuando quiera).
 
-Próximos pasos: reimportar los dos workflows de n8n (paso 8 de abajo), elegir el número de WhatsApp y crear los templates en Meta (paso 9), revisar `/privacidad` con un abogado, y la prueba por voz y por WhatsApp real. Pendientes de producto en `CONTEXTO_PROYECTO.md`.
+**n8n actualizado por API (21/10/2026, 17:17 UTC).** La sesión en la nube tiene `N8N_API_KEY` como variable de entorno (la cargó el usuario; nunca se imprime). Se editaron los workflows existentes sobre su versión actual, sin pisar la URL ni el secreto que ya tenían:
+- **Campañas automáticas** (`g0H8xbQvRNv5FxQj`): suma "Todos los días 19:00 · Encuestas post-consulta" → job `encuestas`. Además se le cargó la zona horaria `America/Argentina/Buenos_Aires`, que no tenía: sin ella, los horarios corrían con la hora por defecto del servidor. **Sigue sin activar.**
+- **Eventos** (`PEaOkLPBrLIfFE0Q`): suma las ramas `turno.confirmado` y `tarea.resuelta`, que terminan en NoOp (no mandan nada). n8n publicó la versión nueva sola. Prueba sintética sin pacientes: ejecuciones 50198 y 50199, `success`, cada evento cayó en su rama.
+
+Próximos pasos: elegir el número de WhatsApp y crear los templates en Meta (paso 9), probar por voz y verificar que la conversación de la demo aparece en Panel → Conversaciones (confirma el webhook post-call). Después de WhatsApp: activar el workflow de campañas y definir a dónde van los avisos al equipo. Pendientes de producto en `CONTEXTO_PROYECTO.md`.
 
 ## Sesión del 21/10/2026 (tarde): Neon resuelto en el código y pendientes P2
 
@@ -29,7 +33,7 @@ Trabajo hecho en la rama `claude/quirky-faraday-xsqbc4`, ya integrada en `main` 
 - **Pendientes P2 implementados:** `confirmar_turno`, feriados/vacaciones/bloqueos, estado de horario de atención y protocolo fuera de horario, transferencia telefónica a una persona, respuesta a recetas/pedidos por WhatsApp, encuesta post-consulta con puntaje, métricas de 30 días, fotos de credencial y órdenes médicas (prompt), baja de mensajes y página `/privacidad`.
 - `/api/health` ahora consulta la base: devuelve `database: "ok"` o 503.
 
-### Pasos para el dueño (1 a 6 ya hechos; quedan 7 a 9)
+### Pasos para el dueño (1 a 6 y 8 ya hechos; quedan 7 y 9)
 
 1. **Vercel → Settings → Environment Variables:** confirmar que existe `DATABASE_URL` (la cargó la integración de Neon) en Production, y también en Preview si se va a probar un preview. No hace falta crear nada nuevo.
 2. **Neon → SQL Editor:** volver a correr `supabase/schema.sql` completo. Solo agrega columnas y la tabla `schedule_blocks`; no borra datos. No volver a correr `seed.sql`.
@@ -38,7 +42,7 @@ Trabajo hecho en la rama `claude/quirky-faraday-xsqbc4`, ya integrada en `main` 
 5. Panel → **Configuración** → **Crear / actualizar agente**, para subir la herramienta nueva (`confirmar_turno`, son 9), el prompt nuevo, el dato `satisfaccion` y, si se cargó teléfono, la transferencia.
 6. Probar la demo (chat) logueado en el panel: pedir un turno y verificar que aparece en la Agenda.
 7. Opcional y sin apuro: borrar en Vercel `NEON_DATA_API_URL` y `NEON_SERVER_PRIVATE_KEY`, y deshabilitar Data API en Neon. Ya no se usan; dejarlos no rompe nada.
-8. n8n: reimportar `n8n/turnia-campanas-automaticas.json` (suma la encuesta diaria de las 19:00) y `n8n/turnia-eventos.json` (suma `turno.confirmado` y `tarea.resuelta`), o agregar esos nodos a mano. Mantener los avisos sin envío y las campañas sin activar, como decidió el usuario.
+8. ~~n8n: sumar la encuesta diaria y los eventos nuevos~~: hecho por API (ver arriba). Los avisos siguen sin envío y las campañas sin activar, como decidió el usuario.
 9. Cuando haya WhatsApp: además de los templates anteriores, crear `encuesta_visita` y `respuesta_pedido` (textos en el README).
 
 ### A confirmar contra los servicios reales

@@ -172,7 +172,6 @@ El entorno de la última sesión no tenía credenciales. Falta confirmar en prod
 - **Post-call:** cómo viene el canal (`metadata.whatsapp`, `metadata.phone_call`, `system__channel`).
 - **Envío de templates:** `/v1/convai/whatsapp/outbound-message` con parámetros posicionales `{{1}}`, `{{2}}`.
 - **Demo web** en modo chat y voz; lectura de fotos y PDF por WhatsApp (credencial, órdenes).
-- **Workflows de n8n** actualizados (encuesta diaria, eventos nuevos).
 
 ---
 
@@ -184,7 +183,7 @@ El entorno de la última sesión no tenía credenciales. Falta confirmar en prod
 3. **WhatsApp Business:** el usuario necesita una cuenta de Meta con un número que no esté en la app de WhatsApp ni en otro BSP. Después: importarlo en ElevenLabs, asignar el agente y pegar el phone number ID en panel → Configuración. No elegir ni migrar un número sin su autorización.
 4. **Templates de Meta** (`recordatorio_turno`, `recall_control`, `turno_liberado`, `turno_perdido`, `reactivacion_paciente`, `encuesta_visita`, `respuesta_pedido`), con `{{1}}` = nombre y `{{2}}` = detalle e idioma `es_AR`. Textos en el README. Confirmar el código de idioma de "Español (ARG)".
 5. ~~Proteger `/demo` y `/api/elevenlabs/token`~~: hecho, piden sesión del panel.
-6. **Validar los workflows de n8n** en la instancia real y ajustar los JSON si hace falta.
+6. ~~Validar los workflows de n8n~~: actualizados por API en la instancia real y probados con eventos sintéticos. Las campañas siguen sin activar hasta que haya WhatsApp.
 
 ### P2 — Paridad con el core de Assort
 7. **Derivación a humano:** hecho en parte. Por teléfono, `transfer_to_number` con `handoff_phone`. En WhatsApp, tarea `derivacion_humana` + evento `tarea.creada` con `panel_url` y `fuera_de_horario`; falta armar el aviso real en n8n cuando el usuario diga a quién.
