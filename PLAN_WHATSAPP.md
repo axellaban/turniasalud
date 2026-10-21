@@ -1,13 +1,33 @@
 # Plan: conectar WhatsApp (oficial con Meta o WAHA para el MVP)
 
-> Traspaso del 21/10/2026. **Todavía no se escribió código para esto.** Falta que el usuario confirme el camino y cargue las credenciales.
+> Traspaso del 21/10/2026. **La opción B (WAHA + Custom Channel) ya está construida y probada con tests** (ver "Estado de la construcción"). Falta conectarla con los servicios reales: el usuario está comprando el chip.
 > Leer antes: `AGENTS.md`, `TRASPASO_CONFIGURACION.md` y `CONTEXTO_PROYECTO.md`.
 
 ## Estado
 
 - No hay ningún número de WhatsApp conectado. `clinics.whatsapp_phone_number_id` está vacío, así que las campañas no envían.
 - El agente de ElevenLabs (`agent_1101m5fg08ezfzrtbvw1rkmvn1df`) ya funciona en la demo web: chat probado en producción, voz todavía no.
-- El usuario **prefiere WAHA para el MVP**: ya lo tiene instalado en su VPS y va a comprar un chip nuevo. Pidió el análisis; **el plan de abajo todavía no lo confirmó**. Antes de construir, confirmarlo con él y pedirle las variables de la sección "Qué necesita el usuario".
+- El usuario **eligió WAHA para el MVP** ("continuá con todo, voy a comprar un chip para instalar WAHA"): ya lo tiene en su VPS. El código está hecho; faltan el chip, las variables y la prueba real.
+
+## Estado de la construcción (opción B, 21/10/2026)
+
+Hecho y verificado contra un Postgres 16 local, con WAHA y ElevenLabs simulados (`src/test/waha.integration.test.ts`, 11 tests; `src/lib/waha.test.ts`, 11 unitarios):
+
+- `clinics.whatsapp_provider` (`meta` | `waha`), elegible en Panel → Configuración. Recuadro "WhatsApp por WAHA" con las variables que faltan (solo nombres) y las dos URLs para copiar. El checklist del inicio del panel se adapta al proveedor.
+- `src/lib/whatsapp.ts`: adaptador único (`sendPatientMessage`). Campañas, lista de espera (`offerFreedSlot`) y respuestas a pedidos (`resolveTask`) pasan por ahí. Por WAHA se manda el texto de `TEMPLATE_TEXTS` (los mismos del README); los no pedidos (recall, reactivación, ausentes, encuesta, personalizada) suman "respondé BAJA". Pausa con azar entre envíos (`WAHA_SEND_DELAY_MS`, 2 s por defecto) y el tope de 50 por corrida.
+- Tablas `channel_conversations` (chat, conversación de ElevenLabs, campaña, contexto, transcripción) y `channel_events` (deduplicación de reintentos), en `schema.sql`. **Hay que volver a correr `schema.sql` en Neon.**
+- `POST /api/waha/webhook`: HMAC SHA-512 (`X-Webhook-Hmac`, admite `X-Webhook-Hmac-Algorithm` sha512/sha256; verificado con el ejemplo de la doc de WAHA), solo evento `message`, ignora propios, grupos, estados y canales. Chats `@lid`: usa el teléfono que traiga el motor (`_data.key.remoteJidAlt`, `senderPn`, `Info.SenderAlt`) o lo pide a `GET /api/{session}/lids/{lid}`; si no aparece, no procesa. Audios: baja el archivo de WAHA y lo transcribe con Speech to Text (`scribe_v2`); si no puede, le pide al paciente que escriba. Fotos y archivos: le pide que lo cuente por escrito. Un lock por paciente evita abrir dos conversaciones con mensajes seguidos. Conversación nueva tras 15 min sin mensajes o después de `end_call`; un mensaje de campaña espera respuesta hasta 72 h y el agente recibe `conversation_context` (con el texto enviado) y `campaign_id`.
+- `POST /api/elevenlabs/canal`: verifica la firma con `ELEVENLABS_CHANNEL_SIGNING_SECRET`, une los `agent_response`, pasa `**negrita**` a `*negrita*`, manda por WAHA al mismo chat, cierra con `end_call` y deduplica los reintentos. Si WAHA falla devuelve 502 (ElevenLabs reintenta); si la conversación todavía no está guardada, 409. Si el agente falla (`status: failed`) le pide al paciente que repita.
+- La conversación se guarda en `conversations` mientras ocurre (canal WhatsApp, transcripción, campaña), se actualiza el destinatario de la campaña y al cerrar se avisa `conversacion.finalizada` a n8n. Si llega el post-call, ese la completa con resumen y no se pisa.
+- `system__channel` con "custom" cuenta como WhatsApp (`sourceFromChannel`, `detectChannel`).
+
+### A verificar con los servicios reales
+1. Que el Custom Channel acepte las 11 `dynamic_variables` en cada turno y qué valor trae `system__channel` (se asumió que contiene "custom").
+2. Si dispara el webhook post-call: si lo hace, la conversación queda con resumen; si no, queda con la transcripción que arma Turnia.
+3. Que WAHA mande `X-Webhook-Hmac` con la clave de la sesión y el formato real del payload de su motor (NOWEB, GOWS o WEBJS), sobre todo `@lid` y `media.url`.
+4. Si su WAHA es Core o Plus (Core puede no bajar audios) y si `media.url` apunta a una dirección pública. Si llega con `localhost`, Turnia la cambia por `WAHA_URL` (sin soporte para `WAHA_URL` con subruta).
+5. Que la clave de ElevenLabs tenga permiso **Speech to Text** (la actual tiene ElevenAgents, Voices y Webhooks).
+6. El tiempo de un envío de campaña: 50 mensajes × ~2 s ≈ 2 min, dentro del `maxDuration` de 300 s de `/api/automations`.
 
 ## Opción A — oficial: Meta Cloud API conectada a ElevenLabs
 
@@ -54,7 +74,7 @@ Paciente ◄──WhatsApp── WAHA sendText ◄── Turnia POST /api/eleven
 - **Sin confirmar:** si dispara el webhook post-call (`/api/elevenlabs/post-call`) al terminar. Si no lo hace, las conversaciones de WhatsApp no llegan al panel con resumen y hay que guardarlas desde el reply webhook.
 - **Sin confirmar:** si `dynamic_variables` tiene que mandarse en cada turno o solo en el primero. Mandarlas siempre (todas las de `buildDynamicVariables`), porque si falta una la conversación falla.
 
-### Qué construir (estimado: unas horas, con tests de integración como los de `src/test/db.integration.test.ts`)
+### Qué se construyó (plan original, ya hecho)
 
 1. **Proveedor de WhatsApp configurable:** `clinics.whatsapp_provider` = `meta` | `waha`, editable en Configuración. Un adaptador en `src/lib/whatsapp.ts` con `sendText` (WAHA) y `sendTemplate` (Meta, el actual). `campaigns.ts`, `offerFreedSlot` y `tasks.ts` pasan por ese adaptador.
 2. **Tabla `channel_conversations`**: `clinic_id`, `phone`, `elevenlabs_conversation_id`, `campaign_id`, `context`, `last_activity_at`, `closed_at`. Si pasan 15 min sin actividad o llega un `end_call`, se arranca una conversación nueva. Agregarla en forma idempotente a `schema.sql`.

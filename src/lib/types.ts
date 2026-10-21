@@ -13,6 +13,8 @@ export type Clinic = {
   policies: string | null;
   urgency_instructions: string | null;
   whatsapp_phone_number_id: string | null;
+  /** meta = WhatsApp oficial importado en ElevenLabs · waha = chip común con WAHA + Custom Channel. */
+  whatsapp_provider: "meta" | "waha";
   elevenlabs_agent_id: string | null;
   elevenlabs_voice_id: string | null;
   templates: Record<string, string>;

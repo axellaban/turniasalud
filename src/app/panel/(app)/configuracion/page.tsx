@@ -1,7 +1,7 @@
 import { getCatalog, getClinic, getScheduleBlocks } from "@/lib/clinic";
 import { formatDateTime, localDateKey } from "@/lib/time";
 import { sql } from "@/lib/db";
-import { env, isConfigured } from "@/lib/env";
+import { WAHA_ENV_VARS, env, isConfigured, missingWahaEnv } from "@/lib/env";
 import {
   addAppointmentType,
   addProfessional,
@@ -33,6 +33,7 @@ export default async function SettingsPage() {
   const clinic = await getClinic();
   const catalog = await getCatalog(clinic.id);
   const configured = isConfigured();
+  const missingWaha = new Set(missingWahaEnv());
   const base = env.appUrl().replace(/\/$/, "");
   const t = clinic.templates ?? {};
   // getCatalog solo trae activos: para poder reactivar, traemos todo de nuevo.
@@ -108,7 +109,18 @@ export default async function SettingsPage() {
               <div className="sm:col-span-2 mt-2 border-t border-brand-900/10 pt-4">
                 <h3 className="font-semibold text-brand-950">WhatsApp y voz</h3>
               </div>
-              <Field label="ID del número de WhatsApp" hint="ElevenLabs → WhatsApp → menú del número → “Copy phone number ID”.">
+              <div className="sm:col-span-2">
+                <Field
+                  label="Cómo se conecta WhatsApp"
+                  hint="Meta es la vía oficial. WAHA usa un chip común: sirve para probar, pero WhatsApp puede bloquear el número si se mandan muchos mensajes."
+                >
+                  <select name="whatsapp_provider" defaultValue={clinic.whatsapp_provider} className={inputClass}>
+                    <option value="meta">Oficial: WhatsApp Business de Meta conectado a ElevenLabs</option>
+                    <option value="waha">WAHA: chip común en tu servidor + Custom Channel de ElevenLabs</option>
+                  </select>
+                </Field>
+              </div>
+              <Field label="ID del número de WhatsApp (solo Meta)" hint="ElevenLabs → WhatsApp → menú del número → “Copy phone number ID”.">
                 <input name="whatsapp_phone_number_id" defaultValue={clinic.whatsapp_phone_number_id ?? ""} className={inputClass} />
               </Field>
               <Field label="ID de voz de ElevenLabs (opcional)" hint="Si lo dejás vacío, elegimos una voz argentina automáticamente.">
@@ -123,7 +135,10 @@ export default async function SettingsPage() {
 
               <div className="sm:col-span-2 mt-2 border-t border-brand-900/10 pt-4">
                 <h3 className="font-semibold text-brand-950">Templates de WhatsApp (nombres en WhatsApp Manager)</h3>
-                <p className="text-xs text-brand-900/50">Todos usan {"{{1}}"} = nombre y {"{{2}}"} = detalle. Los textos sugeridos están en el README.</p>
+                <p className="text-xs text-brand-900/50">
+                  Todos usan {"{{1}}"} = nombre y {"{{2}}"} = detalle. Los textos sugeridos están en el README. Con WAHA no hacen falta: se
+                  manda ese mismo texto como mensaje común.
+                </p>
               </div>
               {[
                 ["recordatorio", "Recordatorio de turno", "recordatorio_turno"],
@@ -345,6 +360,32 @@ export default async function SettingsPage() {
               <p className="text-xs text-brand-900/50">
                 Los llamados de n8n llevan el header <code>x-turnia-secret</code> con el valor de AGENT_TOOLS_SECRET.
               </p>
+            </div>
+          </Card>
+
+          <Card>
+            <h2 className="mb-1 font-semibold text-brand-950">WhatsApp por WAHA</h2>
+            <p className="mb-3 text-xs text-brand-900/60">
+              {clinic.whatsapp_provider === "waha" ? (
+                <Badge tone={configured.waha ? "green" : "yellow"}>{configured.waha ? "Activo" : "Faltan datos"}</Badge>
+              ) : (
+                "No está elegido arriba: las campañas salen por Meta."
+              )}
+            </p>
+            <ul className="space-y-1 text-sm">
+              {WAHA_ENV_VARS.map((name) => (
+                <li key={name}>
+                  {missingWaha.has(name) ? "❌" : "✅"} <code className="text-xs">{name}</code>
+                </li>
+              ))}
+              <li>
+                ➖ <code className="text-xs">WAHA_SESSION</code> <span className="text-xs text-brand-900/50">(opcional: {env.wahaSession()})</span>
+              </li>
+            </ul>
+            <div className="mt-4 space-y-3">
+              <CopyRow label="Webhook de la sesión en WAHA (evento “message”, con clave HMAC)" value={`${base}/api/waha/webhook`} />
+              <CopyRow label="Reply Webhook URL del Custom Channel (ElevenLabs → agente → Channels)" value={`${base}/api/elevenlabs/canal`} />
+              <p className="text-xs text-brand-900/50">Los valores se cargan en Vercel → Settings → Environment Variables. Acá nunca se muestran.</p>
             </div>
           </Card>
 
