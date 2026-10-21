@@ -104,11 +104,13 @@ export function SiteHeader() {
   const pathname = usePathname();
   const cierre = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cerrar todo al navegar.
-  useEffect(() => {
+  // Cerrar todo al navegar (ajuste de estado durante el render, sin efecto).
+  const [ruta, setRuta] = useState(pathname);
+  if (ruta !== pathname) {
+    setRuta(pathname);
     setAbierto(null);
     setMovil(false);
-  }, [pathname]);
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (setAbierto(null), setMovil(false));

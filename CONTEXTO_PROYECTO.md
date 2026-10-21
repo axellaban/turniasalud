@@ -34,7 +34,7 @@
 | **Híbrido código + n8n** | La lógica delicada vive en la API de Next.js y en Postgres: disponibilidad, reservas, constraint anti-superposición. n8n queda para lo que el dueño va a querer tocar: horarios de campañas y avisos al equipo. Tools en n8n agregarían latencia y fragilidad. |
 | **Nombre: Turnia Salud** | Elegido por el usuario. El nombre por defecto del agente es "Sofi". |
 | **Multi-especialidad** | Assort es multi-especialidad. La demo es un centro multiespecialidad ficticio en Palermo (CABA). El usuario dijo "especialidad argentina" y no quedó claro si se refería a una especialidad concreta. **Preguntar si quiere enfocar una especialidad** (sugerencia previa: odontología, por lo natural que es el recall). |
-| **No copiar marca ni textos de Assort** | Se replicaron funcionalidad y arquitectura de información con marca y textos propios, para evitar suplantación y problemas legales. |
+| **Web copycat de Assort con marca propia** | Se replicaron estructura, páginas, interacciones y el key visual (paleta azul cobalto/navy/aqua y Geist, pedido del usuario), con nombre, logo, textos, fotos y guiones propios. No se copian videos, logos, testimonios, métricas ni sellos de Assort. Ver `PLAN_WEB_ASSORT.md`. |
 | **Una clínica por deploy (por ahora)** | El esquema ya es multi-clínica (`clinic_id` en todo). La app usa `DEFAULT_CLINIC_ID` o la primera clínica. |
 | **Panel con contraseña única** | `PANEL_PASSWORD` + cookie firmada con HMAC. Es simple para el MVP. |
 | **Cache Components desactivado** | `next.config.ts` → `cacheComponents: false`. La app es casi toda datos en vivo; las páginas del panel usan `dynamic = "force-dynamic"`. |
@@ -207,7 +207,7 @@ El entorno de la última sesión no tenía credenciales. Falta confirmar en prod
 23. **Observabilidad:** hecho en parte (log JSON por herramienta, `/api/health` consulta la base). Faltan alertas (ElevenLabs y Vercel las ofrecen).
 24. ~~Tests de integración con base real y CI~~: hecho.
 25. **Expansión LATAM:** el código ya usa zonas horarias IANA. Para México, el ID de WhatsApp es 521…, y `phone.ts` hoy solo normaliza Argentina.
-26. **Landing:** sumar casos reales, precios y formulario de contacto. Hoy no hay métricas de clientes (no inventar testimonios).
+26. **Web pública:** hecha como copycat de Assort (ver `PLAN_WEB_ASSORT.md`), con formulario de demo (`leads`). Faltan los audios generados, el video del hero, casos reales y precios. No inventar testimonios ni métricas.
 
 ### Ideas de diferenciación (charladas con el usuario)
 - El **recall** como propuesta de valor principal ("te traemos pacientes que ya tenías"), con cobro por resultado: turnos recuperados.

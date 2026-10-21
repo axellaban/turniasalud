@@ -23,6 +23,7 @@ export function HeroVideo() {
         <source src="/videos/hero.webm" type="video/webm" />
         <source src="/videos/hero.mp4" type="video/mp4" />
       </video>
+      <div className="absolute inset-0 bg-[#0b0d1a]/45 sm:bg-transparent" />
       <div className="absolute inset-0 bg-gradient-to-r from-[#0b0d1a]/85 via-[#0b0d1a]/45 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#0b0d1a]/50 to-transparent" />
 
