@@ -1,5 +1,5 @@
 import "server-only";
-import { sql, pgErrorCode } from "../db";
+import { sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, buildDynamicVariables, getScheduleBlocks, isUuid } from "../clinic";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree } from "../slots";
 import { env } from "../env";
@@ -63,6 +63,7 @@ export async function registerPatient(
     plan?: string;
     numero_afiliado?: string;
     preferencias?: string;
+    no_recibir_mensajes?: boolean;
   },
 ) {
   const patient = await ensurePatient(ctx, input.nombre_completo);
@@ -75,10 +76,13 @@ export async function registerPatient(
   if (input.plan) patch.coverage_plan = input.plan;
   if (input.numero_afiliado) patch.member_number = input.numero_afiliado;
   if (input.preferencias) patch.preferences = input.preferencias;
+  if (typeof input.no_recibir_mensajes === "boolean") patch.contact_opt_out = input.no_recibir_mensajes;
   const [updated] = await sql<Patient[]>`update patients set ${sql(patch)} where id = ${patient.id} returning *`;
   return {
     ok: true,
-    mensaje: "Datos del paciente guardados.",
+    mensaje: updated.contact_opt_out && input.no_recibir_mensajes
+      ? "Listo: no le vamos a mandar más campañas ni avisos. Los recordatorios de sus propios turnos siguen llegando."
+      : "Datos del paciente guardados.",
     paciente: {
       nombre: updated.full_name,
       dni: updated.dni,
@@ -200,13 +204,27 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
 /** La constraint appointments_no_overlap rechazó el turno: alguien lo tomó recién. */
 const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
 
+
 type NewAppointment = Pick<
   Appointment,
   "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
 >;
 
-async function insertAppointment(db: typeof sql, row: NewAppointment): Promise<Appointment> {
-  const [appt] = await db<Appointment[]>`insert into appointments ${db(row)} returning *`;
+/**
+ * Serializa las reservas de cada profesional dentro de la transacción: si dos
+ * pacientes piden el mismo horario a la vez, el segundo espera al primero y
+ * choca limpio con appointments_no_overlap. Sin esto, Postgres puede cortar a
+ * uno con "deadlock detected" y el agente no sabría explicarlo. Los locks se
+ * toman en orden fijo y antes de tocar filas, para no cruzarse entre sí.
+ */
+async function lockProfessionals(tx: TransactionSql, ids: string[]): Promise<void> {
+  for (const id of [...new Set(ids)].sort()) {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${id}::text, 0))`;
+  }
+}
+
+async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promise<Appointment> {
+  const [appt] = await tx<Appointment[]>`insert into appointments ${tx(row)} returning *`;
   return appt;
 }
 
@@ -227,17 +245,20 @@ export async function bookAppointment(
 
   let appt: Appointment;
   try {
-    appt = await insertAppointment(sql, {
-      clinic_id: clinic.id,
-      patient_id: patient.id,
-      professional_id: pro.id,
-      appointment_type_id: type.id,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      status: "confirmado",
-      source: sourceFromChannel(ctx.channel, ctx.patientPhone),
-      coverage: coverage ?? null,
-      notes: input.notas ?? null,
+    appt = await sql.begin(async (tx) => {
+      await lockProfessionals(tx, [pro.id]);
+      return insertAppointment(tx, {
+        clinic_id: clinic.id,
+        patient_id: patient.id,
+        professional_id: pro.id,
+        appointment_type_id: type.id,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: "confirmado",
+        source: sourceFromChannel(ctx.channel, ctx.patientPhone),
+        coverage: coverage ?? null,
+        notes: input.notas ?? null,
+      });
     });
   } catch (e) {
     if (isOverlapError(e)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
@@ -397,8 +418,9 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
   let newAppt: Appointment;
   try {
     newAppt = await sql.begin(async (tx) => {
+      await lockProfessionals(tx, [appt.professional_id, pro.id]);
       await tx`update appointments set status = 'reprogramado', cancelled_at = now() where id = ${appt.id}`;
-      return insertAppointment(tx as unknown as typeof sql, {
+      return insertAppointment(tx, {
         clinic_id: clinic.id,
         patient_id: patient.id,
         professional_id: pro.id,

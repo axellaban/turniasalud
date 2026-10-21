@@ -97,6 +97,7 @@ create table if not exists patients (
   preferences text,
   memory_summary text,
   notes text,
+  contact_opt_out boolean not null default false,
   last_contact_at timestamptz,
   created_at timestamptz not null default now(),
   unique (clinic_id, phone)
@@ -251,6 +252,7 @@ end $$;
 alter table clinics add column if not exists handoff_phone text;
 alter table clinics add column if not exists after_hours_instructions text;
 alter table appointment_types add column if not exists price numeric(12, 2);
+alter table patients add column if not exists contact_opt_out boolean not null default false;
 alter table appointments add column if not exists confirmed_at timestamptz;
 alter table appointments add column if not exists survey_sent_at timestamptz;
 alter table conversations add column if not exists satisfaction smallint check (satisfaction between 0 and 10);

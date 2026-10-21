@@ -167,23 +167,38 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(row.status).toBe("confirmado");
   });
 
-  it("dos reservas simultáneas del mismo horario: entra una sola (constraint de Postgres)", async () => {
-    const p1 = ctx("5491166660006");
-    const p2 = ctx("5491166660007");
-    await service.registerPatient(p1, { nombre_completo: "Carla Carrera" });
-    await service.registerPatient(p2, { nombre_completo: "Diego Carrera" });
-    const { turnos } = await service.checkAvailability(p1, { tipo_turno_id: LIMPIEZA, desde: inTwoDays(), franja: "tarde" });
+  it("reservas simultáneas del mismo horario: entra una sola y el resto recibe un motivo claro", async () => {
+    const people = ["5491166660006", "5491166660016", "5491166660017", "5491166660018"].map(ctx);
+    for (const [i, p] of people.entries()) await service.registerPatient(p, { nombre_completo: `Paciente Carrera ${i}` });
+    const { turnos } = await service.checkAvailability(people[0], { tipo_turno_id: LIMPIEZA, desde: inTwoDays(), franja: "tarde" });
     const slot = turnos[0];
-    const results = await Promise.allSettled([
-      service.bookAppointment(p1, { tipo_turno_id: LIMPIEZA, profesional_id: slot.profesional_id, inicio: slot.inicio }),
-      service.bookAppointment(p2, { tipo_turno_id: LIMPIEZA, profesional_id: slot.profesional_id, inicio: slot.inicio }),
-    ]);
+    const results = await Promise.allSettled(
+      people.map((p) => service.bookAppointment(p, { tipo_turno_id: LIMPIEZA, profesional_id: slot.profesional_id, inicio: slot.inicio })),
+    );
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
-    expect(rejected.reason).toBeInstanceOf(service.ToolError);
+    // Ni deadlocks ni errores técnicos: el agente siempre puede explicar qué pasó.
+    for (const r of results.filter((r): r is PromiseRejectedResult => r.status === "rejected")) {
+      expect(r.reason).toBeInstanceOf(service.ToolError);
+    }
     const [{ count }] = await sql<Array<{ count: number }>>`
       select count(*)::int as count from appointments where professional_id = ${slot.profesional_id} and starts_at = ${slot.inicio} and status = 'confirmado'`;
     expect(count).toBe(1);
+  });
+
+  it("reprogramar y reservar el horario que se libera al mismo tiempo no traba la base", async () => {
+    const mover = ctx("5491166660019");
+    const taker = ctx("5491166660020");
+    await service.registerPatient(mover, { nombre_completo: "Mora Mueve" });
+    await service.registerPatient(taker, { nombre_completo: "Tomás Toma" });
+    const { turnos } = await service.checkAvailability(mover, { tipo_turno_id: LIMPIEZA, desde: inTwoDays(), franja: "manana" });
+    const [s1, s2] = turnos;
+    const original = await service.bookAppointment(mover, { tipo_turno_id: LIMPIEZA, profesional_id: s1.profesional_id, inicio: s1.inicio });
+    const [moved, taken] = await Promise.allSettled([
+      service.rescheduleAppointment(mover, { turno_id: original.turno_id, nuevo_inicio: s2.inicio }),
+      service.bookAppointment(taker, { tipo_turno_id: LIMPIEZA, profesional_id: s1.profesional_id, inicio: s1.inicio }),
+    ]);
+    expect(moved.status).toBe("fulfilled");
+    if (taken.status === "rejected") expect(taken.reason).toBeInstanceOf(service.ToolError);
   });
 
   it("valida profesional, especialidad y cobertura", async () => {
@@ -467,6 +482,23 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(conv.satisfaction).toBe(9);
   });
 
+  it("respeta la baja de mensajes: sin campañas, pero con recordatorios", async () => {
+    const { computeAudience } = await import("@/lib/campaigns");
+    const clinic = await clinicLib.getClinic();
+    expect((await computeAudience(clinic, "recall")).map((m) => m.phone)).toContain("5491155550001");
+    const r = await service.registerPatient(ctx("5491155550001"), { no_recibir_mensajes: true });
+    expect(r.mensaje).toContain("no le vamos a mandar más campañas");
+    expect((await computeAudience(clinic, "recall")).map((m) => m.phone)).not.toContain("5491155550001");
+    expect((await computeAudience(clinic, "personalizada")).map((m) => m.phone)).not.toContain("5491155550001");
+    // El panel puede volver a habilitarla.
+    const actions = await import("@/app/panel/actions");
+    const f = new FormData();
+    f.set("id", "00000000-0000-4000-8000-0000000000c1");
+    f.set("opt_out", "false");
+    await actions.setContactOptOut(f);
+    expect((await computeAudience(clinic, "recall")).map((m) => m.phone)).toContain("5491155550001");
+  });
+
   it("valida el teléfono de derivación antes de configurar la transferencia", async () => {
     const { handoffNumber } = await import("@/lib/agent/setup");
     expect(handoffNumber("+54 11 5555-0100")).toBe("+541155550100");
@@ -537,6 +569,7 @@ describe.runIf(url)("integración con Postgres", () => {
       ["pacientes", async () => (await import("@/app/panel/(app)/pacientes/page")).default({ searchParams: Promise.resolve({ q: "gonz" }) } as never)],
       ["campañas", async () => (await import("@/app/panel/(app)/campanas/page")).default()],
       ["configuración", async () => (await import("@/app/panel/(app)/configuracion/page")).default()],
+      ["privacidad", async () => (await import("@/app/privacidad/page")).default()],
     ];
     const [conversation] = await sql<Array<{ id: string }>>`select id from conversations limit 1`;
     const [campaign] = await sql<Array<{ id: string }>>`select id from campaigns limit 1`;

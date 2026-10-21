@@ -108,6 +108,15 @@ export async function setTaskStatus(form: FormData) {
   revalidatePath("/panel");
 }
 
+export async function setContactOptOut(form: FormData) {
+  await requireSession();
+  const id = uuid(form, "id");
+  if (!id) return;
+  const clinic = await getClinic();
+  await sql`update patients set contact_opt_out = ${form.get("opt_out") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
+  revalidatePath(`/panel/pacientes/${id}`);
+}
+
 export async function resolveTaskAction(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();
   const id = uuid(form, "id");

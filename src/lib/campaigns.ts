@@ -7,7 +7,8 @@ import type { Campaign, CampaignType, Clinic } from "./types";
 
 // "Activa": campañas salientes por WhatsApp. Cada destinatario recibe un
 // template aprobado por Meta y, si responde, lo atiende el mismo agente con el
-// contexto de la campaña.
+// contexto de la campaña. Quien pidió la baja (contact_opt_out) solo recibe
+// los recordatorios de sus turnos y los avisos de la lista de espera.
 
 export const CAMPAIGN_LABELS: Record<CampaignType, { label: string; description: string; goal: string }> = {
   recall: {
@@ -102,7 +103,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
-      where a.clinic_id = ${clinic.id} and a.status = 'atendido'
+      where a.clinic_id = ${clinic.id} and a.status = 'atendido' and not p.contact_opt_out
       order by a.patient_id ${type === "recall" ? sql`, a.appointment_type_id` : sql``}, a.starts_at desc`;
     const seen = new Set<string>();
     for (const r of [...rows].sort((a, b) => b.starts_at.localeCompare(a.starts_at))) {
@@ -141,6 +142,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
       where a.clinic_id = ${clinic.id} and a.status = 'ausente' and a.starts_at >= ${new Date(now - 30 * 86400_000)}
+        and not p.contact_opt_out
       order by a.starts_at desc`;
     const seen = new Set<string>();
     for (const r of rows) {
@@ -165,7 +167,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
       join patients p on p.id = a.patient_id
       join professionals pr on pr.id = a.professional_id
       join appointment_types t on t.id = a.appointment_type_id
-      where a.clinic_id = ${clinic.id} and a.status = 'atendido' and a.survey_sent_at is null
+      where a.clinic_id = ${clinic.id} and a.status = 'atendido' and a.survey_sent_at is null and not p.contact_opt_out
         and a.starts_at >= ${new Date(now - 48 * 3600_000)} and a.starts_at <= ${new Date(now)}
       order by a.starts_at`;
     const seen = new Set<string>();
@@ -205,7 +207,8 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
     return members;
   }
 
-  const rows = await sql<PatientRow[]>`select id, full_name, phone from patients where clinic_id = ${clinic.id} order by created_at`;
+  const rows = await sql<PatientRow[]>`
+    select id, full_name, phone from patients where clinic_id = ${clinic.id} and not contact_opt_out order by created_at`;
   return rows.map((r) => ({ patient_id: r.id, phone: r.phone, name: r.full_name, detail: clinic.name, context: "Aviso general de la clínica." }));
 }
 

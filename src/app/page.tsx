@@ -284,7 +284,12 @@ export default function Home() {
       <footer className="border-t border-brand-900/5 py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm text-brand-900/60 sm:flex-row sm:px-6">
           <Logo />
-          <p>© {new Date().getFullYear()} Turnia Salud · Hecho en Argentina</p>
+          <p>
+            © {new Date().getFullYear()} Turnia Salud · Hecho en Argentina ·{" "}
+            <Link href="/privacidad" className="hover:underline">
+              Privacidad
+            </Link>
+          </p>
         </div>
       </footer>
     </div>

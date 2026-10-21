@@ -34,6 +34,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       plan: { type: "string", description: "Plan de la cobertura (ej. 310, SMG20)." },
       numero_afiliado: { type: "string", description: "Número de afiliado o credencial." },
       preferencias: { type: "string", description: "Preferencias del paciente (ej. 'prefiere turnos a la mañana')." },
+      no_recibir_mensajes: {
+        type: "boolean",
+        description: "true si el paciente pide que no le escriban más para campañas o avisos; false si vuelve a aceptar. No lo mandes si no habló del tema.",
+      },
     },
     schema: z.object({
       nombre_completo: z.string().optional(),
@@ -44,6 +48,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       plan: z.string().optional(),
       numero_afiliado: z.string().optional(),
       preferencias: z.string().optional(),
+      no_recibir_mensajes: z.boolean().optional(),
     }),
   },
   {

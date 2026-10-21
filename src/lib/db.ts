@@ -7,6 +7,7 @@ import postgres from "postgres";
 // la carga sola como DATABASE_URL.
 
 export type Sql = postgres.Sql;
+export type TransactionSql = postgres.TransactionSql;
 
 export function databaseUrl(): string | null {
   return process.env.DATABASE_URL || process.env.POSTGRES_URL || null;

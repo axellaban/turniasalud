@@ -67,6 +67,8 @@ export type Patient = {
   preferences: string | null;
   memory_summary: string | null;
   notes: string | null;
+  /** Pidió no recibir mensajes de campañas (recall, reactivación, encuestas…). */
+  contact_opt_out: boolean;
   last_contact_at: string | null;
   created_at: string;
 };

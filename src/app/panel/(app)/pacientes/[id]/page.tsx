@@ -4,7 +4,8 @@ import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
 import { formatDate, formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
-import { Card, CHANNEL_LABEL, PageHeader, StatusBadge } from "@/components/ui";
+import { Card, CHANNEL_LABEL, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
+import { setContactOptOut } from "../../../actions";
 import type { Patient } from "@/lib/types";
 
 export default async function PatientDetail({ params }: PageProps<"/panel/pacientes/[id]">) {
@@ -56,6 +57,14 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
                 </div>
               ))}
             </dl>
+            <form action={setContactOptOut} className="mt-4 flex items-center justify-between gap-2 border-t border-brand-900/5 pt-3 text-sm">
+              <input type="hidden" name="id" value={p.id} />
+              <input type="hidden" name="opt_out" value={String(!p.contact_opt_out)} />
+              <span className={p.contact_opt_out ? "text-red-700" : "text-brand-900/60"}>
+                {p.contact_opt_out ? "🔕 Pidió no recibir campañas" : "Recibe campañas por WhatsApp"}
+              </span>
+              <button className={smallButtonClass}>{p.contact_opt_out ? "Volver a habilitar" : "Dar de baja"}</button>
+            </form>
           </Card>
           <Card className="bg-brand-50/60">
             <h2 className="text-sm font-semibold text-brand-950">🧠 Memoria del paciente</h2>
