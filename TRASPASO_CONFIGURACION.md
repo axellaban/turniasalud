@@ -1,6 +1,39 @@
 # Turnia Salud — traspaso de configuración
 
-Actualizado el 21/10/2026, aproximadamente 12:30 (Argentina). Leer este archivo antes de continuar con `CONTEXTO_PROYECTO.md`.
+Actualizado el 21/10/2026, a la tarde (Argentina). Leer este archivo antes de continuar con `CONTEXTO_PROYECTO.md`.
+
+## Sesión del 21/10/2026 (tarde): Neon resuelto en el código y pendientes P2
+
+Trabajo en la rama `claude/quirky-faraday-xsqbc4` (todavía **no** está en `main` ni desplegado). Se hizo desde un entorno en la nube **sin credenciales**: no se tocó Vercel, Neon, ElevenLabs ni n8n, y nada se probó contra esos servicios reales. Todo se verificó contra un Postgres 16 local con `schema.sql` + `seed.sql`.
+
+### Qué cambió
+
+- **`jwk not found`: se dejó de usar Neon Data API.** Coincide con reportes de otros usuarios en el Discord de Neon: JWKS publicadas en `*.vercel.app`, fallas intermitentes que dependen del compute y se arreglan reiniciándolo, sin que la URL falle. No hay arreglo desde la app. El servidor ahora se conecta **directo a Postgres con `DATABASE_URL`** (`postgres.js`, SQL parametrizado, compatible con el pooler de Neon y de Supabase). Se quitaron `supabase-js`, la firma JWT, los endpoints JWKS y `neon-access.sql`.
+- **Tests de integración reales** (`src/test/db.integration.test.ts`) contra un Postgres descartable: todas las herramientas, reservas simultáneas, campañas, webhook firmado, server actions y render de cada página del panel. CI en `.github/workflows/ci.yml`.
+- **Bug encontrado por los tests y corregido:** con reservas simultáneas del mismo horario, Postgres podía cortar una con `deadlock detected` y el paciente recibía un error técnico. Ahora cada reserva toma un lock por profesional.
+- **Pendientes P2 implementados:** `confirmar_turno`, feriados/vacaciones/bloqueos, estado de horario de atención y protocolo fuera de horario, transferencia telefónica a una persona, respuesta a recetas/pedidos por WhatsApp, encuesta post-consulta con puntaje, métricas de 30 días, fotos de credencial y órdenes médicas (prompt), baja de mensajes y página `/privacidad`.
+- `/api/health` ahora consulta la base: devuelve `database: "ok"` o 503.
+
+### Pasos para el dueño (en este orden)
+
+1. **Vercel → Settings → Environment Variables:** confirmar que existe `DATABASE_URL` (la cargó la integración de Neon) en Production, y también en Preview si se va a probar un preview. No hace falta crear nada nuevo.
+2. **Neon → SQL Editor:** volver a correr `supabase/schema.sql` completo. Solo agrega columnas y la tabla `schedule_blocks`; no borra datos. No volver a correr `seed.sql`.
+3. **Integrar la rama en `main`** y publicar desde Vercel → Deployments → Create Deployment → `main` (la publicación automática por push no se vio funcionar en la sesión anterior).
+4. Abrir `https://turniasalud.vercel.app/api/health`: tiene que decir `"database":"ok"` y `"clinics":1`.
+5. Panel → **Configuración** → **Crear / actualizar agente**, para subir la herramienta nueva (`confirmar_turno`, son 9), el prompt nuevo, el dato `satisfaccion` y, si se cargó teléfono, la transferencia.
+6. Probar la demo (chat) logueado en el panel: pedir un turno y verificar que aparece en la Agenda.
+7. Opcional y sin apuro: borrar en Vercel `NEON_DATA_API_URL` y `NEON_SERVER_PRIVATE_KEY`, y deshabilitar Data API en Neon. Ya no se usan; dejarlos no rompe nada.
+8. n8n: reimportar `n8n/turnia-campanas-automaticas.json` (suma la encuesta diaria de las 19:00) y `n8n/turnia-eventos.json` (suma `turno.confirmado` y `tarea.resuelta`), o agregar esos nodos a mano. Mantener los avisos sin envío y las campañas sin activar, como decidió el usuario.
+9. Cuando haya WhatsApp: además de los templates anteriores, crear `encuesta_visita` y `respuesta_pedido` (textos en el README).
+
+### A confirmar contra los servicios reales
+
+- Que el pooler de Neon acepte la conexión (`postgres.js` con `prepare: false`, `sslmode=require`; se descarta `channel_binding` de la URL).
+- Que el usuario de `DATABASE_URL` sea el dueño de las tablas (en Neon, `neondb_owner`, el mismo del SQL Editor). Las tablas tienen RLS sin políticas para otros roles: si `/api/health` responde `"clinics":0` con el seed cargado, la URL usa otro rol.
+- Formato de `transfer_to_number` y del dato `integer` en ElevenLabs: se tomaron de su documentación actual, no se probaron.
+- La política `/privacidad` es un borrador: revisarla con un abogado antes de usarla con pacientes reales.
+
+> Lo que sigue es el registro histórico de la sesión anterior. El "Bloqueo principal" quedó **reemplazado** por la conexión directa: no hace falta seguir diagnosticando Data API.
 
 ## Continuación y cierre posterior (21/10/2026, aproximadamente 12:36 Argentina)
 
@@ -84,9 +117,9 @@ Los cambios funcionales están en `main`, subidos a GitHub y desplegados en Verc
 - Campañas **sin publicar/activar**, porque todavía no hay WhatsApp ni templates aprobados. No activar cron ni enviar a teléfonos ficticios del seed.
 - `codex mcp add n8n --url "https://n8n-n8n.b6mgbu.easypanel.host/mcp-server/http"` completó login en la CLI. El conector de la app en esta sesión seguía devolviendo UNAUTHORIZED; se usó el navegador autenticado.
 
-## Bloqueo principal: `jwk not found`
+## Bloqueo principal: `jwk not found` (histórico, reemplazado por `DATABASE_URL`)
 
-No está resuelto. Se reprodujo tanto en pruebas locales como en producción:
+Ya no aplica: la app dejó de usar Data API (ver la sección de la tarde). Registro de lo que se probó:
 
 - Vercel registró `POST /api/elevenlabs/token` 500: `profesionales: jwk not found` (por ejemplo 12:21:30, hora Argentina).
 - El panel cargó correctamente en una oportunidad y luego mostró su pantalla de error al recargar.
@@ -124,7 +157,8 @@ export PATH=/Users/axellabanarzubi/.cache/codex-runtimes/codex-primary-runtime/d
 npm test
 npx eslint src
 npm run build
-RUN_LIVE_INTEGRATION=true SETUP_ELEVENLABS=true npx vitest run src/test/live.integration.test.ts
+# La prueba "live" contra Neon se reemplazó por tests contra un Postgres local descartable:
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/turnia_test npm test
 ```
 
 ## Orden para seguir
