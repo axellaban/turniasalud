@@ -33,6 +33,13 @@ function collected(data: PostCallPayload, key: string): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+/** Puntaje 0-10 de la encuesta (ElevenLabs lo manda como número o como texto). */
+export function satisfactionScore(data: PostCallPayload): number | null {
+  const value = data.analysis?.data_collection_results?.satisfaccion?.value;
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isInteger(n) && n >= 0 && n <= 10 ? n : null;
+}
+
 export function detectChannel(data: PostCallPayload, phone: string): Conversation["channel"] {
   const vars = data.conversation_initiation_client_data?.dynamic_variables ?? {};
   const channel = String(vars.system__channel ?? "").toLowerCase();
@@ -100,6 +107,7 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
     intent: collected(data, "motivo"),
     outcome: collected(data, "resultado"),
     call_successful: data.analysis?.call_successful ?? null,
+    satisfaction: satisfactionScore(data),
     transcript: (data.transcript ?? []).map((t) => ({ role: t.role, message: t.message, time_in_call_secs: t.time_in_call_secs })),
     analysis: {
       data_collection: data.analysis?.data_collection_results ?? {},
@@ -115,7 +123,8 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
       patient_id = excluded.patient_id, campaign_id = excluded.campaign_id, channel = excluded.channel,
       direction = excluded.direction, started_at = excluded.started_at, duration_secs = excluded.duration_secs,
       status = excluded.status, title = excluded.title, summary = excluded.summary, intent = excluded.intent,
-      outcome = excluded.outcome, call_successful = excluded.call_successful, transcript = excluded.transcript,
+      outcome = excluded.outcome, call_successful = excluded.call_successful, satisfaction = excluded.satisfaction,
+      transcript = excluded.transcript,
       analysis = excluded.analysis`;
 
   if (campaignId && patient) await updateCampaignRecipient(campaignId, patient.id, data);
@@ -128,6 +137,7 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
     summary: row.summary,
     intent: row.intent,
     outcome: row.outcome,
+    satisfaction: row.satisfaction,
   });
 }
 

@@ -31,7 +31,9 @@ export default async function PanelHome() {
   const [ny, nm, nd] = addDaysKey(todayKey, 1).split("-").map(Number);
   const dayEnd = zonedTimeToUtc(ny, nm, nd, 0, 0, tz).toISOString();
 
-  const [[stats], today, recentRows, urgentTasks] = await Promise.all([
+  const month = new Date(now.getTime() - 30 * 86400_000).toISOString();
+  const quarter = new Date(now.getTime() - 90 * 86400_000).toISOString();
+  const [[stats], [quality], [recovery], today, recentRows, urgentTasks] = await Promise.all([
     sql<Array<{ conversations: number; resolved: number; booked_by_ai: number; open_tasks: number; recovered: number }>>`
       select
         (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since}) as conversations,
@@ -39,6 +41,28 @@ export default async function PanelHome() {
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and source in ('whatsapp', 'telefono', 'web', 'campana') and created_at >= ${since}) as booked_by_ai,
         (select count(*)::int from tasks where clinic_id = ${clinic.id} and status <> 'resuelta') as open_tasks,
         (select count(*)::int from campaign_recipients r join campaigns c on c.id = r.campaign_id where c.clinic_id = ${clinic.id} and r.status = 'agendo') as recovered`,
+    // Últimos 30 días: satisfacción, confirmación de recordatorios y ausentismo.
+    sql<Array<{ satisfaction: number | null; answers: number; reminded: number; confirmed: number; attended: number; absent: number }>>`
+      select
+        (select round(avg(satisfaction), 1)::float8 from conversations where clinic_id = ${clinic.id} and started_at >= ${month} and satisfaction is not null) as satisfaction,
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${month} and satisfaction is not null) as answers,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month}) as reminded,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month} and confirmed_at is not null) as confirmed,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'atendido') as attended,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'ausente') as absent`,
+    // Turnos que sacaron pacientes después de recibir una campaña (90 días) y su valor de referencia.
+    sql<Array<{ appointments: number; revenue: number }>>`
+      select count(*)::int as appointments, coalesce(sum(t.price), 0)::float8 as revenue
+      from campaign_recipients r
+      join campaigns c on c.id = r.campaign_id
+      join lateral (
+        select a.appointment_type_id from appointments a
+        where a.patient_id = r.patient_id and a.created_at >= r.sent_at and a.status <> 'cancelado'
+        order by a.created_at
+        limit 1
+      ) booked on true
+      join appointment_types t on t.id = booked.appointment_type_id
+      where c.clinic_id = ${clinic.id} and r.status = 'agendo' and r.sent_at >= ${quarter}`,
     sql<Array<{ id: string; starts_at: string; status: string; patient: string | null; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, p.full_name as patient, pr.full_name as professional, t.name as type_name
       from appointments a
@@ -62,6 +86,8 @@ export default async function PanelHome() {
   ]);
 
   const resolutionRate = stats.conversations ? Math.round((stats.resolved / stats.conversations) * 100) : null;
+  const percent = (part: number, total: number) => (total ? `${Math.round((part / total) * 100)}%` : "—");
+  const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
   const checklist = [
     { done: configured.database, label: "Base de datos configurada" },
@@ -97,6 +123,22 @@ export default async function PanelHome() {
         <Stat label="Resueltas por IA" value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin intervención humana" />
         <Stat label="Turnos dados por IA" value={stats.booked_by_ai} hint="últimos 7 días" />
         <Stat label="Turnos recuperados" value={stats.recovered} hint="por campañas (histórico)" />
+      </div>
+
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 30 días</h2>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat
+          label="Satisfacción"
+          value={quality.satisfaction === null ? "—" : `${quality.satisfaction}/10`}
+          hint={`${quality.answers} respuestas a encuestas`}
+        />
+        <Stat label="Confirmaron asistencia" value={percent(quality.confirmed, quality.reminded)} hint={`de ${quality.reminded} recordatorios`} />
+        <Stat label="Ausentismo" value={percent(quality.absent, quality.absent + quality.attended)} hint={`${quality.absent} ausentes`} />
+        <Stat
+          label="Ingresos recuperados"
+          value={money.format(recovery.revenue)}
+          hint={`${recovery.appointments} turnos por campañas (90 días, precio de referencia)`}
+        />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">

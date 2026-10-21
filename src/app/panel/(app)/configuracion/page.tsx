@@ -1,4 +1,5 @@
-import { getCatalog, getClinic } from "@/lib/clinic";
+import { getCatalog, getClinic, getScheduleBlocks } from "@/lib/clinic";
+import { formatDateTime, localDateKey } from "@/lib/time";
 import { sql } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
 import {
@@ -6,12 +7,15 @@ import {
   addProfessional,
   addSchedule,
   deleteSchedule,
+  deleteScheduleBlock,
+  setAppointmentTypePrice,
   saveClinic,
   toggleAppointmentType,
   toggleProfessional,
 } from "../../actions";
 import { Badge, Card, Field, PageHeader, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import { AgentSetupButton } from "./agent-setup";
+import { ScheduleBlockForm } from "./block-form";
 import type { AppointmentType, Professional } from "@/lib/types";
 
 const WEEKDAYS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
@@ -32,10 +36,13 @@ export default async function SettingsPage() {
   const base = env.appUrl().replace(/\/$/, "");
   const t = clinic.templates ?? {};
   // getCatalog solo trae activos: para poder reactivar, traemos todo de nuevo.
-  const [professionals, types] = await Promise.all([
+  const now = new Date();
+  const [professionals, types, blocks] = await Promise.all([
     sql<Professional[]>`select * from professionals where clinic_id = ${clinic.id} order by full_name`,
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} order by specialty, name`,
+    getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 365 * 86400_000)),
   ]);
+  const proName = new Map(professionals.map((p) => [p.id, p.full_name]));
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
 
   return (
@@ -89,6 +96,14 @@ export default async function SettingsPage() {
                   <textarea name="urgency_instructions" rows={3} defaultValue={clinic.urgency_instructions ?? ""} className={inputClass} />
                 </Field>
               </div>
+              <div className="sm:col-span-2">
+                <Field
+                  label="Fuera de horario"
+                  hint="Qué decir cuando no hay nadie atendiendo: guardia de un profesional, teléfono de emergencias, cuándo se responden los pedidos."
+                >
+                  <textarea name="after_hours_instructions" rows={2} defaultValue={clinic.after_hours_instructions ?? ""} className={inputClass} />
+                </Field>
+              </div>
 
               <div className="sm:col-span-2 mt-2 border-t border-brand-900/10 pt-4">
                 <h3 className="font-semibold text-brand-950">WhatsApp y voz</h3>
@@ -98,6 +113,12 @@ export default async function SettingsPage() {
               </Field>
               <Field label="ID de voz de ElevenLabs (opcional)" hint="Si lo dejás vacío, elegimos una voz argentina automáticamente.">
                 <input name="elevenlabs_voice_id" defaultValue={clinic.elevenlabs_voice_id ?? ""} className={inputClass} />
+              </Field>
+              <Field
+                label="Teléfono para pasar llamadas a una persona (opcional)"
+                hint="Formato internacional, ej. +541155550100. Solo en llamadas telefónicas; después tocá “Crear / actualizar agente”."
+              >
+                <input name="handoff_phone" defaultValue={clinic.handoff_phone ?? ""} placeholder="+541155550100" className={inputClass} />
               </Field>
 
               <div className="sm:col-span-2 mt-2 border-t border-brand-900/10 pt-4">
@@ -110,6 +131,8 @@ export default async function SettingsPage() {
                 ["lista_espera", "Turno liberado (lista de espera)", "turno_liberado"],
                 ["reactivacion", "Reactivación", "reactivacion_paciente"],
                 ["no_show", "Recupero de ausentes", "turno_perdido"],
+                ["encuesta", "Encuesta post-consulta", "encuesta_visita"],
+                ["respuesta", "Respuesta a pedidos (recetas, resultados)", "respuesta_pedido"],
                 ["idioma", "Código de idioma de los templates", "es_AR"],
               ].map(([key, label, placeholder]) => (
                 <Field key={key} label={label}>
@@ -201,6 +224,19 @@ export default async function SettingsPage() {
                     </span>
                   </span>
                   {x.is_first_visit && <Badge tone="blue">primera vez</Badge>}
+                  <form action={setAppointmentTypePrice} className="flex items-center gap-1">
+                    <input type="hidden" name="id" value={x.id} />
+                    <span className="text-xs text-brand-900/50">$</span>
+                    <input
+                      name="price"
+                      inputMode="decimal"
+                      defaultValue={x.price ? String(Number(x.price)) : ""}
+                      placeholder="precio"
+                      aria-label={`Precio de ${x.name}`}
+                      className="w-24 rounded-lg border border-brand-900/15 px-2 py-1 text-xs"
+                    />
+                    <button className={smallButtonClass}>Guardar</button>
+                  </form>
                   <form action={toggleAppointmentType}>
                     <input type="hidden" name="id" value={x.id} />
                     <input type="hidden" name="active" value={String(!x.active)} />
@@ -222,6 +258,9 @@ export default async function SettingsPage() {
               <Field label="Control periódico (meses)" hint="Para las campañas de recall. Vacío si no aplica.">
                 <input name="recall_months" type="number" min={1} max={60} className={inputClass} />
               </Field>
+              <Field label="Precio de referencia (opcional)" hint="Para estimar cuánto recuperan las campañas.">
+                <input name="price" inputMode="decimal" placeholder="45000" className={inputClass} />
+              </Field>
               <div className="sm:col-span-2">
                 <Field label="Indicaciones previas">
                   <input name="instructions" className={inputClass} />
@@ -239,6 +278,36 @@ export default async function SettingsPage() {
                 <option key={s} value={s} />
               ))}
             </datalist>
+          </Card>
+
+          <Card>
+            <h2 className="font-semibold text-brand-950">Feriados, vacaciones y bloqueos</h2>
+            <p className="mb-4 mt-1 text-sm text-brand-900/60">
+              En estos períodos el agente no ofrece turnos y avisa que no se atiende. Los turnos ya dados no se cancelan solos.
+            </p>
+            <ul className="mb-4 space-y-2 text-sm">
+              {blocks.map((b) => (
+                <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50/60 px-3 py-2">
+                  <span>
+                    <span className="font-medium text-brand-950">{b.professional_id ? proName.get(b.professional_id) ?? "Profesional" : "Toda la clínica"}</span>
+                    <span className="text-brand-900/60">
+                      {" "}
+                      · {formatDateTime(b.starts_at, clinic.timezone)} → {formatDateTime(b.ends_at, clinic.timezone)}
+                      {b.reason ? ` · ${b.reason}` : ""}
+                    </span>
+                  </span>
+                  <form action={deleteScheduleBlock}>
+                    <input type="hidden" name="id" value={b.id} />
+                    <button className={smallButtonClass}>Quitar</button>
+                  </form>
+                </li>
+              ))}
+              {!blocks.length && <li className="text-brand-900/50">No hay bloqueos cargados.</li>}
+            </ul>
+            <ScheduleBlockForm
+              professionals={professionals.filter((p) => p.active).map((p) => ({ id: p.id, name: p.full_name }))}
+              today={localDateKey(now, clinic.timezone)}
+            />
           </Card>
         </div>
 
@@ -272,6 +341,7 @@ export default async function SettingsPage() {
               <CopyRow label="Webhook de inicio (se configura solo al crear el agente)" value={`${base}/api/elevenlabs/initiation`} />
               <CopyRow label="Automatización: recordatorios (n8n)" value={`${base}/api/automations/recordatorios`} />
               <CopyRow label="Automatización: recall (n8n)" value={`${base}/api/automations/recall`} />
+              <CopyRow label="Automatización: encuestas post-consulta (n8n)" value={`${base}/api/automations/encuestas`} />
               <p className="text-xs text-brand-900/50">
                 Los llamados de n8n llevan el header <code>x-turnia-secret</code> con el valor de AGENT_TOOLS_SECRET.
               </p>

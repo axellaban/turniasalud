@@ -1,7 +1,8 @@
 import "server-only";
 import { sql, pgErrorCode } from "../db";
-import { getCatalog, getClinic, findPatientByPhone, buildDynamicVariables, isUuid } from "../clinic";
-import { computeSlots, isSlotFree } from "../slots";
+import { getCatalog, getClinic, findPatientByPhone, buildDynamicVariables, getScheduleBlocks, isUuid } from "../clinic";
+import { computeSlots, expandBlocks, isOpenAt, isSlotFree } from "../slots";
+import { env } from "../env";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey } from "../time";
 import { normalizePhone } from "../phone";
 import { sendWhatsAppTemplate } from "../elevenlabs";
@@ -113,16 +114,21 @@ export async function checkAvailability(
   if (toKey > addDaysKey(fromKey, 60)) toKey = addDaysKey(fromKey, 60);
 
   const proIds = professionals.map((p) => p.id);
-  const busy = await sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
-    select professional_id, starts_at, ends_at from appointments
-    where professional_id = any(${proIds}::uuid[])
-      and status = any(${ACTIVE}::text[])
-      and ends_at >= ${`${addDaysKey(fromKey, -1)}T00:00:00Z`}
-      and starts_at <= ${`${addDaysKey(toKey, 1)}T23:59:59Z`}`;
+  const rangeStart = `${addDaysKey(fromKey, -1)}T00:00:00Z`;
+  const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
+  const [busy, blocks] = await Promise.all([
+    sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
+      select professional_id, starts_at, ends_at from appointments
+      where professional_id = any(${proIds}::uuid[])
+        and status = any(${ACTIVE}::text[])
+        and ends_at >= ${rangeStart} and starts_at <= ${rangeEnd}`,
+    getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
+  ]);
 
   const slots = computeSlots({
     schedules: catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
     busy,
+    blocked: expandBlocks(blocks, proIds),
     durationMin: type.duration_min,
     fromKey,
     toKey,
@@ -170,18 +176,22 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   if (startsAt.getTime() < Date.now()) throw new ToolError("Ese horario ya pasó.");
 
   const endsAt = new Date(startsAt.getTime() + type.duration_min * 60_000);
-  const busy = await sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
-    select professional_id, starts_at, ends_at from appointments
-    where professional_id = ${pro.id}
-      and status = any(${ACTIVE}::text[])
-      and starts_at < ${endsAt} and ends_at > ${startsAt}
-      ${ignoreAppointmentId ? sql`and id <> ${ignoreAppointmentId}` : sql``}`;
+  const [busy, blocks] = await Promise.all([
+    sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
+      select professional_id, starts_at, ends_at from appointments
+      where professional_id = ${pro.id}
+        and status = any(${ACTIVE}::text[])
+        and starts_at < ${endsAt} and ends_at > ${startsAt}
+        ${ignoreAppointmentId ? sql`and id <> ${ignoreAppointmentId}` : sql``}`,
+    getScheduleBlocks(clinic.id, startsAt, endsAt),
+  ]);
   const check = isSlotFree(
     catalog.schedules.filter((s) => s.professional_id === pro.id),
     busy,
     startsAt,
     type.duration_min,
     clinic.timezone,
+    expandBlocks(blocks, [pro.id]),
   );
   if (!check.ok) throw new ToolError(`${check.reason} Consultá la disponibilidad de nuevo y ofrecé otra opción.`);
   return { type, pro, endsAt };
@@ -291,6 +301,22 @@ async function getOwnAppointment(ctx: ToolContext, appointmentId: string) {
   if (!appt) throw new ToolError("No encontré ese turno para este paciente. Usá ver_turnos_paciente.");
   if (!ACTIVE.includes(appt.status)) throw new ToolError(`Ese turno ya está ${appt.status}.`);
   return { patient, appt };
+}
+
+// ---------------------------------------------------------------------------
+// confirmar_turno (el paciente avisa que va a venir, ej. tras un recordatorio)
+// ---------------------------------------------------------------------------
+export async function confirmAppointment(ctx: ToolContext, input: { turno_id: string }) {
+  const clinic = await getClinic(ctx.clinicId);
+  const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
+  if (new Date(appt.starts_at).getTime() < Date.now()) throw new ToolError("Ese turno ya pasó.");
+  await sql`update appointments set status = 'confirmado', confirmed_at = coalesce(confirmed_at, now()) where id = ${appt.id}`;
+  await notifyN8n("turno.confirmado", { clinic_id: clinic.id, appointment: appt, patient });
+  return {
+    ok: true,
+    mensaje: `Asistencia confirmada para el ${humanSlot(new Date(appt.starts_at), clinic.timezone)}. Recordale la dirección y las indicaciones previas si las hay.`,
+    direccion: clinic.address,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -412,9 +438,14 @@ export async function createTask(
   } catch {
     patientId = null;
   }
+  const clinic = await getClinic(ctx.clinicId);
+  const catalog = await getCatalog(clinic.id);
+  const now = new Date();
+  const blocks = await getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 60_000));
+  const openNow = isOpenAt(catalog.schedules, expandBlocks(blocks, catalog.professionals.map((p) => p.id)), now, clinic.timezone);
   const [task] = await sql<Task[]>`
     insert into tasks ${sql({
-      clinic_id: ctx.clinicId,
+      clinic_id: clinic.id,
       patient_id: patientId,
       conversation_id: ctx.conversationId ?? null,
       type: input.tipo,
@@ -423,11 +454,19 @@ export async function createTask(
       details: input.detalle ?? null,
     })}
     returning *`;
-  await notifyN8n("tarea.creada", { clinic_id: ctx.clinicId, task });
+  // n8n avisa a recepción con el link al panel (derivación a una persona, urgencias, recetas…).
+  await notifyN8n("tarea.creada", {
+    clinic_id: clinic.id,
+    task,
+    fuera_de_horario: !openNow,
+    panel_url: `${env.appUrl().replace(/\/$/, "")}/panel/tareas`,
+  });
   return {
     ok: true,
     tarea_id: task.id,
-    mensaje: "Tarea creada para el equipo. Avisale al paciente que lo van a contactar (en horario de atención).",
+    mensaje: openNow
+      ? "Tarea creada para el equipo. Avisale al paciente que lo van a contactar a la brevedad."
+      : "Tarea creada para el equipo. Ahora estamos fuera del horario de atención: avisale al paciente que lo contactan apenas abramos, y si es urgente repetí las indicaciones de urgencia.",
   };
 }
 

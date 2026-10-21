@@ -16,6 +16,8 @@ export type Clinic = {
   elevenlabs_agent_id: string | null;
   elevenlabs_voice_id: string | null;
   templates: Record<string, string>;
+  handoff_phone: string | null;
+  after_hours_instructions: string | null;
   created_at: string;
 };
 
@@ -37,6 +39,8 @@ export type AppointmentType = {
   duration_min: number;
   instructions: string | null;
   recall_months: number | null;
+  /** numeric de Postgres: llega como texto para no perder precisión. */
+  price: string | null;
   is_first_visit: boolean;
   active: boolean;
 };
@@ -83,6 +87,8 @@ export type Appointment = {
   coverage: string | null;
   notes: string | null;
   reminder_sent_at: string | null;
+  confirmed_at: string | null;
+  survey_sent_at: string | null;
   cancelled_at: string | null;
   created_at: string;
 };
@@ -103,6 +109,7 @@ export type Conversation = {
   intent: string | null;
   outcome: string | null;
   call_successful: string | null;
+  satisfaction: number | null;
   transcript: Array<{ role: string; message: string | null; time_in_call_secs?: number }> | null;
   analysis: Record<string, unknown> | null;
   created_at: string;
@@ -112,6 +119,7 @@ export const TASK_TYPES = [
   "receta",
   "consulta_clinica",
   "resultados",
+  "orden_medica",
   "administrativo",
   "derivacion_humana",
   "urgencia",
@@ -134,6 +142,8 @@ export type Task = {
   title: string;
   details: string | null;
   assigned_to: string | null;
+  response: string | null;
+  responded_at: string | null;
   created_at: string;
   resolved_at: string | null;
 };
@@ -150,7 +160,7 @@ export type WaitlistEntry = {
   created_at: string;
 };
 
-export const CAMPAIGN_TYPES = ["recall", "reactivacion", "recordatorio", "lista_espera", "no_show", "personalizada"] as const;
+export const CAMPAIGN_TYPES = ["recall", "reactivacion", "recordatorio", "lista_espera", "no_show", "encuesta", "personalizada"] as const;
 export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
 
 export type Campaign = {
@@ -164,6 +174,16 @@ export type Campaign = {
   status: "borrador" | "enviando" | "finalizada";
   created_at: string;
   sent_at: string | null;
+};
+
+export type ScheduleBlock = {
+  id: string;
+  clinic_id: string;
+  professional_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  reason: string | null;
+  created_at: string;
 };
 
 export type CampaignRecipient = {

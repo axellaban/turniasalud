@@ -62,6 +62,9 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
               <StatusBadge value={c.outcome} />
               {sentiment && <Badge tone={sentiment === "negativo" ? "red" : sentiment === "positivo" ? "green" : "gray"}>{sentiment}</Badge>}
               {c.duration_secs !== null && <Badge>{Math.round((c.duration_secs ?? 0) / 60)} min</Badge>}
+              {c.satisfaction !== null && (
+                <Badge tone={c.satisfaction >= 9 ? "green" : c.satisfaction <= 6 ? "red" : "gray"}>encuesta: {c.satisfaction}/10</Badge>
+              )}
             </div>
           </Card>
           <Card>

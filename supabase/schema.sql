@@ -1,5 +1,6 @@
--- Turnia Salud — esquema de base de datos (Supabase / Postgres)
--- Pegalo completo en Supabase → SQL Editor → Run. Se puede correr más de una vez.
+-- Turnia Salud — esquema de base de datos (Postgres: Neon, Supabase o local)
+-- Pegalo completo en el SQL Editor de Neon o Supabase → Run. Se puede correr
+-- más de una vez: también actualiza bases creadas con versiones anteriores.
 
 create extension if not exists btree_gist;
 create extension if not exists pgcrypto;
@@ -25,6 +26,8 @@ create table if not exists clinics (
   elevenlabs_agent_id text,
   elevenlabs_voice_id text,
   templates jsonb not null default '{}'::jsonb,
+  handoff_phone text,
+  after_hours_instructions text,
   created_at timestamptz not null default now()
 );
 
@@ -47,6 +50,7 @@ create table if not exists appointment_types (
   duration_min integer not null default 30 check (duration_min between 5 and 480),
   instructions text,
   recall_months integer,
+  price numeric(12, 2),
   is_first_visit boolean not null default false,
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -61,6 +65,20 @@ create table if not exists schedules (
   end_time time not null,
   check (end_time > start_time)
 );
+
+-- Feriados, vacaciones y bloqueos de agenda. Sin profesional = toda la clínica.
+create table if not exists schedule_blocks (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  professional_id uuid references professionals(id) on delete cascade,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  reason text,
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at)
+);
+
+create index if not exists schedule_blocks_clinic_idx on schedule_blocks (clinic_id, ends_at);
 
 -- ---------------------------------------------------------------------------
 -- Pacientes ("memoria del paciente")
@@ -102,6 +120,8 @@ create table if not exists appointments (
   coverage text,
   notes text,
   reminder_sent_at timestamptz,
+  confirmed_at timestamptz,
+  survey_sent_at timestamptz,
   cancelled_at timestamptz,
   created_at timestamptz not null default now(),
   check (ends_at > starts_at)
@@ -141,6 +161,7 @@ create table if not exists conversations (
   intent text,
   outcome text,
   call_successful text,
+  satisfaction smallint check (satisfaction between 0 and 10),
   transcript jsonb,
   analysis jsonb,
   created_at timestamptz not null default now()
@@ -157,12 +178,14 @@ create table if not exists tasks (
   patient_id uuid references patients(id) on delete set null,
   conversation_id text,
   type text not null default 'administrativo'
-    check (type in ('receta', 'consulta_clinica', 'resultados', 'administrativo', 'derivacion_humana', 'urgencia', 'facturacion', 'otro')),
+    check (type in ('receta', 'consulta_clinica', 'resultados', 'orden_medica', 'administrativo', 'derivacion_humana', 'urgencia', 'facturacion', 'otro')),
   priority text not null default 'normal' check (priority in ('baja', 'normal', 'alta', 'urgente')),
   status text not null default 'abierta' check (status in ('abierta', 'en_curso', 'resuelta')),
   title text not null,
   details text,
   assigned_to text,
+  response text,
+  responded_at timestamptz,
   created_at timestamptz not null default now(),
   resolved_at timestamptz
 );
@@ -192,7 +215,7 @@ create table if not exists campaigns (
   clinic_id uuid not null references clinics(id) on delete cascade,
   name text not null,
   type text not null
-    check (type in ('recall', 'reactivacion', 'recordatorio', 'lista_espera', 'no_show', 'personalizada')),
+    check (type in ('recall', 'reactivacion', 'recordatorio', 'lista_espera', 'no_show', 'encuesta', 'personalizada')),
   template_name text not null,
   template_language text not null default 'es_AR',
   goal text,
@@ -222,8 +245,29 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Seguridad: RLS activado y sin políticas → solo el servidor (service role)
--- puede leer o escribir. El navegador nunca habla directo con la base.
+-- Actualización de bases creadas con versiones anteriores de este archivo.
+-- Volver a correr el archivo completo es seguro: solo agrega lo que falta.
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists handoff_phone text;
+alter table clinics add column if not exists after_hours_instructions text;
+alter table appointment_types add column if not exists price numeric(12, 2);
+alter table appointments add column if not exists confirmed_at timestamptz;
+alter table appointments add column if not exists survey_sent_at timestamptz;
+alter table conversations add column if not exists satisfaction smallint check (satisfaction between 0 and 10);
+alter table tasks add column if not exists response text;
+alter table tasks add column if not exists responded_at timestamptz;
+
+alter table tasks drop constraint if exists tasks_type_check;
+alter table tasks add constraint tasks_type_check
+  check (type in ('receta', 'consulta_clinica', 'resultados', 'orden_medica', 'administrativo', 'derivacion_humana', 'urgencia', 'facturacion', 'otro'));
+alter table campaigns drop constraint if exists campaigns_type_check;
+alter table campaigns add constraint campaigns_type_check
+  check (type in ('recall', 'reactivacion', 'recordatorio', 'lista_espera', 'no_show', 'encuesta', 'personalizada'));
+
+-- ---------------------------------------------------------------------------
+-- Seguridad: RLS activado y sin políticas. Solo el servidor, conectado con el
+-- usuario dueño de las tablas (DATABASE_URL), lee y escribe. El navegador
+-- nunca habla directo con la base.
 -- ---------------------------------------------------------------------------
 alter table clinics enable row level security;
 alter table professionals enable row level security;
@@ -236,3 +280,4 @@ alter table tasks enable row level security;
 alter table waitlist enable row level security;
 alter table campaigns enable row level security;
 alter table campaign_recipients enable row level security;
+alter table schedule_blocks enable row level security;

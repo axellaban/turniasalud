@@ -93,6 +93,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     schema: z.object({}),
   },
   {
+    name: "confirmar_turno",
+    description:
+      "Marca que el paciente confirmó que va a venir a un turno (por ejemplo, cuando responde que sí a un recordatorio).",
+    params: {
+      turno_id: { type: "string", description: "turno_id del turno que confirma.", required: true },
+    },
+    schema: z.object({ turno_id: z.string().min(1) }),
+  },
+  {
     name: "cancelar_turno",
     description: "Cancela un turno del paciente. Confirmá con el paciente antes de cancelar.",
     params: {
@@ -115,7 +124,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "crear_tarea",
     description:
-      "Crea una tarea para el equipo de la clínica cuando el pedido necesita a una persona: recetas, resultados, consultas clínicas, facturación, pedidos de hablar con alguien, o urgencias.",
+      "Crea una tarea para el equipo de la clínica cuando el pedido necesita a una persona: recetas, resultados, consultas clínicas, órdenes médicas o derivaciones que no podés agendar, facturación, pedidos de hablar con alguien, o urgencias.",
     params: {
       tipo: { type: "string", description: "Tipo de pedido.", enum: TASK_TYPES, required: true },
       prioridad: { type: "string", description: "Prioridad.", enum: TASK_PRIORITIES },

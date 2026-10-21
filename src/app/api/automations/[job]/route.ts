@@ -11,11 +11,13 @@ export const maxDuration = 300;
 // POST /api/automations/recall         (una vez por semana)
 // POST /api/automations/reactivacion   (una vez por mes)
 // POST /api/automations/ausentes       (todos los días)
+// POST /api/automations/encuestas      (todos los días, ej. 19:00)
 const JOBS: Record<string, CampaignType> = {
   recordatorios: "recordatorio",
   recall: "recall",
   reactivacion: "reactivacion",
   ausentes: "no_show",
+  encuestas: "encuesta",
   "lista-espera": "lista_espera",
 };
 

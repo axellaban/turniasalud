@@ -9,7 +9,7 @@ end if;
 
 insert into clinics (
   id, name, agent_name, specialty, address, phone, website, timezone, hours_text,
-  accepted_coverages, faq, policies, urgency_instructions, templates
+  accepted_coverages, faq, policies, urgency_instructions, after_hours_instructions, templates
 ) values (
   '00000000-0000-4000-8000-000000000001',
   'Centro Médico Plaza (demo)',
@@ -24,7 +24,8 @@ insert into clinics (
   E'- Estacionamiento: no tenemos propio; hay un garage en Av. Santa Fe 3150.\n- Llegar 10 minutos antes con DNI y credencial de la obra social.\n- Consulta particular: $45.000. Se aceptan efectivo, débito, crédito y transferencia.\n- Los menores de 18 años deben venir acompañados por un adulto.\n- Estudios: traer los estudios previos impresos o en el celular.\n- Recetas: se envían por mail o WhatsApp dentro de las 48 h hábiles.',
   E'- Cancelaciones con al menos 24 h de anticipación.\n- Tolerancia de 15 minutos; pasado ese tiempo el turno puede reprogramarse.\n- PAMI: no se atiende por PAMI en esta sede.',
   E'Si el paciente describe dolor de pecho, falta de aire, pérdida de conocimiento, sangrado abundante, un golpe fuerte en la cabeza o cualquier emergencia, indicarle que llame al 107 (SAME) o vaya a la guardia más cercana, y crear una tarea urgente.',
-  '{"recordatorio": "recordatorio_turno", "recall": "recall_control", "lista_espera": "turno_liberado", "reactivacion": "reactivacion_paciente", "no_show": "turno_perdido", "confirmacion": "confirmacion_turno"}'::jsonb
+  E'Fuera de horario no hay profesionales de guardia en la sede. Para urgencias, 107 (SAME) o la guardia más cercana. Los pedidos se responden el siguiente día hábil.',
+  '{"recordatorio": "recordatorio_turno", "recall": "recall_control", "lista_espera": "turno_liberado", "reactivacion": "reactivacion_paciente", "no_show": "turno_perdido", "encuesta": "encuesta_visita", "respuesta": "respuesta_pedido"}'::jsonb
 );
 
 insert into professionals (id, clinic_id, full_name, specialty, bio, accepted_coverages) values
@@ -33,15 +34,15 @@ insert into professionals (id, clinic_id, full_name, specialty, bio, accepted_co
   ('00000000-0000-4000-8000-0000000000a3', '00000000-0000-4000-8000-000000000001', 'Dra. Carolina Ruiz', 'Odontología', 'Odontología general y limpiezas.', null),
   ('00000000-0000-4000-8000-0000000000a4', '00000000-0000-4000-8000-000000000001', 'Dr. Pablo Sosa', 'Clínica médica', 'Chequeos anuales y aptos físicos.', null);
 
-insert into appointment_types (id, clinic_id, name, specialty, duration_min, instructions, recall_months, is_first_visit) values
-  ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-000000000001', 'Primera consulta de traumatología', 'Traumatología', 30, 'Traer estudios por imágenes previos (radiografías, resonancias).', null, true),
-  ('00000000-0000-4000-8000-0000000000b2', '00000000-0000-4000-8000-000000000001', 'Control de traumatología', 'Traumatología', 20, null, 3, false),
-  ('00000000-0000-4000-8000-0000000000b3', '00000000-0000-4000-8000-000000000001', 'Consulta dermatológica', 'Dermatología', 20, null, null, true),
-  ('00000000-0000-4000-8000-0000000000b4', '00000000-0000-4000-8000-000000000001', 'Control anual de lunares', 'Dermatología', 30, 'No usar maquillaje ni autobronceante en las zonas a revisar.', 12, false),
-  ('00000000-0000-4000-8000-0000000000b5', '00000000-0000-4000-8000-000000000001', 'Limpieza dental', 'Odontología', 40, null, 6, false),
-  ('00000000-0000-4000-8000-0000000000b6', '00000000-0000-4000-8000-000000000001', 'Consulta odontológica', 'Odontología', 30, null, null, true),
-  ('00000000-0000-4000-8000-0000000000b7', '00000000-0000-4000-8000-000000000001', 'Chequeo clínico anual', 'Clínica médica', 30, 'Venir con 8 h de ayuno si querés que te pidan laboratorio en el día.', 12, false),
-  ('00000000-0000-4000-8000-0000000000b8', '00000000-0000-4000-8000-000000000001', 'Apto físico', 'Clínica médica', 20, 'Traer ropa cómoda.', 12, false);
+insert into appointment_types (id, clinic_id, name, specialty, duration_min, instructions, recall_months, is_first_visit, price) values
+  ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-000000000001', 'Primera consulta de traumatología', 'Traumatología', 30, 'Traer estudios por imágenes previos (radiografías, resonancias).', null, true, 45000),
+  ('00000000-0000-4000-8000-0000000000b2', '00000000-0000-4000-8000-000000000001', 'Control de traumatología', 'Traumatología', 20, null, 3, false, 35000),
+  ('00000000-0000-4000-8000-0000000000b3', '00000000-0000-4000-8000-000000000001', 'Consulta dermatológica', 'Dermatología', 20, null, null, true, 45000),
+  ('00000000-0000-4000-8000-0000000000b4', '00000000-0000-4000-8000-000000000001', 'Control anual de lunares', 'Dermatología', 30, 'No usar maquillaje ni autobronceante en las zonas a revisar.', 12, false, 50000),
+  ('00000000-0000-4000-8000-0000000000b5', '00000000-0000-4000-8000-000000000001', 'Limpieza dental', 'Odontología', 40, null, 6, false, 40000),
+  ('00000000-0000-4000-8000-0000000000b6', '00000000-0000-4000-8000-000000000001', 'Consulta odontológica', 'Odontología', 30, null, null, true, 40000),
+  ('00000000-0000-4000-8000-0000000000b7', '00000000-0000-4000-8000-000000000001', 'Chequeo clínico anual', 'Clínica médica', 30, 'Venir con 8 h de ayuno si querés que te pidan laboratorio en el día.', 12, false, 45000),
+  ('00000000-0000-4000-8000-0000000000b8', '00000000-0000-4000-8000-000000000001', 'Apto físico', 'Clínica médica', 20, 'Traer ropa cómoda.', 12, false, 30000);
 
 -- Horarios: Fernández L-M-V 9-13, Gómez M-J 14-19, Ruiz L a V 10-17, Sosa L a V 8-12 y S 9-13
 insert into schedules (professional_id, weekday, start_time, end_time) values

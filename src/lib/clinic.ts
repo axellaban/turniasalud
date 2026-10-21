@@ -1,8 +1,9 @@
 import "server-only";
 import { sql } from "./db";
 import { env } from "./env";
-import { formatDateTime } from "./time";
-import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule } from "./types";
+import { expandBlocks, isOpenAt } from "./slots";
+import { formatDate, formatDateTime } from "./time";
+import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule, ScheduleBlock, Task } from "./types";
 
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
@@ -53,10 +54,21 @@ export async function getCatalog(clinicId: string): Promise<Catalog> {
   return { professionals: [...professionals], appointmentTypes: [...appointmentTypes], schedules: [...schedules] };
 }
 
+/** Feriados, vacaciones y bloqueos que se superponen con el rango pedido. */
+export async function getScheduleBlocks(clinicId: string, from: Date | string, to: Date | string): Promise<ScheduleBlock[]> {
+  const rows = await sql<ScheduleBlock[]>`
+    select * from schedule_blocks
+    where clinic_id = ${clinicId} and starts_at < ${to} and ends_at > ${from}
+    order by starts_at`;
+  return [...rows];
+}
+
 /** Texto con la información fija de la clínica que el agente usa para responder. */
-export function clinicInfoText(clinic: Clinic): string {
+export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
   return [
     `Nombre: ${clinic.name}`,
+    openNow !== undefined &&
+      `Ahora mismo: ${openNow ? "dentro del horario de atención (hay profesionales atendiendo)" : "fuera del horario de atención"}`,
     clinic.address && `Dirección: ${clinic.address}`,
     clinic.phone && `Teléfono: ${clinic.phone}`,
     clinic.hours_text && `Horario de atención: ${clinic.hours_text}`,
@@ -69,7 +81,7 @@ export function clinicInfoText(clinic: Clinic): string {
 }
 
 /** Catálogo de profesionales y prácticas con sus IDs, para que el agente use las herramientas. */
-export function catalogText(catalog: Catalog): string {
+export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], timeZone?: string): string {
   const proLines = catalog.professionals.map((p) => {
     const days = catalog.schedules
       .filter((s) => s.professional_id === p.id)
@@ -83,7 +95,15 @@ export function catalogText(catalog: Catalog): string {
     (t) =>
       `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}`,
   );
-  return `PROFESIONALES:\n${proLines.join("\n")}\n\nTIPOS DE TURNO:\n${typeLines.join("\n")}`;
+  const names = new Map(catalog.professionals.map((p) => [p.id, p.full_name]));
+  const blockLines = blocks.map((b) => {
+    const who = b.professional_id ? (names.get(b.professional_id) ?? "un profesional") : "toda la clínica";
+    const from = formatDateTime(b.starts_at, timeZone);
+    const to = formatDateTime(b.ends_at, timeZone);
+    return `- ${who}: del ${from} al ${to}${b.reason ? ` (${b.reason})` : ""}`;
+  });
+  const text = `PROFESIONALES:\n${proLines.join("\n")}\n\nTIPOS DE TURNO:\n${typeLines.join("\n")}`;
+  return blockLines.length ? `${text}\n\nDÍAS SIN ATENCIÓN (próximos 60 días):\n${blockLines.join("\n")}` : text;
 }
 
 export async function patientContextText(clinic: Clinic, patient: Patient | null): Promise<string> {
@@ -97,6 +117,11 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
     join appointment_types t on t.id = a.appointment_type_id
     where a.patient_id = ${patient.id} and a.status in ('confirmado', 'pendiente') and a.starts_at >= now()
     order by a.starts_at
+    limit 5`;
+  const requests = await sql<Array<Pick<Task, "title" | "status" | "response" | "responded_at" | "created_at">>>`
+    select title, status, response, responded_at, created_at from tasks
+    where patient_id = ${patient.id} and (status <> 'resuelta' or responded_at > now() - interval '30 days')
+    order by created_at desc
     limit 5`;
   const lines = [
     `Nombre: ${patient.full_name ?? "sin dato"}`,
@@ -112,6 +137,14 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
           )
           .join("\n")}`
       : "Próximos turnos: ninguno",
+    requests.length &&
+      `Pedidos al equipo:\n${requests
+        .map((t) =>
+          t.status === "resuelta"
+            ? `  - ${t.title} (pedido el ${formatDate(t.created_at, clinic.timezone)}): resuelto${t.response ? `. Respuesta del equipo: ${t.response}` : ""}`
+            : `  - ${t.title} (pedido el ${formatDate(t.created_at, clinic.timezone)}): ${t.status === "en_curso" ? "en curso" : "pendiente"}`,
+        )
+        .join("\n")}`,
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -130,16 +163,25 @@ export async function buildDynamicVariables(
   phone: string,
   opts: { context?: string; campaignId?: string } = {},
 ): Promise<Record<string, string>> {
-  const [catalog, patient] = await Promise.all([getCatalog(clinic.id), findPatientByPhone(clinic.id, phone)]);
+  const now = new Date();
+  const [catalog, patient, blocks] = await Promise.all([
+    getCatalog(clinic.id),
+    findPatientByPhone(clinic.id, phone),
+    getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 60 * 86400_000)),
+  ]);
+  const proIds = catalog.professionals.map((p) => p.id);
+  const openNow = isOpenAt(catalog.schedules, expandBlocks(blocks, proIds), now, clinic.timezone);
+  const urgency =
+    clinic.urgency_instructions || "Ante cualquier emergencia, indicar que llame al 107 (SAME) o vaya a la guardia más cercana.";
   return {
     clinic_id: clinic.id,
     clinic_name: clinic.name,
     agent_name: clinic.agent_name,
-    clinic_info: clinicInfoText(clinic),
-    clinic_catalog: catalogText(catalog),
-    urgency_instructions:
-      clinic.urgency_instructions ||
-      "Ante cualquier emergencia, indicar que llame al 107 (SAME) o vaya a la guardia más cercana.",
+    clinic_info: clinicInfoText(clinic, openNow),
+    clinic_catalog: catalogText(catalog, blocks, clinic.timezone),
+    urgency_instructions: clinic.after_hours_instructions
+      ? `${urgency}\nFuera del horario de atención: ${clinic.after_hours_instructions}`
+      : urgency,
     patient_phone: phone || "desconocido",
     patient_name: patient?.full_name || "desconocido",
     patient_context: await patientContextText(clinic, patient),

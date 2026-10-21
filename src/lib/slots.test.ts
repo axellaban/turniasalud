@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSlots, isSlotFree, type ScheduleBlock } from "./slots";
+import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type ScheduleBlock } from "./slots";
 import { zonedTimeToUtc } from "./time";
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -91,6 +91,39 @@ describe("computeSlots", () => {
     expect(slots).toHaveLength(4);
     const days = new Set(slots.map((s) => s.starts_at.slice(0, 10)));
     expect(days.size).toBe(2);
+  });
+});
+
+describe("bloqueos de agenda", () => {
+  // Feriado de 00:00 a 24:00 hora argentina del lunes 27/10.
+  const feriado = [{ professional_id: PRO, starts_at: "2025-10-27T03:00:00.000Z", ends_at: "2025-10-28T03:00:00.000Z" }];
+
+  it("no ofrece turnos en un día bloqueado", () => {
+    const slots = computeSlots({
+      schedules, busy: [], blocked: feriado, durationMin: 30, fromKey: "2025-10-27", toKey: "2025-11-03", timeZone: TZ, now, perDayPerProfessional: 10,
+    });
+    expect(slots.length).toBeGreaterThan(0);
+    expect(slots.every((s) => s.starts_at.startsWith("2025-11-03"))).toBe(true);
+  });
+
+  it("un bloqueo sin profesional aplica a todos los de la clínica", () => {
+    const expanded = expandBlocks([{ professional_id: null, starts_at: "a", ends_at: "b" }, { professional_id: "pro-2", starts_at: "c", ends_at: "d" }], [PRO, "pro-2"]);
+    expect(expanded).toEqual([
+      { professional_id: PRO, starts_at: "a", ends_at: "b" },
+      { professional_id: "pro-2", starts_at: "a", ends_at: "b" },
+      { professional_id: "pro-2", starts_at: "c", ends_at: "d" },
+    ]);
+  });
+
+  it("sabe si la clínica está atendiendo, salvo feriados", () => {
+    expect(isOpenAt(schedules, [], new Date("2025-10-27T12:30:00.000Z"), TZ)).toBe(true);
+    expect(isOpenAt(schedules, [], new Date("2025-10-27T14:00:00.000Z"), TZ)).toBe(false);
+    expect(isOpenAt(schedules, feriado, new Date("2025-10-27T12:30:00.000Z"), TZ)).toBe(false);
+  });
+
+  it("rechaza reservar en un bloqueo con un motivo propio", () => {
+    const result = isSlotFree(schedules, [], new Date("2025-10-27T12:30:00.000Z"), 30, TZ, feriado);
+    expect(result).toEqual({ ok: false, reason: expect.stringContaining("feriado") });
   });
 });
 

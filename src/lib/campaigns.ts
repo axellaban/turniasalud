@@ -35,6 +35,11 @@ export const CAMPAIGN_LABELS: Record<CampaignType, { label: string; description:
     description: "Pacientes anotados en la lista de espera activa.",
     goal: "Ofrecerle los turnos disponibles más cercanos.",
   },
+  encuesta: {
+    label: "Encuesta post-consulta",
+    description: "Pacientes atendidos en los últimos 2 días: puntaje del 0 al 10 y comentarios.",
+    goal: "Que el paciente responda del 0 al 10 si recomendaría la clínica y cuente cómo fue su atención.",
+  },
   personalizada: {
     label: "Personalizada",
     description: "Todos los pacientes con WhatsApp. Útil para avisos (ej. cambio de horario).",
@@ -152,6 +157,32 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
     return members;
   }
 
+  if (type === "encuesta") {
+    const rows = await sql<Array<{ id: string; patient: PatientRow; professional: string; type_name: string }>>`
+      select a.id, pr.full_name as professional, t.name as type_name,
+             json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) as patient
+      from appointments a
+      join patients p on p.id = a.patient_id
+      join professionals pr on pr.id = a.professional_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.clinic_id = ${clinic.id} and a.status = 'atendido' and a.survey_sent_at is null
+        and a.starts_at >= ${new Date(now - 48 * 3600_000)} and a.starts_at <= ${new Date(now)}
+      order by a.starts_at`;
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (seen.has(r.patient.id)) continue;
+      seen.add(r.patient.id);
+      members.push({
+        patient_id: r.patient.id,
+        phone: r.patient.phone,
+        name: r.patient.full_name,
+        detail: `tu ${r.type_name.toLowerCase()} con ${r.professional}`,
+        context: `Encuesta post-consulta: se atendió de "${r.type_name}" con ${r.professional} (turno_id=${r.id}). Preguntá del 0 al 10 qué tan probable es que recomiende la clínica y si quiere contar algo más.`,
+      });
+    }
+    return members;
+  }
+
   if (type === "lista_espera") {
     const rows = await sql<
       Array<{ patient_id: string; appointment_type_id: string | null; preferences: string | null; type_name: string | null; full_name: string | null; phone: string }>
@@ -239,10 +270,9 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
         on conflict (campaign_id, patient_id) do update set
           status = excluded.status, elevenlabs_conversation_id = excluded.elevenlabs_conversation_id,
           sent_at = excluded.sent_at, error = null`;
-      if (campaign.type === "recordatorio") {
-        const match = /turno_id=([0-9a-f-]{36})/.exec(member.context);
-        if (match) await sql`update appointments set reminder_sent_at = now() where id = ${match[1]}`;
-      }
+      const appointmentId = /turno_id=([0-9a-f-]{36})/.exec(member.context)?.[1];
+      if (appointmentId && campaign.type === "recordatorio") await sql`update appointments set reminder_sent_at = now() where id = ${appointmentId}`;
+      if (appointmentId && campaign.type === "encuesta") await sql`update appointments set survey_sent_at = now() where id = ${appointmentId}`;
       result.sent++;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

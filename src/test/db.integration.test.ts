@@ -355,6 +355,125 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(slots.turnos.length).toBeGreaterThan(0);
   });
 
+  it("confirma la asistencia a un turno", async () => {
+    const c = ctx("5491166660012");
+    await service.registerPatient(c, { nombre_completo: "Irene Confirma" });
+    const { turnos } = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    const booked = await service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio });
+    const confirmed = await service.confirmAppointment(c, { turno_id: booked.turno_id });
+    expect(confirmed.ok).toBe(true);
+    expect(mocks.notifyN8n).toHaveBeenCalledWith("turno.confirmado", expect.objectContaining({ clinic_id: CLINIC }));
+    const [row] = await sql<Array<{ status: string; confirmed_at: string | null }>>`select status, confirmed_at from appointments where id = ${booked.turno_id}`;
+    expect(row.status).toBe("confirmado");
+    expect(row.confirmed_at).not.toBeNull();
+    // Otro paciente no puede confirmar un turno ajeno.
+    await expect(service.confirmAppointment(ctx("5491166660013"), { turno_id: booked.turno_id })).rejects.toBeInstanceOf(service.ToolError);
+  });
+
+  it("los feriados y bloqueos sacan turnos de la oferta y el agente los conoce", async () => {
+    const actions = await import("@/app/panel/actions");
+    const c = ctx("5491166660014");
+    await service.registerPatient(c, { nombre_completo: "Julia Feriado" });
+    const before = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    const day = before.turnos[0].inicio;
+    const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(day));
+
+    const f = new FormData();
+    f.set("date_from", dayKey);
+    f.set("reason", "Feriado de prueba");
+    const saved = await actions.addScheduleBlock(undefined, f);
+    expect(saved.ok).toBe(true);
+
+    const after = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: dayKey, hasta: dayKey });
+    expect(after.turnos).toHaveLength(0);
+    await expect(
+      service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: before.turnos[0].profesional_id, inicio: day }),
+    ).rejects.toThrow("feriado");
+    const vars = await clinicLib.buildDynamicVariables(await clinicLib.getClinic(), "5491166660014");
+    expect(vars.clinic_catalog).toContain("DÍAS SIN ATENCIÓN");
+    expect(vars.clinic_catalog).toContain("Feriado de prueba");
+    expect(vars.clinic_info).toMatch(/Ahora mismo: (dentro|fuera) del horario/);
+
+    // Un bloqueo de un solo profesional no afecta a los demás.
+    const [block] = await sql<Array<{ id: string }>>`select id from schedule_blocks where reason = 'Feriado de prueba'`;
+    const del = new FormData();
+    del.set("id", block.id);
+    await actions.deleteScheduleBlock(del);
+    const partial = new FormData();
+    partial.set("date_from", dayKey);
+    partial.set("professional_id", RUIZ);
+    partial.set("time_from", "10:00");
+    partial.set("time_to", "12:00");
+    expect((await actions.addScheduleBlock(undefined, partial)).ok).toBe(true);
+    const restored = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: dayKey, hasta: dayKey, franja: "tarde" });
+    expect(restored.turnos.length).toBeGreaterThan(0);
+    const morning = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: dayKey, hasta: dayKey, franja: "manana" });
+    expect(morning.turnos.every((t) => new Date(t.inicio).getUTCHours() >= 15)).toBe(true);
+  });
+
+  it("resolver un pedido con respuesta avisa al paciente y el agente la conoce", async () => {
+    const { resolveTask } = await import("@/lib/tasks");
+    const c = ctx("5491166660015");
+    await service.registerPatient(c, { nombre_completo: "Karina Receta" });
+    const { tarea_id } = await service.createTask(c, { tipo: "receta", titulo: "Renovar receta de levotiroxina" });
+    const pending = await clinicLib.buildDynamicVariables(await clinicLib.getClinic(), "5491166660015");
+    expect(pending.patient_context).toContain("Renovar receta de levotiroxina");
+    expect(pending.patient_context).toContain("pendiente");
+
+    const result = await resolveTask(CLINIC, tarea_id, "Ya está en tu mail.\nCualquier cosa escribinos.");
+    expect(result).toMatchObject({ ok: true, notified: true });
+    expect(mocks.sendWhatsAppTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "5491166660015", templateName: "respuesta_pedido", params: ["Karina", "Ya está en tu mail. Cualquier cosa escribinos."] }),
+    );
+    const [task] = await sql<Array<{ status: string; response: string; responded_at: string | null }>>`select status, response, responded_at from tasks where id = ${tarea_id}`;
+    expect(task).toMatchObject({ status: "resuelta", response: "Ya está en tu mail. Cualquier cosa escribinos." });
+    const after = await clinicLib.buildDynamicVariables(await clinicLib.getClinic(), "5491166660015");
+    expect(after.patient_context).toContain("Respuesta del equipo: Ya está en tu mail.");
+
+    // Sin respuesta escrita, solo se resuelve.
+    const other = await service.createTask(c, { tipo: "administrativo", titulo: "Pedido sin respuesta" });
+    mocks.sendWhatsAppTemplate.mockClear();
+    expect(await resolveTask(CLINIC, other.tarea_id, "  ")).toMatchObject({ ok: true, notified: false });
+    expect(mocks.sendWhatsAppTemplate).not.toHaveBeenCalled();
+  });
+
+  it("la encuesta post-consulta llega a los atendidos y guarda el puntaje", async () => {
+    const { computeAudience, createCampaign, sendCampaign } = await import("@/lib/campaigns");
+    const { recordConversation } = await import("@/lib/conversations");
+    const yesterday = new Date(Date.now() - 20 * 3600_000);
+    const [appt] = await sql<Array<{ id: string }>>`
+      insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+      values (${CLINIC}, '00000000-0000-4000-8000-0000000000c3', ${GOMEZ}, ${LUNARES}, ${yesterday}, ${new Date(yesterday.getTime() + 30 * 60_000)}, 'atendido', 'panel')
+      returning id`;
+    const clinic = await clinicLib.getClinic();
+    const audience = await computeAudience(clinic, "encuesta");
+    expect(audience.map((m) => m.name)).toEqual(["Ana Romero"]);
+    expect(audience[0].detail).toBe("tu control anual de lunares con Dr. Martín Gómez");
+
+    const campaign = await createCampaign({ clinicId: CLINIC, name: "Encuesta de prueba", type: "encuesta", templateName: "encuesta_visita" });
+    expect((await sendCampaign(campaign.id)).sent).toBe(1);
+    const [sent] = await sql<Array<{ survey_sent_at: string | null }>>`select survey_sent_at from appointments where id = ${appt.id}`;
+    expect(sent.survey_sent_at).not.toBeNull();
+    expect(await computeAudience(clinic, "encuesta")).toHaveLength(0);
+
+    await recordConversation({
+      agent_id: "agent_test",
+      conversation_id: "conv_encuesta",
+      transcript: [{ role: "user", message: "Un 9, muy bien atendida" }],
+      analysis: { data_collection_results: { satisfaccion: { value: 9 }, motivo: { value: "encuesta" } } },
+      conversation_initiation_client_data: { dynamic_variables: { clinic_id: CLINIC, patient_phone: "5491155550003", campaign_id: campaign.id } },
+    });
+    const [conv] = await sql<Array<{ satisfaction: number }>>`select satisfaction from conversations where elevenlabs_conversation_id = 'conv_encuesta'`;
+    expect(conv.satisfaction).toBe(9);
+  });
+
+  it("valida el teléfono de derivación antes de configurar la transferencia", async () => {
+    const { handoffNumber } = await import("@/lib/agent/setup");
+    expect(handoffNumber("+54 11 5555-0100")).toBe("+541155550100");
+    expect(handoffNumber("011 5555-0100")).toBeNull();
+    expect(handoffNumber(null)).toBeNull();
+  });
+
   it("las server actions del panel modifican la agenda y la configuración", async () => {
     const actions = await import("@/app/panel/actions");
     const form = (data: Record<string, string | string[]>) => {
@@ -381,10 +500,21 @@ describe.runIf(url)("integración con Postgres", () => {
     await actions.saveClinic(form({
       name: "Centro Médico Plaza (demo)", agent_name: "Sofi", accepted_coverages: "OSDE, Galeno",
       template_recordatorio: "recordatorio_turno", template_idioma: "es_AR", whatsapp_phone_number_id: "wa_test",
+      handoff_phone: "+541155550100", after_hours_instructions: "Guardia odontológica: 11 5555-0199",
     }));
     const clinic = await clinicLib.getClinic();
     expect(clinic.accepted_coverages).toEqual(["OSDE", "Galeno"]);
-    expect(clinic.templates).toEqual({ recordatorio: "recordatorio_turno", idioma: "es_AR", confirmacion: "confirmacion_turno" });
+    expect(clinic.templates).toEqual({ recordatorio: "recordatorio_turno", idioma: "es_AR" });
+    expect(clinic.handoff_phone).toBe("+541155550100");
+    const vars = await clinicLib.buildDynamicVariables(clinic, "5491155550001");
+    expect(vars.urgency_instructions).toContain("Fuera del horario de atención: Guardia odontológica");
+
+    const price = new FormData();
+    price.set("id", LIMPIEZA);
+    price.set("price", "$ 42.500");
+    await actions.setAppointmentTypePrice(price);
+    const [limpieza] = await sql<Array<{ price: string }>>`select price from appointment_types where id = ${LIMPIEZA}`;
+    expect(Number(limpieza.price)).toBe(42500);
 
     await actions.addProfessional(form({ full_name: "Dra. Nueva", specialty: "Pediatría", accepted_coverages: "OSDE" }));
     await actions.addAppointmentType(form({ name: "Control pediátrico", specialty: "Pediatría", duration_min: "25", recall_months: "6" }));

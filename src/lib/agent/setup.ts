@@ -99,7 +99,14 @@ async function pickArgentineVoice(): Promise<string | null> {
   }
 }
 
+/** Teléfono para transferir llamadas, en formato E.164 (+5411...). */
+export function handoffNumber(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/[^\d+]/g, "");
+  return /^\+\d{8,15}$/.test(digits) ? digits : null;
+}
+
 function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, baseUrl: string, secret: string) {
+  const handoffPhone = handoffNumber(clinic.handoff_phone);
   return {
     name: `Turnia · ${clinic.name}`,
     tags: ["turnia"],
@@ -115,6 +122,27 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
           tool_ids: toolIds,
           built_in_tools: {
             end_call: { type: "system", name: "end_call", description: "", params: { system_tool_type: "end_call" } },
+            ...(handoffPhone
+              ? {
+                  // Solo funciona en llamadas (Twilio o SIP); por WhatsApp se crea una tarea.
+                  transfer_to_number: {
+                    type: "system",
+                    name: "transfer_to_number",
+                    description: "Transfiere la llamada a una persona del equipo de la clínica.",
+                    params: {
+                      system_tool_type: "transfer_to_number",
+                      transfers: [
+                        {
+                          transfer_destination: { type: "phone", phone_number: handoffPhone },
+                          condition:
+                            "El paciente pide hablar con una persona, o el pedido no se puede resolver con las herramientas, y la clínica está dentro del horario de atención.",
+                          transfer_type: "conference",
+                        },
+                      ],
+                    },
+                  },
+                }
+              : {}),
           },
         },
       },
@@ -138,7 +166,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
         motivo: {
           type: "string",
           description: "Motivo principal de la conversación.",
-          enum: ["agendar", "reprogramar", "cancelar", "confirmar", "consulta_informativa", "receta", "resultados", "consulta_clinica", "urgencia", "facturacion", "otro"],
+          enum: ["agendar", "reprogramar", "cancelar", "confirmar", "consulta_informativa", "receta", "resultados", "orden_medica", "consulta_clinica", "urgencia", "facturacion", "encuesta", "otro"],
         },
         resultado: {
           type: "string",
@@ -147,6 +175,11 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
         },
         nombre_paciente: { type: "string", description: "Nombre y apellido del paciente, si lo dijo." },
         sentimiento: { type: "string", description: "Cómo terminó el paciente.", enum: ["positivo", "neutral", "negativo"] },
+        satisfaccion: {
+          type: "integer",
+          description:
+            "Si el paciente respondió a una encuesta, el puntaje del 0 al 10 que dio a qué tan probable es que recomiende la clínica. Vacío si no dio un número.",
+        },
         memoria: {
           type: "string",
           description:

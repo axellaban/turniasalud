@@ -5,11 +5,13 @@ import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { setTaskStatus } from "../../actions";
 import { Badge, Card, Empty, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
+import { ResolveTaskForm } from "./resolve-form";
 
 const TYPE_LABEL: Record<string, string> = {
   receta: "💊 Receta",
   consulta_clinica: "🩺 Consulta clínica",
   resultados: "🧪 Resultados",
+  orden_medica: "📄 Orden médica",
   administrativo: "🗂️ Administrativo",
   derivacion_humana: "🙋 Hablar con una persona",
   urgencia: "🚨 Urgencia",
@@ -28,6 +30,7 @@ type Row = {
   details: string | null;
   created_at: string;
   conversation_id: string | null;
+  response: string | null;
   patients: { id: string; full_name: string | null; phone: string } | null;
 };
 
@@ -36,13 +39,14 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
   const { ver } = await searchParams;
   const showResolved = ver === "resueltas";
   const result = await sql<Row[]>`
-    select t.id, t.type, t.priority, t.status, t.title, t.details, t.created_at, t.conversation_id,
+    select t.id, t.type, t.priority, t.status, t.title, t.details, t.created_at, t.conversation_id, t.response,
       case when p.id is null then null
            else json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) end as patients
     from tasks t left join patients p on p.id = t.patient_id
     where t.clinic_id = ${clinic.id} and ${showResolved ? sql`t.status = 'resuelta'` : sql`t.status <> 'resuelta'`}
     order by t.created_at desc
     limit 200`;
+  const canNotify = Boolean(clinic.templates?.respuesta && clinic.whatsapp_phone_number_id && clinic.elevenlabs_agent_id);
   const rows = [...result].sort(
     (a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9),
   );
@@ -73,6 +77,12 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
                 </div>
               </div>
               {t.details && <p className="mt-2 whitespace-pre-wrap text-sm text-brand-900/70">{t.details}</p>}
+              {t.response && (
+                <p className="mt-2 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-900/80">
+                  <span className="font-medium">Respuesta al paciente:</span> {t.response}
+                </p>
+              )}
+              {t.status !== "resuelta" && t.patients && <ResolveTaskForm id={t.id} canNotify={canNotify} />}
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-brand-900/55">
                 <span>
                   {t.patients ? (

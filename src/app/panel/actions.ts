@@ -7,11 +7,12 @@ import { json, sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { createCampaign, sendCampaign, CAMPAIGN_LABELS } from "@/lib/campaigns";
+import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions, verifySessionToken } from "@/lib/session";
 import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 import { bookAppointment, registerPatient, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
-import { zonedTimeToUtc } from "@/lib/time";
+import { addDaysKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 
 async function requireSession() {
   const store = await cookies();
@@ -107,6 +108,17 @@ export async function setTaskStatus(form: FormData) {
   revalidatePath("/panel");
 }
 
+export async function resolveTaskAction(_prev: FormState | undefined, form: FormData): Promise<FormState> {
+  await requireSession();
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "Falta la tarea." };
+  const clinic = await getClinic();
+  const result = await resolveTask(clinic.id, id, text(form, "response"));
+  revalidatePath("/panel/tareas");
+  revalidatePath("/panel");
+  return { ok: result.ok, message: result.message };
+}
+
 // ---------------------------------------------------------------------------
 // Configuración de la clínica
 // ---------------------------------------------------------------------------
@@ -118,7 +130,7 @@ export async function saveClinic(form: FormData) {
     .map((c) => c.trim())
     .filter(Boolean);
   const templates: Record<string, string> = { ...clinic.templates };
-  for (const key of ["recordatorio", "recall", "lista_espera", "reactivacion", "no_show", "idioma"]) {
+  for (const key of ["recordatorio", "recall", "lista_espera", "reactivacion", "no_show", "encuesta", "respuesta", "idioma"]) {
     const value = text(form, `template_${key}`);
     if (value) templates[key] = value;
     else delete templates[key];
@@ -137,6 +149,8 @@ export async function saveClinic(form: FormData) {
       urgency_instructions: text(form, "urgency_instructions"),
       whatsapp_phone_number_id: text(form, "whatsapp_phone_number_id"),
       elevenlabs_voice_id: text(form, "elevenlabs_voice_id"),
+      handoff_phone: text(form, "handoff_phone"),
+      after_hours_instructions: text(form, "after_hours_instructions"),
       templates: json(templates),
     })}
     where id = ${clinic.id}`;
@@ -209,8 +223,10 @@ export async function addAppointmentType(form: FormData) {
   const duration = Number(text(form, "duration_min") ?? 30);
   if (!name || !specialty || !Number.isFinite(duration)) return;
   const recall = Number(text(form, "recall_months") ?? "");
+  const price = parsePrice(text(form, "price"));
   await sql`
     insert into appointment_types ${sql({
+      price,
       clinic_id: clinic.id,
       name,
       specialty,
@@ -220,6 +236,74 @@ export async function addAppointmentType(form: FormData) {
       is_first_visit: form.get("is_first_visit") === "on",
     })}`;
   revalidatePath("/panel/configuracion");
+}
+
+/** "$45.000", "45000" o "45.000,50" → 45000 / 45000.5 (formato argentino). */
+function parsePrice(raw: string | null): number | null {
+  if (!raw) return null;
+  const n = Number(raw.replace(/[^\d,]/g, "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
+export async function setAppointmentTypePrice(form: FormData) {
+  await requireSession();
+  const id = uuid(form, "id");
+  if (!id) return;
+  const clinic = await getClinic();
+  await sql`update appointment_types set price = ${parsePrice(text(form, "price"))} where id = ${id} and clinic_id = ${clinic.id}`;
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel");
+}
+
+// ---------------------------------------------------------------------------
+// Feriados, vacaciones y bloqueos de agenda
+// ---------------------------------------------------------------------------
+export async function addScheduleBlock(_prev: FormState | undefined, form: FormData): Promise<FormState> {
+  await requireSession();
+  const clinic = await getClinic();
+  const fromKey = parseDateKey(text(form, "date_from"));
+  const toKey = parseDateKey(text(form, "date_to")) ?? fromKey;
+  if (!fromKey || !toKey || toKey < fromKey) return { ok: false, message: "Revisá las fechas." };
+  const professionalId = uuid(form, "professional_id");
+  const time = (key: string) => /^(\d{2}):(\d{2})$/.exec(text(form, key) ?? "");
+  const startTime = time("time_from");
+  const endTime = time("time_to");
+  const [fy, fm, fd] = fromKey.split("-").map(Number);
+  const startsAt = zonedTimeToUtc(fy, fm, fd, startTime ? Number(startTime[1]) : 0, startTime ? Number(startTime[2]) : 0, clinic.timezone);
+  // Sin hora de fin, el bloqueo dura hasta el final del último día.
+  const [ty, tm, td] = (endTime ? toKey : addDaysKey(toKey, 1)).split("-").map(Number);
+  const endsAt = zonedTimeToUtc(ty, tm, td, endTime ? Number(endTime[1]) : 0, endTime ? Number(endTime[2]) : 0, clinic.timezone);
+  if (endsAt <= startsAt) return { ok: false, message: "La hora de fin tiene que ser posterior a la de inicio." };
+  const [block] = await sql<Array<{ id: string }>>`
+    insert into schedule_blocks (clinic_id, professional_id, starts_at, ends_at, reason)
+    select ${clinic.id}::uuid, ${professionalId}::uuid, ${startsAt}::timestamptz, ${endsAt}::timestamptz, ${text(form, "reason")}::text
+    where ${professionalId}::uuid is null
+       or exists (select 1 from professionals where id = ${professionalId} and clinic_id = ${clinic.id})
+    returning id`;
+  if (!block) return { ok: false, message: "No encontré ese profesional." };
+  const [{ affected }] = await sql<Array<{ affected: number }>>`
+    select count(*)::int as affected from appointments
+    where clinic_id = ${clinic.id} and status in ('confirmado', 'pendiente')
+      and starts_at < ${endsAt} and ends_at > ${startsAt}
+      ${professionalId ? sql`and professional_id = ${professionalId}` : sql``}`;
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/agenda");
+  return {
+    ok: true,
+    message: affected
+      ? `Bloqueo guardado. Ojo: hay ${affected} turno(s) ya dados en ese período; reprogramalos desde la Agenda.`
+      : "Bloqueo guardado. El agente ya no ofrece turnos en ese período.",
+  };
+}
+
+export async function deleteScheduleBlock(form: FormData) {
+  await requireSession();
+  const id = uuid(form, "id");
+  if (!id) return;
+  const clinic = await getClinic();
+  await sql`delete from schedule_blocks where id = ${id} and clinic_id = ${clinic.id}`;
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/agenda");
 }
 
 export async function toggleAppointmentType(form: FormData) {
