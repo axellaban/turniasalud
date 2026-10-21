@@ -1,0 +1,357 @@
+{
+  "name": "Turnia · Campañas automáticas",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "39ec4f5a-f638-4c88-8a22-dea68867166e",
+              "name": "url",
+              "value": "https://TU-APP.vercel.app",
+              "type": "string"
+            },
+            {
+              "id": "eafdb405-81b2-4e67-9ef3-967697a4dd73",
+              "name": "secret",
+              "value": "PEGÁ_ACÁ_TU_AGENT_TOOLS_SECRET",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "5e8e0c1b-1db7-4a0c-a35f-826622277bbe",
+      "name": "Configuración (editá acá)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}/api/automations/{{ $json.job }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-turnia-secret",
+              "value": "={{ $json.secret }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "9774e9d7-133c-42b4-9d7c-d4c64e269844",
+      "name": "Disparar campaña en Turnia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "2eb703f4-cd33-4321-84c5-2934edfa024d",
+      "name": "Todos los días 10:00 · Recordatorios de mañana",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cbc35df5-d509-4ffc-a2f3-7486e745f98d",
+              "name": "job",
+              "value": "recordatorios",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d63e71fb-3e53-40e3-b19c-a4386d46455e",
+      "name": "Job: recordatorios",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b1c36625-e6e2-40b6-90de-5c981a2938e1",
+      "name": "Todos los días 18:00 · Recupero de ausentes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "05a20dc4-13ef-410e-a3a5-5dc70a25cb80",
+              "name": "job",
+              "value": "ausentes",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4ee6ec70-cb19-4ce3-8745-f1d8ae871d7c",
+      "name": "Job: ausentes",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 11 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "7fdb1d9b-5825-40a3-b4af-d9892e02dbb5",
+      "name": "Lunes 11:00 · Recall de controles",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "62ec95bf-5fe9-4dba-aad5-3b6e681ca115",
+              "name": "job",
+              "value": "recall",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ecb403f4-4537-4eab-9888-19013d505ef2",
+      "name": "Job: recall",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 11 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "256665f3-3900-4fcc-b231-ac76d5716eaf",
+      "name": "Día 1 de cada mes 11:00 · Reactivación",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1ad0eefe-1971-4915-97f2-bb1703ff3cf0",
+              "name": "job",
+              "value": "reactivacion",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "698be501-9792-4dac-8801-619b7b5b0018",
+      "name": "Job: reactivacion",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Turnia · campañas automáticas\n1. Editá el nodo **Configuración** con la URL de tu app en Vercel y tu `AGENT_TOOLS_SECRET`.\n2. Revisá que la zona horaria del workflow sea **America/Argentina/Buenos_Aires** (Settings del workflow).\n3. Activá el workflow.\n\nCada corrida crea una campaña en el panel → Campañas.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "8aaa41a9-d040-4365-8db4-489ec55306ed",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        160,
+        -200
+      ]
+    }
+  ],
+  "connections": {
+    "Configuración (editá acá)": {
+      "main": [
+        [
+          {
+            "node": "Disparar campaña en Turnia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Todos los días 10:00 · Recordatorios de mañana": {
+      "main": [
+        [
+          {
+            "node": "Job: recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job: recordatorios": {
+      "main": [
+        [
+          {
+            "node": "Configuración (editá acá)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Todos los días 18:00 · Recupero de ausentes": {
+      "main": [
+        [
+          {
+            "node": "Job: ausentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job: ausentes": {
+      "main": [
+        [
+          {
+            "node": "Configuración (editá acá)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lunes 11:00 · Recall de controles": {
+      "main": [
+        [
+          {
+            "node": "Job: recall",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job: recall": {
+      "main": [
+        [
+          {
+            "node": "Configuración (editá acá)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Día 1 de cada mes 11:00 · Reactivación": {
+      "main": [
+        [
+          {
+            "node": "Job: reactivacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job: reactivacion": {
+      "main": [
+        [
+          {
+            "node": "Configuración (editá acá)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires"
+  },
+  "pinData": {}
+}

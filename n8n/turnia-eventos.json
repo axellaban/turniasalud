@@ -1,0 +1,325 @@
+{
+  "name": "Turnia · Eventos (avisos al equipo)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "turnia-eventos",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "2bb24e39-4963-421f-8c81-3d470c63b3e4",
+      "name": "Eventos de Turnia",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "439852f5-831f-4c34-9737-875d3c8dde3b"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "7994b22e-b38b-4699-b742-1668a2a44963",
+              "leftValue": "={{ $json.headers['x-turnia-secret'] }}",
+              "rightValue": "PEGÁ_ACÁ_TU_AGENT_TOOLS_SECRET",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0138c595-9723-4ce1-b7fa-cfce209e720a",
+      "name": "¿Viene de Turnia?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "f95b874d-8d83-45e2-8ade-6680694a1a6e",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "tarea.creada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Nueva tarea para el equipo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cd581e71-66af-462c-ab9f-76c1703c1077",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "turno.reservado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Turno reservado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "4a896444-d0ae-400f-9c1f-7c0ce40b8e97",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "turno.cancelado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Turno cancelado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "be3a3cda-e78a-4a22-be08-f33000380a74",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "turno.reprogramado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Turno reprogramado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "23889332-2bfc-443b-8e7c-6f4b75fb2849",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "conversacion.finalizada",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Conversación finalizada"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d42fd73-c359-46d8-b2c9-30c1a0e641c8",
+      "name": "Según el evento",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        640,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0c194e5f-57cf-46f5-a34e-af3dc703d0c8",
+      "name": "Nueva tarea para el equipo → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        80
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "33e05216-4e4c-4228-a347-e5221edabf55",
+      "name": "Turno reservado → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "af2ac4bf-ee4a-49e2-9e4d-614f8b55bb4c",
+      "name": "Turno cancelado → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        320
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "c3aa1785-7349-49eb-81f3-e5c7a27b23a5",
+      "name": "Turno reprogramado → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        440
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "4b2ff52c-5348-4c8c-9f7b-501038d7196e",
+      "name": "Conversación finalizada → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Turnia · eventos\n1. Copiá la **Production URL** del nodo *Eventos de Turnia* y cargala en Vercel como `N8N_WEBHOOK_URL`.\n2. En *¿Viene de Turnia?* pegá tu `AGENT_TOOLS_SECRET`.\n3. Reemplazá cada nodo gris por lo que quieras: avisar a recepción por Gmail/Slack/WhatsApp cuando hay una tarea urgente, cargar turnos en Google Sheets o Calendar, etc.\n\nEl evento trae todo en `body` (paciente, turno, tarea, resumen).",
+        "height": 280,
+        "width": 460
+      },
+      "id": "1012f1d4-0965-49e8-a625-b2210ebd39a1",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        160,
+        -60
+      ]
+    }
+  ],
+  "connections": {
+    "Eventos de Turnia": {
+      "main": [
+        [
+          {
+            "node": "¿Viene de Turnia?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Viene de Turnia?": {
+      "main": [
+        [
+          {
+            "node": "Según el evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Según el evento": {
+      "main": [
+        [
+          {
+            "node": "Nueva tarea para el equipo → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Turno reservado → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Turno cancelado → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Turno reprogramado → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Conversación finalizada → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Buenos_Aires"
+  },
+  "pinData": {}
+}
