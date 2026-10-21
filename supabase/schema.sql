@@ -267,6 +267,39 @@ alter table campaigns add constraint campaigns_type_check
   check (type in ('recall', 'reactivacion', 'recordatorio', 'lista_espera', 'no_show', 'encuesta', 'personalizada'));
 
 -- ---------------------------------------------------------------------------
+-- WhatsApp por WAHA (chip común, API no oficial) conectado al agente con el
+-- Custom Channel de ElevenLabs. Con Meta (oficial) estas tablas no se usan.
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists whatsapp_provider text not null default 'meta';
+alter table clinics drop constraint if exists clinics_whatsapp_provider_check;
+alter table clinics add constraint clinics_whatsapp_provider_check check (whatsapp_provider in ('meta', 'waha'));
+
+-- Una fila por conversación de WhatsApp: a qué chat responder y en qué
+-- conversación de ElevenLabs sigue. Se abre una nueva después de 15 minutos
+-- sin mensajes o cuando el agente cierra la conversación (end_call).
+create table if not exists channel_conversations (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  phone text not null,
+  chat_id text not null,
+  elevenlabs_conversation_id text unique,
+  campaign_id uuid references campaigns(id) on delete set null,
+  context text,
+  transcript jsonb not null default '[]'::jsonb,
+  last_activity_at timestamptz not null default now(),
+  closed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists channel_conversations_phone_idx on channel_conversations (clinic_id, phone, last_activity_at desc);
+
+-- Mensajes ya procesados (WAHA y ElevenLabs reintentan los webhooks).
+create table if not exists channel_events (
+  key text primary key,
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
 -- Seguridad: RLS activado y sin políticas. Solo el servidor, conectado con el
 -- usuario dueño de las tablas (DATABASE_URL), lee y escribe. El navegador
 -- nunca habla directo con la base.
@@ -283,3 +316,24 @@ alter table waitlist enable row level security;
 alter table campaigns enable row level security;
 alter table campaign_recipients enable row level security;
 alter table schedule_blocks enable row level security;
+alter table channel_conversations enable row level security;
+alter table channel_events enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Web pública: pedidos de demo (formulario /pedi-una-demo).
+-- ---------------------------------------------------------------------------
+create table if not exists leads (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null,
+  phone text,
+  organization text,
+  role text,
+  specialty text,
+  size text,
+  message text,
+  source text,
+  created_at timestamptz not null default now()
+);
+create index if not exists leads_created_idx on leads (created_at desc);
+alter table leads enable row level security;

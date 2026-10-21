@@ -1,7 +1,28 @@
 # Plan: web de Turnia como copycat de assorthealth.com
 
-> Traspaso del 21/10/2026. **Todavía no se escribió código para esto**: solo se investigó el sitio de Assort y se armó el plan.
+> Traspaso del 21/10/2026. **La web ya está construida** (ver "Estado de la construcción"). Lo que sigue más abajo es el relevamiento y el plan original, que se respetó.
 > Leer antes: `AGENTS.md`, `TRASPASO_CONFIGURACION.md` (estado de Neon/Vercel/ElevenLabs/n8n) y `CONTEXTO_PROYECTO.md`.
+
+## Estado de la construcción (21/10/2026)
+
+**Key visual igual al de Assort** (pedido del usuario): paleta en `src/app/globals.css` tomada de su CSS (`brand-600` = cobalto `#2157e1`, navy `#171729`/`#0b0d1a`, `aqua` `#32d5d8`, `emerald` `#4eb49e`, `lila`, `cielo`, `sun` naranja) y tipografía **Geist**, la misma que usa Assort. Se quitó Fraunces. El panel también quedó azul.
+
+Hecho, con `tsc`, `eslint`, build y tests en verde (capturas revisadas a 1440 y 390 px, sin scroll horizontal):
+
+- `src/app/(marketing)/`: layout con `SiteHeader` (header flotante con mega-menús Plataforma / Soluciones / Recursos / Empresa y menú mobile) y `SiteFooter` (CTA + columnas). `/demo`, `/panel` y `/privacidad` quedan fuera del grupo.
+- **Home** (`(marketing)/page.tsx`) con las 14 secciones de Assort en su orden: hero con video, grilla de especialidades (en lugar de logos), carrusel de escenarios con métrica, banda "Probalo", diagrama del motor, rueda de capacidades, reproductor con orbe, 3 tarjetas con gradiente, banda 24/7, órbita de integraciones, 4 tarjetas de resultados, carrusel de casos con play y footer.
+- **Producto**: `/plataforma`, `/recepcion`, `/activa` (plantilla `components/site/producto.tsx`, textos en `content/productos.ts`).
+- **Soluciones**: `/soluciones/[slug]` (9 casos, `content/casos.ts`), `/especialidades/[slug]` (18, `content/especialidades.ts`), `/organizaciones/[slug]` (3, `content/organizaciones.ts`). Todas estáticas.
+- `/escucha-a-nuestros-agentes`, `/pedi-una-demo` (formulario → tabla `leads` + evento `lead.nuevo` a n8n, con test) y `/nosotros`.
+- **Demos de audio**: 7 guiones originales en `content/conversaciones.json`, reproductor `components/site/reproductor-demo.tsx` (variantes `orbe` y `tarjeta`, transcripción sincronizada) y generador `scripts/generar-audios.mjs`. Ver `public/audios/README.md`.
+- **Fotos**: `public/img/*.jpg` son fotos de Unsplash (licencia Unsplash: uso comercial libre, sin atribución obligatoria). No son de Assort.
+
+### Pendiente
+1. **Generar los audios** en la máquina del usuario: `node --env-file=.env.local scripts/generar-audios.mjs --dry-run` y después sin `--dry-run` (o de a uno: `... pediatria`). Necesita una clave con **Text to Speech** y **Voices: Read**; toma las 2 voces favoritas o `VOZ_AGENTE` / `VOZ_PACIENTE`. Son ~17.600 caracteres en total: la clave actual tiene un tope de 10.000 créditos, así que conviene generarlos en dos tandas o subir el tope. Subir `public/audios/*.mp3` y `*.json` al repo.
+2. **Video del hero**: subir `public/videos/hero.mp4` (y opcional `hero.webm`, `hero-mobile.mp4`). Mientras no exista se ve `public/img/hero.jpg`. Los videos de Assort no se copian.
+3. Revisar los textos con el usuario. Verificar las líneas de ayuda de salud mental citadas en `content/especialidades.ts` (0800-999-0091 y 135) antes de publicar.
+4. **Volver a correr `supabase/schema.sql` en Neon** (agrega `leads` y las tablas de WhatsApp). Hasta entonces, el formulario de demo muestra un error amable y guardar Configuración en el panel falla.
+5. Opcional: blog, casos de clientes reales cuando existan, página de precios.
 
 ## Pedido del usuario
 

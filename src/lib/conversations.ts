@@ -43,7 +43,8 @@ export function satisfactionScore(data: PostCallPayload): number | null {
 export function detectChannel(data: PostCallPayload, phone: string): Conversation["channel"] {
   const vars = data.conversation_initiation_client_data?.dynamic_variables ?? {};
   const channel = String(vars.system__channel ?? "").toLowerCase();
-  if (data.metadata?.whatsapp || channel.includes("whatsapp")) return "whatsapp";
+  // El Custom Channel solo se usa para WhatsApp por WAHA.
+  if (data.metadata?.whatsapp || channel.includes("whatsapp") || channel.includes("custom")) return "whatsapp";
   if (data.metadata?.phone_call || /(twilio|sip|phone|telephon)/.test(channel)) return "telefono";
   if (phone.startsWith("web-")) return "web";
   return /^\d+$/.test(phone) ? "whatsapp" : "web";
@@ -141,7 +142,8 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
   });
 }
 
-async function updateCampaignRecipient(campaignId: string, patientId: string, data: PostCallPayload) {
+/** Marca si el destinatario de una campaña respondió o sacó turno. */
+export async function updateCampaignRecipient(campaignId: string, patientId: string, data: PostCallPayload) {
   const [recipient] = await sql<Array<{ id: string; sent_at: string | null; status: string }>>`
     select id, sent_at, status from campaign_recipients where campaign_id = ${campaignId} and patient_id = ${patientId}`;
   if (!recipient || recipient.status === "agendo") return;

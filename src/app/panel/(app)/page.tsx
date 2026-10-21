@@ -93,7 +93,10 @@ export default async function PanelHome() {
     { done: configured.database, label: "Base de datos configurada" },
     { done: configured.elevenlabs, label: "API key de ElevenLabs cargada" },
     { done: Boolean(clinic.elevenlabs_agent_id), label: "Agente creado en ElevenLabs" },
-    { done: Boolean(clinic.whatsapp_phone_number_id), label: "Número de WhatsApp conectado" },
+    {
+      done: clinic.whatsapp_provider === "waha" ? configured.waha : Boolean(clinic.whatsapp_phone_number_id),
+      label: clinic.whatsapp_provider === "waha" ? "WhatsApp por WAHA configurado" : "Número de WhatsApp conectado",
+    },
     { done: Boolean(process.env.ELEVENLABS_WEBHOOK_SECRET), label: "Webhook post-conversación configurado" },
   ];
   const pending = checklist.filter((c) => !c.done);
