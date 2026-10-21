@@ -8,7 +8,7 @@
 
 1. **A quién:** clínicas odontológicas (implantes, estética dental) y de medicina estética que **pagan anuncios en Instagram/Facebook que abren un chat de WhatsApp**. Pagan por cada conversación y pierden las que nadie contesta a la noche y el fin de semana. Hoy hay **79 anuncios activos** de implantes y **188** de medicina estética en Argentina con ese formato (Biblioteca de Anuncios de Meta, 21/10/2026). Lista abajo.
 2. **Qué vendemos:** un **piloto pago de 30 días**, hecho por nosotros: "Línea de turnos 24/7". Sofi contesta en segundos y da el turno. **$250.000**, con devolución si no agenda 10 turnos. Solo 3 cupos, y es verdad: cada clínica es un deploy y una carga manual.
-3. **Cómo:** esta noche, **paciente fantasma**: le escribís por WhatsApp a 30 de esas clínicas a las 22 h y medís cuánto tardan en contestar. Mañana les mandás el dato y la demo. En paralelo, 50 mensajes a tu red pidiendo referidos.
+3. **Cómo:** esta noche, **paciente fantasma**: le escribís por WhatsApp a 30 de esas clínicas a las 22 h y medís cuánto tardan en contestar. **El WhatsApp de la clínica es solo para medir: no se vende por ahí**, porque del otro lado está la recepcionista, que no compra y puede frenar la venta (sección 4). Mañana le mandás el dato **al dueño, por otro canal** (su Instagram personal, LinkedIn, mail, la agencia que le hace los anuncios). En paralelo, le escribís uno por uno a 50 conocidos tuyos pidiéndoles que te presenten a alguien con consultorio.
 4. **Qué mostramos:** que el dueño **le escriba él mismo** a la línea demo, **cargada con los datos de SU clínica**, y vea aparecer el turno en la agenda en vivo. Después, la cuenta de cuánto le cuesta cada consulta sin respuesta.
 5. **Bloqueante técnico:** conectar WhatsApp por WAHA esta noche (README, paso 4a). Si no sale, se vende igual con la demo web en modo chat y los audios.
 
@@ -52,6 +52,7 @@ Además: el ausentismo en consultorios externos en Argentina está entre el **15
 
 > **Consultorios y centros de odontología privada y de medicina estética, de 1 a 10 profesionales, que publican anuncios hacia WhatsApp, cobran mayormente particular y llevan la agenda en papel, Google Calendar o en el propio WhatsApp.**
 
+- **Para las 48 h, dentro de esa cabeza de playa: el profesional dueño que contesta su propio WhatsApp** (consultorio de 1 a 3 profesionales, sin secretaria o con una de medio día; páginas con nombre propio como "Dra. X Medicina Estética" o "Dr. Y Odontología"). Ahí el que sufre las consultas de las 23 h es el mismo que paga: no hay nadie en el medio. Las clínicas con equipo de recepción se trabajan igual, pero hablando con el dueño (sección 4).
 - **Por qué sin software de gestión:** Turnia hoy **es** la agenda y no se integra con Dentalink, AgendaPro ni Doctoralia. Si la clínica ya usa uno, hay doble carga. Para el primer cliente, buscá una sin sistema. Si usa uno, en el piloto Sofi agenda solo en **bloques reservados** (por ejemplo, "evaluaciones de implantes, martes y jueves de 15 a 18") y la secretaria los pasa a su sistema a la mañana.
 - **Geografía:** CABA y GBA, para poder ir en persona. Pero el producto es 100 % WhatsApp: una clínica de Rosario o de Tucumán se vende igual por videollamada.
 - **Paralelo con Assort:** arrancó en especialidades con mucho volumen de llamadas (traumatología y kinesiología) y después fue a gineco, dermatología y odontología. En Argentina el canal no es el teléfono: es el WhatsApp de la especialidad privada que pauta.
@@ -83,7 +84,7 @@ Un **chip nuevo** con Sofi, que la clínica publica en la bio de Instagram, en G
 
 ### Nombre
 
-**"Piloto Fundador: ninguna consulta sin respuesta"**. Recepcionista con IA en WhatsApp, funcionando en 72 horas.
+**"Piloto Fundador: ninguna consulta sin respuesta"**. Una asistente con IA que cubre el WhatsApp de la clínica cuando no hay nadie, funcionando en 72 horas. No la presentes como "recepcionista con IA": suena a reemplazo (sección 4).
 
 ### Qué incluye
 
@@ -134,12 +135,18 @@ Los valores de ejemplo son supuestos; **usá siempre los del prospecto**. No dig
 
 ### Nivel 0: tu red (la venta más probable en 48 h)
 
+"Tu red" son las personas que ya te conocen y te contestan un WhatsApp. La idea **no es venderles**: es pedirles que te presenten a alguien con consultorio. Una presentación de un conocido llega directo al dueño, sin pasar por la recepción, y con confianza prestada.
+
+Cómo armar la lista de 50 esta noche (una planilla con nombre, de dónde lo conocés, qué tiene que ver con salud y si ya le escribiste):
+
 - Tu odontólogo, tu dermatóloga, tu kinesiólogo, tu médica estética.
 - Alumnos y exalumnos del posgrado que sean de salud o tengan un consultorio en la familia.
 - La comunidad de A13I, contactos de LinkedIn con "odontólogo", "odontología", "medicina estética", "clínica", "director médico".
 - Familia y amigos: "¿quién conoce a alguien con consultorio?".
 
-**Meta:** 40 a 60 nombres esta noche y mensajes mañana a las 9.
+- Revisá tus chats de WhatsApp y tus contactos de LinkedIn: cualquiera que sea de salud, o que tenga pareja, padres o hermanos odontólogos o médicos.
+
+**Meta:** 40 a 60 nombres esta noche. Mañana a las 9, **un mensaje personal a cada uno** (guion A, o B si la persona tiene consultorio). No es un mensaje a un grupo ni una difusión: es uno por uno, con su nombre.
 
 ### Nivel 1: lista caliente (pautan a WhatsApp hoy)
 
@@ -191,6 +198,8 @@ Sacada de la Biblioteca de Anuncios de Meta el 21/10/2026 (Argentina, anuncios a
 | Eireen Medicina Estética | "Endolift, cupos limitados" | [ver](https://www.facebook.com/ads/library/?id=1753133075909372) |
 | Dr. Nicolás Ramírez (Comodoro Rivadavia, remota) | 5 anuncios, "Toxina botulínica, agenda abierta" | [ver](https://www.facebook.com/ads/library/?id=1782333196325950) |
 
+**Primero, las de marca personal** (lo más probable es que el profesional lea su propio WhatsApp): Dra. Paula Pelozo, Dra. Nadia De Cárdenas, Dra. Martínez Rivera, Dra. María Helena Pauli, Dra. Micaela Urtubey, Dra. Malena Maraschi, Dr. Nicolás Ramírez, Dr. Luis Arévalo, Dr. Jamil Ortiz, Maximiliano Bonamin. Y otras de la misma búsqueda: [Dra. Johalis Padrón](https://www.facebook.com/ads/library/?id=1807652223887217), [Dra. Lourdes Rincón](https://www.facebook.com/ads/library/?id=1145393108444275), [Dra. Sandra Ongarato](https://www.facebook.com/ads/library/?id=994272657035231), [od.rociofernandezm](https://www.facebook.com/ads/library/?id=1903826117248993), [Dr. Cristian Kaselowski](https://www.facebook.com/ads/library/?id=2382090722531891).
+
 Para ampliar: [Biblioteca de Anuncios](https://www.facebook.com/ads/library/), país Argentina, anuncios activos, buscá "implantes", "ortodoncia", "botox", "toxina", "depilación láser", "turnos por WhatsApp".
 
 ### Nivel 2: socio que multiplica
@@ -202,7 +211,25 @@ Para ampliar: [Biblioteca de Anuncios](https://www.facebook.com/ads/library/), p
 1. Tiene botón a WhatsApp ("Chateá con nosotros", `api.whatsapp.com`).
 2. Muchos anuncios activos o creados esta semana (más gasto, más dolor).
 3. **No contestó el paciente fantasma en menos de 1 hora** (es la señal más fuerte).
-4. Zona a la que podés ir en persona.
+4. Marca personal ("Dra. X"): no hay recepción en el medio.
+5. Zona a la que podés ir en persona.
+
+### La recepcionista no compra (y puede frenar la venta)
+
+En una clínica con recepción, quien contesta el WhatsApp es una empleada con horario fijo. Desde su lugar, "una IA que contesta el WhatsApp" suena a "me reemplazan" o a "me van a controlar". Si la propuesta entra por ella, no llega al dueño o llega como "escribió un vendedor". Y si el piloto arranca con ella en contra, no publica la línea, no resuelve las tareas y dice que los pacientes se quejan. Se resuelve con cuatro reglas:
+
+1. **No se vende por el WhatsApp de la clínica ni en el mostrador.** Ese WhatsApp sirve solo para medir (paciente fantasma). Al dueño se llega por otro lado:
+   - una presentación de alguien de tu red;
+   - el Instagram o el LinkedIn **personal** del profesional (el de la clínica suele manejarlo la recepción o una community manager);
+   - el mail de la web o de "Nosotros";
+   - la **agencia que le hace los anuncios**: habla con el dueño todas las semanas y gana si los mensajes se convierten en pacientes (guion I);
+   - una llamada a la clínica preguntando **a qué hora se lo encuentra** al doctor, sin contarle la propuesta a quien atiende.
+   Para encontrar al dueño: el nombre suele estar en la página ("Dra. X"), en "Nosotros" de la web, o etiquetado en las publicaciones de la clínica. Son unos 5 minutos por clínica: hacelo con las 15 mejores, no con las 30.
+2. **El problema son las horas, no la persona.** La auditoría nunca dice "tu secretaria tardó". Dice: "Te escribí a las 22 h y te contestaron apenas abrieron, perfecto. El tema es que entre las 20 h y las 9 h, y el fin de semana, no hay nadie, y los anuncios siguen trayendo mensajes". Así la recepcionista queda bien parada, y el dueño no tiene que defenderla.
+3. **Sofi trabaja las horas que nadie trabaja, y para la recepcionista.** Nunca digas "reemplaza a la secretaria". Decí: "le saca el turno noche y el fin de semana, y el lunes llega con los turnos ya dados en vez de 60 mensajes sin leer". En horario de atención, Sofi contesta las preguntas repetidas (precio, coberturas, dirección) y le deja a ella lo que necesita una persona, como tarea en el panel. Con la línea nueva 24/7 eso pasa solo; con el número de la clínica hace falta el modo "fuera de horario" (sección 9, tarea 4).
+4. **Hacela la responsable del piloto.** Que esté en la carga del lunes, que sea quien resuelve las tareas del panel y que el reporte semanal muestre "lo que Sofi te dejó resuelto". Sugerile al dueño, como idea suya, reconocerle a ella los resultados (un premio si el piloto da los 10 turnos). Nunca le ofrezcas plata a la recepcionista a escondidas del dueño: eso es una coima, no una venta.
+
+Si igual te toca hablar con ella (en persona o porque ella contesta el Instagram), usá el guion H: le preguntás por **su** dolor (los mensajes del lunes, las mismas preguntas todo el día) y le dejás algo para el dueño que la haga quedar bien.
 
 ---
 
@@ -222,11 +249,11 @@ Si a las 22 h WhatsApp no anda: **no frenes las ventas**. La demo de mañana es 
 
 | Hora | Qué | Volumen |
 |---|---|---|
-| 8 a 9 h | Anotá quién contestó y cuánto tardó | 30 |
-| 9 a 11 h | Mensajes a tu red (guiones A y B) | 50 |
-| 11 a 13 h | Mandales la auditoría a las clínicas del paciente fantasma (guion C2). DM por Instagram a las que no tienen WhatsApp visible (guion E) | 30 + 20 |
-| 13 a 14 h | Publicá el post con los resultados agregados y sin nombres (guion D) | 1 post |
-| 14 a 18 h | En persona: 5 a 8 clínicas de la lista en tu zona (guion G) o llamadas | 5 a 8 |
+| 8 a 9 h | Anotá quién contestó y cuánto tardó. **No le contestes nada a la clínica todavía** | 30 |
+| 9 a 11 h | Un mensaje personal a cada uno de tus 50 conocidos (guiones A y B) | 50 |
+| 11 a 13 h | De las 15 mejores, buscá al dueño (sección 4) y mandale la auditoría **por su canal personal** (guion C2). A las de marca personal, DM directo al profesional (guion E). Si alguna trabaja con una agencia, guion I | 15 + 15 |
+| 13 a 14 h | Opcional: publicación en tu perfil con los resultados, sin nombres (guion D). Solo si tenés audiencia | 1 |
+| 14 a 18 h | En persona, 5 a 8 clínicas de tu zona: preguntá por el profesional y a qué hora encontrarlo; si te atiende la recepcionista, guion H | 5 a 8 |
 | 18 a 20 h | **Para cada demo de mañana:** cargá en el panel el nombre, los profesionales, las prestaciones, los horarios y las coberturas de la clínica (salen de su Instagram o su web; 20 min cada una) | 1 por demo |
 
 ### Viernes 23/10: demos y cobro
@@ -240,8 +267,8 @@ Si a las 22 h WhatsApp no anda: **no frenes las ventas**. La demo de mañana es 
 ### Embudo objetivo (regla de 100)
 
 ```
-100 contactos (50 red + 30 fantasma + 20 Instagram)
- → 20 respuestas
+~90 contactos (50 conocidos + 15 dueños de la lista + 15 profesionales por Instagram + 5 a 8 visitas + 1 o 2 agencias)
+ → 18 respuestas
  → 6 demos agendadas
  → 4 demos hechas
  → 1 o 2 pilotos cobrados
@@ -254,7 +281,7 @@ Son supuestos para tener una vara, no promesas. Si el jueves a las 14 h tenés m
 ## 6. Qué mostramos: demo de 12 minutos
 
 1. **Diagnóstico (2 min).** ¿Cuántos WhatsApp te entran por día? ¿Quién los contesta? ¿Hasta qué hora? ¿Qué pasa el sábado? ¿Cuánto vale un paciente nuevo? ¿Cuánto ponés en anuncios?
-2. **El espejo (1 min).** Si pasó por el paciente fantasma: "El miércoles a las 22:10 te pregunté por implantes. Me contestaron a las 11:30 del jueves".
+2. **El espejo (1 min).** Si pasó por el paciente fantasma: "El miércoles a las 22:10 te pregunté por implantes. Me contestaron apenas abrieron, a las 9:15, perfecto. Pero durante esas 11 horas no había nadie, y el anuncio seguía andando". El problema son las horas, nunca la recepcionista.
 3. **"Escribile vos" (4 min).** Le das el número de la línea demo, que ya **tiene el nombre de su clínica, sus profesionales y sus precios**. Él pide un turno, pregunta el precio y la obra social, y manda un audio. Lo ve aparecer en la **Agenda** en vivo. Después cancela, y Sofi ofrece el hueco a la lista de espera.
 4. **El panel (2 min).** La conversación con el resumen, la tarea que quedó para la secretaria y las métricas.
 5. **La voz (1 min).** Audio de la web: [inicio](https://turniasalud.vercel.app) o [escuchá a nuestros agentes](https://turniasalud.vercel.app/escucha-a-nuestros-agentes).
@@ -268,42 +295,60 @@ No muestres: la web completa, la arquitectura ni las 9 herramientas. Mostrá **s
 
 > Escribí siempre 1 a 1, a mano, con el nombre de la persona. Nada de envíos masivos desde tu número: si muchos te bloquean o te reportan, WhatsApp te restringe el número.
 
-**A. Tu red: pedido de referidos (Hormozi: no vendas, pedí ayuda)**
-> Hola [nombre]! Estoy lanzando una recepcionista con IA que contesta el WhatsApp de consultorios las 24 h y da turnos sola. Busco 3 clínicas para un piloto este mes. ¿Conocés a algún odontólogo o médica estética que pierda pacientes por no llegar a contestar? Si me pasás el contacto, te debo una.
+**A. A un conocido: pedile que te presente a alguien (no le vendas, pedile ayuda)**
+> Hola [nombre]! Estoy lanzando una asistente con IA que contesta el WhatsApp de consultorios a la noche y el fin de semana, y da turnos sola. Busco 3 clínicas para un piloto este mes. ¿Conocés a algún odontólogo o médica estética que pierda pacientes por no llegar a contestar? Si me pasás el contacto, te debo una.
 
-**B. Tu red: a quien ya tiene consultorio**
+Si te pasa un contacto, pedile que te presente él ("¿le podés reenviar esto o armar un grupo con los dos?"): una presentación de un conocido se contesta mucho más que un mensaje tuyo en frío.
+
+**B. A un conocido que tiene consultorio**
 > Hola [nombre]! Una pregunta rápida: ¿quién te contesta el WhatsApp del consultorio a la noche y el fin de semana? Armé una asistente con IA que da turnos sola en tu agenda, y te la quiero mostrar con tu consultorio ya cargado. Son 15 minutos. ¿Mañana o el viernes?
 
 **C1. Paciente fantasma (miércoles, de 21 a 23 h)**
 > Hola! Vi su publicidad. ¿Tienen turno esta semana para una evaluación de implantes? ¿Cuánto sale la consulta?
 
-(Para estética: "¿Cuánto sale la toxina y tienen turno esta semana?"). Reglas: una pregunta real y simple, **no reserves turnos** ni des datos falsos, y contalo en el mensaje siguiente.
+(Para estética: "¿Cuánto sale la toxina y tienen turno esta semana?"). Reglas: una pregunta real y simple, **no reserves turnos** ni des datos falsos. Cuando te contesten, cerrá amable en el mismo chat ("¡Gracias! Lo veo y les escribo") y nada más: la propuesta no va por ahí.
 
-**C2. La auditoría (jueves, de 11 a 13 h, al mismo chat)**
-> Hola, perdón: la consulta de anoche era mía, para medir algo. Les escribí a 30 clínicas que pautan a WhatsApp a las 22 h; ustedes respondieron [a las 11:30 / no respondieron todavía]. Con lo que cuesta cada mensaje del anuncio, eso es plata que se va.
-> Armé una asistente con IA que contesta en segundos, da el turno en tu agenda y te deja todo anotado. ¿Te la muestro 15 minutos con tu clínica ya cargada? Tengo lugar mañana a las [hora] o a las [hora].
+**C2. La auditoría (jueves, de 11 a 13 h, al dueño, por su canal personal)**
+> Hola [Dra./Dr. nombre]! Te escribo por [la clínica]. Anoche a las 22 h les consulté por WhatsApp por [implantes], como un paciente que vio el anuncio. Me contestaron [apenas abrieron, a las 9:15 / todavía no]. Lo hice con 30 clínicas que pautan: casi ninguna tiene a alguien a esa hora, y es lógico, nadie trabaja de noche. El tema es que los anuncios siguen trayendo mensajes a la noche y el fin de semana.
+> Armé una asistente con IA que cubre justo esas horas: contesta en segundos, da el turno en tu agenda y el lunes tu recepción encuentra todo resuelto. ¿Te la muestro 15 minutos, con tu clínica ya cargada? Tengo lugar mañana a las [hora] o a las [hora].
 
-Si contestaron rápido: felicitalos y preguntá por el sábado y el domingo ("¿y el fin de semana quién contesta?").
+Contale en el mismo mensaje que la consulta era tuya. Nunca digas "tu secretaria tardó": el problema son las horas sin nadie.
 
-**D. Post en LinkedIn o Instagram (jueves, 13 h)**
+**D. Publicación con los resultados (jueves, 13 h; opcional)**
+
+Es una publicación en **tu propio perfil**, en la red donde ya te sigue gente (si sos docente de IA, probablemente LinkedIn; si no, tu Instagram personal). Sirve para que alguien que te sigue y tiene consultorio, o conoce a alguien que tiene, te escriba a vos. **No es imprescindible:** si tenés pocos seguidores, salteala y dedicá esa hora a más mensajes 1 a 1. No la publiques en grupos de odontólogos sin leer las reglas: casi todos prohíben la publicidad.
+
+Ejemplo:
+
 > Le escribí por WhatsApp a 30 clínicas que pagan anuncios en Instagram, un miércoles a las 22 h.
 > → [X] contestaron en menos de 1 hora.
 > → [Y] tardaron más de 10 horas.
 > → [Z] todavía no contestaron.
-> Están pagando por cada conversación y la pierden mientras duermen. Estoy armando 3 pilotos con una recepcionista con IA que contesta en segundos y da el turno. Si tenés consultorio (o conocés a alguien), escribime.
+> No es culpa de nadie: a esa hora no trabaja nadie. Pero los anuncios siguen trayendo mensajes. Estoy armando 3 pilotos con una asistente con IA que cubre la noche y el fin de semana, contesta en segundos y da el turno. Si tenés consultorio (o conocés a alguien), escribime.
 
 Sin nombres de clínicas, y con los números reales de tu planilla.
 
-**E. DM por Instagram**
+**E. DM por Instagram, a la cuenta personal del profesional**
 > Hola [Dra./Dr. nombre]! Vi el anuncio de [tratamiento]. ¿Quién les contesta los mensajes que llegan a la noche? Armé una asistente con IA que responde en segundos y da turnos sola. Si querés, te la muestro con tu consultorio cargado, en 15 minutos.
+
+Si la única cuenta es la de la clínica, es probable que la lea la recepción: usá el guion H en lugar de este.
 
 **F. Seguimiento del "lo pienso" (viernes, 17 h)**
 > [Nombre], ¿qué te quedó dando vueltas: si funciona, el precio o el momento? Si es si funciona, por eso está la garantía: 10 turnos en 30 días o te devuelvo todo. Me quedan [2] lugares para arrancar el lunes.
 
-**G. En persona (a la recepción)**
-> Hola, ¿está el doctor o la doctora? Soy Axel, [tu presentación en una línea]. Traigo algo que contesta el WhatsApp de la clínica cuando ustedes no están. Son 5 minutos, ¿cuándo lo puedo agarrar?
+**G. En persona: preguntá por el profesional**
+> Hola, ¿está la doctora [nombre]? Soy Axel, [tu presentación en una línea]. ¿A qué hora la puedo encontrar unos minutos?
 
-Llevá el celular con la línea demo cargada **con esa clínica**: "Mirá, escribile vos".
+Si te pregunta de qué se trata, pasá al guion H. Llevá el celular con la línea demo cargada **con esa clínica**: cuando estés con el profesional, "mirá, escribile vos".
+
+**H. Si te atiende la recepcionista (en persona o por el Instagram de la clínica)**
+> ¿Cuántos mensajes encontrás el lunes a la mañana? ¿Y cuántas veces por día te preguntan lo mismo, el precio, si atienden tal obra social?
+> Traigo algo para eso: una asistente que contesta la noche y el fin de semana, y te deja los turnos dados y lo raro anotado para vos. No reemplaza a nadie: cubre las horas en que no hay nadie. ¿Se lo puedo mostrar a la doctora? Si querés, te dejo esto para ella.
+
+Dejale una hoja con un código QR a la demo cargada con su clínica y el título **"Para que el lunes no haya 60 mensajes sin leer"**. Le das algo que la hace quedar bien con el dueño, no algo que la deja en evidencia.
+
+**I. A la agencia que le hace los anuncios a la clínica**
+> Hola! Vi que manejás los anuncios de [clínica]. Les escribí un miércoles a las 22 h desde un anuncio tuyo y me contestaron a las [hora]: los mensajes que traés a la noche se enfrían. Tengo una asistente con IA que les contesta en segundos y da el turno. Mejora el resultado de tus campañas sin que cambies nada. ¿Te interesa sumarla para tus clientes? Te dejo un 20 % de lo que paguen mientras sigan.
 
 ### Cierre
 
@@ -317,6 +362,7 @@ Después de la cuenta, preguntá: **"¿Arrancamos?"** Y callate.
 |---|---|
 | "¿Y si contesta cualquier cosa?" | Sofi usa solo lo que vos cargás. Lo que no sabe lo deja como tarea para tu secretaria; las urgencias van al 107. Ves cada conversación en el panel. Y no puede dar dos turnos en el mismo horario: lo impide la base de datos |
 | "Ya tengo secretaria" | No la reemplaza: cubre las ~15 horas por día y los fines de semana en que ella no está, y le saca las preguntas repetidas |
+| "Mi secretaria no va a querer" | Es lógico que desconfíe. Por eso ella es la responsable del piloto: está en la carga, resuelve lo que Sofi le deja y el reporte muestra lo que le sacó de encima. Si los 10 turnos llegan, reconocéselo a ella |
 | "Uso [Dentalink / AgendaPro / Doctoralia]" | En el piloto Sofi agenda en bloques que vos le reservás y tu secretaria los pasa a la mañana. La integración viene después (decilo así: no está hecha) |
 | "Es caro" | Con tus números: un paciente de [implantes] paga [X] meses. Y si en 30 días no te da 10 turnos, te devuelvo todo |
 | "¿Me pueden bloquear el WhatsApp?" | Por eso el piloto usa un chip nuevo y no tu número principal. Sofi responde; no manda mensajes masivos. Si funciona, pasamos a la API oficial de Meta |
@@ -350,6 +396,7 @@ Después de la cuenta, preguntá: **"¿Arrancamos?"** Y callate.
 
 ## 10. Después de la primera venta
 
+0. **Carga del lunes, con la recepcionista presente:** ella explica cómo se dan los turnos, qué preguntan los pacientes y qué no se puede prometer. Queda como la persona que resuelve las tareas del panel.
 1. **Semana 1:** que el piloto dé el primer turno nocturno, y sacale captura (con permiso). Es el caso de éxito.
 2. **Semana 2:** confirmaciones y lista de espera sobre sus turnos (ausentismo de 15 % a 30 %): el segundo resultado medible.
 3. **Semana 3:** pedile 2 referidos ("¿qué colega tuyo está igual?"). Los odontólogos se conocen entre ellos.
