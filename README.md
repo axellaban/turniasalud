@@ -42,7 +42,7 @@ El panel conserva las mismas consultas PostgREST y también permite usar Supabas
    El seed conserva una clínica demo existente; no borra sus turnos ni su configuración.
 3. Cargá `NEON_SERVER_PRIVATE_KEY` (clave RSA PKCS8 en base64) como **Secret** en Vercel.
 4. Habilitá Data API sin Neon Auth y sin conceder acceso general al esquema público.
-5. Agregá un proveedor de autenticación propio con JWKS en `https://tu-app/api/database/jwks`
+5. Una vez publicado el deploy y verificado que devuelve JSON, agregá un proveedor de autenticación propio con JWKS en `https://tu-app/.well-known/jwks.json`
    y audiencia `turnia-data-api`.
 6. Cargá `NEON_DATA_API_URL`, copiando la URL de Data API sin el sufijo `/rest/v1`.
 

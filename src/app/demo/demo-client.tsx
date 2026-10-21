@@ -71,7 +71,7 @@ function Demo() {
       });
       const info = (await res.json()) as SessionInfo;
       if (!res.ok) throw new Error(info.error || "No se pudo iniciar la conversación");
-      conversation.startSession({
+      await conversation.startSession({
         ...(mode === "chat" ? { signedUrl: info.signedUrl!, textOnly: true } : { conversationToken: info.token! }),
         dynamicVariables: info.dynamicVariables,
         userId: info.userId,

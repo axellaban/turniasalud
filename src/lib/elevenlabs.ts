@@ -32,7 +32,15 @@ export async function elevenlabs<T = unknown>(path: string, init: RequestInit = 
     // respuesta no JSON: la dejamos como texto
   }
   if (!res.ok) {
-    throw new ElevenLabsError(`ElevenLabs ${init.method ?? "GET"} ${path} → ${res.status}: ${text.slice(0, 500)}`, res.status, body);
+    // Un 422 puede incluir el cuerpo enviado, con secretos de los webhooks.
+    // No los exponemos en el panel ni en los logs del servidor.
+    let safeText = text;
+    for (const [name, value] of Object.entries(process.env)) {
+      if (value && /(?:KEY|SECRET|PASSWORD)$/.test(name)) safeText = safeText.replaceAll(value, "[secreto]");
+    }
+    let safeBody: unknown = safeText;
+    try { safeBody = JSON.parse(safeText); } catch { /* respuesta de error no JSON */ }
+    throw new ElevenLabsError(`ElevenLabs ${init.method ?? "GET"} ${path} → ${res.status}: ${safeText.slice(0, 500)}`, res.status, safeBody);
   }
   return body as T;
 }

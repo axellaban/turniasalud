@@ -7,6 +7,9 @@ begin
   end if;
 end $$;
 
+-- Data API verifica el JWT y adopta su rol con SET ROLE.
+grant turnia_server to authenticator;
+
 grant usage on schema public to turnia_server;
 
 do $$
