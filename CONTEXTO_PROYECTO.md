@@ -3,6 +3,8 @@
 > Documento de traspaso para la próxima persona o IA que siga el proyecto.
 > Última actualización: 21/10/2026. Repo: https://github.com/axellaban/turniasalud (rama `main`).
 
+> **Actualización operativa posterior:** leer primero [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md). Ya se crearon Vercel, Neon Free, el agente privado de ElevenLabs, su webhook HMAC y los workflows de n8n. **Persiste un bloqueo intermitente `jwk not found` en Neon Data API; la demo y el panel no están estables ni listos para pacientes reales.** El detalle de servicios, pruebas, permisos y próximos pasos del traspaso prevalece sobre las secciones históricas de estado que siguen. Los pendientes P2/P3 se mantienen.
+
 ---
 
 ## 1. Qué es y para quién
