@@ -10,4 +10,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Contexto del proyecto
 
-Antes de trabajar en este repo leé [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones tomadas, arquitectura, estado y pendientes priorizados.
+Antes de trabajar en este repo leé, en este orden:
+
+1. [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md): estado real de Vercel, Neon, ElevenLabs y n8n, y el bloqueo `jwk not found`.
+2. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): **tarea en curso**, la web pública como copycat de assorthealth.com y las demos de audio en español.
+3. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
