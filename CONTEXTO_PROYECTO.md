@@ -3,7 +3,7 @@
 > Documento de traspaso para la próxima persona o IA que siga el proyecto.
 > Última actualización: 21/10/2026. Repo: https://github.com/axellaban/turniasalud (rama `main`).
 
-> **Actualización operativa:** leer primero [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md). Ya se crearon Vercel, Neon Free, el agente privado de ElevenLabs, su webhook HMAC y los workflows de n8n. El bloqueo `jwk not found` de Neon Data API se resolvió en el código pasando a **conexión directa con `DATABASE_URL`** (rama `claude/quirky-faraday-xsqbc4`, falta integrarla en `main`, correr `schema.sql` y desplegar; los pasos están en el traspaso). Todavía no está listo para pacientes reales: falta WhatsApp, probar en producción y la revisión legal.
+> **Actualización operativa:** leer primero [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md). Ya se crearon Vercel, Neon Free, el agente privado de ElevenLabs, su webhook HMAC y los workflows de n8n. El bloqueo `jwk not found` de Neon Data API se resolvió pasando a **conexión directa con `DATABASE_URL`**: está en `main`, desplegado, con `schema.sql` aplicado en Neon, `/api/health` en `database: "ok"`, el agente actualizado con 9 herramientas y una reserva de prueba hecha desde la demo. Todavía no está listo para pacientes reales: faltan WhatsApp, la prueba por voz y la revisión legal.
 
 ---
 
@@ -163,12 +163,11 @@ Las respuestas son JSON en español, pensado para el LLM. Los errores de negocio
 - `npm test` con `TEST_DATABASE_URL`: 56 tests OK (sin esa variable corren 36 y se omiten los 20 de integración). Unitarios (turnos, feriados, horario de atención, zonas horarias, teléfonos, firma HMAC, sesión, canales, memoria, token de la demo) y de integración contra una base real descartable: schema + seed aplicados dos veces, todas las herramientas, reservas simultáneas (4 a la vez y reprogramar mientras otro toma el horario: 30 corridas sin fallas), campañas y envíos (WhatsApp simulado), webhook post-conversación firmado e idempotente, server actions y render de todas las páginas del panel.
 - `npx tsc --noEmit`, `npx eslint src` y `npm run build`: sin errores.
 - `schema.sql` actualiza una base creada con la versión anterior sin perder datos.
-- En la sesión anterior, en producción: el agente privado de ElevenLabs, sus herramientas, el webhook HMAC y los workflows de n8n se crearon bien; el panel y la demo fallaban por `jwk not found` (Data API), que ya no se usa.
+- En producción (21/10/2026, después del merge del PR #1): `/api/health` responde `database: "ok"`; el panel carga; "Crear / actualizar agente" sube las 9 herramientas; una reserva desde la demo en modo chat aparece en la Agenda y se cancela bien. El agente, el webhook HMAC y los workflows de n8n ya existían de la sesión anterior.
 
 ### Hecho pero NO probado contra servicios reales
 El entorno de la última sesión no tenía credenciales. Falta confirmar en producción:
-- La conexión con el pooler de Neon vía `DATABASE_URL` (ver "A confirmar" en el traspaso).
-- `setupAgent` con la herramienta nueva `confirmar_turno`, el dato `satisfaccion` (tipo `integer`) y `transfer_to_number` (formatos tomados de la documentación de ElevenLabs).
+- `transfer_to_number` (solo se sube si hay `handoff_phone`; todavía no se cargó) y que el dato `satisfaccion` (tipo `integer`) llegue bien en el post-call.
 - **Webhook de inicio:** la forma exacta de la respuesta (`{type, dynamic_variables, user_id}`).
 - **Post-call:** cómo viene el canal (`metadata.whatsapp`, `metadata.phone_call`, `system__channel`).
 - **Envío de templates:** `/v1/convai/whatsapp/outbound-message` con parámetros posicionales `{{1}}`, `{{2}}`.
@@ -180,7 +179,7 @@ El entorno de la última sesión no tenía credenciales. Falta confirmar en prod
 ## 6. Pendientes (ordenados por prioridad)
 
 ### P1 — Para que funcione en producción
-1. **Desplegar la rama nueva** y verificar `/api/health`, el panel y la demo contra Neon (pasos en el traspaso). Después, prueba de punta a punta con ElevenLabs.
+1. ~~Desplegar la conexión directa~~: hecho (PR #1). Falta la prueba por voz y revisar que las conversaciones de la demo lleguen al panel por el webhook post-call.
 2. ~~Post-call webhook~~: creado en la sesión anterior; verificar que llegan las conversaciones al panel.
 3. **WhatsApp Business:** el usuario necesita una cuenta de Meta con un número que no esté en la app de WhatsApp ni en otro BSP. Después: importarlo en ElevenLabs, asignar el agente y pegar el phone number ID en panel → Configuración. No elegir ni migrar un número sin su autorización.
 4. **Templates de Meta** (`recordatorio_turno`, `recall_control`, `turno_liberado`, `turno_perdido`, `reactivacion_paciente`, `encuesta_visita`, `respuesta_pedido`), con `{{1}}` = nombre y `{{2}}` = detalle e idioma `es_AR`. Textos en el README. Confirmar el código de idioma de "Español (ARG)".
