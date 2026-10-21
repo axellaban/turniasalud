@@ -337,3 +337,15 @@ create table if not exists leads (
 );
 create index if not exists leads_created_idx on leads (created_at desc);
 alter table leads enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Web pública: audios de las demos, generados desde Panel → Configuración.
+-- ---------------------------------------------------------------------------
+create table if not exists web_audios (
+  slug text primary key,
+  mp3 bytea not null,
+  sync jsonb not null,
+  voices jsonb,
+  created_at timestamptz not null default now()
+);
+alter table web_audios enable row level security;

@@ -7,7 +7,11 @@ Acá van los audios que suenan en la web (home, "Escuchá a nuestros agentes" y 
   Formato: `{ "duracion": 187.4, "segmentos": [{ "linea": 0, "inicio": 0.1, "fin": 5.3 }] }`.
 
 Los guiones están en `src/content/conversaciones.json`. Mientras falte el audio de un guion,
-la web muestra la conversación escrita con la etiqueta "Audio próximamente".
+la web reproduce la conversación escrita como lectura animada.
+
+**Forma más simple (sin computadora):** Panel → Configuración → Audios de la web → "Generar".
+Se guardan en la base (tabla `web_audios`) y la web los toma de `/api/audios/`. Los archivos de
+esta carpeta, si existen, tienen prioridad.
 
 ## Cómo generarlos
 

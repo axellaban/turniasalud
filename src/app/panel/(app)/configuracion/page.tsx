@@ -16,7 +16,12 @@ import {
 import { Badge, Card, Field, PageHeader, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import { AgentSetupButton } from "./agent-setup";
 import { ScheduleBlockForm } from "./block-form";
+import { AudiosWeb } from "./audios-web";
+import { estadoAudios } from "@/lib/web-audios";
 import type { AppointmentType, Professional } from "@/lib/types";
+
+// Generar los audios de la web puede tardar ~1 minuto por conversación.
+export const maxDuration = 300;
 
 const WEEKDAYS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
@@ -38,10 +43,11 @@ export default async function SettingsPage() {
   const t = clinic.templates ?? {};
   // getCatalog solo trae activos: para poder reactivar, traemos todo de nuevo.
   const now = new Date();
-  const [professionals, types, blocks] = await Promise.all([
+  const [professionals, types, blocks, audios] = await Promise.all([
     sql<Professional[]>`select * from professionals where clinic_id = ${clinic.id} order by full_name`,
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} order by specialty, name`,
     getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 365 * 86400_000)),
+    estadoAudios(),
   ]);
   const proName = new Map(professionals.map((p) => [p.id, p.full_name]));
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
@@ -387,6 +393,14 @@ export default async function SettingsPage() {
               <CopyRow label="Reply Webhook URL del Custom Channel (ElevenLabs → agente → Channels)" value={`${base}/api/elevenlabs/canal`} />
               <p className="text-xs text-brand-900/50">Los valores se cargan en Vercel → Settings → Environment Variables. Acá nunca se muestran.</p>
             </div>
+          </Card>
+
+          <Card>
+            <h2 className="mb-1 font-semibold text-brand-950">Audios de la web</h2>
+            <p className="mb-3 text-xs text-brand-900/60">
+              Las conversaciones que se escuchan en la home y en “Escuchá a nuestros agentes”.
+            </p>
+            <AudiosWeb items={audios} />
           </Card>
 
           <Card>

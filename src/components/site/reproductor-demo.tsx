@@ -4,11 +4,13 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { formatearTiempo, type Conversacion } from "@/content/conversaciones";
 import { inicioDeLinea, leerSincronizacion, lineaActiva, type Sincronizacion } from "./reproductor-sync";
 
-// Reproductor de las demos de audio. Lee /audios/<slug>.mp3 y /audios/<slug>.json
-// (los genera scripts/generar-audios.mjs). Si todavía no existen, muestra el guion
-// con "Audio próximamente".
+// Reproductor de las demos de audio. Lee /audios/<slug>.mp3 + .json (scripts/generar-audios.mjs)
+// o /api/audios/<slug>.mp3 + .json (generados desde Panel → Configuración). Si todavía no
+// hay audio, el play reproduce la conversación como lectura animada.
 
-type Estado = "cargando" | "listo" | "sin-audio";
+// "listo": hay audio. "texto": todavía no se generó el audio y la conversación se
+// reproduce como lectura animada, con tiempos estimados por cantidad de palabras.
+type Estado = "cargando" | "listo" | "texto";
 
 const EVENTO_PLAY = "turnia:demo-play";
 
@@ -33,68 +35,126 @@ const COLORES: Record<Conversacion["color"], { cuadro: string; boton: string; ac
 // Alturas relativas de las barras del ecualizador (como el orbe de la home de Assort).
 const BARRAS = [0.32, 0.5, 0.78, 0.46, 0.92, 0.66, 1, 0.58, 0.84, 0.44, 0.3];
 
+/** Tiempos estimados por línea para la lectura animada (sin audio). */
+function sincronizacionEstimada(conversacion: Conversacion): Sincronizacion {
+  let t = 0.6;
+  const segmentos = conversacion.lineas.map((l, linea) => {
+    const palabras = l.texto.split(/\s+/).filter(Boolean).length;
+    const dura = Math.max(1.6, palabras / 3.2); // ~190 palabras por minuto de lectura
+    const s = { linea, inicio: t, fin: t + dura };
+    t += dura + 0.5;
+    return s;
+  });
+  return { duracion: t, segmentos };
+}
+
+async function buscarSincronizacion(slug: string, totalLineas: number, signal: AbortSignal) {
+  // Primero los archivos del repo (public/audios), después los generados desde el panel.
+  for (const base of ["/audios", "/api/audios"]) {
+    const res = await fetch(`${base}/${slug}.json`, { signal }).catch(() => null);
+    if (!res?.ok) continue;
+    const sync = leerSincronizacion(await res.json().catch(() => null), totalLineas);
+    if (sync) return { sync, src: `${base}/${slug}.mp3` };
+  }
+  return null;
+}
+
 function useReproductor(conversacion: Conversacion) {
   const id = useId();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [estado, setEstado] = useState<Estado>("cargando");
   const [sync, setSync] = useState<Sincronizacion | null>(null);
+  const [src, setSrc] = useState<string | null>(null);
   const [sonando, setSonando] = useState(false);
   const [tiempo, setTiempo] = useState(0);
   const [duracionAudio, setDuracionAudio] = useState<number | null>(null);
+  // Reloj de la lectura animada: segundo de partida y momento en que arrancó.
+  const reloj = useRef({ base: 0, desde: 0 });
   const totalLineas = conversacion.lineas.length;
+
+  const usarTexto = useCallback(() => {
+    setSync(sincronizacionEstimada(conversacion));
+    setEstado("texto");
+  }, [conversacion]);
 
   useEffect(() => {
     const control = new AbortController();
-    fetch(`/audios/${conversacion.slug}.json`, { signal: control.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((datos) => {
-        const leido = leerSincronizacion(datos, totalLineas);
-        setSync(leido);
-        setEstado(leido ? "listo" : "sin-audio");
+    buscarSincronizacion(conversacion.slug, totalLineas, control.signal)
+      .then((encontrado) => {
+        if (control.signal.aborted) return;
+        if (encontrado) {
+          setSync(encontrado.sync);
+          setSrc(encontrado.src);
+          setEstado("listo");
+        } else usarTexto();
       })
       .catch(() => {
-        if (!control.signal.aborted) setEstado("sin-audio");
+        if (!control.signal.aborted) usarTexto();
       });
     return () => control.abort();
-  }, [conversacion.slug, totalLineas]);
+  }, [conversacion.slug, totalLineas, usarTexto]);
+
+  const pausar = useCallback(() => {
+    if (audioRef.current) audioRef.current.pause();
+    else setSonando(false);
+  }, []);
 
   // Un solo reproductor sonando por página.
   useEffect(() => {
     function otroEmpezo(e: Event) {
-      if ((e as CustomEvent<string>).detail !== id) audioRef.current?.pause();
+      if ((e as CustomEvent<string>).detail !== id) pausar();
     }
     window.addEventListener(EVENTO_PLAY, otroEmpezo);
     return () => window.removeEventListener(EVENTO_PLAY, otroEmpezo);
-  }, [id]);
+  }, [id, pausar]);
+
+  const duracion = duracionAudio ?? sync?.duracion ?? 0;
 
   // timeupdate llega ~4 veces por segundo; con requestAnimationFrame la barra y el
-  // resaltado avanzan suaves.
+  // resaltado avanzan suaves. En modo texto, el reloj es propio.
   useEffect(() => {
     if (!sonando) return;
     let frame = 0;
     const tick = () => {
       if (audioRef.current) setTiempo(audioRef.current.currentTime);
+      else {
+        const t = reloj.current.base + (performance.now() - reloj.current.desde) / 1000;
+        if (t >= duracion) {
+          setSonando(false);
+          setTiempo(0);
+          return;
+        }
+        setTiempo(t);
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [sonando]);
+  }, [sonando, duracion]);
 
   const alternar = useCallback(() => {
+    if (estado === "cargando") return;
     const audio = audioRef.current;
-    if (!audio || estado !== "listo") return;
-    if (audio.paused) {
-      window.dispatchEvent(new CustomEvent(EVENTO_PLAY, { detail: id }));
-      audio.play().catch(() => setSonando(false));
-    } else {
-      audio.pause();
+    if (estado === "listo" && audio) {
+      if (audio.paused) {
+        window.dispatchEvent(new CustomEvent(EVENTO_PLAY, { detail: id }));
+        audio.play().catch(() => setSonando(false));
+      } else audio.pause();
+      return;
     }
-  }, [estado, id]);
+    if (sonando) {
+      setSonando(false);
+    } else {
+      window.dispatchEvent(new CustomEvent(EVENTO_PLAY, { detail: id }));
+      reloj.current = { base: tiempo, desde: performance.now() };
+      setSonando(true);
+    }
+  }, [estado, id, sonando, tiempo]);
 
   const buscar = useCallback((segundo: number) => {
     const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = segundo;
+    if (audio) audio.currentTime = segundo;
+    reloj.current = { base: segundo, desde: performance.now() };
     setTiempo(segundo);
   }, []);
 
@@ -103,19 +163,18 @@ function useReproductor(conversacion: Conversacion) {
       const inicio = sync ? inicioDeLinea(sync.segmentos, linea) : null;
       if (inicio === null) return;
       buscar(inicio);
-      if (audioRef.current?.paused) alternar();
+      if (!sonando) alternar();
     },
-    [sync, buscar, alternar],
+    [sync, buscar, alternar, sonando],
   );
 
-  const duracion = duracionAudio ?? sync?.duracion ?? 0;
   const activa = sync && (sonando || tiempo > 0) ? lineaActiva(sync.segmentos, tiempo) : -1;
 
   const audio =
-    estado === "listo" ? (
+    estado === "listo" && src ? (
       <audio
         ref={audioRef}
-        src={`/audios/${conversacion.slug}.mp3`}
+        src={src}
         preload="metadata"
         onPlay={() => setSonando(true)}
         onPause={() => setSonando(false)}
@@ -129,7 +188,8 @@ function useReproductor(conversacion: Conversacion) {
         }}
         onError={() => {
           setSonando(false);
-          setEstado("sin-audio");
+          setSrc(null);
+          usarTexto();
         }}
       />
     ) : null;
@@ -153,7 +213,8 @@ export function ReproductorDemo({ conversacion, variante = "tarjeta" }: { conver
 type Reproductor = ReturnType<typeof useReproductor>;
 
 function VarianteOrbe({ conversacion, r }: { conversacion: Conversacion; r: Reproductor }) {
-  const disponible = r.estado === "listo";
+  const disponible = r.estado !== "cargando";
+  const conAudio = r.estado === "listo";
   const hablaPaciente = r.activa >= 0 && conversacion.lineas[r.activa]?.quien === "paciente";
   const etiqueta = r.sonando ? "Pausar la conversación" : `Escuchar la conversación: ${conversacion.titulo}`;
 
@@ -210,20 +271,16 @@ function VarianteOrbe({ conversacion, r }: { conversacion: Conversacion; r: Repr
         </button>
 
         <div className="mt-8 flex min-h-9 items-center justify-center">
-          {r.estado === "sin-audio" ? (
-            <ProximamenteBadge />
-          ) : (
-            <button
-              type="button"
-              onClick={r.alternar}
-              disabled={!disponible}
-              className="inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-brand-950 shadow-sm ring-1 ring-white transition hover:bg-white disabled:opacity-60"
-            >
-              <IconoPlay sonando={r.sonando} className="h-3.5 w-3.5" />
-              {r.sonando ? "Pausar" : r.tiempo > 0 ? "Seguir escuchando" : "Escuchar la llamada"}
-              <span className="tabular-nums text-brand-950/55">· {disponible ? formatearTiempo(r.duracion) : "…"}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={r.alternar}
+            disabled={!disponible}
+            className="inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-brand-950 shadow-sm ring-1 ring-white transition hover:bg-white disabled:opacity-60"
+          >
+            <IconoPlay sonando={r.sonando} className="h-3.5 w-3.5" />
+            {r.sonando ? "Pausar" : r.tiempo > 0 ? "Seguir" : conAudio ? "Escuchar la llamada" : "Ver la conversación"}
+            <span className="tabular-nums text-brand-950/55">· {disponible ? formatearTiempo(r.duracion) : "…"}</span>
+          </button>
         </div>
 
         {disponible && (
@@ -243,7 +300,8 @@ function VarianteOrbe({ conversacion, r }: { conversacion: Conversacion; r: Repr
 function VarianteTarjeta({ conversacion, r }: { conversacion: Conversacion; r: Reproductor }) {
   const [abierta, setAbierta] = useState(false);
   const colores = COLORES[conversacion.color];
-  const disponible = r.estado === "listo";
+  const disponible = r.estado !== "cargando";
+  const conAudio = r.estado === "listo";
   const mostrar = abierta || r.sonando;
   const panelId = useId();
 
@@ -279,22 +337,21 @@ function VarianteTarjeta({ conversacion, r }: { conversacion: Conversacion; r: R
             <IconoPlay sonando={r.sonando} className="h-5 w-5" />
           </button>
           <div className="min-w-0">
-            <p className="font-semibold text-brand-900">{r.sonando ? "Pausar" : "Escuchar demo"}</p>
+            <p className="font-semibold text-brand-900">{r.sonando ? "Pausar" : conAudio ? "Escuchar demo" : "Ver demo"}</p>
             <p className="text-sm tabular-nums text-brand-900/60">
               {disponible
                 ? r.sonando || r.tiempo > 0
                   ? `${formatearTiempo(r.tiempo)} / ${formatearTiempo(r.duracion)}`
-                  : formatearTiempo(r.duracion)
-                : r.estado === "sin-audio"
-                  ? `≈ ${conversacion.duracionEstimada}`
-                  : "…"}
+                  : conAudio
+                    ? formatearTiempo(r.duracion)
+                    : `≈ ${conversacion.duracionEstimada}`
+                : "…"}
             </p>
           </div>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 sm:pl-[112px]">
-        {r.estado === "sin-audio" && <ProximamenteBadge />}
         <button
           type="button"
           onClick={() => setAbierta((v) => !v)}
@@ -338,7 +395,7 @@ function BarraProgreso({ r, className = "", acento, claro = false }: { r: Reprod
 
 function Transcripcion({ conversacion, r, className = "" }: { conversacion: Conversacion; r: Reproductor; className?: string }) {
   const contenedor = useRef<HTMLOListElement>(null);
-  const puedeSaltar = r.estado === "listo";
+  const puedeSaltar = r.estado !== "cargando";
 
   // Desplaza solo el contenedor de la transcripción, nunca la página.
   useEffect(() => {
@@ -380,15 +437,6 @@ function Transcripcion({ conversacion, r, className = "" }: { conversacion: Conv
         );
       })}
     </ol>
-  );
-}
-
-function ProximamenteBadge() {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-sun-100 px-3 py-1 text-xs font-semibold text-sun-600 ring-1 ring-sun-300/60">
-      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-sun-500" />
-      Audio próximamente
-    </span>
   );
 }
 

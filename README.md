@@ -143,6 +143,10 @@ En ElevenLabs → **Phone numbers** importá un número de Twilio o un SIP trunk
 
 ---
 
+### 8. Web pública: audios de las demos y video
+- **Audios:** Panel → Configuración → **Audios de la web** → "Generar los que faltan". Usa tus 2 voces favoritas de ElevenLabs (Sofi = la femenina). La clave necesita los permisos **Text to Speech** y **Voices: Read**; si preferís no tocar la del agente, creá otra y cargala en Vercel como `ELEVENLABS_TTS_API_KEY`. Son unos 17.600 caracteres en total.
+- **Video del hero:** subí `public/videos/hero.mp4` (opcional `hero.webm` y `hero-mobile.mp4`). Sin video se ve la foto.
+
 ## Para desarrolladores
 
 ```bash

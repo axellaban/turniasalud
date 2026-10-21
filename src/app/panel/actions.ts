@@ -13,6 +13,8 @@ import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 import { bookAppointment, registerPatient, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
 import { addDaysKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
+import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
+import { getConversacion } from "@/content/conversaciones";
 
 async function requireSession() {
   const store = await cookies();
@@ -382,5 +384,31 @@ export async function sendCampaignAction(_prev: SendState | undefined, form: For
     };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Audios de las demos de la web pública
+// ---------------------------------------------------------------------------
+export type AudioWebState = { ok: boolean; message: string; slug: string; duracion?: number };
+
+/** Genera (o regenera) el audio de una conversación de la web con las voces favoritas de ElevenLabs. */
+export async function generarAudioWeb(slug: string): Promise<AudioWebState> {
+  await requireSession();
+  const conversacion = getConversacion(slug);
+  if (!conversacion) return { ok: false, message: "No existe esa conversación.", slug };
+  try {
+    const voces = await elegirVoces();
+    const duracion = await generarAudio(conversacion, voces);
+    return {
+      ok: true,
+      slug,
+      duracion,
+      message: `Listo (${Math.floor(duracion / 60)}:${String(Math.round(duracion % 60)).padStart(2, "0")}). Sofi: ${voces.agente.nombre} · Paciente: ${voces.paciente.nombre}.`,
+    };
+  } catch (e) {
+    console.error("audios: falló la generación", slug, e);
+    const message = e instanceof AudioError ? e.message : "No se pudo generar el audio. Mirá los logs de Vercel.";
+    return { ok: false, message, slug };
   }
 }
