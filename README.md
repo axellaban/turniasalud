@@ -67,10 +67,45 @@ La app se conecta directo a Postgres con una sola variable, `DATABASE_URL`, solo
 > Cada vez que cambies datos de la clínica (horarios, feriados, precios, textos) no hace falta tocar nada: el agente los lee al empezar cada conversación. Solo volvé a tocar **Crear / actualizar agente** si cambia la URL de la app, el teléfono para pasar llamadas o actualizás el código.
 
 ### 4. WhatsApp
+Hay dos formas de conectarlo. Se elige en Panel → Configuración → **Cómo se conecta WhatsApp**:
+
+| | Oficial (Meta) | WAHA (chip común) |
+|---|---|---|
+| Número | Número dedicado de WhatsApp Business Platform | Cualquier chip, vinculado con QR |
+| Riesgo de bloqueo | No | **Sí**: es una API no oficial. Usá un chip de prueba, no el número principal de la clínica |
+| Mensajes salientes | Templates aprobados por Meta (pagos) | El mismo texto como mensaje común, con una pausa entre envíos |
+| Audios | Sí, con respuesta en voz | Sí: se transcriben y el agente responde por texto |
+| Fotos y archivos | Sí (credencial, órdenes) | No: el agente le pide que lo cuente por escrito |
+
+#### 4a. WhatsApp por WAHA (para probar con un chip)
+Usa **WAHA** en tu servidor y el **Custom Channel** de ElevenLabs (en alpha), que conecta ese WhatsApp con el mismo agente, sus herramientas y la memoria del paciente.
+
+0. **Base:** en Neon → SQL Editor, volvé a correr [`supabase/schema.sql`](supabase/schema.sql) completo. Agrega la columna `whatsapp_provider` y las tablas `channel_conversations` y `channel_events`; no borra datos.
+1. **Chip y WAHA:** en el dashboard de WAHA creá (o usá) la sesión `default` y escaneá el QR con el WhatsApp del chip nuevo.
+2. **ElevenLabs:** abrí el agente "Turnia · …" → **Channels** → **Custom Channel** → **Add trigger**. En *Reply Webhook URL* poné `https://turniasalud.vercel.app/api/elevenlabs/canal` → **Add**. Copiá los tres valores que muestra.
+3. **Vercel → Settings → Environment Variables** (como *Secret*, en Production):
+   | Variable | Qué va |
+   |---|---|
+   | `ELEVENLABS_CHANNEL_URL` | *Inbound Webhook URL* del paso 2 |
+   | `ELEVENLABS_CHANNEL_SECRET` | *Inbound Secret* del paso 2 |
+   | `ELEVENLABS_CHANNEL_SIGNING_SECRET` | *Outbound Signing Secret* del paso 2 |
+   | `WAHA_URL` | La dirección pública de tu WAHA, con `https://` |
+   | `WAHA_API_KEY` | La API key de WAHA |
+   | `WAHA_WEBHOOK_HMAC` | Un texto largo y aleatorio que inventás vos (lo usás en el paso 5) |
+   | `WAHA_SESSION` | Opcional: el nombre de la sesión si no es `default` |
+
+   Después, **Deployments → Create Deployment → `main`** para que tome las variables.
+4. **Panel → Configuración:** elegí **WAHA** en *Cómo se conecta WhatsApp* y guardá. El recuadro *WhatsApp por WAHA* tiene que mostrar todo en ✅.
+5. **Webhook en WAHA:** en la sesión → *Webhooks* → URL `https://turniasalud.vercel.app/api/waha/webhook`, evento **`message`** y, en *HMAC*, la misma clave de `WAHA_WEBHOOK_HMAC`.
+6. Mandale un WhatsApp al chip desde otro celular. La respuesta del agente vuelve por el mismo chat y la conversación aparece en Panel → Conversaciones.
+
+> Para transcribir audios, la API key de ElevenLabs necesita el permiso **Speech to Text**. Si WAHA es la versión Core y no descarga archivos, el agente le pide al paciente que escriba el mensaje.
+
+#### 4b. WhatsApp oficial (Meta)
 1. Necesitás una cuenta de **WhatsApp Business Platform** (Meta) con un número que **no** esté en uso en la app de WhatsApp ni en otro proveedor.
 2. ElevenLabs → **WhatsApp** → **Import account** → autorizá → asigná el agente "Turnia · …".
 3. En el menú del número → **Copy phone number ID** y pegalo en el panel → Configuración → *ID del número de WhatsApp*.
-4. En WhatsApp Manager creá los templates (categoría **Utility**, salvo reactivación que es **Marketing**; idioma Español (ARG) = `es_AR`). Todos usan `{{1}}` = nombre y `{{2}}` = detalle:
+4. En WhatsApp Manager creá los templates (categoría **Utility**, salvo reactivación que es **Marketing**; idioma Español (ARG) = `es_AR`). Todos usan `{{1}}` = nombre y `{{2}}` = detalle. Con WAHA no hacen falta: se manda este mismo texto (`src/lib/whatsapp.ts`), y los mensajes que el paciente no pidió suman "Si no querés recibir más mensajes, respondé BAJA.":
 
 | Nombre | Texto sugerido |
 |---|---|
@@ -128,6 +163,8 @@ Los tests de integración cubren todas las herramientas del agente (incluidas re
 - `src/lib/agent/tools.ts` — definición única de las herramientas (validación + config de ElevenLabs).
 - `src/lib/agent/prompt.ts` — prompt del agente.
 - `src/lib/agent/setup.ts` — crea/actualiza tools y agente vía API de ElevenLabs.
+- `src/lib/whatsapp.ts` — único punto para escribirle al paciente (Meta o WAHA) y textos de los templates.
+- `src/lib/channel.ts` + `src/lib/waha.ts` — WhatsApp por WAHA: conversaciones del Custom Channel, firma y parseo de WAHA.
 - `src/lib/campaigns.ts` — audiencias y envíos de Turnia Activa.
 - `src/lib/tasks.ts` — resolver pedidos y responderle al paciente por WhatsApp.
 - `supabase/schema.sql` — tablas con RLS activado y sin políticas: solo el servidor, con el usuario dueño de las tablas, accede.
@@ -138,6 +175,8 @@ Los tests de integración cubren todas las herramientas del agente (incluidas re
 | `POST /api/agent/tools/:nombre` | ElevenLabs (herramientas) | header `x-turnia-secret` |
 | `POST /api/elevenlabs/initiation` | ElevenLabs (inicio de conversación) | header `x-turnia-secret` |
 | `POST /api/elevenlabs/post-call` | ElevenLabs (fin de conversación) | firma HMAC `ElevenLabs-Signature` |
+| `POST /api/waha/webhook` | WAHA (mensajes de WhatsApp por chip) | HMAC SHA-512 `X-Webhook-Hmac` |
+| `POST /api/elevenlabs/canal` | ElevenLabs Custom Channel (respuestas del agente) | firma HMAC `ElevenLabs-Signature` |
 | `POST /api/automations/:job` | n8n (`recordatorios`, `recall`, `reactivacion`, `ausentes`, `lista-espera`, `encuestas`) | header `x-turnia-secret` |
 | `POST /api/elevenlabs/token` | Demo web | sesión del panel |
 | `GET /api/health` | Monitoreo: consulta la base, 503 si no responde | público |

@@ -8,6 +8,7 @@ import { displayPhone } from "@/lib/phone";
 import type { Campaign } from "@/lib/types";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { SendCampaignButton } from "./send-button";
+import { renderTemplate, templateKeyFor, whatsappReadiness } from "@/lib/whatsapp";
 
 export default async function CampaignDetail({ params }: PageProps<"/panel/campanas/[id]">) {
   const { id } = await params;
@@ -22,14 +23,18 @@ export default async function CampaignDetail({ params }: PageProps<"/panel/campa
       where r.campaign_id = ${campaign.id}
       order by r.sent_at desc nulls last`,
   ]);
-  const missingSetup = !clinic.whatsapp_phone_number_id || !clinic.elevenlabs_agent_id;
+  const missingSetup = whatsappReadiness(clinic);
+  const waha = clinic.whatsapp_provider === "waha";
 
   return (
     <>
       <Link href="/panel/campanas" className="text-sm text-brand-700 hover:underline">
         ← Campañas
       </Link>
-      <PageHeader title={campaign.name} description={`${CAMPAIGN_LABELS[campaign.type].label} · template “${campaign.template_name}” (${campaign.template_language})`} />
+      <PageHeader
+        title={campaign.name}
+        description={`${CAMPAIGN_LABELS[campaign.type].label} · ${waha ? "por WAHA" : `template “${campaign.template_name}” (${campaign.template_language})`}`}
+      />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <div className="mb-3 flex items-center justify-between">
@@ -51,16 +56,23 @@ export default async function CampaignDetail({ params }: PageProps<"/panel/campa
           <div className="mt-4">
             {missingSetup ? (
               <p className="rounded-xl bg-sun-100 p-3 text-sm">
-                Para enviar, completá el ID del número de WhatsApp y creá el agente en <Link href="/panel/configuracion" className="underline">Configuración</Link>.
+                Para enviar: {missingSetup} Revisalo en <Link href="/panel/configuracion" className="underline">Configuración</Link>.
               </p>
             ) : (
               <SendCampaignButton id={campaign.id} count={audience.length} />
             )}
           </div>
-          <p className="mt-3 text-xs text-brand-900/50">
-            El template tiene que estar aprobado por Meta y usar dos variables: {"{{1}}"} = nombre y {"{{2}}"} = detalle (fecha del turno, control,
-            etc.). Se envían hasta 50 por vez.
-          </p>
+          {waha ? (
+            <p className="mt-3 text-xs text-brand-900/50">
+              Por WAHA se manda este texto, con una pausa entre mensajes (hasta 50 por vez):{" "}
+              <q>{renderTemplate(templateKeyFor(campaign.type), ["María", "…"], { optOutFooter: true })}</q>
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-brand-900/50">
+              El template tiene que estar aprobado por Meta y usar dos variables: {"{{1}}"} = nombre y {"{{2}}"} = detalle (fecha del turno, control,
+              etc.). Se envían hasta 50 por vez.
+            </p>
+          )}
         </Card>
         <Card>
           <h2 className="mb-3 font-semibold text-brand-950">Envíos ({sentRows.length})</h2>

@@ -157,6 +157,7 @@ export async function saveClinic(form: FormData) {
       policies: text(form, "policies"),
       urgency_instructions: text(form, "urgency_instructions"),
       whatsapp_phone_number_id: text(form, "whatsapp_phone_number_id"),
+      whatsapp_provider: text(form, "whatsapp_provider") === "waha" ? "waha" : "meta",
       elevenlabs_voice_id: text(form, "elevenlabs_voice_id"),
       handoff_phone: text(form, "handoff_phone"),
       after_hours_instructions: text(form, "after_hours_instructions"),
@@ -352,7 +353,8 @@ export async function createCampaignAction(form: FormData) {
   const type = text(form, "type") as CampaignType | null;
   if (!type || !CAMPAIGN_TYPES.includes(type)) return;
   const templateKey = type === "personalizada" ? "" : type;
-  const template = text(form, "template_name") ?? clinic.templates?.[templateKey];
+  // Por WAHA no hay templates de Meta: se manda el texto sugerido para ese tipo.
+  const template = text(form, "template_name") ?? clinic.templates?.[templateKey] ?? (clinic.whatsapp_provider === "waha" ? type : null);
   if (!template) return;
   const campaign = await createCampaign({
     clinicId: clinic.id,

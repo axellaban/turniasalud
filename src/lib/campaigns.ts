@@ -1,13 +1,13 @@
 import "server-only";
 import { sql } from "./db";
-import { buildDynamicVariables, getClinic } from "./clinic";
-import { sendWhatsAppTemplate } from "./elevenlabs";
+import { getClinic } from "./clinic";
+import { pauseBetweenSends, sendPatientMessage, templateKeyFor, whatsappReadiness } from "./whatsapp";
 import { humanSlot } from "./time";
 import type { Campaign, CampaignType, Clinic } from "./types";
 
 // "Activa": campañas salientes por WhatsApp. Cada destinatario recibe un
-// template aprobado por Meta y, si responde, lo atiende el mismo agente con el
-// contexto de la campaña. Quien pidió la baja (contact_opt_out) solo recibe
+// template aprobado por Meta (o el mismo texto por WAHA) y, si responde, lo
+// atiende el mismo agente con el contexto de la campaña. Quien pidió la baja (contact_opt_out) solo recibe
 // los recordatorios de sus turnos y los avisos de la lista de espera.
 
 export const CAMPAIGN_LABELS: Record<CampaignType, { label: string; description: string; goal: string }> = {
@@ -239,8 +239,8 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
   const [campaign] = await sql<Campaign[]>`select * from campaigns where id = ${campaignId}`;
   if (!campaign) throw new Error("No encontré la campaña.");
   const clinic = await getClinic(campaign.clinic_id);
-  if (!clinic.whatsapp_phone_number_id) throw new Error("Falta el ID del número de WhatsApp en Configuración.");
-  if (!clinic.elevenlabs_agent_id) throw new Error("Primero creá el agente en Configuración.");
+  const problem = whatsappReadiness(clinic);
+  if (problem) throw new Error(problem);
 
   const audience = await computeAudience(clinic, campaign.type);
   const already = await sql<Array<{ patient_id: string; status: string }>>`
@@ -250,22 +250,24 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
   await sql`update campaigns set status = 'enviando' where id = ${campaign.id}`;
   const result: SendResult = { audience: audience.length, sent: 0, failed: 0, skipped: 0, errors: [] };
 
+  let attempts = 0;
   for (const member of audience.slice(0, MAX_PER_RUN)) {
     if (done.has(member.patient_id) || !isWhatsAppId(member.phone)) {
       result.skipped++;
       continue;
     }
+    if (attempts++ > 0) await pauseBetweenSends(clinic);
     const firstName = member.name?.split(" ")[0] || "hola";
     const context = `${member.context} Objetivo de la campaña "${campaign.name}": ${campaign.goal}`;
     try {
-      const res = await sendWhatsAppTemplate({
-        phoneNumberId: clinic.whatsapp_phone_number_id,
-        userId: member.phone,
+      const res = await sendPatientMessage(clinic, {
+        phone: member.phone,
+        templateKey: templateKeyFor(campaign.type),
         templateName: campaign.template_name,
         language: campaign.template_language,
         params: [firstName, member.detail],
-        agentId: clinic.elevenlabs_agent_id,
-        dynamicVariables: await buildDynamicVariables(clinic, member.phone, { context, campaignId: campaign.id }),
+        context,
+        campaignId: campaign.id,
       });
       await sql`
         insert into campaign_recipients (campaign_id, patient_id, status, elevenlabs_conversation_id, sent_at, error)
@@ -295,8 +297,8 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
 /** Corre una campaña automática (la dispara n8n o un cron). */
 export async function runAutomation(type: CampaignType, clinicId?: string): Promise<SendResult & { campaign_id: string }> {
   const clinic = await getClinic(clinicId);
-  const templateKey = type === "recall" ? "recall" : type;
-  const templateName = clinic.templates?.[templateKey];
+  // Por WAHA no hay templates de Meta: se manda el texto de TEMPLATE_TEXTS.
+  const templateName = clinic.templates?.[type] ?? (clinic.whatsapp_provider === "waha" ? type : null);
   if (!templateName) throw new Error(`No hay template configurado para "${type}" (Configuración → Templates).`);
   const today = new Intl.DateTimeFormat("es-AR", { timeZone: clinic.timezone, day: "numeric", month: "short" }).format(new Date());
   const campaign = await createCampaign({

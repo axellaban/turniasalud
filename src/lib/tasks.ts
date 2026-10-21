@@ -1,8 +1,8 @@
 import "server-only";
 import { sql } from "./db";
-import { buildDynamicVariables, getClinic } from "./clinic";
-import { sendWhatsAppTemplate } from "./elevenlabs";
+import { getClinic } from "./clinic";
 import { notifyN8n } from "./n8n";
+import { sendPatientMessage, whatsappReadiness } from "./whatsapp";
 import type { Task } from "./types";
 
 export type TaskResolution = { ok: boolean; message: string; notified: boolean };
@@ -39,9 +39,10 @@ export async function resolveTask(clinicId: string, taskId: string, rawResponse:
   await notifyN8n("tarea.resuelta", { clinic_id: clinic.id, task: { ...task, status: "resuelta", response } });
   if (!response) return { ok: true, message: "Tarea resuelta.", notified: false };
 
-  const template = clinic.templates?.respuesta;
+  // Por WAHA no hace falta template de Meta: se manda el texto de "respuesta".
+  const template = clinic.templates?.respuesta ?? (clinic.whatsapp_provider === "waha" ? "respuesta" : null);
   const phone = task.phone ?? "";
-  if (!template || !clinic.whatsapp_phone_number_id || !clinic.elevenlabs_agent_id || !process.env.ELEVENLABS_API_KEY || !/^\d{8,15}$/.test(phone)) {
+  if (!template || whatsappReadiness(clinic) || !/^\d{8,15}$/.test(phone)) {
     return {
       ok: true,
       message:
@@ -51,14 +52,12 @@ export async function resolveTask(clinicId: string, taskId: string, rawResponse:
   }
   try {
     const context = `Le escribimos para responder su pedido "${task.title}". Respuesta del equipo: ${response}. Si tiene dudas, ayudalo; si necesita algo más del equipo, creá una tarea.`;
-    await sendWhatsAppTemplate({
-      phoneNumberId: clinic.whatsapp_phone_number_id,
-      userId: phone,
+    await sendPatientMessage(clinic, {
+      phone,
+      templateKey: "respuesta",
       templateName: template,
-      language: clinic.templates?.idioma || "es_AR",
       params: [task.full_name?.split(" ")[0] || "hola", response],
-      agentId: clinic.elevenlabs_agent_id,
-      dynamicVariables: await buildDynamicVariables(clinic, phone, { context }),
+      context,
     });
     return { ok: true, message: "Tarea resuelta y respuesta enviada por WhatsApp.", notified: true };
   } catch (e) {

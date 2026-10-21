@@ -17,6 +17,24 @@ export function testDatabaseUrl(): string | null {
   return url;
 }
 
+/**
+ * Crea (o vuelve a crear) otra base vacía en el mismo servidor de test, para
+ * que cada archivo de integración tenga la suya y puedan correr en paralelo.
+ */
+export async function scratchDatabase(url: string, name: string): Promise<string> {
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error(`Nombre de base inválido: ${name}`);
+  const admin = postgres(url, { max: 1, onnotice: () => {} });
+  try {
+    await admin.unsafe(`drop database if exists ${name} with (force)`);
+    await admin.unsafe(`create database ${name}`);
+  } finally {
+    await admin.end();
+  }
+  const scratch = new URL(url);
+  scratch.pathname = `/${name}`;
+  return scratch.toString();
+}
+
 export async function resetTestDatabase(url: string): Promise<void> {
   const admin = postgres(url, { max: 1, onnotice: () => {} });
   try {

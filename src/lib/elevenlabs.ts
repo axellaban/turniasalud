@@ -87,6 +87,64 @@ export async function sendWhatsAppTemplate(msg: TemplateMessage): Promise<{ conv
   });
 }
 
+/** Transcribe un audio de WhatsApp con Speech to Text (la clave necesita ese permiso). */
+export async function transcribeAudio(audio: Blob, mimetype: string): Promise<string> {
+  const extension = mimetype.includes("ogg") ? "ogg" : mimetype.split("/")[1]?.split(";")[0] || "bin";
+  const form = new FormData();
+  form.append("model_id", env.sttModel());
+  form.append("language_code", "es");
+  form.append("tag_audio_events", "false");
+  form.append("file", audio, `audio.${extension}`);
+  const res = await fetch(`${API}/v1/speech-to-text`, {
+    method: "POST",
+    headers: { "xi-api-key": env.elevenLabsApiKey() },
+    body: form,
+    cache: "no-store",
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!res.ok) throw new ElevenLabsError(`ElevenLabs POST /v1/speech-to-text → ${res.status}`, res.status, null);
+  const body = (await res.json()) as { text?: string };
+  return (body.text ?? "").trim();
+}
+
+export type ChannelMessage = {
+  messageId: string;
+  text: string;
+  userIdentifier: string;
+  conversationId?: string | null;
+  dynamicVariables: Record<string, string>;
+};
+
+/**
+ * Manda el mensaje de un paciente al agente por el Custom Channel de ElevenLabs
+ * (alpha). Responde 202 enseguida; la respuesta del agente llega después a
+ * /api/elevenlabs/canal. user_message_id evita duplicados si se reintenta.
+ */
+export async function sendChannelMessage(msg: ChannelMessage): Promise<{ conversation_id: string }> {
+  const res = await fetch(env.channelUrl(), {
+    method: "POST",
+    headers: { "X-Webhook-Secret": env.channelSecret(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data: { type: "user_message", text: msg.text, user_identifier: msg.userIdentifier },
+      user_message_id: msg.messageId,
+      ...(msg.conversationId ? { conversation_id: msg.conversationId } : {}),
+      dynamic_variables: msg.dynamicVariables,
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new ElevenLabsError(`ElevenLabs Custom Channel → ${res.status}: ${text.slice(0, 300)}`, res.status, null);
+  let body: { conversation_id?: string } = {};
+  try {
+    body = JSON.parse(text || "{}");
+  } catch {
+    // respuesta no JSON: la tratamos como error abajo
+  }
+  if (!body.conversation_id) throw new ElevenLabsError("ElevenLabs Custom Channel no devolvió conversation_id", res.status, null);
+  return { conversation_id: body.conversation_id };
+}
+
 /**
  * Verifica la firma HMAC de los webhooks de ElevenLabs.
  * Header: "ElevenLabs-Signature: t=<unix>,v0=<hex sha256 de `${t}.${body}`>"

@@ -21,9 +21,43 @@ export const env = {
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
   agentLlm: () => process.env.AGENT_LLM || "claude-sonnet-5-5",
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
+  // WhatsApp por WAHA + Custom Channel de ElevenLabs
+  wahaUrl: () => required("WAHA_URL").replace(/\/$/, ""),
+  wahaApiKey: () => required("WAHA_API_KEY"),
+  wahaSession: () => process.env.WAHA_SESSION || "default",
+  wahaWebhookHmac: () => process.env.WAHA_WEBHOOK_HMAC ?? "",
+  /** Pausa base entre mensajes de una campaña por WAHA (se le suma un azar), para bajar el riesgo de bloqueo. */
+  wahaSendDelayMs: () => Number(process.env.WAHA_SEND_DELAY_MS ?? 2000) || 0,
+  channelUrl: () => required("ELEVENLABS_CHANNEL_URL"),
+  channelSecret: () => required("ELEVENLABS_CHANNEL_SECRET"),
+  channelSigningSecret: () => process.env.ELEVENLABS_CHANNEL_SIGNING_SECRET ?? "",
+  sttModel: () => process.env.ELEVENLABS_STT_MODEL || "scribe_v2",
 };
 
-export function isConfigured(): { database: boolean; elevenlabs: boolean; panel: boolean; tools: boolean; webhook: boolean; n8n: boolean } {
+/** Variables obligatorias para WhatsApp por WAHA (WAHA_SESSION es opcional: por defecto "default"). */
+export const WAHA_ENV_VARS = [
+  "WAHA_URL",
+  "WAHA_API_KEY",
+  "WAHA_WEBHOOK_HMAC",
+  "ELEVENLABS_CHANNEL_URL",
+  "ELEVENLABS_CHANNEL_SECRET",
+  "ELEVENLABS_CHANNEL_SIGNING_SECRET",
+] as const;
+
+/** Solo los nombres de las que faltan, nunca los valores. */
+export function missingWahaEnv(): string[] {
+  return WAHA_ENV_VARS.filter((name) => !process.env[name]);
+}
+
+export function isConfigured(): {
+  database: boolean;
+  elevenlabs: boolean;
+  panel: boolean;
+  tools: boolean;
+  webhook: boolean;
+  n8n: boolean;
+  waha: boolean;
+} {
   return {
     database: Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL),
     elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
@@ -31,5 +65,6 @@ export function isConfigured(): { database: boolean; elevenlabs: boolean; panel:
     tools: Boolean(process.env.AGENT_TOOLS_SECRET),
     webhook: Boolean(process.env.ELEVENLABS_WEBHOOK_SECRET),
     n8n: Boolean(process.env.N8N_WEBHOOK_URL),
+    waha: missingWahaEnv().length === 0,
   };
 }

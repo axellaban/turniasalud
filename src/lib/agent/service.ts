@@ -1,11 +1,11 @@
 import "server-only";
 import { sql, pgErrorCode, type TransactionSql } from "../db";
-import { getCatalog, getClinic, findPatientByPhone, buildDynamicVariables, getScheduleBlocks, isUuid } from "../clinic";
+import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid } from "../clinic";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree } from "../slots";
 import { env } from "../env";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey } from "../time";
 import { normalizePhone } from "../phone";
-import { sendWhatsAppTemplate } from "../elevenlabs";
+import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import type { Appointment, AppointmentSource, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
@@ -23,7 +23,8 @@ const ACTIVE = ["confirmado", "pendiente"];
 export function sourceFromChannel(channel: string | undefined, phone: string): AppointmentSource {
   const c = (channel ?? "").toLowerCase();
   if (c === "panel") return "panel";
-  if (c.includes("whatsapp")) return "whatsapp";
+  // El Custom Channel de ElevenLabs solo se usa para WhatsApp por WAHA.
+  if (c.includes("whatsapp") || c.includes("custom")) return "whatsapp";
   if (/(twilio|sip|phone|telephon|exotel)/.test(c)) return "telefono";
   if (phone.startsWith("web-")) return "web";
   return c ? "web" : "whatsapp";
@@ -363,8 +364,8 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
 /** Cuando se libera un turno, se lo ofrecemos por WhatsApp a quienes esperan (flujo "Activa"). */
 export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise<number> {
   if (new Date(appt.starts_at).getTime() < Date.now() + 2 * 3600_000) return 0;
-  const template = clinic.templates?.lista_espera;
-  if (!template || !clinic.whatsapp_phone_number_id || !clinic.elevenlabs_agent_id || !process.env.ELEVENLABS_API_KEY) return 0;
+  const template = clinic.templates?.lista_espera ?? (clinic.whatsapp_provider === "waha" ? "lista_espera" : null);
+  if (!template || whatsappReadiness(clinic)) return 0;
 
   const entries = await sql<Array<{ id: string; patient_id: string; professional_id: string | null; full_name: string | null; phone: string }>>`
     select w.id, w.patient_id, w.professional_id, p.full_name, p.phone
@@ -385,14 +386,12 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
     const phone = entry.phone;
     const context = `Le escribimos para ofrecerle un turno que se liberó: ${when} (profesional_id=${appt.professional_id}, tipo_turno_id=${appt.appointment_type_id}, inicio=${appt.starts_at}). Si lo quiere, reservalo enseguida porque se ofreció a varias personas.`;
     try {
-      await sendWhatsAppTemplate({
-        phoneNumberId: clinic.whatsapp_phone_number_id,
-        userId: phone,
+      await sendPatientMessage(clinic, {
+        phone,
+        templateKey: "lista_espera",
         templateName: template,
-        language: clinic.templates?.idioma || "es_AR",
         params: [entry.full_name?.split(" ")[0] || "hola", when],
-        agentId: clinic.elevenlabs_agent_id,
-        dynamicVariables: await buildDynamicVariables(clinic, phone, { context }),
+        context,
       });
       await sql`update waitlist set status = 'ofrecida', offered_at = now() where id = ${entry.id}`;
       sent++;
