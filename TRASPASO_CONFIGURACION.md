@@ -19,7 +19,14 @@ Sin tocar, a decisión del usuario: `NEON_DATA_API_URL`, `NEON_SERVER_PRIVATE_KE
 - **Campañas automáticas** (`g0H8xbQvRNv5FxQj`): suma "Todos los días 19:00 · Encuestas post-consulta" → job `encuestas`. Además se le cargó la zona horaria `America/Argentina/Buenos_Aires`, que no tenía: sin ella, los horarios corrían con la hora por defecto del servidor. **Sigue sin activar.**
 - **Eventos** (`PEaOkLPBrLIfFE0Q`): suma las ramas `turno.confirmado` y `tarea.resuelta`, que terminan en NoOp (no mandan nada). n8n publicó la versión nueva sola. Prueba sintética sin pacientes: ejecuciones 50198 y 50199, `success`, cada evento cayó en su rama.
 
-Próximos pasos: elegir el número de WhatsApp y crear los templates en Meta (paso 9), probar por voz y verificar que la conversación de la demo aparece en Panel → Conversaciones (confirma el webhook post-call). Después de WhatsApp: activar el workflow de campañas y definir a dónde van los avisos al equipo. Pendientes de producto en `CONTEXTO_PROYECTO.md`.
+**WhatsApp: siguiente tarea, ver [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md).** El usuario tiene WAHA en su VPS y prefiere usarlo para el MVP con un chip nuevo, conectado al mismo agente con el Custom Channel de ElevenLabs. Ya se le explicaron los riesgos (API no oficial, posible bloqueo, solo texto, Custom Channel en alpha). Falta que confirme el plan y cargue las variables `WAHA_*` y `ELEVENLABS_CHANNEL_*`. La alternativa oficial (Meta Cloud API conectada a ElevenLabs) también está descripta ahí.
+
+Otros próximos pasos:
+- Probar la demo por voz.
+- Verificar que la conversación de la demo aparece en Panel → Conversaciones; eso confirma el webhook post-call.
+- Después de WhatsApp: activar el workflow de campañas en n8n y definir a dónde van los avisos al equipo.
+
+La página `/privacidad` no es prioridad para el usuario. Los pendientes de producto están en `CONTEXTO_PROYECTO.md`.
 
 ## Sesión del 21/10/2026 (tarde): Neon resuelto en el código y pendientes P2
 

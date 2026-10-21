@@ -12,6 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Antes de trabajar en este repo leé, en este orden:
 
-1. [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md): estado real de Vercel, Neon, ElevenLabs y n8n, y el bloqueo `jwk not found`.
+1. [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md): estado real de Vercel, Neon, ElevenLabs y n8n (el bloqueo `jwk not found` ya está resuelto).
 2. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): **tarea en curso**, la web pública como copycat de assorthealth.com y las demos de audio en español.
-3. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
+3. [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md): **siguiente tarea**, conectar WhatsApp. El usuario se inclina por WAHA + Custom Channel de ElevenLabs para el MVP; falta su confirmación y sus credenciales.
+4. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.

@@ -180,8 +180,8 @@ El entorno de la última sesión no tenía credenciales. Falta confirmar en prod
 ### P1 — Para que funcione en producción
 1. ~~Desplegar la conexión directa~~: hecho (PR #1). Falta la prueba por voz y revisar que las conversaciones de la demo lleguen al panel por el webhook post-call.
 2. ~~Post-call webhook~~: creado en la sesión anterior; verificar que llegan las conversaciones al panel.
-3. **WhatsApp Business:** el usuario necesita una cuenta de Meta con un número que no esté en la app de WhatsApp ni en otro BSP. Después: importarlo en ElevenLabs, asignar el agente y pegar el phone number ID en panel → Configuración. No elegir ni migrar un número sin su autorización.
-4. **Templates de Meta** (`recordatorio_turno`, `recall_control`, `turno_liberado`, `turno_perdido`, `reactivacion_paciente`, `encuesta_visita`, `respuesta_pedido`), con `{{1}}` = nombre y `{{2}}` = detalle e idioma `es_AR`. Textos en el README. Confirmar el código de idioma de "Español (ARG)".
+3. **WhatsApp:** siguiente tarea, ver [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md). Para el MVP, el usuario se inclina por **WAHA** (ya lo tiene en su VPS, va a comprar un chip) conectado al mismo agente con el **Custom Channel** de ElevenLabs. La alternativa oficial es Meta Cloud API importada en ElevenLabs. Falta su confirmación y sus credenciales. No elegir ni migrar un número sin su autorización.
+4. **Templates** (solo con la opción oficial de Meta; con WAHA se manda el mismo texto como mensaje común): (`recordatorio_turno`, `recall_control`, `turno_liberado`, `turno_perdido`, `reactivacion_paciente`, `encuesta_visita`, `respuesta_pedido`), con `{{1}}` = nombre y `{{2}}` = detalle e idioma `es_AR`. Textos en el README. Confirmar el código de idioma de "Español (ARG)".
 5. ~~Proteger `/demo` y `/api/elevenlabs/token`~~: hecho, piden sesión del panel.
 6. ~~Validar los workflows de n8n~~: actualizados por API en la instancia real y probados con eventos sintéticos. Las campañas siguen sin activar hasta que haya WhatsApp.
 
