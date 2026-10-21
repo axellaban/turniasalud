@@ -6,7 +6,7 @@ import { Badge, Card, Empty, PageHeader, Stat, buttonClass, inputClass, secondar
 import { FollowupForm } from "./followup-form";
 
 type Lead = {
-  id: string; name: string; email: string; phone: string | null; organization: string | null;
+  id: string; name: string; email: string | null; phone: string | null; organization: string | null;
   role: string | null; specialty: string | null; size: string | null; message: string | null;
   source: string | null; created_at: string; updated_at: string; status: LeadStatus; notes: string | null;
 };
@@ -65,16 +65,16 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
             </div>
             <p className="mt-2 text-xs text-brand-900/50">Recibido: {formatDateTime(lead.created_at, "America/Argentina/Buenos_Aires")}</p>
             <dl className="my-4 grid gap-2 text-sm">
-              <div><dt className="font-medium text-brand-900">Email</dt><dd><a href={`mailto:${lead.email}`} className="break-all text-brand-600 underline">{lead.email}</a></dd></div>
-              {lead.phone && <div><dt className="font-medium text-brand-900">Teléfono / WhatsApp</dt><dd className="break-words">{lead.phone}</dd></div>}
+              {lead.email && <div><dt className="font-medium text-brand-900">Email</dt><dd><a href={`mailto:${lead.email}`} className="break-all text-brand-600 underline">{lead.email}</a></dd></div>}
+              {lead.phone && <div><dt className="font-medium text-brand-900">Teléfono / WhatsApp</dt><dd className="break-words">{/^\d{8,15}$/.test(lead.phone) ? <a href={`https://wa.me/${lead.phone}`} className="text-brand-600 underline">+{lead.phone}</a> : lead.phone}</dd></div>}
               <div><dt className="font-medium text-brand-900">Especialidad y equipo</dt><dd>{[lead.specialty, lead.size, lead.role].filter(Boolean).join(" · ") || "Sin indicar"}</dd></div>
-              {lead.message && <div><dt className="font-medium text-brand-900">Qué busca resolver</dt><dd className="whitespace-pre-wrap break-words text-brand-900/75">{lead.message}</dd></div>}
+              {lead.message && <div><dt className="font-medium text-brand-900">{lead.source === "demo-whatsapp" ? "Demo por WhatsApp" : "Qué busca resolver"}</dt><dd className="whitespace-pre-wrap break-words text-brand-900/75">{lead.message}</dd></div>}
               {lead.source && <div><dt className="font-medium text-brand-900">Origen</dt><dd className="break-all text-brand-900/60">{lead.source}</dd></div>}
             </dl>
             <FollowupForm id={lead.id} status={lead.status} notes={lead.notes} />
           </Card>
         ))}
-      </div> : <Empty>{q || status ? "No hay pedidos con estos filtros." : "Todavía no hay pedidos de demo. Aparecen acá cuando alguien completa el formulario de la web."}</Empty>}
+      </div> : <Empty>{q || status ? "No hay pedidos con estos filtros." : "Todavía no hay pedidos de demo. Aparecen acá cuando alguien completa el formulario de la web o prueba la demo por WhatsApp."}</Empty>}
       <nav aria-label="Páginas de pedidos de demo" className="mt-6 flex items-center justify-between gap-3">
         {page > 1 ? <Link href={pageUrl(page - 1)} className={secondaryButtonClass}>Anterior</Link> : <span />}
         <span className="text-sm text-brand-900/60">Página {page}</span>

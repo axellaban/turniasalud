@@ -167,3 +167,17 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
     return null;
   }
 }
+
+/** Nota de voz. Con convert: true WAHA la deja en el formato exacto de WhatsApp (puede requerir WAHA Plus). */
+export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void> {
+  await waha("/api/sendVoice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: env.wahaSession(),
+      chatId,
+      file: { mimetype: "audio/ogg; codecs=opus", filename: "respuesta.ogg", data: audio.toString("base64") },
+      convert: true,
+    }),
+  });
+}

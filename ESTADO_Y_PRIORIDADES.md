@@ -24,6 +24,12 @@ Actualización: 21/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - [ ] Definir los destinos de avisos asistenciales; la autorización de email de esta sesión es para pedidos comerciales de demo, no para enviar datos de pacientes.
 - [ ] Activar campañas solamente después de validar el canal, los destinatarios y la baja de mensajes. Workflow `g0H8xbQvRNv5FxQj` continúa desactivado.
 
+## Prioridad 2b: lead magnet "Probá la demo con tu web" (después de WAHA)
+
+- [x] Landing `/probar-demo`, flujo por WhatsApp, lectura de la web, ficha con Claude, clínica temporal y modos llamada/audio/chat. Tests de integración con servicios simulados. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
+- [ ] Correr `schema.sql` en Neon y cargar `DEMO_WHATSAPP_NUMBER` y `ANTHROPIC_API_KEY` en Vercel (opcional `ELEVENLABS_PHONE_NUMBER_ID`).
+- [ ] Prueba en vivo de los tres modos con un celular y la web de un consultorio real.
+
 ## Prioridad 3: primera clínica y ampliaciones
 
 - Cargar datos y protocolos reales de la clínica; hoy sigue el centro ficticio de demo. No reemplazar datos por suposición.

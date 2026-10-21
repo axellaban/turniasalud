@@ -147,6 +147,16 @@ En ElevenLabs → **Phone numbers** importá un número de Twilio o un SIP trunk
 - **Audios:** Panel → Configuración → **Audios de la web** → "Generar los que faltan". Usa tus 2 voces favoritas de ElevenLabs (Sofi = la femenina). La clave necesita los permisos **Text to Speech** y **Voices: Read**; si preferís no tocar la del agente, creá otra y cargala en Vercel como `ELEVENLABS_TTS_API_KEY`. Son unos 17.600 caracteres en total.
 - **Video del hero:** subí `public/videos/hero.mp4` (opcional `hero.webm` y `hero-mobile.mp4`). Sin video se ve la foto.
 
+### 9. Lead magnet: "Probá la demo con tu web" (`/probar-demo`)
+La persona pega la web de su consultorio y toca **PROBAR DEMO**: se abre WhatsApp con «Quiero probar la demo de Turnia. Te paso mi web: …». Turnia lee la web, arma una clínica de prueba con esos datos y le ofrece **1 llamada de voz, 2 audios de WhatsApp o 3 chat**; el agente la atiende como la recepcionista de ese consultorio. Cada interesado aparece en Panel → Pedidos de demo (origen `demo-whatsapp`) y dispara `lead.nuevo` a n8n. Requiere WhatsApp por WAHA (paso 4) funcionando. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
+
+| Variable en Vercel | Para qué |
+|---|---|
+| `DEMO_WHATSAPP_NUMBER` | Número del chip de WAHA con código de país, ej. `5491122223333`. Sin esto la landing muestra "se habilita en breve" |
+| `ANTHROPIC_API_KEY` | Recomendada: Claude ordena la web en profesionales, prestaciones, horarios y coberturas. Sin clave la demo funciona con un perfil básico |
+| `ELEVENLABS_PHONE_NUMBER_ID` | Opcional: número de Twilio importado en ElevenLabs para que la opción 1 **llame al celular**. Sin esto, la opción 1 manda un link para hablar desde el navegador |
+| `ELEVENLABS_VOICE_ID` | Opcional: voz de los audios. Por defecto, la voz del agente |
+
 ## Para desarrolladores
 
 ```bash
@@ -169,6 +179,7 @@ Los tests de integración cubren todas las herramientas del agente (incluidas re
 - `src/lib/agent/setup.ts` — crea/actualiza tools y agente vía API de ElevenLabs.
 - `src/lib/whatsapp.ts` — único punto para escribirle al paciente (Meta o WAHA) y textos de los templates.
 - `src/lib/channel.ts` + `src/lib/waha.ts` — WhatsApp por WAHA: conversaciones del Custom Channel, firma y parseo de WAHA.
+- `src/lib/demo/` — lead magnet: lectura de la web (`scraper.ts`), perfil con Claude (`profile.ts`), textos y reglas (`flow.ts`) y sesiones (`session.ts`).
 - `src/lib/campaigns.ts` — audiencias y envíos de Turnia Activa.
 - `src/lib/tasks.ts` — resolver pedidos y responderle al paciente por WhatsApp.
 - `supabase/schema.sql` — tablas con RLS activado y sin políticas: solo el servidor, con el usuario dueño de las tablas, accede.
@@ -183,6 +194,7 @@ Los tests de integración cubren todas las herramientas del agente (incluidas re
 | `POST /api/elevenlabs/canal` | ElevenLabs Custom Channel (respuestas del agente) | firma HMAC `ElevenLabs-Signature` |
 | `POST /api/automations/:job` | n8n (`recordatorios`, `recall`, `reactivacion`, `ausentes`, `lista-espera`, `encuestas`) | header `x-turnia-secret` |
 | `POST /api/elevenlabs/token` | Demo web | sesión del panel |
+| `POST /api/demo/llamada` | Llamada por la web del lead magnet | token del link enviado por WhatsApp |
 | `GET /api/health` | Monitoreo: consulta la base, 503 si no responde | público |
 | `GET /privacidad` | Pacientes y Meta | público |
 

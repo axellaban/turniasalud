@@ -1,12 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { env } from "@/lib/env";
 import { normalizePhone } from "@/lib/phone";
 import { transcribeAudio } from "@/lib/elevenlabs";
 import { AUDIO_FAILED_REPLY, MEDIA_ONLY_REPLY, claimEvent, forwardToAgent, releaseEvent, whatsappClinic } from "@/lib/channel";
+import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
 import { parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wahaSendText, type WahaEvent } from "@/lib/waha";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// La demo del lead magnet lee la web del interesado después de responder (after).
+export const maxDuration = 300;
 
 // Webhook de WAHA (WhatsApp con chip común): cada mensaje del paciente pasa al
 // agente por el Custom Channel de ElevenLabs. La respuesta vuelve por
@@ -61,6 +63,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, media: "no_soportada" });
       }
       text += "\n(El paciente mandó además una foto o archivo que no podés ver: pedile que te lo cuente por escrito.)";
+    }
+
+    // Lead magnet: "quiero probar la demo, mi web es…" y lo que siga de esa demo.
+    const demo = await handleDemoMessage({ messageId: parsed.id, chatId: parsed.chatId, phone, text });
+    if (demo) {
+      const sessionId = demo.analyze;
+      if (sessionId) after(() => analyzeDemo(sessionId));
+      return NextResponse.json({ ok: true, demo: demo.status });
     }
 
     const clinic = await whatsappClinic();

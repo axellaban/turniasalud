@@ -20,6 +20,9 @@ export type Clinic = {
   templates: Record<string, string>;
   handoff_phone: string | null;
   after_hours_instructions: string | null;
+  /** Clínica temporal de la demo del lead magnet (/probar-demo), armada con la web del interesado. */
+  is_demo: boolean;
+  demo_source_url: string | null;
   created_at: string;
 };
 

@@ -162,3 +162,45 @@ export function verifyWebhookSignature(rawBody: string, header: string | null, s
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+/** Voz del agente (la que usa en las llamadas), para que los audios de WhatsApp suenen igual. */
+export async function agentVoiceId(agentId: string): Promise<string | null> {
+  const agent = await elevenlabs<{ conversation_config?: { tts?: { voice_id?: string } } }>(
+    `/v1/convai/agents/${encodeURIComponent(agentId)}`,
+  );
+  return agent.conversation_config?.tts?.voice_id ?? null;
+}
+
+/** Nota de voz (Ogg Opus, el formato de WhatsApp) con Text to Speech. */
+export async function textToSpeech(text: string, voiceId: string): Promise<Buffer> {
+  const key = process.env.ELEVENLABS_TTS_API_KEY || env.elevenLabsApiKey();
+  const res = await fetch(`${API}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=opus_48000_64`, {
+    method: "POST",
+    headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/ogg" },
+    body: JSON.stringify({ text, model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: "es" }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(60000),
+  });
+  if (!res.ok) throw new ElevenLabsError(`ElevenLabs POST /v1/text-to-speech → ${res.status}`, res.status, null);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+/** Llamada telefónica saliente del agente por el número de Twilio importado en ElevenLabs. */
+export async function startPhoneCall(call: {
+  agentId: string;
+  phoneNumberId: string;
+  toNumber: string;
+  dynamicVariables: Record<string, string>;
+}): Promise<{ conversation_id: string | null }> {
+  const body = await elevenlabs<{ success?: boolean; message?: string; conversation_id?: string | null }>("/v1/convai/twilio/outbound-call", {
+    method: "POST",
+    body: JSON.stringify({
+      agent_id: call.agentId,
+      agent_phone_number_id: call.phoneNumberId,
+      to_number: call.toNumber,
+      conversation_initiation_client_data: { dynamic_variables: call.dynamicVariables, user_id: call.toNumber.replace(/^\+/, "") },
+    }),
+  });
+  if (body.success === false) throw new ElevenLabsError(`No se pudo iniciar la llamada: ${body.message ?? "sin detalle"}`, 200, null);
+  return { conversation_id: body.conversation_id ?? null };
+}
