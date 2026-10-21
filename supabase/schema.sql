@@ -338,6 +338,12 @@ create table if not exists leads (
 create index if not exists leads_created_idx on leads (created_at desc);
 alter table leads enable row level security;
 
+-- Seguimiento comercial desde el panel. Conserva los pedidos existentes.
+alter table leads add column if not exists status text not null default 'nuevo'
+  check (status in ('nuevo', 'contactado', 'demo_agendada', 'ganado', 'descartado'));
+alter table leads add column if not exists notes text;
+alter table leads add column if not exists updated_at timestamptz not null default now();
+
 -- ---------------------------------------------------------------------------
 -- Web pública: audios de las demos, generados desde Panel → Configuración.
 -- ---------------------------------------------------------------------------
