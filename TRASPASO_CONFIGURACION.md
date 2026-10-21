@@ -2,6 +2,17 @@
 
 Actualizado el 21/10/2026, aproximadamente 12:30 (Argentina). Leer este archivo antes de continuar con `CONTEXTO_PROYECTO.md`.
 
+## Continuación y cierre posterior (21/10/2026, aproximadamente 12:36 Argentina)
+
+El usuario pidió continuar exclusivamente el diagnóstico de Neon y luego ordenó detenerlo por el saldo de créditos. **Se detuvieron las pruebas; el error sigue sin resolverse.** No hubo cambios funcionales de código en esta continuación.
+
+- Se deshabilitó y volvió a habilitar **Data API de la base dedicada de Turnia**, para reinicializar su interfaz. Se verificó en la consola que quedó habilitada, con el mismo proveedor `https://turniasalud.vercel.app/.well-known/jwks.json`. No se borraron tablas, se cambiaron planes ni se relajó RLS. Esto actualiza la nota histórica de más abajo que decía que no se había deshabilitado Data API.
+- Tras la reinicialización, las pruebas reales siguieron fallando con `jwk not found`. La última falló en la primera lectura de clínica, antes de crear un paciente sintético.
+- Lecturas HTTP directas devolvieron 200 en series consecutivas, tanto sin `iss` como con dos variantes del issuer. Eso no resolvió el fallo del cliente: consultas equivalentes mediante `supabase-js` alternaron 3 éxitos y 3 errores en series de 6, incluso seleccionando solo `id`. No atribuir el problema a `iss` ni darlo por arreglado.
+- Se revisó el código instalado de `supabase-js` y `postgrest-js`: el cliente agrega `apikey` y `Authorization`, y su wrapper transforma los headers en una instancia de `Headers`. Una siguiente comparación útil, **todavía no realizada**, es capturar de forma segura la petición final del SDK y contrastarla con HTTP directo, o probar un adaptador de transporte que serialice headers como objeto. Es una hipótesis de diagnóstico, no una corrección validada. Nunca enviar tokens a servicios de eco externos ni imprimirlos.
+- No se agregó un retry ni se modificaron JWT, secretos, roles o permisos en esta continuación. No quedaron cambios funcionales por integrar. El código desplegado sigue siendo `4a51576`; los commits posteriores contienen documentación.
+- Pedido final del usuario: **parar, integrar en `main` y dejar anotado**. Continuar solo cuando lo vuelva a pedir.
+
 ## Estado de entrega
 
 Los cambios funcionales están en `main`, subidos a GitHub y desplegados en Vercel. **La aplicación todavía no está lista para uso real: la conexión con Neon Data API falla de forma intermitente con `jwk not found`.** El panel llegó a cargar datos, pero también falla al recargar; la demo no consiguió iniciar una conversación. No presentar el estado de Vercel `Ready` como una prueba de funcionamiento completo.
