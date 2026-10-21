@@ -16,3 +16,4 @@ Antes de trabajar en este repo leé, en este orden:
 2. [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md): WhatsApp por WAHA + Custom Channel de ElevenLabs. **Código hecho**; falta conectarlo con el chip y las variables del usuario y probarlo en vivo.
 3. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): web pública copycat de assorthealth.com (**hecha**, con su key visual). Falta generar los audios de las demos y subir el video del hero.
 4. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
+5. [`PLAN_VENTA_48H.md`](PLAN_VENTA_48H.md): a quién le vendemos primero (odontología y medicina estética que pautan a WhatsApp), la oferta del piloto, guiones y las tareas técnicas que destraban la venta.
