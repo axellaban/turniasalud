@@ -7,14 +7,14 @@ import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, Stat, StatusBadge } from
 
 export default async function PanelHome() {
   const configured = isConfigured();
-  if (!configured.supabase) {
+  if (!configured.database) {
     return (
       <>
         <PageHeader title="¡Bienvenido a Turnia!" />
         <Card>
           <p className="text-sm text-brand-900/70">
-            Falta conectar la base de datos. Cargá <code>SUPABASE_URL</code> y <code>SUPABASE_SERVICE_ROLE_KEY</code> en las
-            variables de entorno de Vercel y volvé a desplegar. La guía paso a paso está en el README del repositorio.
+            Falta conectar la base de datos. Completá la configuración de Neon o Supabase en Vercel y volvé a desplegar.
+            La guía paso a paso está en el README del repositorio.
           </p>
         </Card>
       </>
@@ -92,7 +92,7 @@ export default async function PanelHome() {
   }>;
 
   const checklist = [
-    { done: configured.supabase, label: "Base de datos conectada" },
+    { done: configured.database, label: "Base de datos configurada" },
     { done: configured.elevenlabs, label: "API key de ElevenLabs cargada" },
     { done: Boolean(clinic.elevenlabs_agent_id), label: "Agente creado en ElevenLabs" },
     { done: Boolean(clinic.whatsapp_phone_number_id), label: "Número de WhatsApp conectado" },

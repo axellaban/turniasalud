@@ -25,13 +25,32 @@ Panel de la clínica (/panel)        n8n ◄── eventos (turno reservado, tar
                                     n8n ──► /api/automations/*  (recordatorios, recall… programados)
 ```
 
-- **Stack:** Next.js 16 (Vercel) · Supabase (Postgres) · ElevenLabs Agents (voz + WhatsApp) · n8n (automatizaciones).
+- **Stack:** Next.js 16 (Vercel) · Neon o Supabase (Postgres) · ElevenLabs Agents (voz + WhatsApp) · n8n (automatizaciones).
 - La lógica delicada (no dar dos veces el mismo turno, horarios por profesional, coberturas) vive en el código y en la base (una *constraint* de Postgres impide turnos superpuestos).
 - n8n queda para lo que más vas a querer tocar sin código: horarios de las campañas y avisos al equipo.
 
 ---
 
 ## Puesta en marcha (sin programar)
+
+### Base gratuita desde Vercel: Neon
+El deploy de Turnia usa **Neon Free**, en São Paulo, conectado desde Vercel → Storage.
+El panel conserva las mismas consultas PostgREST y también permite usar Supabase.
+
+1. Creá una base Neon Free dedicada desde Vercel → Storage → Create Database.
+2. En Neon → SQL Editor, ejecutá `supabase/schema.sql`, `supabase/seed.sql` y `supabase/neon-access.sql`.
+   El seed conserva una clínica demo existente; no borra sus turnos ni su configuración.
+3. Cargá `NEON_SERVER_PRIVATE_KEY` (clave RSA PKCS8 en base64) como **Secret** en Vercel.
+4. Habilitá Data API sin Neon Auth y sin conceder acceso general al esquema público.
+5. Agregá un proveedor de autenticación propio con JWKS en `https://tu-app/api/database/jwks`
+   y audiencia `turnia-data-api`.
+6. Cargá `NEON_DATA_API_URL`, copiando la URL de Data API sin el sufijo `/rest/v1`.
+
+El servidor firma credenciales de cinco minutos para el rol `turnia_server`. La ruta JWKS
+publica exclusivamente la clave pública. Las tablas mantienen RLS y solo ese rol accede
+mediante las políticas de `neon-access.sql`; el navegador nunca recibe credenciales de la base.
+
+La alternativa Supabase continúa disponible con las variables de la sección siguiente.
 
 ### 1. Base de datos (Supabase)
 1. Entrá a tu proyecto de Supabase → **SQL Editor** → **New query**.
@@ -57,7 +76,7 @@ Panel de la clínica (/panel)        n8n ◄── eventos (turno reservado, tar
 ### 3. Agente en ElevenLabs
 1. En el panel → **Configuración** → **Crear / actualizar agente**. Esto crea en tu cuenta de ElevenLabs el agente "Turnia · …" con sus 8 herramientas, el prompt en rioplatense, una voz argentina y el webhook de inicio.
 2. En ElevenLabs → **Agents → Settings → Post-call webhook**: creá un webhook con la URL `https://tu-app.vercel.app/api/elevenlabs/post-call`. Copiá el **secreto** que te muestra, cargalo en Vercel como `ELEVENLABS_WEBHOOK_SECRET` y hacé **Redeploy**.
-3. Probalo en `https://tu-app.vercel.app/demo` (chat o voz). Los turnos que reserves aparecen en el panel → Agenda, y la conversación en → Conversaciones.
+3. Ingresá al panel y probalo en `https://tu-app.vercel.app/demo` (chat o voz). La demo requiere sesión del panel. Los turnos que reserves aparecen en el panel → Agenda, y la conversación en → Conversaciones.
 
 > Cada vez que cambies datos de la clínica no hace falta tocar nada: el agente los lee al empezar cada conversación. Solo volvé a tocar **Crear / actualizar agente** si cambia la URL de la app o actualizás el código.
 
@@ -116,12 +135,12 @@ npm run build
 | `POST /api/elevenlabs/initiation` | ElevenLabs (inicio de conversación) | header `x-turnia-secret` |
 | `POST /api/elevenlabs/post-call` | ElevenLabs (fin de conversación) | firma HMAC `ElevenLabs-Signature` |
 | `POST /api/automations/:job` | n8n (`recordatorios`, `recall`, `reactivacion`, `ausentes`, `lista-espera`) | header `x-turnia-secret` |
-| `POST /api/elevenlabs/token` | Demo web | público |
+| `POST /api/elevenlabs/token` | Demo web | sesión del panel |
 | `GET /api/health` | Monitoreo | público |
 
 ### Pendientes conocidos del MVP
 - Una sola cuenta de panel (contraseña compartida) y una clínica activa por deploy (el esquema ya es multi-clínica).
-- La demo web es pública: cualquiera con el link puede gastar minutos de ElevenLabs. Sacala o protegela antes de difundir.
+- La demo web y la emisión de credenciales requieren sesión del panel; el agente se configura con autenticación habilitada en ElevenLabs.
 - Derivación a humano en WhatsApp: hoy se resuelve con tareas (ElevenLabs todavía no tiene *human handoff* nativo en WhatsApp).
 - Integraciones con sistemas de gestión locales (historia clínica / agenda existente) no incluidas.
 - Datos de salud: revisá con un abogado el cumplimiento de la Ley 25.326 y, para producción, activá *Zero Retention Mode* en ElevenLabs.

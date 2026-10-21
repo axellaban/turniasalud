@@ -25,9 +25,13 @@ export const env = {
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
 };
 
-export function isConfigured(): { supabase: boolean; elevenlabs: boolean; panel: boolean; tools: boolean } {
+export function isConfigured(): { database: boolean; supabase: boolean; neon: boolean; elevenlabs: boolean; panel: boolean; tools: boolean } {
+  const supabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const neon = Boolean(process.env.NEON_DATA_API_URL && process.env.NEON_SERVER_PRIVATE_KEY);
   return {
-    supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+    database: neon || supabase,
+    supabase,
+    neon,
     elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
     panel: Boolean(process.env.PANEL_PASSWORD),
     tools: Boolean(process.env.AGENT_TOOLS_SECRET),

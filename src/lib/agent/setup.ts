@@ -1,5 +1,5 @@
 import "server-only";
-import { db } from "../supabase";
+import { db, unwrap } from "../supabase";
 import { env } from "../env";
 import { elevenlabs } from "../elevenlabs";
 import { CONTEXT_PARAMS, TOOL_DEFINITIONS, type ToolDefinition } from "./tools";
@@ -122,6 +122,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
       conversation: { max_duration_seconds: 1200 },
     },
     platform_settings: {
+      auth: { enable_auth: true },
       summary_language: "es",
       overrides: {
         enable_conversation_initiation_client_data_from_webhook: true,
@@ -196,9 +197,12 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
     agentId = res.agent_id;
     created = true;
   }
-  await db()
-    .from("clinics")
-    .update({ elevenlabs_agent_id: agentId, ...(voiceId ? { elevenlabs_voice_id: voiceId } : {}) })
-    .eq("id", clinic.id);
+  unwrap(
+    await db()
+      .from("clinics")
+      .update({ elevenlabs_agent_id: agentId, ...(voiceId ? { elevenlabs_voice_id: voiceId } : {}) })
+      .eq("id", clinic.id).select("id").single(),
+    "guardar configuración del agente",
+  );
   return { agentId, created, voiceId, toolIds };
 }

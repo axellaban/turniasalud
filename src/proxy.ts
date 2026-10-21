@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
-// Protege el panel: sin sesión válida, redirige al login.
+// La demo usa minutos de ElevenLabs: requiere la misma sesión que el panel.
 export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/panel/login")) return NextResponse.next();
   if (verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value)) return NextResponse.next();
@@ -11,5 +11,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/panel/:path*"],
+  matcher: ["/panel/:path*", "/demo/:path*"],
 };

@@ -32,7 +32,7 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
   const store = await cookies();
   store.set(SESSION_COOKIE, createSessionToken(), sessionCookieOptions);
   const next = String(form.get("next") ?? "/panel");
-  redirect(next.startsWith("/panel") ? next : "/panel");
+  redirect(next === "/demo" || next === "/panel" || next.startsWith("/panel/") ? next : "/panel");
 }
 
 export async function logout() {

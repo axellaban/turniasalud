@@ -282,7 +282,7 @@ export default async function SettingsPage() {
           <Card>
             <h2 className="mb-3 font-semibold text-brand-950">Estado</h2>
             <ul className="space-y-1 text-sm">
-              <li>{configured.supabase ? "✅" : "❌"} Supabase</li>
+              <li>{configured.database ? "✅" : "❌"} Base de datos ({configured.neon ? "Neon" : "Supabase"})</li>
               <li>{configured.elevenlabs ? "✅" : "❌"} ElevenLabs API key</li>
               <li>{configured.tools ? "✅" : "❌"} AGENT_TOOLS_SECRET</li>
               <li>{process.env.ELEVENLABS_WEBHOOK_SECRET ? "✅" : "❌"} ELEVENLABS_WEBHOOK_SECRET</li>

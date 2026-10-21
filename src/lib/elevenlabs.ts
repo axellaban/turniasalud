@@ -89,7 +89,8 @@ export function verifyWebhookSignature(rawBody: string, header: string | null, s
   const timestamp = parts.find((p) => p.startsWith("t="))?.slice(2);
   const signature = parts.find((p) => p.startsWith("v0="));
   if (!timestamp || !signature) return false;
-  if (Number(timestamp) * 1000 < now - 30 * 60 * 1000) return false;
+  const timestampMs = Number(timestamp) * 1000;
+  if (!/^\d+$/.test(timestamp) || !Number.isFinite(timestampMs) || Math.abs(now - timestampMs) > 30 * 60 * 1000) return false;
   const expected = "v0=" + createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
   const a = Buffer.from(signature);
   const b = Buffer.from(expected);

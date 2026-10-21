@@ -22,6 +22,13 @@ describe("verifyWebhookSignature", () => {
     expect(verifyWebhookSignature(body, signed(body, "s3cr3t", old), "s3cr3t")).toBe(false);
     expect(verifyWebhookSignature(body, null, "s3cr3t")).toBe(false);
   });
+
+  it("rechaza timestamps futuros o no numéricos aunque la firma coincida", () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    expect(verifyWebhookSignature(body, signed(body, "s3cr3t", future), "s3cr3t")).toBe(false);
+    const invalid = `t=NaN,v0=${createHmac("sha256", "s3cr3t").update(`NaN.${body}`).digest("hex")}`;
+    expect(verifyWebhookSignature(body, invalid, "s3cr3t")).toBe(false);
+  });
 });
 
 describe("mergeMemory", () => {

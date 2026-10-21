@@ -1,7 +1,11 @@
 -- Turnia Salud — datos de demo (clínica ficticia en CABA)
--- Correlo DESPUÉS de schema.sql. Es idempotente: borra y recrea la clínica demo.
+-- Correlo DESPUÉS de schema.sql. Si la clínica demo ya existe, conserva sus datos.
 
-delete from clinics where id = '00000000-0000-4000-8000-000000000001';
+do $turnia_seed$
+begin
+if exists (select 1 from clinics where id = '00000000-0000-4000-8000-000000000001') then
+  return;
+end if;
 
 insert into clinics (
   id, name, agent_name, specialty, address, phone, website, timezone, hours_text,
@@ -79,3 +83,5 @@ insert into appointments (clinic_id, patient_id, professional_id, appointment_ty
 insert into tasks (clinic_id, patient_id, type, priority, title, details) values
   ('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-0000000000c2', 'receta', 'normal',
     'Renovar receta de antiinflamatorio', 'Jorge pide renovar la receta que le indicó la Dra. Fernández en el último control. Quiere recibirla por WhatsApp.');
+end;
+$turnia_seed$;

@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
+import { cookies } from "next/headers";
 import { buildDynamicVariables, getClinic } from "@/lib/clinic";
 import { getConversationToken, getSignedUrl } from "@/lib/elevenlabs";
 import { normalizePhone } from "@/lib/phone";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 // Para la demo web: da un token de conversación y las variables dinámicas
 // (en la web no corre el webhook de inicio, así que las mandamos desde acá).
 export async function POST(request: Request) {
+  const store = await cookies();
+  if (!verifySessionToken(store.get(SESSION_COOKIE)?.value)) {
+    return NextResponse.json({ error: "Ingresá al panel para probar el agente." }, { status: 401 });
+  }
   const body = (await request.json().catch(() => ({}))) as { phone?: string; mode?: "voz" | "chat" };
   try {
     const clinic = await getClinic();
@@ -30,9 +36,9 @@ export async function POST(request: Request) {
       clinicName: clinic.name,
       dynamicVariables,
       userId: phone,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("token demo", e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Error inesperado" }, { status: 500 });
+    return NextResponse.json({ error: "No se pudo iniciar la demo. Revisá la configuración del agente en el panel." }, { status: 500 });
   }
 }
