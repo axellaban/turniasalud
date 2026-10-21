@@ -2,9 +2,24 @@
 
 Actualizado el 21/10/2026, a la tarde (Argentina). Leer este archivo antes de continuar con `CONTEXTO_PROYECTO.md`.
 
+## Estado actual: desplegado y funcionando con Postgres directo (21/10/2026)
+
+El usuario completó los pasos de despliegue con Claude computer use. Todo salió como se esperaba:
+
+- `DATABASE_URL` existe en Vercel para Production y Preview (cargada por la integración de Neon).
+- `schema.sql` se volvió a correr en Neon (rama `br-cold-wildflower-b6ubnhi1`, base `neondb`, rol `neondb_owner`): 46 sentencias sin errores. Verificación: 1 clínica, tabla `schedule_blocks` creada y columna `patients.contact_opt_out` presente. No se volvió a correr `seed.sql`.
+- PR https://github.com/axellaban/turniasalud/pull/1 mergeado en `main` con el CI en verde. El deployment del merge (`2edbabd`) quedó Ready · Production · Current y se publicó solo, sin "Create Deployment".
+- `https://turniasalud.vercel.app/api/health` → `"ok":true, "database":"ok", "clinics":1`. **El error `jwk not found` quedó resuelto.**
+- Panel → Configuración → "Crear / actualizar agente" → "Agente actualizado (agent_1101m5fg08ezfzrtbvw1rkmvn1df) con 9 herramientas".
+- Demo en modo chat: se reservó un turno de Limpieza dental para "Prueba técnica" (Particular), apareció en la Agenda y se canceló desde el panel. Quedó ese paciente sintético (teléfono `web-…`) con el turno cancelado. Se puede borrar o dejar; no es un paciente real.
+
+Sin tocar, a decisión del usuario: `NEON_DATA_API_URL`, `NEON_SERVER_PRIVATE_KEY` y Data API en Neon (ya no se usan; se pueden borrar o deshabilitar cuando quiera).
+
+Próximos pasos: reimportar los dos workflows de n8n (paso 8 de abajo), elegir el número de WhatsApp y crear los templates en Meta (paso 9), revisar `/privacidad` con un abogado, y la prueba por voz y por WhatsApp real. Pendientes de producto en `CONTEXTO_PROYECTO.md`.
+
 ## Sesión del 21/10/2026 (tarde): Neon resuelto en el código y pendientes P2
 
-Trabajo en la rama `claude/quirky-faraday-xsqbc4` (todavía **no** está en `main` ni desplegado). Se hizo desde un entorno en la nube **sin credenciales**: no se tocó Vercel, Neon, ElevenLabs ni n8n, y nada se probó contra esos servicios reales. Todo se verificó contra un Postgres 16 local con `schema.sql` + `seed.sql`.
+Trabajo hecho en la rama `claude/quirky-faraday-xsqbc4`, ya integrada en `main` y desplegada (ver arriba). Se hizo desde un entorno en la nube **sin credenciales**: no se tocó Vercel, Neon, ElevenLabs ni n8n, y nada se probó contra esos servicios reales. Todo se verificó contra un Postgres 16 local con `schema.sql` + `seed.sql`.
 
 ### Qué cambió
 
@@ -14,7 +29,7 @@ Trabajo en la rama `claude/quirky-faraday-xsqbc4` (todavía **no** está en `mai
 - **Pendientes P2 implementados:** `confirmar_turno`, feriados/vacaciones/bloqueos, estado de horario de atención y protocolo fuera de horario, transferencia telefónica a una persona, respuesta a recetas/pedidos por WhatsApp, encuesta post-consulta con puntaje, métricas de 30 días, fotos de credencial y órdenes médicas (prompt), baja de mensajes y página `/privacidad`.
 - `/api/health` ahora consulta la base: devuelve `database: "ok"` o 503.
 
-### Pasos para el dueño (en este orden)
+### Pasos para el dueño (1 a 6 ya hechos; quedan 7 a 9)
 
 1. **Vercel → Settings → Environment Variables:** confirmar que existe `DATABASE_URL` (la cargó la integración de Neon) en Production, y también en Preview si se va a probar un preview. No hace falta crear nada nuevo.
 2. **Neon → SQL Editor:** volver a correr `supabase/schema.sql` completo. Solo agrega columnas y la tabla `schedule_blocks`; no borra datos. No volver a correr `seed.sql`.
@@ -28,9 +43,8 @@ Trabajo en la rama `claude/quirky-faraday-xsqbc4` (todavía **no** está en `mai
 
 ### A confirmar contra los servicios reales
 
-- Que el pooler de Neon acepte la conexión (`postgres.js` con `prepare: false`, `sslmode=require`; se descarta `channel_binding` de la URL).
-- Que el usuario de `DATABASE_URL` sea el dueño de las tablas (en Neon, `neondb_owner`, el mismo del SQL Editor). Las tablas tienen RLS sin políticas para otros roles: si `/api/health` responde `"clinics":0` con el seed cargado, la URL usa otro rol.
-- Formato de `transfer_to_number` y del dato `integer` en ElevenLabs: se tomaron de su documentación actual, no se probaron.
+- ~~Conexión al pooler de Neon y rol dueño de las tablas~~: confirmado en producción (`/api/health` con `"clinics":1`). Si alguna vez responde `"clinics":0` con datos cargados, la `DATABASE_URL` está usando otro rol: las tablas tienen RLS sin políticas para otros roles.
+- ElevenLabs aceptó la configuración del agente con 9 herramientas y el dato `integer`. `transfer_to_number` todavía no se subió, porque no hay `handoff_phone` cargado.
 - La política `/privacidad` es un borrador: revisarla con un abogado antes de usarla con pacientes reales.
 
 > Lo que sigue es el registro histórico de la sesión anterior. El "Bloqueo principal" quedó **reemplazado** por la conexión directa: no hace falta seguir diagnosticando Data API.
