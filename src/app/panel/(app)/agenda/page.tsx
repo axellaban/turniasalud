@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getCatalog, getClinic } from "@/lib/clinic";
 import { addDaysKey, formatTime, localDateKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
@@ -16,8 +16,9 @@ type Row = {
   coverage: string | null;
   notes: string | null;
   professional_id: string;
-  patients: { full_name: string | null; phone: string } | null;
-  appointment_types: { name: string } | null;
+  patient: string | null;
+  phone: string;
+  type_name: string;
 };
 
 export default async function AgendaPage({ searchParams }: PageProps<"/panel/agenda">) {
@@ -28,18 +29,19 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [y, m, d] = dayKey.split("-").map(Number);
   const [ny, nm, nd] = addDaysKey(dayKey, 1).split("-").map(Number);
 
-  const [catalog, result] = await Promise.all([
+  const [catalog, rows] = await Promise.all([
     getCatalog(clinic.id),
-    db()
-      .from("appointments")
-      .select("id, starts_at, ends_at, status, source, coverage, notes, professional_id, patients(full_name, phone), appointment_types(name)")
-      .eq("clinic_id", clinic.id)
-      .gte("starts_at", zonedTimeToUtc(y, m, d, 0, 0, tz).toISOString())
-      .lt("starts_at", zonedTimeToUtc(ny, nm, nd, 0, 0, tz).toISOString())
-      .neq("status", "reprogramado")
-      .order("starts_at"),
+    sql<Row[]>`
+      select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.professional_id,
+             p.full_name as patient, p.phone, t.name as type_name
+      from appointments a
+      join patients p on p.id = a.patient_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.clinic_id = ${clinic.id}
+        and a.starts_at >= ${zonedTimeToUtc(y, m, d, 0, 0, tz)} and a.starts_at < ${zonedTimeToUtc(ny, nm, nd, 0, 0, tz)}
+        and a.status <> 'reprogramado'
+      order by a.starts_at`,
   ]);
-  const rows = (result.data ?? []) as unknown as Row[];
   const label = new Intl.DateTimeFormat("es-AR", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" }).format(
     new Date(`${dayKey}T12:00:00Z`),
   );
@@ -85,9 +87,9 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                           {formatTime(a.starts_at, tz)}–{formatTime(a.ends_at, tz)}
                         </span>
                         <div className="min-w-40 flex-1">
-                          <p className="font-medium text-brand-950">{a.patients?.full_name ?? "Paciente"}</p>
+                          <p className="font-medium text-brand-950">{a.patient ?? "Paciente"}</p>
                           <p className="text-xs text-brand-900/55">
-                            {a.appointment_types?.name} · {a.coverage ?? "sin cobertura"} · {displayPhone(a.patients?.phone)}
+                            {a.type_name} · {a.coverage ?? "sin cobertura"} · {displayPhone(a.phone)}
                           </p>
                           {a.notes && <p className="mt-0.5 text-xs text-brand-900/55">📝 {a.notes}</p>}
                         </div>

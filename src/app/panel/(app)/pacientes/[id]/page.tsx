@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db } from "@/lib/supabase";
-import { getClinic } from "@/lib/clinic";
+import { sql } from "@/lib/db";
+import { getClinic, isUuid } from "@/lib/clinic";
 import { formatDate, formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Card, CHANNEL_LABEL, PageHeader, StatusBadge } from "@/components/ui";
@@ -10,18 +10,22 @@ import type { Patient } from "@/lib/types";
 export default async function PatientDetail({ params }: PageProps<"/panel/pacientes/[id]">) {
   const { id } = await params;
   const clinic = await getClinic();
-  const { data } = await db().from("patients").select("*").eq("id", id).eq("clinic_id", clinic.id).maybeSingle();
-  if (!data) notFound();
-  const p = data as Patient;
+  const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
+  if (!p) notFound();
   const [appointments, conversations, tasks] = await Promise.all([
-    db()
-      .from("appointments")
-      .select("id, starts_at, status, source, professionals(full_name), appointment_types(name)")
-      .eq("patient_id", p.id)
-      .order("starts_at", { ascending: false })
-      .limit(30),
-    db().from("conversations").select("id, started_at, channel, title, summary, outcome").eq("patient_id", p.id).order("started_at", { ascending: false }).limit(20),
-    db().from("tasks").select("id, title, status, created_at").eq("patient_id", p.id).order("created_at", { ascending: false }).limit(20),
+    sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
+      select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, t.name as type_name
+      from appointments a
+      join professionals pr on pr.id = a.professional_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.patient_id = ${p.id}
+      order by a.starts_at desc
+      limit 30`,
+    sql<Array<{ id: string; started_at: string; channel: string; title: string | null; summary: string | null; outcome: string | null }>>`
+      select id, started_at, channel, title, summary, outcome from conversations
+      where patient_id = ${p.id} order by started_at desc limit 20`,
+    sql<Array<{ id: string; title: string; status: string; created_at: string }>>`
+      select id, title, status, created_at from tasks where patient_id = ${p.id} order by created_at desc limit 20`,
   ]);
   const tz = clinic.timezone;
 
@@ -62,30 +66,23 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
           <Card>
             <h2 className="mb-3 font-semibold text-brand-950">Turnos</h2>
             <ul className="divide-y divide-brand-900/5 text-sm">
-              {((appointments.data ?? []) as unknown as Array<{
-                id: string;
-                starts_at: string;
-                status: string;
-                source: string;
-                professionals: { full_name: string } | null;
-                appointment_types: { name: string } | null;
-              }>).map((a) => (
+              {appointments.map((a) => (
                 <li key={a.id} className="flex flex-wrap items-center gap-3 py-2">
                   <span className="w-40 text-brand-900/70">{formatDateTime(a.starts_at, tz)}</span>
                   <span className="flex-1">
-                    {a.appointment_types?.name} · {a.professionals?.full_name}
+                    {a.type_name} · {a.professional}
                   </span>
                   <span className="text-xs text-brand-900/50">{CHANNEL_LABEL[a.source]}</span>
                   <StatusBadge value={a.status} />
                 </li>
               ))}
-              {!(appointments.data ?? []).length && <li className="py-2 text-brand-900/50">Sin turnos.</li>}
+              {!appointments.length && <li className="py-2 text-brand-900/50">Sin turnos.</li>}
             </ul>
           </Card>
           <Card>
             <h2 className="mb-3 font-semibold text-brand-950">Conversaciones</h2>
             <ul className="space-y-2 text-sm">
-              {((conversations.data ?? []) as Array<{ id: string; started_at: string; channel: string; title: string | null; summary: string | null; outcome: string | null }>).map((c) => (
+              {conversations.map((c) => (
                 <li key={c.id}>
                   <Link href={`/panel/conversaciones/${c.id}`} className="flex items-center gap-3 rounded-xl p-2 hover:bg-brand-50">
                     <span className="w-36 shrink-0 text-xs text-brand-900/55">{formatDateTime(c.started_at, tz)}</span>
@@ -96,14 +93,14 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
                   </Link>
                 </li>
               ))}
-              {!(conversations.data ?? []).length && <li className="text-brand-900/50">Sin conversaciones.</li>}
+              {!conversations.length && <li className="text-brand-900/50">Sin conversaciones.</li>}
             </ul>
           </Card>
-          {(tasks.data ?? []).length > 0 && (
+          {tasks.length > 0 && (
             <Card>
               <h2 className="mb-3 font-semibold text-brand-950">Tareas</h2>
               <ul className="space-y-2 text-sm">
-                {(tasks.data as Array<{ id: string; title: string; status: string }>).map((t) => (
+                {tasks.map((t) => (
                   <li key={t.id} className="flex items-center justify-between">
                     <span>{t.title}</span>
                     <StatusBadge value={t.status} />

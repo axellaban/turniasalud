@@ -10,8 +10,6 @@ function required(name: string): string {
 }
 
 export const env = {
-  supabaseUrl: () => required("SUPABASE_URL"),
-  supabaseServiceRoleKey: () => required("SUPABASE_SERVICE_ROLE_KEY"),
   elevenLabsApiKey: () => required("ELEVENLABS_API_KEY"),
   elevenLabsWebhookSecret: () => process.env.ELEVENLABS_WEBHOOK_SECRET ?? "",
   agentToolsSecret: () => required("AGENT_TOOLS_SECRET"),
@@ -25,15 +23,13 @@ export const env = {
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
 };
 
-export function isConfigured(): { database: boolean; supabase: boolean; neon: boolean; elevenlabs: boolean; panel: boolean; tools: boolean } {
-  const supabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const neon = Boolean(process.env.NEON_DATA_API_URL && process.env.NEON_SERVER_PRIVATE_KEY);
+export function isConfigured(): { database: boolean; elevenlabs: boolean; panel: boolean; tools: boolean; webhook: boolean; n8n: boolean } {
   return {
-    database: neon || supabase,
-    supabase,
-    neon,
+    database: Boolean(process.env.DATABASE_URL || process.env.POSTGRES_URL),
     elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
     panel: Boolean(process.env.PANEL_PASSWORD),
     tools: Boolean(process.env.AGENT_TOOLS_SECRET),
+    webhook: Boolean(process.env.ELEVENLABS_WEBHOOK_SECRET),
+    n8n: Boolean(process.env.N8N_WEBHOOK_URL),
   };
 }

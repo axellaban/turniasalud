@@ -1,12 +1,12 @@
 import "server-only";
-import { db, unwrap } from "../supabase";
-import { getCatalog, getClinic, findPatientByPhone, buildDynamicVariables } from "../clinic";
+import { sql, pgErrorCode } from "../db";
+import { getCatalog, getClinic, findPatientByPhone, buildDynamicVariables, isUuid } from "../clinic";
 import { computeSlots, isSlotFree } from "../slots";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey } from "../time";
 import { normalizePhone } from "../phone";
 import { sendWhatsAppTemplate } from "../elevenlabs";
 import { notifyN8n } from "../n8n";
-import type { Appointment, AppointmentSource, Clinic, Patient, TaskPriority, TaskType } from "../types";
+import type { Appointment, AppointmentSource, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
 export type ToolContext = {
   clinicId: string;
@@ -34,23 +34,18 @@ async function ensurePatient(ctx: ToolContext, name?: string): Promise<Patient> 
   const existing = await findPatientByPhone(ctx.clinicId, phone);
   if (existing) {
     if (name && !existing.full_name) {
-      const updated = unwrap(
-        await db().from("patients").update({ full_name: name }).eq("id", existing.id).select("*").single(),
-        "actualizar paciente",
-      );
-      return updated as Patient;
+      const [updated] = await sql<Patient[]>`update patients set full_name = ${name} where id = ${existing.id} returning *`;
+      return updated;
     }
     return existing;
   }
-  const created = unwrap(
-    await db()
-      .from("patients")
-      .insert({ clinic_id: ctx.clinicId, phone, full_name: name ?? null, last_contact_at: new Date().toISOString() })
-      .select("*")
-      .single(),
-    "crear paciente",
-  );
-  return created as Patient;
+  // "on conflict" cubre dos herramientas que crean al mismo paciente en paralelo.
+  const [created] = await sql<Patient[]>`
+    insert into patients (clinic_id, phone, full_name, last_contact_at)
+    values (${ctx.clinicId}, ${phone}, ${name ?? null}, now())
+    on conflict (clinic_id, phone) do update set full_name = coalesce(patients.full_name, excluded.full_name)
+    returning *`;
+  return created;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,10 +74,7 @@ export async function registerPatient(
   if (input.plan) patch.coverage_plan = input.plan;
   if (input.numero_afiliado) patch.member_number = input.numero_afiliado;
   if (input.preferencias) patch.preferences = input.preferencias;
-  const updated = unwrap(
-    await db().from("patients").update(patch).eq("id", patient.id).select("*").single(),
-    "actualizar paciente",
-  ) as Patient;
+  const [updated] = await sql<Patient[]>`update patients set ${sql(patch)} where id = ${patient.id} returning *`;
   return {
     ok: true,
     mensaje: "Datos del paciente guardados.",
@@ -121,16 +113,12 @@ export async function checkAvailability(
   if (toKey > addDaysKey(fromKey, 60)) toKey = addDaysKey(fromKey, 60);
 
   const proIds = professionals.map((p) => p.id);
-  const busy = unwrap(
-    await db()
-      .from("appointments")
-      .select("professional_id, starts_at, ends_at")
-      .in("professional_id", proIds)
-      .in("status", ACTIVE)
-      .gte("ends_at", new Date(`${fromKey}T00:00:00Z`).toISOString())
-      .lte("starts_at", new Date(`${addDaysKey(toKey, 1)}T23:59:59Z`).toISOString()),
-    "turnos ocupados",
-  ) as Array<{ professional_id: string; starts_at: string; ends_at: string }>;
+  const busy = await sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
+    select professional_id, starts_at, ends_at from appointments
+    where professional_id = any(${proIds}::uuid[])
+      and status = any(${ACTIVE}::text[])
+      and ends_at >= ${`${addDaysKey(fromKey, -1)}T00:00:00Z`}
+      and starts_at <= ${`${addDaysKey(toKey, 1)}T23:59:59Z`}`;
 
   const slots = computeSlots({
     schedules: catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
@@ -182,15 +170,12 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   if (startsAt.getTime() < Date.now()) throw new ToolError("Ese horario ya pasó.");
 
   const endsAt = new Date(startsAt.getTime() + type.duration_min * 60_000);
-  let q = db()
-    .from("appointments")
-    .select("professional_id, starts_at, ends_at, id")
-    .eq("professional_id", pro.id)
-    .in("status", ACTIVE)
-    .lt("starts_at", endsAt.toISOString())
-    .gt("ends_at", startsAt.toISOString());
-  if (ignoreAppointmentId) q = q.neq("id", ignoreAppointmentId);
-  const busy = unwrap(await q, "turnos ocupados") as Array<{ professional_id: string; starts_at: string; ends_at: string }>;
+  const busy = await sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
+    select professional_id, starts_at, ends_at from appointments
+    where professional_id = ${pro.id}
+      and status = any(${ACTIVE}::text[])
+      and starts_at < ${endsAt} and ends_at > ${startsAt}
+      ${ignoreAppointmentId ? sql`and id <> ${ignoreAppointmentId}` : sql``}`;
   const check = isSlotFree(
     catalog.schedules.filter((s) => s.professional_id === pro.id),
     busy,
@@ -202,8 +187,17 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   return { type, pro, endsAt };
 }
 
-function isOverlapError(error: { code?: string; message: string } | null): boolean {
-  return Boolean(error && (error.code === "23P01" || error.message.includes("appointments_no_overlap")));
+/** La constraint appointments_no_overlap rechazó el turno: alguien lo tomó recién. */
+const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
+
+type NewAppointment = Pick<
+  Appointment,
+  "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
+>;
+
+async function insertAppointment(db: typeof sql, row: NewAppointment): Promise<Appointment> {
+  const [appt] = await db<Appointment[]>`insert into appointments ${db(row)} returning *`;
+  return appt;
 }
 
 export async function bookAppointment(
@@ -221,9 +215,9 @@ export async function bookAppointment(
     throw new ToolError(`${pro.full_name} no atiende por ${coverage}. Atiende: ${pro.accepted_coverages.join(", ")}.`);
   }
 
-  const result = await db()
-    .from("appointments")
-    .insert({
+  let appt: Appointment;
+  try {
+    appt = await insertAppointment(sql, {
       clinic_id: clinic.id,
       patient_id: patient.id,
       professional_id: pro.id,
@@ -234,19 +228,16 @@ export async function bookAppointment(
       source: sourceFromChannel(ctx.channel, ctx.patientPhone),
       coverage: coverage ?? null,
       notes: input.notas ?? null,
-    })
-    .select("*")
-    .single();
-  if (isOverlapError(result.error)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
-  const appt = unwrap(result, "reservar turno") as Appointment;
+    });
+  } catch (e) {
+    if (isOverlapError(e)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
+    throw e;
+  }
 
   // Si el paciente estaba en lista de espera para esto, la damos por resuelta.
-  await db()
-    .from("waitlist")
-    .update({ status: "resuelta" })
-    .eq("patient_id", patient.id)
-    .eq("appointment_type_id", type.id)
-    .in("status", ["activa", "ofrecida"]);
+  await sql`
+    update waitlist set status = 'resuelta'
+    where patient_id = ${patient.id} and appointment_type_id = ${type.id} and status in ('activa', 'ofrecida')`;
 
   await notifyN8n("turno.reservado", { clinic_id: clinic.id, appointment: appt, patient, professional: pro.full_name, type: type.name });
 
@@ -266,33 +257,25 @@ export async function listPatientAppointments(ctx: ToolContext) {
   const clinic = await getClinic(ctx.clinicId);
   const patient = await findPatientByPhone(clinic.id, normalizePhone(ctx.patientPhone));
   if (!patient) return { ok: true, turnos: [], mensaje: "El paciente no tiene turnos registrados." };
-  const rows = unwrap(
-    await db()
-      .from("appointments")
-      .select("id, starts_at, status, professional_id, appointment_type_id, professionals(full_name), appointment_types(name)")
-      .eq("patient_id", patient.id)
-      .in("status", ACTIVE)
-      .gte("starts_at", new Date().toISOString())
-      .order("starts_at"),
-    "turnos",
-  ) as unknown as Array<{
-    id: string;
-    starts_at: string;
-    status: string;
-    professional_id: string;
-    appointment_type_id: string;
-    professionals: { full_name: string } | null;
-    appointment_types: { name: string } | null;
-  }>;
+  const rows = await sql<
+    Array<{ id: string; starts_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
+  >`
+    select a.id, a.starts_at, a.status, a.professional_id, a.appointment_type_id,
+           pr.full_name as professional, t.name as type_name
+    from appointments a
+    join professionals pr on pr.id = a.professional_id
+    join appointment_types t on t.id = a.appointment_type_id
+    where a.patient_id = ${patient.id} and a.status = any(${ACTIVE}::text[]) and a.starts_at >= now()
+    order by a.starts_at`;
   return {
     ok: true,
     turnos: rows.map((r) => ({
       turno_id: r.id,
       cuando: humanSlot(new Date(r.starts_at), clinic.timezone),
       inicio: r.starts_at,
-      tipo_turno: r.appointment_types?.name,
+      tipo_turno: r.type_name,
       tipo_turno_id: r.appointment_type_id,
-      profesional: r.professionals?.full_name,
+      profesional: r.professional,
       profesional_id: r.professional_id,
       estado: r.status,
     })),
@@ -302,9 +285,10 @@ export async function listPatientAppointments(ctx: ToolContext) {
 async function getOwnAppointment(ctx: ToolContext, appointmentId: string) {
   const patient = await findPatientByPhone(ctx.clinicId, normalizePhone(ctx.patientPhone));
   if (!patient) throw new ToolError("No encontré al paciente.");
-  const r = await db().from("appointments").select("*").eq("id", appointmentId).eq("patient_id", patient.id).maybeSingle();
-  if (r.error || !r.data) throw new ToolError("No encontré ese turno para este paciente. Usá ver_turnos_paciente.");
-  const appt = r.data as Appointment;
+  const [appt] = isUuid(appointmentId)
+    ? await sql<Appointment[]>`select * from appointments where id = ${appointmentId} and patient_id = ${patient.id}`
+    : [];
+  if (!appt) throw new ToolError("No encontré ese turno para este paciente. Usá ver_turnos_paciente.");
   if (!ACTIVE.includes(appt.status)) throw new ToolError(`Ese turno ya está ${appt.status}.`);
   return { patient, appt };
 }
@@ -316,15 +300,7 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
   const clinic = await getClinic(ctx.clinicId);
   const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
   const notes = [appt.notes, input.motivo && `Cancelado: ${input.motivo}`].filter(Boolean).join(" | ");
-  unwrap(
-    await db()
-      .from("appointments")
-      .update({ status: "cancelado", cancelled_at: new Date().toISOString(), notes: notes || null })
-      .eq("id", appt.id)
-      .select("id")
-      .single(),
-    "cancelar turno",
-  );
+  await sql`update appointments set status = 'cancelado', cancelled_at = now(), notes = ${notes || null} where id = ${appt.id}`;
   await notifyN8n("turno.cancelado", { clinic_id: clinic.id, appointment: appt, patient, motivo: input.motivo });
   const offered = await offerFreedSlot(clinic, appt).catch((e) => {
     console.error("No se pudo ofrecer el turno liberado", e);
@@ -343,27 +319,23 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
   const template = clinic.templates?.lista_espera;
   if (!template || !clinic.whatsapp_phone_number_id || !clinic.elevenlabs_agent_id || !process.env.ELEVENLABS_API_KEY) return 0;
 
-  const entries = unwrap(
-    await db()
-      .from("waitlist")
-      .select("id, patient_id, professional_id, patients(full_name, phone)")
-      .eq("clinic_id", clinic.id)
-      .eq("status", "activa")
-      .eq("appointment_type_id", appt.appointment_type_id)
-      .order("created_at")
-      .limit(10),
-    "lista de espera",
-  ) as unknown as Array<{ id: string; patient_id: string; professional_id: string | null; patients: { full_name: string | null; phone: string } | null }>;
+  const entries = await sql<Array<{ id: string; patient_id: string; professional_id: string | null; full_name: string | null; phone: string }>>`
+    select w.id, w.patient_id, w.professional_id, p.full_name, p.phone
+    from waitlist w join patients p on p.id = w.patient_id
+    where w.clinic_id = ${clinic.id} and w.status = 'activa' and w.appointment_type_id = ${appt.appointment_type_id}
+      and w.patient_id <> ${appt.patient_id}
+    order by w.created_at
+    limit 10`;
 
   const candidates = entries
     .filter((e) => !e.professional_id || e.professional_id === appt.professional_id)
-    .filter((e) => e.patients && /^\d+$/.test(e.patients.phone))
+    .filter((e) => /^\d+$/.test(e.phone))
     .slice(0, 3);
 
   const when = humanSlot(new Date(appt.starts_at), clinic.timezone);
   let sent = 0;
   for (const entry of candidates) {
-    const phone = entry.patients!.phone;
+    const phone = entry.phone;
     const context = `Le escribimos para ofrecerle un turno que se liberó: ${when} (profesional_id=${appt.professional_id}, tipo_turno_id=${appt.appointment_type_id}, inicio=${appt.starts_at}). Si lo quiere, reservalo enseguida porque se ofreció a varias personas.`;
     try {
       await sendWhatsAppTemplate({
@@ -371,11 +343,11 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
         userId: phone,
         templateName: template,
         language: clinic.templates?.idioma || "es_AR",
-        params: [entry.patients!.full_name?.split(" ")[0] || "hola", when],
+        params: [entry.full_name?.split(" ")[0] || "hola", when],
         agentId: clinic.elevenlabs_agent_id,
         dynamicVariables: await buildDynamicVariables(clinic, phone, { context }),
       });
-      await db().from("waitlist").update({ status: "ofrecida", offered_at: new Date().toISOString() }).eq("id", entry.id);
+      await sql`update waitlist set status = 'ofrecida', offered_at = now() where id = ${entry.id}`;
       sent++;
     } catch (e) {
       console.error("Fallo al ofrecer turno liberado", e);
@@ -394,41 +366,29 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
   const startsAt = new Date(input.nuevo_inicio);
   const { type, pro, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, appt.id);
 
-  // Primero liberamos el turno viejo (puede superponerse con el nuevo) y, si
-  // la reserva nueva falla, lo restauramos.
-  unwrap(
-    await db()
-      .from("appointments")
-      .update({ status: "reprogramado", cancelled_at: new Date().toISOString() })
-      .eq("id", appt.id)
-      .select("id")
-      .single(),
-    "liberar turno anterior",
-  );
-  const restore = () => db().from("appointments").update({ status: appt.status, cancelled_at: null }).eq("id", appt.id);
-
-  const inserted = await db()
-    .from("appointments")
-    .insert({
-      clinic_id: clinic.id,
-      patient_id: patient.id,
-      professional_id: pro.id,
-      appointment_type_id: type.id,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      status: "confirmado",
-      source: sourceFromChannel(ctx.channel, ctx.patientPhone),
-      coverage: appt.coverage,
-      notes: appt.notes,
-    })
-    .select("*")
-    .single();
-  if (inserted.error) {
-    await restore();
-    if (isOverlapError(inserted.error)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
-    throw new Error(`reprogramar turno: ${inserted.error.message}`);
+  // En una transacción: liberamos el turno viejo (puede superponerse con el
+  // nuevo) y reservamos el nuevo. Si algo falla, el viejo queda como estaba.
+  let newAppt: Appointment;
+  try {
+    newAppt = await sql.begin(async (tx) => {
+      await tx`update appointments set status = 'reprogramado', cancelled_at = now() where id = ${appt.id}`;
+      return insertAppointment(tx as unknown as typeof sql, {
+        clinic_id: clinic.id,
+        patient_id: patient.id,
+        professional_id: pro.id,
+        appointment_type_id: type.id,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: "confirmado",
+        source: sourceFromChannel(ctx.channel, ctx.patientPhone),
+        coverage: appt.coverage,
+        notes: appt.notes,
+      });
+    });
+  } catch (e) {
+    if (isOverlapError(e)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
+    throw e;
   }
-  const newAppt = inserted.data as Appointment;
   await notifyN8n("turno.reprogramado", { clinic_id: clinic.id, before: appt, after: newAppt, patient });
   await offerFreedSlot(clinic, appt).catch(() => 0);
 
@@ -452,26 +412,21 @@ export async function createTask(
   } catch {
     patientId = null;
   }
-  const task = unwrap(
-    await db()
-      .from("tasks")
-      .insert({
-        clinic_id: ctx.clinicId,
-        patient_id: patientId,
-        conversation_id: ctx.conversationId ?? null,
-        type: input.tipo,
-        priority: input.prioridad ?? (input.tipo === "urgencia" ? "urgente" : "normal"),
-        title: input.titulo,
-        details: input.detalle ?? null,
-      })
-      .select("*")
-      .single(),
-    "crear tarea",
-  );
+  const [task] = await sql<Task[]>`
+    insert into tasks ${sql({
+      clinic_id: ctx.clinicId,
+      patient_id: patientId,
+      conversation_id: ctx.conversationId ?? null,
+      type: input.tipo,
+      priority: input.prioridad ?? (input.tipo === "urgencia" ? "urgente" : "normal"),
+      title: input.titulo,
+      details: input.detalle ?? null,
+    })}
+    returning *`;
   await notifyN8n("tarea.creada", { clinic_id: ctx.clinicId, task });
   return {
     ok: true,
-    tarea_id: (task as { id: string }).id,
+    tarea_id: task.id,
     mensaje: "Tarea creada para el equipo. Avisale al paciente que lo van a contactar (en horario de atención).",
   };
 }
@@ -483,19 +438,14 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id: str
   const patient = await ensurePatient(ctx);
   const catalog = await getCatalog(ctx.clinicId);
   if (!catalog.appointmentTypes.some((t) => t.id === input.tipo_turno_id)) throw new ToolError("Tipo de turno inválido.");
-  unwrap(
-    await db()
-      .from("waitlist")
-      .insert({
-        clinic_id: ctx.clinicId,
-        patient_id: patient.id,
-        appointment_type_id: input.tipo_turno_id,
-        professional_id: input.profesional_id || null,
-        preferences: input.preferencias ?? null,
-      })
-      .select("id")
-      .single(),
-    "lista de espera",
-  );
+  const professionalId = input.profesional_id && catalog.professionals.some((p) => p.id === input.profesional_id) ? input.profesional_id : null;
+  await sql`
+    insert into waitlist ${sql({
+      clinic_id: ctx.clinicId,
+      patient_id: patient.id,
+      appointment_type_id: input.tipo_turno_id,
+      professional_id: professionalId,
+      preferences: input.preferencias ?? null,
+    })}`;
   return { ok: true, mensaje: "Paciente anotado en la lista de espera. Si se libera un turno le escribimos por WhatsApp." };
 }

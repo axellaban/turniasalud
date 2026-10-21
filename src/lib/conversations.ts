@@ -1,6 +1,6 @@
 import "server-only";
-import { db } from "./supabase";
-import { INBOUND_CONTEXT, findPatientByPhone, resolveClinic } from "./clinic";
+import { json, sql } from "./db";
+import { INBOUND_CONTEXT, findPatientByPhone, isUuid, resolveClinic } from "./clinic";
 import { normalizePhone } from "./phone";
 import { notifyN8n } from "./n8n";
 import type { Conversation, Patient } from "./types";
@@ -53,32 +53,32 @@ export function mergeMemory(previous: string | null, addition: string | null, ma
 export async function recordConversation(data: PostCallPayload): Promise<void> {
   const vars = data.conversation_initiation_client_data?.dynamic_variables ?? {};
   const clinic = await resolveClinic({ agentId: data.agent_id });
-  const clinicId = typeof vars.clinic_id === "string" ? vars.clinic_id : clinic.id;
+  const clinicId = isUuid(vars.clinic_id) ? vars.clinic_id : clinic.id;
   const phone = normalizePhone(
     (typeof vars.patient_phone === "string" && vars.patient_phone !== "desconocido" ? vars.patient_phone : null) ??
       data.user_id ??
       data.metadata?.phone_call?.external_number ??
       "",
   );
-  const campaignId = typeof vars.campaign_id === "string" && vars.campaign_id !== "ninguna" ? vars.campaign_id : null;
+  const campaignId = isUuid(vars.campaign_id) ? vars.campaign_id : null;
   const direction = campaignId || (typeof vars.conversation_context === "string" && vars.conversation_context !== INBOUND_CONTEXT) ? "saliente" : "entrante";
 
   let patient: Patient | null = await findPatientByPhone(clinicId, phone);
   const name = collected(data, "nombre_paciente");
   const memory = collected(data, "memoria");
   if (!patient && phone && name) {
-    const created = await db().from("patients").insert({ clinic_id: clinicId, phone, full_name: name }).select("*").single();
-    patient = (created.data as Patient) ?? null;
+    [patient] = await sql<Patient[]>`
+      insert into patients (clinic_id, phone, full_name) values (${clinicId}, ${phone}, ${name})
+      on conflict (clinic_id, phone) do update set full_name = coalesce(patients.full_name, excluded.full_name)
+      returning *`;
   }
   if (patient) {
-    await db()
-      .from("patients")
-      .update({
-        last_contact_at: new Date().toISOString(),
-        memory_summary: mergeMemory(patient.memory_summary, memory),
-        ...(name && !patient.full_name ? { full_name: name } : {}),
-      })
-      .eq("id", patient.id);
+    await sql`
+      update patients set
+        last_contact_at = now(),
+        memory_summary = ${mergeMemory(patient.memory_summary, memory)},
+        full_name = coalesce(full_name, ${name})
+      where id = ${patient.id}`;
   }
 
   const startedAt = data.metadata?.start_time_unix_secs
@@ -107,8 +107,16 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
       sentimiento: collected(data, "sentimiento"),
     },
   };
-  const saved = await db().from("conversations").upsert(row, { onConflict: "elevenlabs_conversation_id" });
-  if (saved.error) throw new Error(`No se pudo guardar la conversación: ${saved.error.message}`);
+  // ElevenLabs puede reenviar el webhook: la conversación se guarda una sola vez.
+  const values = { ...row, transcript: json(row.transcript), analysis: json(row.analysis) };
+  await sql`
+    insert into conversations ${sql(values)}
+    on conflict (elevenlabs_conversation_id) do update set
+      patient_id = excluded.patient_id, campaign_id = excluded.campaign_id, channel = excluded.channel,
+      direction = excluded.direction, started_at = excluded.started_at, duration_secs = excluded.duration_secs,
+      status = excluded.status, title = excluded.title, summary = excluded.summary, intent = excluded.intent,
+      outcome = excluded.outcome, call_successful = excluded.call_successful, transcript = excluded.transcript,
+      analysis = excluded.analysis`;
 
   if (campaignId && patient) await updateCampaignRecipient(campaignId, patient.id, data);
 
@@ -124,22 +132,15 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
 }
 
 async function updateCampaignRecipient(campaignId: string, patientId: string, data: PostCallPayload) {
-  const recipient = await db()
-    .from("campaign_recipients")
-    .select("id, sent_at, status")
-    .eq("campaign_id", campaignId)
-    .eq("patient_id", patientId)
-    .maybeSingle();
-  if (!recipient.data) return;
+  const [recipient] = await sql<Array<{ id: string; sent_at: string | null; status: string }>>`
+    select id, sent_at, status from campaign_recipients where campaign_id = ${campaignId} and patient_id = ${patientId}`;
+  if (!recipient || recipient.status === "agendo") return;
   const userSpoke = (data.transcript ?? []).some((t) => t.role === "user" && t.message);
   if (!userSpoke) return;
-  const booked = await db()
-    .from("appointments")
-    .select("id", { count: "exact", head: true })
-    .eq("patient_id", patientId)
-    .gte("created_at", recipient.data.sent_at ?? new Date(0).toISOString());
-  await db()
-    .from("campaign_recipients")
-    .update({ status: (booked.count ?? 0) > 0 ? "agendo" : "respondio" })
-    .eq("id", recipient.data.id);
+  const [{ booked }] = await sql<Array<{ booked: boolean }>>`
+    select exists (
+      select 1 from appointments
+      where patient_id = ${patientId} and created_at >= ${recipient.sent_at ?? new Date(0)} and status <> 'cancelado'
+    ) as booked`;
+  await sql`update campaign_recipients set status = ${booked ? "agendo" : "respondio"} where id = ${recipient.id}`;
 }

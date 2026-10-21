@@ -150,7 +150,7 @@ export const CONTEXT_PARAMS: Record<string, { dynamic_variable: string; descript
 };
 
 export const contextSchema = z.object({
-  clinic_id: z.string().min(1),
+  clinic_id: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
   patient_phone: z.string().min(1),
   conversation_id: z.string().optional(),
   canal: z.string().optional(),

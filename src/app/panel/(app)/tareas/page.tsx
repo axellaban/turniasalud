@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getClinic } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
@@ -35,14 +35,15 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
   const clinic = await getClinic();
   const { ver } = await searchParams;
   const showResolved = ver === "resueltas";
-  let query = db()
-    .from("tasks")
-    .select("id, type, priority, status, title, details, created_at, conversation_id, patients(id, full_name, phone)")
-    .eq("clinic_id", clinic.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  query = showResolved ? query.eq("status", "resuelta") : query.neq("status", "resuelta");
-  const rows = (((await query).data ?? []) as unknown as Row[]).sort(
+  const result = await sql<Row[]>`
+    select t.id, t.type, t.priority, t.status, t.title, t.details, t.created_at, t.conversation_id,
+      case when p.id is null then null
+           else json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) end as patients
+    from tasks t left join patients p on p.id = t.patient_id
+    where t.clinic_id = ${clinic.id} and ${showResolved ? sql`t.status = 'resuelta'` : sql`t.status <> 'resuelta'`}
+    order by t.created_at desc
+    limit 200`;
+  const rows = [...result].sort(
     (a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9),
   );
 

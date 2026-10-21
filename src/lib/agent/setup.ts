@@ -1,5 +1,5 @@
 import "server-only";
-import { db, unwrap } from "../supabase";
+import { sql } from "../db";
 import { env } from "../env";
 import { elevenlabs } from "../elevenlabs";
 import { CONTEXT_PARAMS, TOOL_DEFINITIONS, type ToolDefinition } from "./tools";
@@ -197,12 +197,8 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
     agentId = res.agent_id;
     created = true;
   }
-  unwrap(
-    await db()
-      .from("clinics")
-      .update({ elevenlabs_agent_id: agentId, ...(voiceId ? { elevenlabs_voice_id: voiceId } : {}) })
-      .eq("id", clinic.id).select("id").single(),
-    "guardar configuración del agente",
-  );
+  await sql`
+    update clinics set elevenlabs_agent_id = ${agentId}, elevenlabs_voice_id = coalesce(${voiceId ?? null}, elevenlabs_voice_id)
+    where id = ${clinic.id}`;
   return { agentId, created, voiceId, toolIds };
 }

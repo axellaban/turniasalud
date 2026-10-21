@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getClinic } from "@/lib/clinic";
 import { CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { formatDateTime } from "@/lib/time";
@@ -9,23 +9,16 @@ import { Card, Empty, Field, PageHeader, StatusBadge, buttonClass, inputClass } 
 
 export default async function CampaignsPage() {
   const clinic = await getClinic();
-  const campaigns = ((await db().from("campaigns").select("*").eq("clinic_id", clinic.id).order("created_at", { ascending: false }).limit(50)).data ??
-    []) as Campaign[];
-  const ids = campaigns.map((c) => c.id);
-  const recipients = ids.length
-    ? (((await db().from("campaign_recipients").select("campaign_id, status").in("campaign_id", ids)).data ?? []) as Array<{
-        campaign_id: string;
-        status: string;
-      }>)
-    : [];
-  const stats = (id: string) => {
-    const list = recipients.filter((r) => r.campaign_id === id);
-    return {
-      sent: list.filter((r) => r.status !== "pendiente" && r.status !== "error").length,
-      replied: list.filter((r) => r.status === "respondio" || r.status === "agendo").length,
-      booked: list.filter((r) => r.status === "agendo").length,
-    };
-  };
+  const campaigns = await sql<Array<Campaign & { sent: number; replied: number; booked: number }>>`
+    select c.*,
+      count(r.id) filter (where r.status not in ('pendiente', 'error'))::int as sent,
+      count(r.id) filter (where r.status in ('respondio', 'agendo'))::int as replied,
+      count(r.id) filter (where r.status = 'agendo')::int as booked
+    from campaigns c left join campaign_recipients r on r.campaign_id = c.id
+    where c.clinic_id = ${clinic.id}
+    group by c.id
+    order by c.created_at desc
+    limit 50`;
 
   return (
     <>
@@ -37,7 +30,7 @@ export default async function CampaignsPage() {
         <div className="space-y-4">
           {campaigns.length ? (
             campaigns.map((c) => {
-              const s = stats(c.id);
+              const s = c;
               return (
                 <Link key={c.id} href={`/panel/campanas/${c.id}`} className="block">
                   <Card className="hover:border-brand-300">

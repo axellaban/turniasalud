@@ -1,5 +1,5 @@
 import "server-only";
-import { db, unwrap } from "./supabase";
+import { sql } from "./db";
 import { buildDynamicVariables, getClinic } from "./clinic";
 import { sendWhatsAppTemplate } from "./elevenlabs";
 import { humanSlot } from "./time";
@@ -50,15 +50,9 @@ const isWhatsAppId = (phone: string) => /^\d{8,15}$/.test(phone);
 type PatientRow = { id: string; full_name: string | null; phone: string };
 
 async function futureAppointmentPatientIds(clinicId: string): Promise<Set<string>> {
-  const rows = unwrap(
-    await db()
-      .from("appointments")
-      .select("patient_id")
-      .eq("clinic_id", clinicId)
-      .in("status", ["confirmado", "pendiente"])
-      .gte("starts_at", new Date().toISOString()),
-    "turnos futuros",
-  ) as Array<{ patient_id: string }>;
+  const rows = await sql<Array<{ patient_id: string }>>`
+    select distinct patient_id from appointments
+    where clinic_id = ${clinicId} and status in ('confirmado', 'pendiente') and starts_at >= now()`;
   return new Set(rows.map((r) => r.patient_id));
 }
 
@@ -68,77 +62,67 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
   const members: AudienceMember[] = [];
 
   if (type === "recordatorio") {
-    const from = new Date(now + 12 * 3600_000).toISOString();
-    const to = new Date(now + 36 * 3600_000).toISOString();
-    const rows = unwrap(
-      await db()
-        .from("appointments")
-        .select("id, starts_at, professional_id, appointment_type_id, patients(id, full_name, phone), professionals(full_name), appointment_types(name)")
-        .eq("clinic_id", clinic.id)
-        .eq("status", "confirmado")
-        .is("reminder_sent_at", null)
-        .gte("starts_at", from)
-        .lte("starts_at", to),
-      "turnos de mañana",
-    ) as unknown as Array<{
-      id: string;
-      starts_at: string;
-      patients: PatientRow | null;
-      professionals: { full_name: string } | null;
-      appointment_types: { name: string } | null;
-    }>;
+    const from = new Date(now + 12 * 3600_000);
+    const to = new Date(now + 36 * 3600_000);
+    const rows = await sql<Array<{ id: string; starts_at: string; patient: PatientRow; professional: string; type_name: string }>>`
+      select a.id, a.starts_at, pr.full_name as professional, t.name as type_name,
+             json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) as patient
+      from appointments a
+      join patients p on p.id = a.patient_id
+      join professionals pr on pr.id = a.professional_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.clinic_id = ${clinic.id} and a.status in ('confirmado', 'pendiente') and a.reminder_sent_at is null
+        and a.starts_at >= ${from} and a.starts_at <= ${to}
+      order by a.starts_at`;
     for (const r of rows) {
-      if (!r.patients) continue;
       const when = humanSlot(new Date(r.starts_at), clinic.timezone);
       members.push({
-        patient_id: r.patients.id,
-        phone: r.patients.phone,
-        name: r.patients.full_name,
-        detail: `${when} con ${r.professionals?.full_name ?? "el profesional"}`,
-        context: `Recordatorio del turno de ${r.appointment_types?.name ?? "consulta"} el ${when} con ${r.professionals?.full_name} (turno_id=${r.id}). Pedile que confirme si viene; si no puede, ofrecé reprogramar o cancelar.`,
+        patient_id: r.patient.id,
+        phone: r.patient.phone,
+        name: r.patient.full_name,
+        detail: `${when} con ${r.professional}`,
+        context: `Recordatorio del turno de ${r.type_name} el ${when} con ${r.professional} (turno_id=${r.id}). Pedile que confirme si viene: si dice que sí, usá confirmar_turno; si no puede, ofrecé reprogramar o cancelar.`,
       });
     }
     return members;
   }
 
   if (type === "recall" || type === "reactivacion") {
-    const rows = unwrap(
-      await db()
-        .from("appointments")
-        .select("patient_id, starts_at, appointment_type_id, appointment_types(name, recall_months), patients(id, full_name, phone)")
-        .eq("clinic_id", clinic.id)
-        .eq("status", "atendido")
-        .order("starts_at", { ascending: false }),
-      "historial",
-    ) as unknown as Array<{
-      patient_id: string;
-      starts_at: string;
-      appointment_type_id: string;
-      appointment_types: { name: string; recall_months: number | null } | null;
-      patients: PatientRow | null;
-    }>;
+    // Último turno atendido de cada paciente (recall: de cada paciente y tipo de turno).
+    const rows = await sql<
+      Array<{ patient_id: string; starts_at: string; appointment_type_id: string; type_name: string; recall_months: number | null; full_name: string | null; phone: string }>
+    >`
+      select distinct on (a.patient_id ${type === "recall" ? sql`, a.appointment_type_id` : sql``})
+             a.patient_id, a.starts_at, a.appointment_type_id, t.name as type_name, t.recall_months, p.full_name, p.phone
+      from appointments a
+      join patients p on p.id = a.patient_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.clinic_id = ${clinic.id} and a.status = 'atendido'
+      order by a.patient_id ${type === "recall" ? sql`, a.appointment_type_id` : sql``}, a.starts_at desc`;
     const seen = new Set<string>();
-    for (const r of rows) {
-      if (!r.patients || seen.has(r.patient_id) || future.has(r.patient_id)) continue;
-      seen.add(r.patient_id);
+    for (const r of [...rows].sort((a, b) => b.starts_at.localeCompare(a.starts_at))) {
+      if (seen.has(r.patient_id) || future.has(r.patient_id)) continue;
       const monthsAgo = (now - new Date(r.starts_at).getTime()) / (30.44 * 86400_000);
       if (type === "recall") {
-        const every = r.appointment_types?.recall_months;
+        const every = r.recall_months;
         if (!every || monthsAgo < every) continue;
+        seen.add(r.patient_id);
         members.push({
           patient_id: r.patient_id,
-          phone: r.patients.phone,
-          name: r.patients.full_name,
-          detail: r.appointment_types!.name.toLowerCase(),
-          context: `Campaña de recall: su último turno de "${r.appointment_types!.name}" (tipo_turno_id=${r.appointment_type_id}) fue hace ${Math.round(monthsAgo)} meses y corresponde hacerlo cada ${every}. Ofrecé turnos para ese control.`,
+          phone: r.phone,
+          name: r.full_name,
+          detail: r.type_name.toLowerCase(),
+          context: `Campaña de recall: su último turno de "${r.type_name}" (tipo_turno_id=${r.appointment_type_id}) fue hace ${Math.round(monthsAgo)} meses y corresponde hacerlo cada ${every}. Ofrecé turnos para ese control.`,
         });
-      } else if (monthsAgo >= 12) {
+      } else {
+        seen.add(r.patient_id);
+        if (monthsAgo < 12) continue;
         members.push({
           patient_id: r.patient_id,
-          phone: r.patients.phone,
-          name: r.patients.full_name,
+          phone: r.phone,
+          name: r.full_name,
           detail: clinic.name,
-          context: `Campaña de reactivación: no viene a la clínica hace ${Math.round(monthsAgo)} meses (último turno: ${r.appointment_types?.name}). Preguntá cómo está y ofrecé un turno.`,
+          context: `Campaña de reactivación: no viene a la clínica hace ${Math.round(monthsAgo)} meses (último turno: ${r.type_name}). Preguntá cómo está y ofrecé un turno.`,
         });
       }
     }
@@ -146,59 +130,51 @@ export async function computeAudience(clinic: Clinic, type: CampaignType): Promi
   }
 
   if (type === "no_show") {
-    const rows = unwrap(
-      await db()
-        .from("appointments")
-        .select("patient_id, starts_at, appointment_type_id, appointment_types(name), patients(id, full_name, phone)")
-        .eq("clinic_id", clinic.id)
-        .eq("status", "ausente")
-        .gte("starts_at", new Date(now - 30 * 86400_000).toISOString()),
-      "ausentes",
-    ) as unknown as Array<{ patient_id: string; appointment_type_id: string; appointment_types: { name: string } | null; patients: PatientRow | null }>;
+    const rows = await sql<Array<{ patient_id: string; appointment_type_id: string; type_name: string; full_name: string | null; phone: string }>>`
+      select a.patient_id, a.appointment_type_id, t.name as type_name, p.full_name, p.phone
+      from appointments a
+      join patients p on p.id = a.patient_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.clinic_id = ${clinic.id} and a.status = 'ausente' and a.starts_at >= ${new Date(now - 30 * 86400_000)}
+      order by a.starts_at desc`;
     const seen = new Set<string>();
     for (const r of rows) {
-      if (!r.patients || seen.has(r.patient_id) || future.has(r.patient_id)) continue;
+      if (seen.has(r.patient_id) || future.has(r.patient_id)) continue;
       seen.add(r.patient_id);
       members.push({
         patient_id: r.patient_id,
-        phone: r.patients.phone,
-        name: r.patients.full_name,
-        detail: r.appointment_types?.name.toLowerCase() ?? "tu turno",
-        context: `Recupero de ausente: faltó a su turno de "${r.appointment_types?.name}" (tipo_turno_id=${r.appointment_type_id}). Sin retar, ofrecé reprogramarlo.`,
+        phone: r.phone,
+        name: r.full_name,
+        detail: r.type_name.toLowerCase(),
+        context: `Recupero de ausente: faltó a su turno de "${r.type_name}" (tipo_turno_id=${r.appointment_type_id}). Sin retar, ofrecé reprogramarlo.`,
       });
     }
     return members;
   }
 
   if (type === "lista_espera") {
-    const rows = unwrap(
-      await db()
-        .from("waitlist")
-        .select("patient_id, appointment_type_id, preferences, appointment_types(name), patients(id, full_name, phone)")
-        .eq("clinic_id", clinic.id)
-        .eq("status", "activa"),
-      "lista de espera",
-    ) as unknown as Array<{
-      patient_id: string;
-      appointment_type_id: string | null;
-      preferences: string | null;
-      appointment_types: { name: string } | null;
-      patients: PatientRow | null;
-    }>;
+    const rows = await sql<
+      Array<{ patient_id: string; appointment_type_id: string | null; preferences: string | null; type_name: string | null; full_name: string | null; phone: string }>
+    >`
+      select distinct on (w.patient_id) w.patient_id, w.appointment_type_id, w.preferences, t.name as type_name, p.full_name, p.phone
+      from waitlist w
+      join patients p on p.id = w.patient_id
+      left join appointment_types t on t.id = w.appointment_type_id
+      where w.clinic_id = ${clinic.id} and w.status = 'activa'
+      order by w.patient_id, w.created_at`;
     for (const r of rows) {
-      if (!r.patients) continue;
       members.push({
         patient_id: r.patient_id,
-        phone: r.patients.phone,
-        name: r.patients.full_name,
-        detail: r.appointment_types?.name.toLowerCase() ?? "tu turno",
-        context: `Está en lista de espera para "${r.appointment_types?.name}" (tipo_turno_id=${r.appointment_type_id}). Preferencias: ${r.preferences ?? "sin datos"}. Consultá disponibilidad y ofrecé lo más cercano.`,
+        phone: r.phone,
+        name: r.full_name,
+        detail: r.type_name?.toLowerCase() ?? "tu turno",
+        context: `Está en lista de espera para "${r.type_name ?? "un turno"}" (tipo_turno_id=${r.appointment_type_id}). Preferencias: ${r.preferences ?? "sin datos"}. Consultá disponibilidad y ofrecé lo más cercano.`,
       });
     }
     return members;
   }
 
-  const rows = unwrap(await db().from("patients").select("id, full_name, phone").eq("clinic_id", clinic.id), "pacientes") as PatientRow[];
+  const rows = await sql<PatientRow[]>`select id, full_name, phone from patients where clinic_id = ${clinic.id} order by created_at`;
   return rows.map((r) => ({ patient_id: r.id, phone: r.phone, name: r.full_name, detail: clinic.name, context: "Aviso general de la clínica." }));
 }
 
@@ -210,39 +186,34 @@ export async function createCampaign(input: {
   templateLanguage?: string;
   goal?: string;
 }): Promise<Campaign> {
-  return unwrap(
-    await db()
-      .from("campaigns")
-      .insert({
-        clinic_id: input.clinicId,
-        name: input.name,
-        type: input.type,
-        template_name: input.templateName,
-        template_language: input.templateLanguage || "es_AR",
-        goal: input.goal || CAMPAIGN_LABELS[input.type].goal,
-      })
-      .select("*")
-      .single(),
-    "crear campaña",
-  ) as Campaign;
+  const [campaign] = await sql<Campaign[]>`
+    insert into campaigns ${sql({
+      clinic_id: input.clinicId,
+      name: input.name,
+      type: input.type,
+      template_name: input.templateName,
+      template_language: input.templateLanguage || "es_AR",
+      goal: input.goal || CAMPAIGN_LABELS[input.type].goal,
+    })}
+    returning *`;
+  return campaign;
 }
 
 export type SendResult = { audience: number; sent: number; failed: number; skipped: number; errors: string[] };
 
 export async function sendCampaign(campaignId: string): Promise<SendResult> {
-  const campaign = unwrap(await db().from("campaigns").select("*").eq("id", campaignId).single(), "campaña") as Campaign;
+  const [campaign] = await sql<Campaign[]>`select * from campaigns where id = ${campaignId}`;
+  if (!campaign) throw new Error("No encontré la campaña.");
   const clinic = await getClinic(campaign.clinic_id);
   if (!clinic.whatsapp_phone_number_id) throw new Error("Falta el ID del número de WhatsApp en Configuración.");
   if (!clinic.elevenlabs_agent_id) throw new Error("Primero creá el agente en Configuración.");
 
   const audience = await computeAudience(clinic, campaign.type);
-  const already = unwrap(
-    await db().from("campaign_recipients").select("patient_id, status").eq("campaign_id", campaign.id),
-    "destinatarios",
-  ) as Array<{ patient_id: string; status: string }>;
+  const already = await sql<Array<{ patient_id: string; status: string }>>`
+    select patient_id, status from campaign_recipients where campaign_id = ${campaign.id}`;
   const done = new Set(already.filter((r) => r.status !== "pendiente" && r.status !== "error").map((r) => r.patient_id));
 
-  await db().from("campaigns").update({ status: "enviando" }).eq("id", campaign.id);
+  await sql`update campaigns set status = 'enviando' where id = ${campaign.id}`;
   const result: SendResult = { audience: audience.length, sent: 0, failed: 0, skipped: 0, errors: [] };
 
   for (const member of audience.slice(0, MAX_PER_RUN)) {
@@ -262,36 +233,29 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
         agentId: clinic.elevenlabs_agent_id,
         dynamicVariables: await buildDynamicVariables(clinic, member.phone, { context, campaignId: campaign.id }),
       });
-      await db().from("campaign_recipients").upsert(
-        {
-          campaign_id: campaign.id,
-          patient_id: member.patient_id,
-          status: "enviado",
-          elevenlabs_conversation_id: res.conversation_id ?? null,
-          sent_at: new Date().toISOString(),
-          error: null,
-        },
-        { onConflict: "campaign_id,patient_id" },
-      );
+      await sql`
+        insert into campaign_recipients (campaign_id, patient_id, status, elevenlabs_conversation_id, sent_at, error)
+        values (${campaign.id}, ${member.patient_id}, 'enviado', ${res.conversation_id ?? null}, now(), null)
+        on conflict (campaign_id, patient_id) do update set
+          status = excluded.status, elevenlabs_conversation_id = excluded.elevenlabs_conversation_id,
+          sent_at = excluded.sent_at, error = null`;
       if (campaign.type === "recordatorio") {
         const match = /turno_id=([0-9a-f-]{36})/.exec(member.context);
-        if (match) await db().from("appointments").update({ reminder_sent_at: new Date().toISOString() }).eq("id", match[1]);
+        if (match) await sql`update appointments set reminder_sent_at = now() where id = ${match[1]}`;
       }
       result.sent++;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       result.failed++;
       result.errors.push(`${member.name ?? member.phone}: ${message.slice(0, 200)}`);
-      await db()
-        .from("campaign_recipients")
-        .upsert(
-          { campaign_id: campaign.id, patient_id: member.patient_id, status: "error", error: message.slice(0, 500) },
-          { onConflict: "campaign_id,patient_id" },
-        );
+      await sql`
+        insert into campaign_recipients (campaign_id, patient_id, status, error)
+        values (${campaign.id}, ${member.patient_id}, 'error', ${message.slice(0, 500)})
+        on conflict (campaign_id, patient_id) do update set status = 'error', error = excluded.error`;
     }
   }
 
-  await db().from("campaigns").update({ status: "finalizada", sent_at: new Date().toISOString() }).eq("id", campaign.id);
+  await sql`update campaigns set status = 'finalizada', sent_at = now() where id = ${campaign.id}`;
   return result;
 }
 

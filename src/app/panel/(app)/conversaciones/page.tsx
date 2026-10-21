@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getClinic } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, StatusBadge } from "@/components/ui";
@@ -14,7 +14,7 @@ type Row = {
   summary: string | null;
   intent: string | null;
   outcome: string | null;
-  patients: { full_name: string | null } | null;
+  patient: string | null;
 };
 
 const FILTERS = [
@@ -27,14 +27,14 @@ const FILTERS = [
 export default async function ConversationsPage({ searchParams }: PageProps<"/panel/conversaciones">) {
   const clinic = await getClinic();
   const { canal } = await searchParams;
-  let query = db()
-    .from("conversations")
-    .select("id, started_at, channel, direction, duration_secs, title, summary, intent, outcome, patients(full_name)")
-    .eq("clinic_id", clinic.id)
-    .order("started_at", { ascending: false })
-    .limit(100);
-  if (typeof canal === "string" && canal) query = query.eq("channel", canal);
-  const rows = ((await query).data ?? []) as unknown as Row[];
+  const channel = typeof canal === "string" && canal ? canal : null;
+  const rows = await sql<Row[]>`
+    select c.id, c.started_at, c.channel, c.direction, c.duration_secs, c.title, c.summary, c.intent, c.outcome,
+           p.full_name as patient
+    from conversations c left join patients p on p.id = c.patient_id
+    where c.clinic_id = ${clinic.id} ${channel ? sql`and c.channel = ${channel}` : sql``}
+    order by c.started_at desc
+    limit 100`;
 
   return (
     <>
@@ -65,7 +65,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
                     </p>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-brand-950">{c.patients?.full_name ?? "Paciente sin identificar"}</p>
+                    <p className="font-medium text-brand-950">{c.patient ?? "Paciente sin identificar"}</p>
                     <p className="line-clamp-2 text-sm text-brand-900/60">{c.title || c.summary || "Sin resumen todavía"}</p>
                   </div>
                   <div className="flex shrink-0 gap-2">

@@ -1,0 +1,434 @@
+import { createHmac } from "node:crypto";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetTestDatabase, testDatabaseUrl } from "./db-setup";
+
+// Integración con un Postgres real y descartable (local o el servicio de CI).
+// Corre con TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/turnia_test
+// No llama a ElevenLabs ni a n8n: esas salidas se reemplazan por espías.
+
+const mocks = vi.hoisted(() => ({
+  notifyN8n: vi.fn(async () => {}),
+  sendWhatsAppTemplate: vi.fn<(msg: unknown) => Promise<{ conversation_id: string }>>(async () => ({ conversation_id: "conv_saliente" })),
+  session: undefined as string | undefined,
+}));
+
+vi.mock("@/lib/n8n", () => ({ notifyN8n: mocks.notifyN8n }));
+vi.mock("@/lib/elevenlabs", async (original) => ({
+  ...(await original<typeof import("@/lib/elevenlabs")>()),
+  sendWhatsAppTemplate: mocks.sendWhatsAppTemplate,
+}));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => (mocks.session ? { value: mocks.session } : undefined), set: () => {}, delete: () => {} }),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/navigation", () => ({
+  redirect: (to: string) => {
+    throw new Error(`redirect:${to}`);
+  },
+  notFound: () => {
+    throw new Error("notFound");
+  },
+  usePathname: () => "/panel",
+}));
+
+const url = testDatabaseUrl();
+const CLINIC = "00000000-0000-4000-8000-000000000001";
+const LIMPIEZA = "00000000-0000-4000-8000-0000000000b5";
+const RUIZ = "00000000-0000-4000-8000-0000000000a3";
+const GOMEZ = "00000000-0000-4000-8000-0000000000a2";
+const LUNARES = "00000000-0000-4000-8000-0000000000b4";
+
+describe.runIf(url)("integración con Postgres", () => {
+  let sql: typeof import("@/lib/db").sql;
+  let service: typeof import("@/lib/agent/service");
+  let clinicLib: typeof import("@/lib/clinic");
+
+  const ctx = (phone: string) => ({ clinicId: CLINIC, patientPhone: phone, channel: "whatsapp", conversationId: "conv_test" });
+  const inTwoDays = () => new Date(Date.now() + 2 * 86400_000).toISOString().slice(0, 10);
+
+  beforeAll(async () => {
+    await resetTestDatabase(url!);
+    vi.stubEnv("DATABASE_URL", url!);
+    vi.stubEnv("AGENT_TOOLS_SECRET", "secreto-de-prueba");
+    vi.stubEnv("SESSION_SECRET", "sesion-de-prueba");
+    vi.stubEnv("ELEVENLABS_API_KEY", "clave-falsa");
+    vi.stubEnv("ELEVENLABS_WEBHOOK_SECRET", "wsec_prueba");
+    ({ sql } = await import("@/lib/db"));
+    service = await import("@/lib/agent/service");
+    clinicLib = await import("@/lib/clinic");
+    const { createSessionToken } = await import("@/lib/session");
+    mocks.session = createSessionToken();
+  }, 60000);
+
+  afterAll(async () => {
+    const { closeDb } = await import("@/lib/db");
+    await closeDb();
+    vi.unstubAllEnvs();
+  });
+
+  beforeEach(() => {
+    mocks.notifyN8n.mockClear();
+    mocks.sendWhatsAppTemplate.mockClear();
+  });
+
+  it("lee la clínica, el catálogo y arma todas las variables dinámicas", async () => {
+    const clinic = await clinicLib.getClinic();
+    expect(clinic.id).toBe(CLINIC);
+    expect(clinic.accepted_coverages).toContain("OSDE");
+    expect(clinic.templates.recordatorio).toBe("recordatorio_turno");
+    // Un ID inválido o inexistente cae en la clínica por defecto, sin romper.
+    expect((await clinicLib.getClinic("no-es-uuid")).id).toBe(CLINIC);
+    expect((await clinicLib.resolveClinic({ agentId: "agente-desconocido" })).id).toBe(CLINIC);
+
+    const catalog = await clinicLib.getCatalog(CLINIC);
+    expect(catalog.professionals).toHaveLength(4);
+    expect(catalog.appointmentTypes).toHaveLength(8);
+    expect(catalog.schedules.length).toBeGreaterThan(10);
+    expect(catalog.schedules[0].start_time).toMatch(/^\d\d:\d\d:\d\d$/);
+
+    const vars = await clinicLib.buildDynamicVariables(clinic, "5491155550001");
+    for (const key of [
+      "clinic_id", "clinic_name", "agent_name", "clinic_info", "clinic_catalog", "urgency_instructions",
+      "patient_phone", "patient_name", "patient_context", "conversation_context", "campaign_id",
+    ]) {
+      expect(vars[key], key).toBeTruthy();
+    }
+    expect(vars.patient_name).toBe("María González");
+    expect(vars.patient_context).toContain("Prefiere turnos a la mañana");
+    expect(vars.clinic_catalog).toContain(`id=${LIMPIEZA}`);
+  });
+
+  it("registra pacientes nuevos y actualiza sus datos", async () => {
+    const r = await service.registerPatient(ctx("011 15 6666-0001"), {
+      nombre_completo: "Paula Prueba",
+      dni: "30.111.222",
+      fecha_nacimiento: "1990-05-04",
+      cobertura: "OSDE",
+      plan: "210",
+    });
+    expect(r.paciente).toMatchObject({ nombre: "Paula Prueba", dni: "30111222", cobertura: "OSDE", plan: "210" });
+    const patient = await clinicLib.findPatientByPhone(CLINIC, "5491166660001");
+    expect(patient?.birth_date).toBe("1990-05-04");
+    expect(patient?.last_contact_at).toMatch(/Z$/);
+    // Otra llamada con el teléfono en otro formato encuentra al mismo paciente.
+    await service.registerPatient(ctx("+54 9 11 6666-0001"), { email: "paula@example.com" });
+    const [{ count }] = await sql<Array<{ count: number }>>`select count(*)::int as count from patients where phone = '5491166660001'`;
+    expect(count).toBe(1);
+  });
+
+  it("consulta disponibilidad, reserva, reprograma y cancela", async () => {
+    const c = ctx("5491166660002");
+    await service.registerPatient(c, { nombre_completo: "Rodrigo Reserva", cobertura: "Galeno" });
+    const availability = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    expect(availability.turnos.length).toBeGreaterThan(2);
+    const [first, second] = availability.turnos;
+
+    const booked = await service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: first.profesional_id, inicio: first.inicio });
+    expect(booked.ok).toBe(true);
+    expect(mocks.notifyN8n).toHaveBeenCalledWith("turno.reservado", expect.objectContaining({ clinic_id: CLINIC }));
+
+    // El mismo horario ya no aparece ni se puede volver a reservar.
+    const again = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    expect(again.turnos.map((t) => t.inicio)).not.toContain(first.inicio);
+    await expect(
+      service.bookAppointment(ctx("5491166660003"), { tipo_turno_id: LIMPIEZA, profesional_id: first.profesional_id, inicio: first.inicio, nombre_completo: "Otra Persona" }),
+    ).rejects.toBeInstanceOf(service.ToolError);
+
+    const listed = await service.listPatientAppointments(c);
+    expect(listed.turnos).toHaveLength(1);
+    expect(listed.turnos[0]).toMatchObject({ turno_id: booked.turno_id, tipo_turno: "Limpieza dental", profesional: "Dra. Carolina Ruiz" });
+
+    const moved = await service.rescheduleAppointment(c, { turno_id: booked.turno_id, nuevo_inicio: second.inicio });
+    expect(moved.ok).toBe(true);
+    const [old] = await sql<Array<{ status: string }>>`select status from appointments where id = ${booked.turno_id}`;
+    expect(old.status).toBe("reprogramado");
+    const afterMove = await service.listPatientAppointments(c);
+    expect(afterMove.turnos).toHaveLength(1);
+    expect(afterMove.turnos[0].inicio).toBe(second.inicio);
+
+    const cancelled = await service.cancelAppointment(c, { turno_id: moved.turno_id, motivo: "viaje" });
+    expect(cancelled.ok).toBe(true);
+    expect((await service.listPatientAppointments(c)).turnos).toHaveLength(0);
+    await expect(service.cancelAppointment(c, { turno_id: moved.turno_id })).rejects.toThrow("ya está cancelado");
+    await expect(service.cancelAppointment(c, { turno_id: "inventado" })).rejects.toBeInstanceOf(service.ToolError);
+  });
+
+  it("si la reserva nueva choca, reprogramar deja el turno original intacto", async () => {
+    const a = ctx("5491166660004");
+    const b = ctx("5491166660005");
+    await service.registerPatient(a, { nombre_completo: "Ana Original" });
+    await service.registerPatient(b, { nombre_completo: "Beto Ocupa" });
+    const { turnos } = await service.checkAvailability(a, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    const mine = await service.bookAppointment(a, { tipo_turno_id: LIMPIEZA, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio });
+    await service.bookAppointment(b, { tipo_turno_id: LIMPIEZA, profesional_id: turnos[1].profesional_id, inicio: turnos[1].inicio });
+    await expect(service.rescheduleAppointment(a, { turno_id: mine.turno_id, nuevo_inicio: turnos[1].inicio })).rejects.toBeInstanceOf(service.ToolError);
+    const [row] = await sql<Array<{ status: string }>>`select status from appointments where id = ${mine.turno_id}`;
+    expect(row.status).toBe("confirmado");
+  });
+
+  it("dos reservas simultáneas del mismo horario: entra una sola (constraint de Postgres)", async () => {
+    const p1 = ctx("5491166660006");
+    const p2 = ctx("5491166660007");
+    await service.registerPatient(p1, { nombre_completo: "Carla Carrera" });
+    await service.registerPatient(p2, { nombre_completo: "Diego Carrera" });
+    const { turnos } = await service.checkAvailability(p1, { tipo_turno_id: LIMPIEZA, desde: inTwoDays(), franja: "tarde" });
+    const slot = turnos[0];
+    const results = await Promise.allSettled([
+      service.bookAppointment(p1, { tipo_turno_id: LIMPIEZA, profesional_id: slot.profesional_id, inicio: slot.inicio }),
+      service.bookAppointment(p2, { tipo_turno_id: LIMPIEZA, profesional_id: slot.profesional_id, inicio: slot.inicio }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(rejected.reason).toBeInstanceOf(service.ToolError);
+    const [{ count }] = await sql<Array<{ count: number }>>`
+      select count(*)::int as count from appointments where professional_id = ${slot.profesional_id} and starts_at = ${slot.inicio} and status = 'confirmado'`;
+    expect(count).toBe(1);
+  });
+
+  it("valida profesional, especialidad y cobertura", async () => {
+    const c = ctx("5491166660008");
+    await service.registerPatient(c, { nombre_completo: "Elena Cobertura", cobertura: "IOMA" });
+    const { turnos } = await service.checkAvailability(c, { tipo_turno_id: LUNARES, desde: inTwoDays() });
+    await expect(
+      service.bookAppointment(c, { tipo_turno_id: LUNARES, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio }),
+    ).rejects.toThrow("no atiende por IOMA");
+    await expect(
+      service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: GOMEZ, inicio: turnos[0].inicio }),
+    ).rejects.toThrow("no hace Limpieza dental");
+    await expect(service.checkAvailability(c, { tipo_turno_id: "inventado" })).rejects.toBeInstanceOf(service.ToolError);
+  });
+
+  it("crea tareas y anota en lista de espera; al cancelar ofrece el turno por WhatsApp", async () => {
+    await sql`update clinics set whatsapp_phone_number_id = 'wa_test', elevenlabs_agent_id = 'agent_test' where id = ${CLINIC}`;
+    const waiting = ctx("5491166660009");
+    await service.registerPatient(waiting, { nombre_completo: "Fede Espera" });
+    const task = await service.createTask(waiting, { tipo: "receta", titulo: "Renovar receta", detalle: "Ibuprofeno" });
+    const [taskRow] = await sql<Array<{ priority: string; conversation_id: string }>>`select priority, conversation_id from tasks where id = ${task.tarea_id}`;
+    expect(taskRow).toEqual({ priority: "normal", conversation_id: "conv_test" });
+    await service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, preferencias: "tardes" });
+
+    const holder = ctx("5491166660010");
+    await service.registerPatient(holder, { nombre_completo: "Gabi Cancela" });
+    const { turnos } = await service.checkAvailability(holder, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    const booked = await service.bookAppointment(holder, { tipo_turno_id: LIMPIEZA, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio });
+    const result = await service.cancelAppointment(holder, { turno_id: booked.turno_id });
+    expect(result.avisados_lista_espera).toBe(1);
+    expect(mocks.sendWhatsAppTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "5491166660009", templateName: "turno_liberado", params: ["Fede", expect.any(String)] }),
+    );
+    const [entry] = await sql<Array<{ status: string }>>`
+      select w.status from waitlist w join patients p on p.id = w.patient_id where p.phone = '5491166660009'`;
+    expect(entry.status).toBe("ofrecida");
+
+    // Si después reserva ese tipo de turno, la lista de espera queda resuelta.
+    await service.bookAppointment(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio });
+    const [resolved] = await sql<Array<{ status: string }>>`
+      select w.status from waitlist w join patients p on p.id = w.patient_id where p.phone = '5491166660009'`;
+    expect(resolved.status).toBe("resuelta");
+  });
+
+  it("arma las audiencias de las campañas y registra los envíos", async () => {
+    const { computeAudience, createCampaign, sendCampaign } = await import("@/lib/campaigns");
+    const clinic = await clinicLib.getClinic();
+
+    const recall = await computeAudience(clinic, "recall");
+    // María (limpieza cada 6 meses, hace 7), Ana (lunares cada 12, hace 13) y Jorge (control cada 3, hace 4).
+    expect(recall.map((m) => m.name).sort()).toEqual(["Ana Romero", "Jorge Pérez", "María González"]);
+    expect((await computeAudience(clinic, "reactivacion")).map((m) => m.name)).toEqual(["Ana Romero"]);
+    expect((await computeAudience(clinic, "no_show")).map((m) => m.name)).toEqual(["Lucas Díaz"]);
+
+    // Un turno para mañana entra en el recordatorio.
+    const tomorrow = new Date(Date.now() + 24 * 3600_000);
+    tomorrow.setUTCMinutes(0, 0, 0);
+    const [appt] = await sql<Array<{ id: string }>>`
+      insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+      values (${CLINIC}, '00000000-0000-4000-8000-0000000000c4', '00000000-0000-4000-8000-0000000000a4', '00000000-0000-4000-8000-0000000000b8',
+              ${tomorrow}, ${new Date(tomorrow.getTime() + 20 * 60_000)}, 'confirmado', 'panel')
+      returning id`;
+    const reminders = await computeAudience(clinic, "recordatorio");
+    expect(reminders.map((m) => m.name)).toContain("Lucas Díaz");
+    // Lucas ahora tiene un turno futuro: ya no es un ausente a recuperar.
+    expect(await computeAudience(clinic, "no_show")).toHaveLength(0);
+
+    const campaign = await createCampaign({ clinicId: CLINIC, name: "Recordatorios de prueba", type: "recordatorio", templateName: "recordatorio_turno" });
+    const sent = await sendCampaign(campaign.id);
+    expect(sent.sent).toBe(reminders.length);
+    expect(mocks.sendWhatsAppTemplate).toHaveBeenCalledWith(expect.objectContaining({ userId: "5491155550004", templateName: "recordatorio_turno" }));
+    const [reminded] = await sql<Array<{ reminder_sent_at: string | null }>>`select reminder_sent_at from appointments where id = ${appt.id}`;
+    expect(reminded.reminder_sent_at).not.toBeNull();
+    const recipients = await sql<Array<{ status: string; elevenlabs_conversation_id: string }>>`
+      select status, elevenlabs_conversation_id from campaign_recipients where campaign_id = ${campaign.id}`;
+    expect(recipients.every((r) => r.status === "enviado" && r.elevenlabs_conversation_id === "conv_saliente")).toBe(true);
+
+    // Reenviar la misma campaña no le vuelve a escribir a nadie.
+    mocks.sendWhatsAppTemplate.mockClear();
+    const resend = await sendCampaign(campaign.id);
+    expect(resend.sent).toBe(0);
+    expect(mocks.sendWhatsAppTemplate).not.toHaveBeenCalled();
+
+    // Un error de envío queda registrado por destinatario.
+    mocks.sendWhatsAppTemplate.mockRejectedValueOnce(new Error("template no aprobado"));
+    const failing = await createCampaign({ clinicId: CLINIC, name: "Reactivación de prueba", type: "reactivacion", templateName: "reactivacion_paciente" });
+    const failed = await sendCampaign(failing.id);
+    expect(failed.failed).toBe(1);
+    const [errorRow] = await sql<Array<{ status: string; error: string }>>`select status, error from campaign_recipients where campaign_id = ${failing.id}`;
+    expect(errorRow).toEqual({ status: "error", error: "template no aprobado" });
+  });
+
+  it("guarda la conversación del webhook firmado, la memoria y el resultado de la campaña", async () => {
+    const { POST } = await import("@/app/api/elevenlabs/post-call/route");
+    const [campaign] = await sql<Array<{ id: string }>>`select id from campaigns where name = 'Recordatorios de prueba'`;
+    const payload = {
+      type: "post_call_transcription",
+      data: {
+        agent_id: "agent_test",
+        conversation_id: "conv_post_1",
+        status: "done",
+        user_id: "5491155550004",
+        transcript: [
+          { role: "agent", message: "¡Hola Lucas!", time_in_call_secs: 0 },
+          { role: "user", message: "Sí, voy mañana", time_in_call_secs: 3 },
+        ],
+        metadata: { start_time_unix_secs: Math.floor(Date.now() / 1000), call_duration_secs: 42, whatsapp: { id: "x" } },
+        analysis: {
+          call_successful: "success",
+          transcript_summary: "Confirmó el turno de mañana.",
+          call_summary_title: "Confirmación de turno",
+          data_collection_results: {
+            motivo: { value: "confirmar_turno" },
+            resultado: { value: "resuelto" },
+            memoria: { value: "Prefiere que le escriban por la tarde." },
+            sentimiento: { value: "positivo" },
+          },
+        },
+        conversation_initiation_client_data: {
+          dynamic_variables: { clinic_id: CLINIC, patient_phone: "5491155550004", campaign_id: campaign.id, conversation_context: "Recordatorio" },
+        },
+      },
+    };
+    const body = JSON.stringify(payload);
+    const signed = (raw: string) => {
+      const t = Math.floor(Date.now() / 1000);
+      return `t=${t},v0=${createHmac("sha256", "wsec_prueba").update(`${t}.${raw}`).digest("hex")}`;
+    };
+    const send = (raw: string, signature: string) =>
+      POST(new Request("https://turnia.example/api/elevenlabs/post-call", { method: "POST", body: raw, headers: { "elevenlabs-signature": signature } }));
+
+    expect((await send(body, "t=1,v0=falsa")).status).toBe(401);
+    expect((await send(body, signed(body))).status).toBe(200);
+    // ElevenLabs puede reintentar: no duplica la conversación.
+    expect((await send(body, signed(body))).status).toBe(200);
+
+    const conversations = await sql<Array<{ channel: string; direction: string; outcome: string; transcript: unknown[]; analysis: { sentimiento: string } }>>`
+      select channel, direction, outcome, transcript, analysis from conversations where elevenlabs_conversation_id = 'conv_post_1'`;
+    expect(conversations).toHaveLength(1);
+    expect(conversations[0]).toMatchObject({ channel: "whatsapp", direction: "saliente", outcome: "resuelto", analysis: { sentimiento: "positivo" } });
+    expect(conversations[0].transcript).toHaveLength(2);
+    const lucas = await clinicLib.findPatientByPhone(CLINIC, "5491155550004");
+    expect(lucas?.memory_summary).toContain("Prefiere que le escriban por la tarde.");
+    const [recipient] = await sql<Array<{ status: string }>>`
+      select r.status from campaign_recipients r join patients p on p.id = r.patient_id
+      where r.campaign_id = ${campaign.id} and p.phone = '5491155550004'`;
+    expect(recipient.status).toBe("respondio");
+  });
+
+  it("expone las herramientas por HTTP con el secreto y valida los parámetros", async () => {
+    const { POST } = await import("@/app/api/agent/tools/[name]/route");
+    const call = (name: string, body: unknown, secret = "secreto-de-prueba") =>
+      POST(
+        new Request(`https://turnia.example/api/agent/tools/${name}`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: { "x-turnia-secret": secret, "content-type": "application/json" },
+        }),
+        { params: Promise.resolve({ name }) },
+      );
+    const base = { clinic_id: CLINIC, patient_phone: "5491155550001", conversation_id: "conv_http", canal: "whatsapp" };
+    expect((await call("ver_turnos_paciente", base, "otro")).status).toBe(401);
+    expect((await call("inexistente", base)).status).toBe(404);
+    expect(await (await call("consultar_disponibilidad", { ...base, tipo_turno_id: "" })).json()).toMatchObject({ ok: false });
+    const list = await (await call("ver_turnos_paciente", base)).json();
+    expect(list).toEqual({ ok: true, turnos: [] });
+    const slots = await (await call("consultar_disponibilidad", { ...base, tipo_turno_id: LIMPIEZA, franja: "manana", profesional_id: "" })).json();
+    expect(slots.ok).toBe(true);
+    expect(slots.turnos.length).toBeGreaterThan(0);
+  });
+
+  it("las server actions del panel modifican la agenda y la configuración", async () => {
+    const actions = await import("@/app/panel/actions");
+    const form = (data: Record<string, string | string[]>) => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(data)) for (const x of [v].flat()) f.append(k, x);
+      return f;
+    };
+    const day = inTwoDays();
+    const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+    // Un horario nuevo para el Dr. Sosa ese día a la noche, así el turno manual siempre entra.
+    await actions.addSchedule(form({ professional_id: "00000000-0000-4000-8000-0000000000a4", weekday: String(weekday), start_time: "20:00", end_time: "22:00" }));
+    const manual = await actions.createManualAppointment(undefined, form({
+      phone: "11 6666-0011", full_name: "Hugo Manual", coverage: "Particular", date: day, time: "20:30",
+      appointment_type_id: "00000000-0000-4000-8000-0000000000b8", professional_id: "00000000-0000-4000-8000-0000000000a4",
+    }));
+    expect(manual).toMatchObject({ ok: true });
+    const [appt] = await sql<Array<{ id: string; source: string }>>`
+      select a.id, a.source from appointments a join patients p on p.id = a.patient_id where p.phone = '5491166660011'`;
+    expect(appt.source).toBe("panel");
+    await actions.setAppointmentStatus(form({ id: appt.id, status: "atendido" }));
+    const [done] = await sql<Array<{ status: string }>>`select status from appointments where id = ${appt.id}`;
+    expect(done.status).toBe("atendido");
+
+    await actions.saveClinic(form({
+      name: "Centro Médico Plaza (demo)", agent_name: "Sofi", accepted_coverages: "OSDE, Galeno",
+      template_recordatorio: "recordatorio_turno", template_idioma: "es_AR", whatsapp_phone_number_id: "wa_test",
+    }));
+    const clinic = await clinicLib.getClinic();
+    expect(clinic.accepted_coverages).toEqual(["OSDE", "Galeno"]);
+    expect(clinic.templates).toEqual({ recordatorio: "recordatorio_turno", idioma: "es_AR", confirmacion: "confirmacion_turno" });
+
+    await actions.addProfessional(form({ full_name: "Dra. Nueva", specialty: "Pediatría", accepted_coverages: "OSDE" }));
+    await actions.addAppointmentType(form({ name: "Control pediátrico", specialty: "Pediatría", duration_min: "25", recall_months: "6" }));
+    const catalog = await clinicLib.getCatalog(CLINIC);
+    expect(catalog.professionals.map((p) => p.full_name)).toContain("Dra. Nueva");
+    expect(catalog.appointmentTypes.find((t) => t.name === "Control pediátrico")?.recall_months).toBe(6);
+
+    mocks.session = undefined;
+    await expect(actions.setTaskStatus(form({ id: appt.id, status: "resuelta" }))).rejects.toThrow("redirect:/panel/login");
+    const { createSessionToken } = await import("@/lib/session");
+    mocks.session = createSessionToken();
+  });
+
+  it("todas las páginas del panel consultan y renderizan con datos reales", async () => {
+    const pages: Array<[string, () => Promise<unknown>]> = [
+      ["inicio", async () => (await import("@/app/panel/(app)/page")).default()],
+      ["agenda", async () => (await import("@/app/panel/(app)/agenda/page")).default({ searchParams: Promise.resolve({ fecha: inTwoDays() }) } as never)],
+      ["conversaciones", async () => (await import("@/app/panel/(app)/conversaciones/page")).default({ searchParams: Promise.resolve({ canal: "whatsapp" }) } as never)],
+      ["tareas", async () => (await import("@/app/panel/(app)/tareas/page")).default({ searchParams: Promise.resolve({}) } as never)],
+      ["pacientes", async () => (await import("@/app/panel/(app)/pacientes/page")).default({ searchParams: Promise.resolve({ q: "gonz" }) } as never)],
+      ["campañas", async () => (await import("@/app/panel/(app)/campanas/page")).default()],
+      ["configuración", async () => (await import("@/app/panel/(app)/configuracion/page")).default()],
+    ];
+    const [conversation] = await sql<Array<{ id: string }>>`select id from conversations limit 1`;
+    const [campaign] = await sql<Array<{ id: string }>>`select id from campaigns limit 1`;
+    pages.push(
+      ["conversación", async () => (await import("@/app/panel/(app)/conversaciones/[id]/page")).default({ params: Promise.resolve({ id: conversation.id }) } as never)],
+      ["paciente", async () => (await import("@/app/panel/(app)/pacientes/[id]/page")).default({ params: Promise.resolve({ id: "00000000-0000-4000-8000-0000000000c2" }) } as never)],
+      ["campaña", async () => (await import("@/app/panel/(app)/campanas/[id]/page")).default({ params: Promise.resolve({ id: campaign.id }) } as never)],
+    );
+    for (const [name, render] of pages) {
+      const html = renderToStaticMarkup((await render()) as React.ReactElement);
+      expect(html.length, name).toBeGreaterThan(200);
+    }
+    const pacientes = renderToStaticMarkup((await (await import("@/app/panel/(app)/pacientes/page")).default({ searchParams: Promise.resolve({ q: "gonz" }) } as never)) as React.ReactElement);
+    expect(pacientes).toContain("María González");
+    expect(pacientes).not.toContain("Jorge Pérez");
+    await expect((await import("@/app/panel/(app)/pacientes/[id]/page")).default({ params: Promise.resolve({ id: "no-existe" }) } as never)).rejects.toThrow("notFound");
+  });
+
+  it("el health check confirma que la base responde", async () => {
+    const { GET } = await import("@/app/api/health/route");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, database: "ok", clinics: 1 });
+  });
+});

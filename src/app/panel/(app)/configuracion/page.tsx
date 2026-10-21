@@ -1,5 +1,5 @@
 import { getCatalog, getClinic } from "@/lib/clinic";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { env, isConfigured } from "@/lib/env";
 import {
   addAppointmentType,
@@ -12,6 +12,7 @@ import {
 } from "../../actions";
 import { Badge, Card, Field, PageHeader, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import { AgentSetupButton } from "./agent-setup";
+import type { AppointmentType, Professional } from "@/lib/types";
 
 const WEEKDAYS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
@@ -31,12 +32,10 @@ export default async function SettingsPage() {
   const base = env.appUrl().replace(/\/$/, "");
   const t = clinic.templates ?? {};
   // getCatalog solo trae activos: para poder reactivar, traemos todo de nuevo.
-  const [allPros, allTypes] = await Promise.all([
-    db().from("professionals").select("*").eq("clinic_id", clinic.id).order("full_name"),
-    db().from("appointment_types").select("*").eq("clinic_id", clinic.id).order("specialty"),
+  const [professionals, types] = await Promise.all([
+    sql<Professional[]>`select * from professionals where clinic_id = ${clinic.id} order by full_name`,
+    sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} order by specialty, name`,
   ]);
-  const professionals = (allPros.data ?? []) as typeof catalog.professionals;
-  const types = (allTypes.data ?? []) as typeof catalog.appointmentTypes;
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
 
   return (
@@ -282,11 +281,11 @@ export default async function SettingsPage() {
           <Card>
             <h2 className="mb-3 font-semibold text-brand-950">Estado</h2>
             <ul className="space-y-1 text-sm">
-              <li>{configured.database ? "✅" : "❌"} Base de datos ({configured.neon ? "Neon" : "Supabase"})</li>
+              <li>{configured.database ? "✅" : "❌"} Base de datos (DATABASE_URL)</li>
               <li>{configured.elevenlabs ? "✅" : "❌"} ElevenLabs API key</li>
               <li>{configured.tools ? "✅" : "❌"} AGENT_TOOLS_SECRET</li>
-              <li>{process.env.ELEVENLABS_WEBHOOK_SECRET ? "✅" : "❌"} ELEVENLABS_WEBHOOK_SECRET</li>
-              <li>{process.env.N8N_WEBHOOK_URL ? "✅" : "➖"} N8N_WEBHOOK_URL (opcional)</li>
+              <li>{configured.webhook ? "✅" : "❌"} ELEVENLABS_WEBHOOK_SECRET</li>
+              <li>{configured.n8n ? "✅" : "➖"} N8N_WEBHOOK_URL (opcional)</li>
               <li className="pt-2 text-xs text-brand-900/50">LLM del agente: {env.agentLlm()}</li>
             </ul>
           </Card>
