@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getClinic } from "@/lib/clinic";
 import { formatDate } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
@@ -10,12 +10,13 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
   const clinic = await getClinic();
   const { q } = await searchParams;
   const search = typeof q === "string" ? q.trim() : "";
-  let query = db().from("patients").select("*").eq("clinic_id", clinic.id).order("last_contact_at", { ascending: false, nullsFirst: false }).limit(200);
-  if (search) {
-    const safe = search.replace(/[%,()]/g, "");
-    query = query.or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%,dni.ilike.%${safe}%`);
-  }
-  const rows = ((await query).data ?? []) as Patient[];
+  const pattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await sql<Patient[]>`
+    select * from patients
+    where clinic_id = ${clinic.id}
+      ${search ? sql`and (full_name ilike ${pattern} or phone ilike ${pattern} or dni ilike ${pattern})` : sql``}
+    order by last_contact_at desc nulls last, created_at desc
+    limit 200`;
 
   return (
     <>

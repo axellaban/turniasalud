@@ -168,6 +168,52 @@
               },
               "renameOutput": true,
               "outputKey": "Conversación finalizada"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "e6d27e46-28dd-41cd-b108-ffa8824b4282",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "turno.confirmado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Turno confirmado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "272491d4-74fe-4648-968d-574f8719d2d8",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "tarea.resuelta",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Tarea resuelta"
             }
           ]
         },
@@ -251,6 +297,28 @@
         160,
         -60
       ]
+    },
+    {
+      "parameters": {},
+      "id": "cdbdc0b6-feae-4814-a572-1f040cb1faab",
+      "name": "Turno confirmado → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        680
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3230e9bb-297b-4824-88de-d25986d1d6f1",
+      "name": "Tarea resuelta → reemplazá por Gmail/Slack/Sheets",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        920,
+        800
+      ]
     }
   ],
   "connections": {
@@ -310,6 +378,20 @@
         [
           {
             "node": "Conversación finalizada → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Turno confirmado → reemplazá por Gmail/Slack/Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tarea resuelta → reemplazá por Gmail/Slack/Sheets",
             "type": "main",
             "index": 0
           }

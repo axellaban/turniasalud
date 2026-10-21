@@ -5,6 +5,7 @@ import {
   bookAppointment,
   cancelAppointment,
   checkAvailability,
+  confirmAppointment,
   createTask,
   joinWaitlist,
   listPatientAppointments,
@@ -22,6 +23,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   consultar_disponibilidad: checkAvailability,
   reservar_turno: bookAppointment,
   ver_turnos_paciente: listPatientAppointments,
+  confirmar_turno: confirmAppointment,
   cancelar_turno: cancelAppointment,
   reprogramar_turno: rescheduleAppointment,
   crear_tarea: createTask,
@@ -58,6 +60,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
     });
   }
 
+  // Una línea JSON por llamada: en Vercel → Logs se puede filtrar por herramienta y resultado.
+  const started = Date.now();
+  const log = (resultado: string, extra: Record<string, unknown> = {}) =>
+    console.log(JSON.stringify({ evento: "herramienta", herramienta: name, resultado, ms: Date.now() - started, conversacion: ctx.data.conversation_id, canal: ctx.data.canal, ...extra }));
   try {
     const result = await handler(
       {
@@ -68,9 +74,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
       },
       input.data,
     );
+    log("ok");
     return NextResponse.json(result);
   } catch (e) {
-    if (e instanceof ToolError) return NextResponse.json({ ok: false, error: e.message });
+    if (e instanceof ToolError) {
+      log("rechazo", { motivo: e.message });
+      return NextResponse.json({ ok: false, error: e.message });
+    }
+    log("error");
     console.error(`Error en herramienta ${name}`, e);
     return NextResponse.json(
       { ok: false, error: "Hubo un problema técnico. Disculpate y creá una tarea de derivacion_humana con el pedido." },

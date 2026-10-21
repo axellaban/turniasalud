@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db } from "@/lib/supabase";
+import { sql } from "@/lib/db";
 import { getClinic } from "@/lib/clinic";
 import { isConfigured } from "@/lib/env";
 import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } from "@/lib/time";
@@ -31,65 +31,63 @@ export default async function PanelHome() {
   const [ny, nm, nd] = addDaysKey(todayKey, 1).split("-").map(Number);
   const dayEnd = zonedTimeToUtc(ny, nm, nd, 0, 0, tz).toISOString();
 
-  const [conversations, bookedByAi, openTasks, recovered, today, recentConversations, urgentTasks] = await Promise.all([
-    db().from("conversations").select("outcome, channel").eq("clinic_id", clinic.id).gte("started_at", since),
-    db()
-      .from("appointments")
-      .select("id", { count: "exact", head: true })
-      .eq("clinic_id", clinic.id)
-      .in("source", ["whatsapp", "telefono", "web", "campana"])
-      .gte("created_at", since),
-    db().from("tasks").select("id", { count: "exact", head: true }).eq("clinic_id", clinic.id).neq("status", "resuelta"),
-    db()
-      .from("campaign_recipients")
-      .select("id, campaigns!inner(clinic_id)", { count: "exact", head: true })
-      .eq("campaigns.clinic_id", clinic.id)
-      .eq("status", "agendo"),
-    db()
-      .from("appointments")
-      .select("id, starts_at, status, source, patients(full_name), professionals(full_name), appointment_types(name)")
-      .eq("clinic_id", clinic.id)
-      .gte("starts_at", dayStart)
-      .lt("starts_at", dayEnd)
-      .in("status", ["confirmado", "pendiente", "atendido", "ausente"])
-      .order("starts_at"),
-    db()
-      .from("conversations")
-      .select("id, started_at, channel, title, summary, outcome, patients(full_name)")
-      .eq("clinic_id", clinic.id)
-      .order("started_at", { ascending: false })
-      .limit(5),
-    db()
-      .from("tasks")
-      .select("id, title, priority, created_at")
-      .eq("clinic_id", clinic.id)
-      .in("priority", ["urgente", "alta"])
-      .neq("status", "resuelta")
-      .order("created_at", { ascending: false })
-      .limit(5),
+  const month = new Date(now.getTime() - 30 * 86400_000).toISOString();
+  const quarter = new Date(now.getTime() - 90 * 86400_000).toISOString();
+  const [[stats], [quality], [recovery], today, recentRows, urgentTasks] = await Promise.all([
+    sql<Array<{ conversations: number; resolved: number; booked_by_ai: number; open_tasks: number; recovered: number }>>`
+      select
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since}) as conversations,
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since} and outcome = 'resuelto') as resolved,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and source in ('whatsapp', 'telefono', 'web', 'campana') and created_at >= ${since}) as booked_by_ai,
+        (select count(*)::int from tasks where clinic_id = ${clinic.id} and status <> 'resuelta') as open_tasks,
+        (select count(*)::int from campaign_recipients r join campaigns c on c.id = r.campaign_id where c.clinic_id = ${clinic.id} and r.status = 'agendo') as recovered`,
+    // Últimos 30 días: satisfacción, confirmación de recordatorios y ausentismo.
+    sql<Array<{ satisfaction: number | null; answers: number; reminded: number; confirmed: number; attended: number; absent: number }>>`
+      select
+        (select round(avg(satisfaction), 1)::float8 from conversations where clinic_id = ${clinic.id} and started_at >= ${month} and satisfaction is not null) as satisfaction,
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${month} and satisfaction is not null) as answers,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month}) as reminded,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month} and confirmed_at is not null) as confirmed,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'atendido') as attended,
+        (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'ausente') as absent`,
+    // Turnos que sacaron pacientes después de recibir una campaña (90 días) y su valor de referencia.
+    sql<Array<{ appointments: number; revenue: number }>>`
+      select count(*)::int as appointments, coalesce(sum(t.price), 0)::float8 as revenue
+      from campaign_recipients r
+      join campaigns c on c.id = r.campaign_id
+      join lateral (
+        select a.appointment_type_id from appointments a
+        where a.patient_id = r.patient_id and a.created_at >= r.sent_at and a.status <> 'cancelado'
+        order by a.created_at
+        limit 1
+      ) booked on true
+      join appointment_types t on t.id = booked.appointment_type_id
+      where c.clinic_id = ${clinic.id} and r.status = 'agendo' and r.sent_at >= ${quarter}`,
+    sql<Array<{ id: string; starts_at: string; status: string; patient: string | null; professional: string; type_name: string }>>`
+      select a.id, a.starts_at, a.status, p.full_name as patient, pr.full_name as professional, t.name as type_name
+      from appointments a
+      join patients p on p.id = a.patient_id
+      join professionals pr on pr.id = a.professional_id
+      join appointment_types t on t.id = a.appointment_type_id
+      where a.clinic_id = ${clinic.id} and a.starts_at >= ${dayStart} and a.starts_at < ${dayEnd}
+        and a.status in ('confirmado', 'pendiente', 'atendido', 'ausente')
+      order by a.starts_at`,
+    sql<Array<{ id: string; started_at: string; channel: string; title: string | null; summary: string | null; patient: string | null }>>`
+      select c.id, c.started_at, c.channel, c.title, c.summary, p.full_name as patient
+      from conversations c left join patients p on p.id = c.patient_id
+      where c.clinic_id = ${clinic.id}
+      order by c.started_at desc
+      limit 5`,
+    sql<Array<{ id: string; title: string; priority: string }>>`
+      select id, title, priority from tasks
+      where clinic_id = ${clinic.id} and priority in ('urgente', 'alta') and status <> 'resuelta'
+      order by created_at desc
+      limit 5`,
   ]);
 
-  const convRows = (conversations.data ?? []) as Array<{ outcome: string | null; channel: string }>;
-  const resolved = convRows.filter((c) => c.outcome === "resuelto").length;
-  const resolutionRate = convRows.length ? Math.round((resolved / convRows.length) * 100) : null;
-  const todayRows = (today.data ?? []) as unknown as Array<{
-    id: string;
-    starts_at: string;
-    status: string;
-    source: string;
-    patients: { full_name: string | null } | null;
-    professionals: { full_name: string } | null;
-    appointment_types: { name: string } | null;
-  }>;
-  const recentRows = (recentConversations.data ?? []) as unknown as Array<{
-    id: string;
-    started_at: string;
-    channel: string;
-    title: string | null;
-    summary: string | null;
-    outcome: string | null;
-    patients: { full_name: string | null } | null;
-  }>;
+  const resolutionRate = stats.conversations ? Math.round((stats.resolved / stats.conversations) * 100) : null;
+  const percent = (part: number, total: number) => (total ? `${Math.round((part / total) * 100)}%` : "—");
+  const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
   const checklist = [
     { done: configured.database, label: "Base de datos configurada" },
@@ -121,10 +119,26 @@ export default async function PanelHome() {
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Conversaciones" value={convRows.length} hint="WhatsApp, teléfono y web" />
+        <Stat label="Conversaciones" value={stats.conversations} hint="WhatsApp, teléfono y web" />
         <Stat label="Resueltas por IA" value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin intervención humana" />
-        <Stat label="Turnos dados por IA" value={bookedByAi.count ?? 0} hint="últimos 7 días" />
-        <Stat label="Turnos recuperados" value={recovered.count ?? 0} hint="por campañas (histórico)" />
+        <Stat label="Turnos dados por IA" value={stats.booked_by_ai} hint="últimos 7 días" />
+        <Stat label="Turnos recuperados" value={stats.recovered} hint="por campañas (histórico)" />
+      </div>
+
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 30 días</h2>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat
+          label="Satisfacción"
+          value={quality.satisfaction === null ? "—" : `${quality.satisfaction}/10`}
+          hint={`${quality.answers} respuestas a encuestas`}
+        />
+        <Stat label="Confirmaron asistencia" value={percent(quality.confirmed, quality.reminded)} hint={`de ${quality.reminded} recordatorios`} />
+        <Stat label="Ausentismo" value={percent(quality.absent, quality.absent + quality.attended)} hint={`${quality.absent} ausentes`} />
+        <Stat
+          label="Ingresos recuperados"
+          value={money.format(recovery.revenue)}
+          hint={`${recovery.appointments} turnos por campañas (90 días, precio de referencia)`}
+        />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -135,14 +149,14 @@ export default async function PanelHome() {
               Ver agenda
             </Link>
           </div>
-          {todayRows.length ? (
+          {today.length ? (
             <ul className="divide-y divide-brand-900/5">
-              {todayRows.map((a) => (
+              {today.map((a) => (
                 <li key={a.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
                   <span className="w-12 font-mono text-brand-900">{formatTime(a.starts_at, tz)}</span>
-                  <span className="flex-1 font-medium text-brand-950">{a.patients?.full_name ?? "Paciente"}</span>
+                  <span className="flex-1 font-medium text-brand-950">{a.patient ?? "Paciente"}</span>
                   <span className="text-brand-900/60">
-                    {a.appointment_types?.name} · {a.professionals?.full_name}
+                    {a.type_name} · {a.professional}
                   </span>
                   <StatusBadge value={a.status} />
                 </li>
@@ -157,11 +171,11 @@ export default async function PanelHome() {
           <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-brand-950">Para el equipo</h2>
-              <Badge tone={(openTasks.count ?? 0) > 0 ? "yellow" : "green"}>{openTasks.count ?? 0} abiertas</Badge>
+              <Badge tone={stats.open_tasks > 0 ? "yellow" : "green"}>{stats.open_tasks} abiertas</Badge>
             </div>
-            {(urgentTasks.data ?? []).length ? (
+            {urgentTasks.length ? (
               <ul className="space-y-2 text-sm">
-                {(urgentTasks.data as Array<{ id: string; title: string; priority: string }>).map((t) => (
+                {urgentTasks.map((t) => (
                   <li key={t.id} className="flex items-center justify-between gap-2">
                     <span className="truncate">{t.title}</span>
                     <StatusBadge value={t.priority} />
@@ -189,7 +203,7 @@ export default async function PanelHome() {
                   <li key={c.id}>
                     <Link href={`/panel/conversaciones/${c.id}`} className="block rounded-xl p-2 hover:bg-brand-50">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-brand-950">{c.patients?.full_name ?? "Paciente sin identificar"}</span>
+                        <span className="font-medium text-brand-950">{c.patient ?? "Paciente sin identificar"}</span>
                         <span className="text-xs text-brand-900/50">{formatDateTime(c.started_at, tz)}</span>
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-brand-900/60">

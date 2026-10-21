@@ -234,7 +234,7 @@
     },
     {
       "parameters": {
-        "content": "## Turnia · campañas automáticas\n1. Editá el nodo **Configuración** con la URL de tu app en Vercel y tu `AGENT_TOOLS_SECRET`.\n2. Revisá que la zona horaria del workflow sea **America/Argentina/Buenos_Aires** (Settings del workflow).\n3. Activá el workflow.\n\nCada corrida crea una campaña en el panel → Campañas.",
+        "content": "## Turnia · campañas automáticas\n1. Editá el nodo **Configuración** con la URL de tu app en Vercel y tu `AGENT_TOOLS_SECRET`.\n2. Revisá que la zona horaria del workflow sea **America/Argentina/Buenos_Aires** (Settings del workflow).\n3. La encuesta post-consulta necesita el template de encuesta en Configuración; si no lo vas a usar, borrá ese disparador.\n4. Activá el workflow.\n\nCada corrida crea una campaña en el panel → Campañas.",
         "height": 260,
         "width": 420
       },
@@ -245,6 +245,49 @@
       "position": [
         160,
         -200
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 19 * * *"
+            }
+          ]
+        }
+      },
+      "id": "50de1d09-fe9b-4b0f-9238-52188a54eaf1",
+      "name": "Todos los días 19:00 · Encuestas post-consulta",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "be2f03c0-9c03-4149-9d1b-891ea43115bc",
+              "name": "job",
+              "value": "encuestas",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b3df9beb-106a-4458-8b8b-3e2a37ed464a",
+      "name": "Job: encuestas",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        450,
+        660
       ]
     }
   ],
@@ -338,6 +381,28 @@
       ]
     },
     "Job: reactivacion": {
+      "main": [
+        [
+          {
+            "node": "Configuración (editá acá)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Todos los días 19:00 · Encuestas post-consulta": {
+      "main": [
+        [
+          {
+            "node": "Job: encuestas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job: encuestas": {
       "main": [
         [
           {

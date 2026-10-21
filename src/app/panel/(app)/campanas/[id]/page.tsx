@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db } from "@/lib/supabase";
-import { getClinic } from "@/lib/clinic";
+import { sql } from "@/lib/db";
+import { getClinic, isUuid } from "@/lib/clinic";
 import { CAMPAIGN_LABELS, computeAudience } from "@/lib/campaigns";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
@@ -12,24 +12,16 @@ import { SendCampaignButton } from "./send-button";
 export default async function CampaignDetail({ params }: PageProps<"/panel/campanas/[id]">) {
   const { id } = await params;
   const clinic = await getClinic();
-  const { data } = await db().from("campaigns").select("*").eq("id", id).eq("clinic_id", clinic.id).maybeSingle();
-  if (!data) notFound();
-  const campaign = data as Campaign;
-  const [audience, recipients] = await Promise.all([
+  const [campaign] = isUuid(id) ? await sql<Campaign[]>`select * from campaigns where id = ${id} and clinic_id = ${clinic.id}` : [];
+  if (!campaign) notFound();
+  const [audience, sentRows] = await Promise.all([
     computeAudience(clinic, campaign.type),
-    db()
-      .from("campaign_recipients")
-      .select("id, status, error, sent_at, patients(full_name, phone)")
-      .eq("campaign_id", campaign.id)
-      .order("sent_at", { ascending: false }),
+    sql<Array<{ id: string; status: string; error: string | null; sent_at: string | null; full_name: string | null; phone: string }>>`
+      select r.id, r.status, r.error, r.sent_at, p.full_name, p.phone
+      from campaign_recipients r join patients p on p.id = r.patient_id
+      where r.campaign_id = ${campaign.id}
+      order by r.sent_at desc nulls last`,
   ]);
-  const sentRows = (recipients.data ?? []) as unknown as Array<{
-    id: string;
-    status: string;
-    error: string | null;
-    sent_at: string | null;
-    patients: { full_name: string | null; phone: string } | null;
-  }>;
   const missingSetup = !clinic.whatsapp_phone_number_id || !clinic.elevenlabs_agent_id;
 
   return (
@@ -75,7 +67,7 @@ export default async function CampaignDetail({ params }: PageProps<"/panel/campa
           <ul className="divide-y divide-brand-900/5 text-sm">
             {sentRows.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-2 py-2">
-                <span className="flex-1">{r.patients?.full_name ?? displayPhone(r.patients?.phone)}</span>
+                <span className="flex-1">{r.full_name ?? displayPhone(r.phone)}</span>
                 <span className="text-xs text-brand-900/50">{r.sent_at ? formatDateTime(r.sent_at, clinic.timezone) : ""}</span>
                 <StatusBadge value={r.status} />
                 {r.error && <p className="w-full text-xs text-red-600">{r.error}</p>}

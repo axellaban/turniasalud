@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db } from "@/lib/supabase";
-import { getClinic } from "@/lib/clinic";
+import { sql } from "@/lib/db";
+import { getClinic, isUuid } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Badge, Card, CHANNEL_LABEL, PageHeader, StatusBadge } from "@/components/ui";
@@ -10,15 +10,22 @@ import type { Conversation } from "@/lib/types";
 export default async function ConversationDetail({ params }: PageProps<"/panel/conversaciones/[id]">) {
   const { id } = await params;
   const clinic = await getClinic();
-  const { data } = await db()
-    .from("conversations")
-    .select("*, patients(id, full_name, phone, coverage)")
-    .eq("id", id)
-    .eq("clinic_id", clinic.id)
-    .maybeSingle();
-  if (!data) notFound();
-  const c = data as Conversation & { patients: { id: string; full_name: string | null; phone: string; coverage: string | null } | null };
-  const tasks = (await db().from("tasks").select("id, title, status, priority").eq("conversation_id", c.elevenlabs_conversation_id ?? "-")).data ?? [];
+  type Detail = Conversation & { patients: { id: string; full_name: string | null; phone: string; coverage: string | null } | null };
+  const [c] = isUuid(id)
+    ? await sql<Detail[]>`
+        select c.*,
+          case when p.id is null then null
+               else json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone, 'coverage', p.coverage) end as patients
+        from conversations c left join patients p on p.id = c.patient_id
+        where c.id = ${id} and c.clinic_id = ${clinic.id}`
+    : [];
+  if (!c) notFound();
+  const tasks = c.elevenlabs_conversation_id
+    ? await sql<Array<{ id: string; title: string; status: string; priority: string }>>`
+        select id, title, status, priority from tasks
+        where clinic_id = ${clinic.id} and conversation_id = ${c.elevenlabs_conversation_id}
+        order by created_at`
+    : [];
   const sentiment = (c.analysis as { sentimiento?: string } | null)?.sentimiento;
 
   return (
@@ -55,6 +62,9 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
               <StatusBadge value={c.outcome} />
               {sentiment && <Badge tone={sentiment === "negativo" ? "red" : sentiment === "positivo" ? "green" : "gray"}>{sentiment}</Badge>}
               {c.duration_secs !== null && <Badge>{Math.round((c.duration_secs ?? 0) / 60)} min</Badge>}
+              {c.satisfaction !== null && (
+                <Badge tone={c.satisfaction >= 9 ? "green" : c.satisfaction <= 6 ? "red" : "gray"}>encuesta: {c.satisfaction}/10</Badge>
+              )}
             </div>
           </Card>
           <Card>
@@ -74,7 +84,7 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
             <Card>
               <h2 className="font-semibold text-brand-950">Tareas creadas</h2>
               <ul className="mt-2 space-y-2 text-sm">
-                {(tasks as Array<{ id: string; title: string; status: string }>).map((t) => (
+                {tasks.map((t) => (
                   <li key={t.id} className="flex items-center justify-between gap-2">
                     <span>{t.title}</span>
                     <StatusBadge value={t.status} />

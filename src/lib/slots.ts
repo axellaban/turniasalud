@@ -1,7 +1,7 @@
 // Cálculo de turnos libres. Es una función pura (sin base de datos) para
 // poder testearla: recibe horarios, turnos ocupados y devuelve opciones.
 
-import { addDaysKey, humanSlot, timeToMinutes, weekdayOfKey, zonedTimeToUtc } from "./time";
+import { addDaysKey, humanSlot, timeToMinutes, weekdayOfKey, zonedParts, zonedTimeToUtc } from "./time";
 
 export type ScheduleBlock = {
   professional_id: string;
@@ -22,6 +22,8 @@ export type Slot = {
 export type SlotQuery = {
   schedules: ScheduleBlock[];
   busy: BusyInterval[];
+  /** Feriados, vacaciones y bloqueos de agenda, ya expandidos por profesional. */
+  blocked?: BusyInterval[];
   durationMin: number;
   fromKey: string; // YYYY-MM-DD local
   toKey: string; // YYYY-MM-DD local, inclusive
@@ -43,7 +45,7 @@ export function computeSlots(q: SlotQuery): Slot[] {
   const step = q.durationMin;
 
   const busyByProfessional = new Map<string, Array<[number, number]>>();
-  for (const b of q.busy) {
+  for (const b of [...q.busy, ...(q.blocked ?? [])]) {
     const list = busyByProfessional.get(b.professional_id) ?? [];
     list.push([new Date(b.starts_at).getTime(), new Date(b.ends_at).getTime()]);
     busyByProfessional.set(b.professional_id, list);
@@ -100,6 +102,7 @@ export function isSlotFree(
   startsAt: Date,
   durationMin: number,
   timeZone: string,
+  blocked: BusyInterval[] = [],
 ): { ok: true } | { ok: false; reason: string } {
   const startMs = startsAt.getTime();
   const endMs = startMs + durationMin * 60_000;
@@ -124,8 +127,34 @@ export function isSlotFree(
       minute + durationMin <= timeToMinutes(s.end_time),
   );
   if (!fits) return { ok: false, reason: "El profesional no atiende en ese horario." };
-  if (busy.some((b) => startMs < new Date(b.ends_at).getTime() && endMs > new Date(b.starts_at).getTime())) {
-    return { ok: false, reason: "Ese horario ya está ocupado." };
-  }
+  const overlaps = (b: BusyInterval) => startMs < new Date(b.ends_at).getTime() && endMs > new Date(b.starts_at).getTime();
+  if (blocked.some(overlaps)) return { ok: false, reason: "Ese día no se atiende (feriado, vacaciones o agenda bloqueada)." };
+  if (busy.some(overlaps)) return { ok: false, reason: "Ese horario ya está ocupado." };
   return { ok: true };
+}
+
+/** Expande feriados y bloqueos a intervalos por profesional (sin profesional = todos). */
+export function expandBlocks(
+  blocks: Array<{ professional_id: string | null; starts_at: string; ends_at: string }>,
+  professionalIds: string[],
+): BusyInterval[] {
+  return blocks.flatMap((b) =>
+    (b.professional_id ? [b.professional_id] : professionalIds)
+      .filter((id) => professionalIds.includes(id))
+      .map((id) => ({ professional_id: id, starts_at: b.starts_at, ends_at: b.ends_at })),
+  );
+}
+
+/** ¿Hay algún profesional atendiendo ahora? Sirve para saber si la clínica está en horario. */
+export function isOpenAt(schedules: ScheduleBlock[], blocked: BusyInterval[], at: Date, timeZone: string): boolean {
+  const p = zonedParts(at, timeZone);
+  const minute = p.hour * 60 + p.minute;
+  const ms = at.getTime();
+  return schedules.some(
+    (s) =>
+      s.weekday === p.weekday &&
+      minute >= timeToMinutes(s.start_time) &&
+      minute < timeToMinutes(s.end_time) &&
+      !blocked.some((b) => b.professional_id === s.professional_id && ms >= new Date(b.starts_at).getTime() && ms < new Date(b.ends_at).getTime()),
+  );
 }

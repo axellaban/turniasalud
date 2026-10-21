@@ -34,6 +34,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       plan: { type: "string", description: "Plan de la cobertura (ej. 310, SMG20)." },
       numero_afiliado: { type: "string", description: "Número de afiliado o credencial." },
       preferencias: { type: "string", description: "Preferencias del paciente (ej. 'prefiere turnos a la mañana')." },
+      no_recibir_mensajes: {
+        type: "boolean",
+        description: "true si el paciente pide que no le escriban más para campañas o avisos; false si vuelve a aceptar. No lo mandes si no habló del tema.",
+      },
     },
     schema: z.object({
       nombre_completo: z.string().optional(),
@@ -44,6 +48,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       plan: z.string().optional(),
       numero_afiliado: z.string().optional(),
       preferencias: z.string().optional(),
+      no_recibir_mensajes: z.boolean().optional(),
     }),
   },
   {
@@ -93,6 +98,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     schema: z.object({}),
   },
   {
+    name: "confirmar_turno",
+    description:
+      "Marca que el paciente confirmó que va a venir a un turno (por ejemplo, cuando responde que sí a un recordatorio).",
+    params: {
+      turno_id: { type: "string", description: "turno_id del turno que confirma.", required: true },
+    },
+    schema: z.object({ turno_id: z.string().min(1) }),
+  },
+  {
     name: "cancelar_turno",
     description: "Cancela un turno del paciente. Confirmá con el paciente antes de cancelar.",
     params: {
@@ -115,7 +129,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "crear_tarea",
     description:
-      "Crea una tarea para el equipo de la clínica cuando el pedido necesita a una persona: recetas, resultados, consultas clínicas, facturación, pedidos de hablar con alguien, o urgencias.",
+      "Crea una tarea para el equipo de la clínica cuando el pedido necesita a una persona: recetas, resultados, consultas clínicas, órdenes médicas o derivaciones que no podés agendar, facturación, pedidos de hablar con alguien, o urgencias.",
     params: {
       tipo: { type: "string", description: "Tipo de pedido.", enum: TASK_TYPES, required: true },
       prioridad: { type: "string", description: "Prioridad.", enum: TASK_PRIORITIES },
@@ -150,7 +164,7 @@ export const CONTEXT_PARAMS: Record<string, { dynamic_variable: string; descript
 };
 
 export const contextSchema = z.object({
-  clinic_id: z.string().min(1),
+  clinic_id: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
   patient_phone: z.string().min(1),
   conversation_id: z.string().optional(),
   canal: z.string().optional(),
