@@ -202,7 +202,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect(unmatched).toEqual([]);
     const pros = await sql<Array<{ full_name: string; days: number[] }>>`
       select p.full_name, array_agg(s.weekday order by s.weekday)::int[] as days from professionals p join schedules s on s.professional_id = p.id
-      where p.clinic_id = ${s.clinic_id} group by p.full_name order by p.full_name`;
+      where p.clinic_id = ${s.clinic_id} group by p.full_name order by p.full_name collate "C"`;
     expect(pros).toEqual([
       { full_name: "Dr. Luis Gil", days: [1, 2, 3, 4, 5] },
       { full_name: "Dra. Ana Pérez", days: [1, 3] },
