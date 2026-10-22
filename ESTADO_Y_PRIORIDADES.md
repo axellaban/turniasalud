@@ -2,6 +2,18 @@
 
 Actualización: 22/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Actualización posterior del 22/10: Anthropic y Speech to Text resueltos
+
+Este bloque prevalece sobre las comprobaciones anteriores de esta misma fecha:
+- El usuario cargó la clave de Anthropic en Vercel. Comprobado `/api/health`: `database: "ok"`, `demo.base: true`, `demo.claude: true`, `demo.whatsapp: false`. La presencia de la variable no confirma todavía una extracción real con Claude.
+- Speech to Text habilitado y guardado en la clave existente «Turnia Salud · Vercel», después de la confirmación explícita del usuario. ElevenLabs mostró «API key updated successfully» y, al reabrir la clave, Speech to Text → Access seguía seleccionado. Text to Speech y los demás permisos no se cambiaron; límite de 25.000 créditos conservado.
+- El usuario todavía no puso el teléfono de Turnia. Se puede preparar la infraestructura; la vinculación y prueba de WhatsApp requieren el QR y ese celular.
+- WAHA existente: Easypanel confirma `n8n/waha`, habilitado, imagen `devlikeapro/waha:noweb`, con almacenamiento persistente. Esto no confirma que una sesión esté conectada. No se modificó ese servicio ni se copiaron sus credenciales a otro proyecto.
+- Intento de crear un proyecto aislado `turniasalud`: Easypanel lo rechazó con `You are not allowed to create more projects`. No se creó el proyecto ni se cambió de plan. Alternativa preparada, **sin ejecutar y pendiente de autorización del usuario**: servicio nuevo `n8n/turnia-waha`, almacenamiento y claves exclusivos, 0,5 CPU y 512 MB de límite.
+- Custom Channel de ElevenLabs: formulario preparado como «Turnia · WhatsApp WAHA», **sin pulsar Connect ni crear el trigger**. Se pidió confirmación de seguridad para crearlo y cargar sus credenciales en los campos de Vercel. La Reply Webhook URL será `https://turniasalud.vercel.app/api/elevenlabs/canal`.
+- El navegador no pudo observar la pestaña de error de la URL de WAHA: su política de seguridad rechazó el acceso. No se intentó eludir el bloqueo con otro navegador ni con peticiones directas a ese servicio. La revisión de configuración se hizo mediante el conector de Easypanel.
+- Gmail y campañas siguen pospuestos. No se enviaron mensajes ni se contrataron planes.
+
 ## Revisión del 22/10/2026: últimos cambios y orden de trabajo
 
 Se revisó `main` hasta `746d903` (PR #6 y #7). CI de esa versión: **123 tests correctos**, TypeScript, lint y build aprobados. Vercel marca el commit como publicado correctamente.

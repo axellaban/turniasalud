@@ -3,6 +3,10 @@
 > Traspaso del 21/10/2026. **La opción B (WAHA + Custom Channel) ya está construida y probada con tests** (ver "Estado de la construcción"). Falta conectarla con los servicios reales: el usuario está comprando el chip.
 > Leer antes: `AGENTS.md`, `TRASPASO_CONFIGURACION.md` y `CONTEXTO_PROYECTO.md`.
 
+## Actualización de configuración del 22/10/2026
+
+Speech to Text ya está habilitado y guardado en la clave de Turnia; la clave de Anthropic fue cargada por el usuario y la app la detecta. El teléfono todavía no fue colocado. El servicio existente `n8n/waha` se conservó intacto. Crear un proyecto separado fue rechazado por el límite de Easypanel; la alternativa de crear solo `n8n/turnia-waha` y el alta del Custom Channel están preparadas, pendientes de las confirmaciones del usuario. Ver el bloque más reciente de `ESTADO_Y_PRIORIDADES.md` antes de repetir pasos históricos.
+
 ## Estado
 
 - No hay ningún número de WhatsApp conectado. `clinics.whatsapp_phone_number_id` está vacío, así que las campañas no envían.
