@@ -45,11 +45,11 @@ export function HeroVideo() {
             admisión, deriva lo urgente y le escribe a tus pacientes para que vuelvan.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="#en-accion" className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50">
-              Miralo en acción <Flecha />
+            <Link href="/probar-demo" className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50">
+              Probalo con tu web <Flecha />
             </Link>
-            <Link href="/pedi-una-demo" className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10">
-              Pedí una demo
+            <Link href="#en-accion" className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10">
+              Miralo en acción
             </Link>
           </div>
         </div>

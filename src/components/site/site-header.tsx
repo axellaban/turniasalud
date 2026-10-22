@@ -172,6 +172,9 @@ export function SiteHeader() {
         </ul>
 
         <div className="flex items-center gap-2">
+          <Link href="/probar-demo" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:text-brand-900 md:inline-block">
+            Probá con tu web
+          </Link>
           <Link href="/panel" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-950/80 hover:text-brand-700 sm:inline-block">
             Ingresar
           </Link>

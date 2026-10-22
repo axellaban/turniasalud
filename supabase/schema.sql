@@ -355,3 +355,34 @@ create table if not exists web_audios (
   created_at timestamptz not null default now()
 );
 alter table web_audios enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Lead magnet "Probá la demo con tu web" (/probar-demo). La persona manda su
+-- web por WhatsApp, Turnia la lee y arma una clínica temporal (is_demo) con
+-- sus datos; el agente la atiende como la recepcionista de ese consultorio por
+-- llamada, audios o chat. Las clínicas de demo se borran a los 7 días.
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists is_demo boolean not null default false;
+alter table clinics add column if not exists demo_source_url text;
+alter table channel_conversations add column if not exists reply_with_voice boolean not null default false;
+-- Los interesados que llegan por WhatsApp no dejan email.
+alter table leads alter column email drop not null;
+
+create table if not exists demo_sessions (
+  id uuid primary key default gen_random_uuid(),
+  phone text not null,
+  chat_id text not null,
+  website text not null,
+  status text not null default 'analizando'
+    check (status in ('analizando', 'eligiendo', 'llamada', 'audio', 'chat', 'terminada', 'error')),
+  clinic_id uuid references clinics(id) on delete set null,
+  lead_id uuid references leads(id) on delete set null,
+  -- Link de la llamada por la web cuando no hay número de teléfono para llamar.
+  call_token text unique,
+  pages_read integer,
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
+alter table demo_sessions enable row level security;

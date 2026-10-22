@@ -17,7 +17,7 @@ export async function getClinic(id?: string): Promise<Clinic> {
     if (clinic) return clinic;
   }
   // Si el ID por defecto no existe, usamos la primera clínica cargada.
-  const [first] = await sql<Clinic[]>`select * from clinics order by created_at limit 1`;
+  const [first] = await sql<Clinic[]>`select * from clinics where not is_demo order by created_at limit 1`;
   if (!first) throw new Error("No hay ninguna clínica cargada. Corré supabase/seed.sql o creá una.");
   return first;
 }

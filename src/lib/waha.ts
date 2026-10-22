@@ -115,7 +115,7 @@ async function waha(path: string, init: RequestInit = {}): Promise<Response> {
     ...init,
     headers: { "X-Api-Key": env.wahaApiKey(), Accept: "application/json", ...(init.headers ?? {}) },
     cache: "no-store",
-    signal: AbortSignal.timeout(15000),
+    signal: init.signal ?? AbortSignal.timeout(15000),
   });
   if (!res.ok) {
     const text = (await res.text().catch(() => "")).slice(0, 300);
@@ -166,4 +166,39 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
     console.error("WAHA: no se pudo bajar el audio", e instanceof Error ? e.message : e);
     return null;
   }
+}
+
+/** Nota de voz. Con convert: true WAHA la deja en el formato exacto de WhatsApp (puede requerir WAHA Plus). */
+export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void> {
+  await waha("/api/sendVoice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: env.wahaSession(),
+      chatId,
+      file: { mimetype: "audio/ogg; codecs=opus", filename: "respuesta.ogg", data: audio.toString("base64") },
+      convert: true,
+    }),
+  });
+}
+
+let ownNumber: { value: string | null; at: number } | null = null;
+
+/**
+ * Número del chip conectado a la sesión de WAHA (solo dígitos, ej. 5491122223333).
+ * Se guarda 10 minutos; si WAHA no responde, se reintenta al minuto.
+ */
+export async function wahaOwnNumber(): Promise<string | null> {
+  const ttl = ownNumber?.value ? 10 * 60_000 : 60_000;
+  if (ownNumber && Date.now() - ownNumber.at < ttl) return ownNumber.value;
+  let value: string | null = null;
+  try {
+    const res = await waha(`/api/sessions/${encodeURIComponent(env.wahaSession())}`, { signal: AbortSignal.timeout(3000) });
+    const body = (await res.json()) as { status?: string; me?: { id?: string } | null };
+    value = body.status === "WORKING" || body.status === undefined ? phoneFromJid(body.me?.id) : null;
+  } catch (e) {
+    console.error("WAHA: no se pudo leer el número de la sesión", e instanceof Error ? e.message : e);
+  }
+  ownNumber = { value, at: Date.now() };
+  return value;
 }

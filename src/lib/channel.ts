@@ -1,10 +1,10 @@
 import "server-only";
 import { json, sql, type Sql, type TransactionSql } from "./db";
 import { INBOUND_CONTEXT, buildDynamicVariables, findPatientByPhone, getClinic } from "./clinic";
-import { sendChannelMessage } from "./elevenlabs";
+import { agentVoiceId, sendChannelMessage, textToSpeech } from "./elevenlabs";
 import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
-import { wahaSendText } from "./waha";
+import { wahaSendText, wahaSendVoice } from "./waha";
 import type { Clinic } from "./types";
 
 // Conversaciones de WhatsApp por WAHA + Custom Channel de ElevenLabs.
@@ -27,6 +27,8 @@ export type ChannelConversation = {
   campaign_id: string | null;
   context: string | null;
   transcript: TranscriptLine[];
+  /** El agente contesta con notas de voz (modo audio de la demo). */
+  reply_with_voice: boolean;
   last_activity_at: string;
   closed_at: string | null;
   created_at: string;
@@ -34,7 +36,8 @@ export type ChannelConversation = {
 
 /** Clínica que atiende el WhatsApp de WAHA (la primera con ese proveedor, o la de por defecto). */
 export async function whatsappClinic(): Promise<Clinic> {
-  const [clinic] = await sql<Clinic[]>`select * from clinics where whatsapp_provider = 'waha' order by created_at limit 1`;
+  const [clinic] = await sql<Clinic[]>`
+    select * from clinics where whatsapp_provider = 'waha' and not is_demo order by created_at limit 1`;
   return clinic ?? getClinic();
 }
 
@@ -88,11 +91,13 @@ export async function registerOutbound(
 /**
  * Pasa el mensaje del paciente al agente. Sigue la conversación abierta o
  * arranca una nueva, siempre con todas las variables dinámicas (si falta una,
- * ElevenLabs corta la conversación).
+ * ElevenLabs corta la conversación). `context` y `replyWithVoice` valen para
+ * una conversación nueva (la demo del lead magnet).
  */
 export async function forwardToAgent(
   clinic: Clinic,
   input: { messageId: string; chatId: string; phone: string; text: string },
+  opts: { context?: string; replyWithVoice?: boolean } = {},
 ): Promise<{ conversation_id: string; continued: boolean }> {
   // Fuera de la transacción: son varias consultas y no conviene retener la conexión.
   const vars = await buildDynamicVariables(clinic, input.phone);
@@ -104,7 +109,7 @@ export async function forwardToAgent(
       update channel_conversations set closed_at = now()
       where clinic_id = ${clinic.id} and phone = ${input.phone} and closed_at is null and id is distinct from ${open?.id ?? null}::uuid`;
 
-    vars.conversation_context = open?.context ?? INBOUND_CONTEXT;
+    vars.conversation_context = open?.context ?? opts.context ?? INBOUND_CONTEXT;
     vars.campaign_id = open?.campaign_id ?? "ninguna";
     const res = await sendChannelMessage({
       messageId: input.messageId,
@@ -130,6 +135,8 @@ export async function forwardToAgent(
           phone: input.phone,
           chat_id: input.chatId,
           elevenlabs_conversation_id: res.conversation_id,
+          context: opts.context ?? null,
+          reply_with_voice: opts.replyWithVoice ?? false,
           transcript: userLine,
         })}
         on conflict (elevenlabs_conversation_id) do update set
@@ -205,7 +212,8 @@ export async function handleReply(reply: ChannelReply): Promise<ReplyOutcome> {
 
   if (text) {
     try {
-      await wahaSendText(conv.chat_id, text);
+      if (conv.reply_with_voice && !failed) await sendVoiceReply(conv, text);
+      else await wahaSendText(conv.chat_id, text);
     } catch (e) {
       await releaseEvent(key);
       return { status: "send_failed", error: e instanceof Error ? e.message : String(e) };
@@ -221,6 +229,34 @@ export async function handleReply(reply: ChannelReply): Promise<ReplyOutcome> {
     returning *`;
   await savePanelConversation(updated, ended);
   return { status: text ? "sent" : "empty", ended };
+}
+
+let cachedVoice: { agentId: string; voiceId: string | null } | null = null;
+
+/** Voz del agente de la clínica principal (la de la demo no tiene agente propio). */
+async function replyVoiceId(): Promise<string | null> {
+  if (process.env.ELEVENLABS_VOICE_ID) return process.env.ELEVENLABS_VOICE_ID;
+  const main = await getClinic();
+  if (main.elevenlabs_voice_id) return main.elevenlabs_voice_id;
+  if (!main.elevenlabs_agent_id) return null;
+  if (cachedVoice?.agentId !== main.elevenlabs_agent_id) {
+    cachedVoice = { agentId: main.elevenlabs_agent_id, voiceId: await agentVoiceId(main.elevenlabs_agent_id) };
+  }
+  return cachedVoice.voiceId;
+}
+
+/** Contesta con una nota de voz; si no se puede (sin voz, TTS o WAHA sin envío de audio), manda el texto. */
+async function sendVoiceReply(conv: ChannelConversation, text: string): Promise<void> {
+  try {
+    const voiceId = await replyVoiceId();
+    if (!voiceId) throw new Error("no hay voz configurada");
+    const spoken = text.replace(/[*_~`]/g, "").replace(/https?:\/\/\S+/g, "el link que te escribo");
+    await wahaSendVoice(conv.chat_id, await textToSpeech(spoken, voiceId));
+    if (/https?:\/\//.test(text)) await wahaSendText(conv.chat_id, text);
+  } catch (e) {
+    console.error("Demo: no se pudo mandar la nota de voz; va como texto", e instanceof Error ? e.message : e);
+    await wahaSendText(conv.chat_id, text);
+  }
 }
 
 /**
