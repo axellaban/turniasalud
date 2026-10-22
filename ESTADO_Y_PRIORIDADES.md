@@ -27,8 +27,8 @@ Actualización: 22/10/2026 (Argentina). Este registro prevalece sobre los pendie
 ## Prioridad 2b: lead magnet "Probá la demo con tu web" (después de WAHA)
 
 - [x] Landing `/probar-demo`, flujo por WhatsApp, lectura de la web, ficha con Claude, clínica temporal y modos llamada/audio/chat. Tests de integración con servicios simulados. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
-- [x] Unido a `main`. La base se actualiza sola en cada deploy de producción y el número de la landing sale solo de WAHA.
-- [ ] **Lo que queda lo hace la próxima IA** con computer use cuando el usuario lo pida: comprobar el deploy, cargar `ANTHROPIC_API_KEY` en Vercel, revisar los permisos de ElevenLabs y, con WAHA conectado, probar los tres modos. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
+- [x] Unido a `main` (PR #6) y publicado: `/api/health` → `demo.base: true` (la base se actualizó sola en el deploy). El número de la landing sale solo de WAHA.
+- [ ] **Lo que queda lo hace la próxima IA** con computer use cuando el usuario lo pida: cargar `ANTHROPIC_API_KEY` en Vercel, revisar los permisos de ElevenLabs y, con WAHA conectado, probar los tres modos. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
 
 ## Prioridad 3: primera clínica y ampliaciones
 
