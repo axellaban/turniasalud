@@ -21,7 +21,7 @@
 > El usuario prefirió no hacerlo él: **lo hace la próxima IA**, con computer use o la extensión del navegador, cuando él lo pida. Reglas: no mostrar ni copiar claves en el chat (se copian de un sitio y se pegan directo en el otro), tocar solo el proyecto Turnia, no contratar planes ni cargar saldo, y frenar y preguntar ante cualquier diferencia. Al terminar, marcar cada paso acá y actualizar `ESTADO_Y_PRIORIDADES.md`.
 
 **Ya resuelto desde el código (22/10/2026), no hace falta hacerlo a mano:**
-- [x] Código unido a `main` (se publica solo en Vercel).
+- [x] Código unido a `main` con el PR https://github.com/axellaban/turniasalud/pull/6 (se publica solo en Vercel).
 - [x] **Base:** cada deploy de producción aplica `schema.sql` solo (`scripts/migrate-db.mjs`). No hay que entrar a Neon.
 - [x] **Número de WhatsApp de la landing:** sale solo del chip conectado a WAHA (`GET /api/sessions/{session}` → `me.id`). `DEMO_WHATSAPP_NUMBER` queda opcional, solo para forzar otro número.
 - [x] **Estado visible:** Panel → Configuración → "Demo con tu web" y `https://turniasalud.vercel.app/api/health` → `demo: { base, whatsapp, whatsapp_source, claude, llamada_telefonica }`.
@@ -29,7 +29,7 @@
 
 **Lo que queda (no se puede hacer sin entrar a las consolas):**
 
-- [ ] **1. Comprobar el deploy.** En Vercel → proyecto `turniasalud` → Deployments, el último de Production (merge del PR del lead magnet) tiene que estar **Ready** y su log de build tiene que decir `[db] Base actualizada con supabase/schema.sql…`. Si dice `No se pudo actualizar la base`, copiar el error y avisar al usuario (no cargar `SKIP_DB_MIGRATION` sin preguntarle). Después: `https://turniasalud.vercel.app/api/health` → `database: "ok"` y `demo.base: true`.
+- [ ] **1. Comprobar el deploy.** En Vercel → proyecto `turniasalud` → Deployments, el último de Production (merge del PR #6) tiene que estar **Ready** y su log de build tiene que decir `[db] Base actualizada con supabase/schema.sql…`. Si dice `No se pudo actualizar la base`, copiar el error y avisar al usuario (no cargar `SKIP_DB_MIGRATION` sin preguntarle). Después: `https://turniasalud.vercel.app/api/health` → `database: "ok"` y `demo.base: true`.
 - [ ] **2. Clave de Claude.** En https://console.anthropic.com → Settings → API Keys, crear `turnia-demo-web` y pegarla en Vercel → Settings → Environment Variables como `ANTHROPIC_API_KEY` (Sensitive, Production y Preview). Revisar en Billing que la cuenta tenga saldo; si no tiene, avisar al usuario (sin clave o sin saldo la demo funciona con una ficha básica). Después, **Redeploy** del último deploy de Production y esperar "Ready". Verificar: `/api/health` → `demo.claude: true`.
 - [ ] **3. Permisos de ElevenLabs.** En Developers → API Keys, la clave de `ELEVENLABS_API_KEY` necesita **Text to Speech** (respuestas en audio) y **Speech to Text** (escuchar audios). Si falta alguno y se puede editar, agregarlo. Si hay que crear una clave nueva, preguntarle al usuario.
 - [ ] **4. Cuando WAHA esté conectado** (`PLAN_WHATSAPP.md`): `/api/health` → `demo.whatsapp: true` y `whatsapp_source: "waha"`. En `https://turniasalud.vercel.app/probar-demo`, escribir "mi clinica" → pide revisar la dirección; una web válida → abre WhatsApp con «¡Hola! Quiero probar la demo de Turnia. Te paso mi web: …» dirigido al número del chip.
