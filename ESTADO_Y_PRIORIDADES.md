@@ -23,13 +23,15 @@ La actualización automática de `schema.sql` en los builds de producción ya es
 
 Se reforzó el código de `/probar-demo`: lector con DNS fijo y límites reales de bytes/tiempo, cuota y creación de demos bajo transacción, reintentos idempotentes, análisis único, cancelación sin clínicas huérfanas, máximo de tres llamadas por demo y cierre de la captura temporal del micrófono. Los textos aclaran que las conversaciones y la agenda son simuladas. Detalle, benchmark de cuatro webs y verificación en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#revisión-y-endurecimiento-del-22102026).
 
-Verificación local: **137 tests correctos** con Postgres 17 descartable; TypeScript, lint y build correctos. No se usaron API pagas en las pruebas. CI y publicación de esta tanda se registran al cerrar el PR.
+Verificación local: **137 tests correctos** con Postgres 17 descartable; TypeScript, lint y build correctos. No se usaron API pagas en las pruebas. CI del [PR #9](https://github.com/axellaban/turniasalud/pull/9) aprobada: **137 tests** con Postgres 16, TypeScript, lint y build. Integrado en `main` como `e8f171c`. Vercel confirma el deploy de producción [`3WMXBJUTw8ro8hQhFfkXtxxprweE`](https://vercel.com/labans-projects-c5c64fdc/turniasalud/3WMXBJUTw8ro8hQhFfkXtxxprweE).
 
 Consolas revisadas sin modificar credenciales:
 - Anthropic: saldo positivo, recarga automática desactivada; ninguna clave exclusiva de Turnia. Crear `turnia-demo-web` requiere confirmación de seguridad en ese momento.
 - ElevenLabs: Text to Speech habilitado; Speech to Text confirmado en No Access. Habilitarlo amplía permisos y requiere confirmación de seguridad en ese momento. Se canceló la edición.
 - WAHA: el servicio existente está asociado a otro flujo. No se cambió su configuración ni se reutilizaron sus claves. Falta un servicio/sesión exclusivo y la vinculación del chip mediante QR.
 - Gmail sigue pospuesto por pedido expreso del usuario.
+
+La Mac se bloqueó al intentar abrir la consola del deploy; no se intentó desbloquearla automáticamente ni se continuó operando esa consola. La comprobación final se hizo mediante el estado de Vercel y HTTP: salud 200 con `database: "ok"` y `demo.base: true`; siete JSON 200 y siete MP3 206 con Range; `/panel/demos` y `/demo` → 307 al login; API de token del panel → 401 sin sesión; enlace de llamada inválido → 404. `/api/waha/webhook` devuelve 500 «Webhook sin configurar», coherente con que todavía no está conectado. Los textos nuevos ya aparecen en `/probar-demo` y `/escucha-a-nuestros-agentes`. La base y el servidor locales de prueba quedaron detenidos.
 
 Estas confirmaciones no se pueden suplir con la instrucción de avanzar mientras el usuario duerme. No se contrataron planes ni se recargó saldo.
 
@@ -70,6 +72,7 @@ Estas confirmaciones no se pueden suplir con la instrucción de avanzar mientras
 - Revisar acceso, consentimiento, conservación de datos y los textos de privacidad antes de usar pacientes reales. No activar Zero Retention a ciegas: el plan de Custom Channel documenta incompatibilidad.
 - Configurar derivación telefónica si se elige teléfono de recepción. Agendas externas, roles por clínica, admisión digital y cobranzas son ampliaciones posteriores.
 - Video propio del hero, casos reales y precios: pendientes de contenido; la web usa una foto de respaldo.
+- Dependencias de desarrollo: `npm audit` reportó cinco entradas de severidad alta en la cadena de ESLint/fast-glob/micromatch/braces. `braces` 3.0.3 sigue siendo la última versión consultada; no se aplicó el `--force` que propone bajar `eslint-config-next` a Next 14. No forma parte del servidor publicado. Revisar al salir una corrección compatible.
 
 ## Continuidad sin computer use
 
