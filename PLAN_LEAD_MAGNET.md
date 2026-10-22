@@ -34,6 +34,8 @@
 - Textos públicos ajustados: secciones principales de la web, tiempo aproximado y ejemplos simulados. El menú de WhatsApp pide datos ficticios y aclara que la agenda es de prueba.
 - Verificación local: **137 tests correctos**, con Postgres 17 descartable y proveedores simulados; TypeScript, lint y build correctos. La CI repite la integración en Postgres 16.
 - No se consumieron créditos de Anthropic ni de ElevenLabs en estas pruebas; la lectura de webs públicas fue real.
+- **Publicado:** [PR #9](https://github.com/axellaban/turniasalud/pull/9), merge `e8f171c`; [CI aprobada con 137 tests](https://github.com/axellaban/turniasalud/actions/runs/39718368347); [deploy de producción confirmado por Vercel](https://vercel.com/labans-projects-c5c64fdc/turniasalud/3WMXBJUTw8ro8hQhFfkXtxxprweE). Comprobados por HTTP: textos nuevos en las dos landing, `database: "ok"`, siete audios intactos y controles de login/token. `demo.whatsapp` y `demo.claude` siguen en `false`, según los bloqueos siguientes.
+- La Mac se bloqueó durante el cierre; para retomar las consolas el usuario debe desbloquearla. No se intentó eludir ese bloqueo.
 
 ## Puesta en marcha (lo que queda para la próxima IA)
 
