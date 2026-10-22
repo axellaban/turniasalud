@@ -2,15 +2,19 @@
 
 Actualización: 22/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
-## Actualización posterior del 22/10: Anthropic y Speech to Text resueltos
+## Actualización posterior del 22/10: infraestructura WAHA y Custom Channel preparados
 
 Este bloque prevalece sobre las comprobaciones anteriores de esta misma fecha:
 - El usuario cargó la clave de Anthropic en Vercel. Comprobado `/api/health`: `database: "ok"`, `demo.base: true`, `demo.claude: true`, `demo.whatsapp: false`. La presencia de la variable no confirma todavía una extracción real con Claude.
 - Speech to Text habilitado y guardado en la clave existente «Turnia Salud · Vercel», después de la confirmación explícita del usuario. ElevenLabs mostró «API key updated successfully» y, al reabrir la clave, Speech to Text → Access seguía seleccionado. Text to Speech y los demás permisos no se cambiaron; límite de 25.000 créditos conservado.
 - El usuario todavía no puso el teléfono de Turnia. Se puede preparar la infraestructura; la vinculación y prueba de WhatsApp requieren el QR y ese celular.
 - WAHA existente: Easypanel confirma `n8n/waha`, habilitado, imagen `devlikeapro/waha:noweb`, con almacenamiento persistente. Esto no confirma que una sesión esté conectada. No se modificó ese servicio ni se copiaron sus credenciales a otro proyecto.
-- Intento de crear un proyecto aislado `turniasalud`: Easypanel lo rechazó con `You are not allowed to create more projects`. No se creó el proyecto ni se cambió de plan. Alternativa preparada, **sin ejecutar y pendiente de autorización del usuario**: servicio nuevo `n8n/turnia-waha`, almacenamiento y claves exclusivos, 0,5 CPU y 512 MB de límite.
-- Custom Channel de ElevenLabs: formulario preparado como «Turnia · WhatsApp WAHA», **sin pulsar Connect ni crear el trigger**. Se pidió confirmación de seguridad para crearlo y cargar sus credenciales en los campos de Vercel. La Reply Webhook URL será `https://turniasalud.vercel.app/api/elevenlabs/canal`.
+- Easypanel rechazó crear otro proyecto con `You are not allowed to create more projects`. Después de la **autorización explícita del usuario**, se creó únicamente `n8n/turnia-waha`, con imagen `devlikeapro/waha:noweb`, volúmenes propios `/app/.sessions` y `/app/files`, claves nuevas y límites de **0,5 CPU / 512 MB**. No se modificaron los otros servicios. Verificados límites y 1 contenedor activo de 1 esperado.
+- Servicio exclusivo: `https://n8n-turnia-waha.b6mgbu.easypanel.host`. Sesión `default`, motor NOWEB, inicio automático y webhook global de evento `message` a `https://turniasalud.vercel.app/api/waha/webhook`, con HMAC y reintentos. La API autenticada respondió 200. Sin teléfono, se encontró `FAILED`; un reinicio exclusivo de esta sesión la llevó a **`SCAN_QR_CODE`**, sin `me.id`. Esto comprueba que puede pedir vinculación, **no que WhatsApp esté conectado**. Si vence el QR, reiniciar esa sesión cuando el usuario tenga el teléfono listo.
+- Custom Channel de ElevenLabs: conexión **«Turnia · WhatsApp WAHA»** y trigger **User message** creados con confirmación explícita. Reply Webhook URL: `https://turniasalud.vercel.app/api/elevenlabs/canal`. Las tres credenciales generadas se cargaron directamente en Vercel como secretos de Production.
+- Vercel: guardadas `WAHA_URL`, `WAHA_API_KEY`, `WAHA_WEBHOOK_HMAC`, `WAHA_SESSION=default`, `ELEVENLABS_CHANNEL_URL`, `ELEVENLABS_CHANNEL_SECRET` y `ELEVENLABS_CHANNEL_SIGNING_SECRET`, todas como secretos de Production. [Redeploy comprobado Ready](https://vercel.com/labans-projects-c5c64fdc/turniasalud/5LeKt2uu348Lem2R4SzrqYoRAvFm). Panel → Configuración: proveedor WAHA guardado y persistencia comprobada al recargar; seis variables obligatorias en verde.
+- Verificación después del deploy: `/api/health` → `database: "ok"`, `configured.waha: true`, `demo.base: true`, `demo.claude: true`, `demo.whatsapp: false`. Un evento sintético `session.status`, que el receptor ignora sin enviar mensajes, respondió 200 con HMAC correcto y 401 «Firma inválida» sin firma. No se probó todavía una entrega real de mensajes desde WAHA ni una respuesta de ElevenLabs.
+- Para retomar: colocar el chip y activar WhatsApp en el celular, abrir el dashboard del **nuevo** servicio, entrar con los campos `WAHA_DASHBOARD_USERNAME` / `WAHA_DASHBOARD_PASSWORD` de **n8n/turnia-waha → Environment** y vincular `default` con el QR. La clave de API está en `WAHA_API_KEY`, en ese mismo servicio; no usar las credenciales de `n8n/waha` ni pegarlas en chat. Luego verificar `WORKING`, `demo.whatsapp: true` y el recorrido completo del lead magnet.
 - El navegador no pudo observar la pestaña de error de la URL de WAHA: su política de seguridad rechazó el acceso. No se intentó eludir el bloqueo con otro navegador ni con peticiones directas a ese servicio. La revisión de configuración se hizo mediante el conector de Easypanel.
 - Gmail y campañas siguen pospuestos. No se enviaron mensajes ni se contrataron planes.
 
@@ -64,10 +68,10 @@ Estas confirmaciones no se pueden suplir con la instrucción de avanzar mientras
 
 ## Prioridad 2: conectar WhatsApp y validar el circuito real
 
-- [ ] Chip de prueba y sesión de WAHA en el VPS, acceso y variables `WAHA_*`.
-- [ ] Crear Custom Channel en el agente y cargar sus valores en los campos correctos de Vercel, sin mostrarlos en chat ni en documentación.
-- [ ] Configurar webhook HMAC y elegir WAHA en el panel. La configuración observada todavía indica Meta y no tiene las seis variables de WAHA/Custom Channel.
-- [ ] Probar texto, audios entrantes, turnos, cancelación, memoria, recetas y derivación a recepción con el número de prueba. Permiso Speech to Text pendiente de verificación.
+- [x] Servicio WAHA exclusivo en el VPS y variables privadas preparados; ver bloque operativo de arriba. Falta vincular el chip por QR.
+- [x] Custom Channel y trigger del agente creados; sus valores están en los campos correctos de Vercel, sin valores en chat ni documentación.
+- [x] Webhook global HMAC configurado y proveedor WAHA guardado en el panel. El receptor acepta firma válida y rechaza firma ausente.
+- [ ] Vincular el teléfono con QR y comprobar sesión `WORKING` antes de probar texto, audios entrantes, turnos, cancelación, memoria, recetas y derivación a recepción. Speech to Text ya está habilitado; su uso real todavía no fue probado.
 - [ ] Definir los destinos de avisos asistenciales; la autorización de email de esta sesión es para pedidos comerciales de demo, no para enviar datos de pacientes.
 - [ ] Activar campañas solamente después de validar el canal, los destinatarios y la baja de mensajes. Workflow `g0H8xbQvRNv5FxQj` continúa desactivado.
 
@@ -75,7 +79,7 @@ Estas confirmaciones no se pueden suplir con la instrucción de avanzar mientras
 
 - [x] Landing `/probar-demo`, flujo por WhatsApp, lectura de la web, ficha con Claude, clínica temporal y modos llamada/audio/chat. Tests de integración con servicios simulados. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
 - [x] Unido a `main` (PR #6) y publicado: `/api/health` → `demo.base: true` (la base se actualizó sola en el deploy). El número de la landing sale solo de WAHA.
-- [ ] **Configuración revisada, con pasos que requieren al usuario al retomar:** cargar `ANTHROPIC_API_KEY` en Vercel, revisar los permisos de ElevenLabs y, con WAHA conectado, probar los tres modos. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
+- [ ] **Prueba real pendiente:** Anthropic, permisos de ElevenLabs y conexiones de WAHA ya están preparados. Vincular el teléfono y probar extracción, chat, audio, llamada web y SALIR. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
 
 ## Prioridad 3: primera clínica y ampliaciones
 

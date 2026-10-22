@@ -5,7 +5,11 @@
 
 ## Actualización de configuración del 22/10/2026
 
-Speech to Text ya está habilitado y guardado en la clave de Turnia; la clave de Anthropic fue cargada por el usuario y la app la detecta. El teléfono todavía no fue colocado. El servicio existente `n8n/waha` se conservó intacto. Crear un proyecto separado fue rechazado por el límite de Easypanel; la alternativa de crear solo `n8n/turnia-waha` y el alta del Custom Channel están preparadas, pendientes de las confirmaciones del usuario. Ver el bloque más reciente de `ESTADO_Y_PRIORIDADES.md` antes de repetir pasos históricos.
+Speech to Text está habilitado; Anthropic está cargado y la app lo detecta. Con las confirmaciones explícitas del usuario, se creó **n8n/turnia-waha** (0,5 CPU, 512 MB, claves y volúmenes propios), conservando intacto `n8n/waha`. URL exclusiva: `https://n8n-turnia-waha.b6mgbu.easypanel.host`. La sesión `default` respondió por API autenticada y llegó a `SCAN_QR_CODE` después de reiniciarla; **todavía no tiene teléfono vinculado**.
+
+También se creó «Turnia · WhatsApp WAHA» y su trigger User message en ElevenLabs, con respuesta a `https://turniasalud.vercel.app/api/elevenlabs/canal`. Las seis variables obligatorias más `WAHA_SESSION` están como secretos de Production en Vercel; deploy Ready y proveedor WAHA guardado en el panel. Salud: `database: "ok"`, `configured.waha: true`, `demo.whatsapp: false`. HMAC comprobado con evento inocuo: firma válida → 200 ignorado; sin firma → 401. El webhook global del nuevo WAHA apunta a `/api/waha/webhook`, evento `message`, con HMAC y reintentos.
+
+**Próximo paso del usuario:** activar WhatsApp en el celular de Turnia, entrar al dashboard del nuevo servicio con los campos `WAHA_DASHBOARD_USERNAME` / `WAHA_DASHBOARD_PASSWORD` de **Easypanel → n8n → turnia-waha → Environment** y escanear el QR de `default` (reiniciar esa sesión si venció). Si el dashboard pide la clave de API, usar `WAHA_API_KEY` de ese mismo servicio. No poner claves en chat ni usar las de otro servicio. Confirmar `WORKING`, luego `demo.whatsapp: true` y hacer las pruebas reales del checklist. Ver `ESTADO_Y_PRIORIDADES.md` para la evidencia y los límites de estas comprobaciones.
 
 ## Estado
 
