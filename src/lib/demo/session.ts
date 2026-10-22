@@ -137,20 +137,47 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
 
   const previous = await latestSession(input.phone);
   if (previous) await closeAgentConversations(previous);
-  await sql`update demo_sessions set status = 'terminada', updated_at = now() where phone = ${input.phone} and status <> 'terminada'`;
+  // Las que fallaron quedan como error, para verlo en el panel.
+  await sql`
+    update demo_sessions set status = 'terminada', updated_at = now()
+    where phone = ${input.phone} and status not in ('terminada', 'error')`;
 
+  // Un interesado es un solo pedido en el panel, aunque pruebe varias webs.
   const host = hostOf(website);
-  const [lead] = await sql<{ id: string }[]>`
-    insert into leads (name, phone, organization, message, source)
-    values (${`WhatsApp +${input.phone}`}, ${input.phone}, ${host}, ${`Probó la demo con su web: ${website}`}, 'demo-whatsapp')
+  const note = `Probó la demo con su web: ${website}`;
+  const [existing] = await sql<{ id: string }[]>`
+    update leads set message = concat_ws(' · ', message, ${note}::text), updated_at = now()
+    where id = (
+      select id from leads where phone = ${input.phone} and source = 'demo-whatsapp'
+      order by created_at desc limit 1)
     returning id`;
+  const lead =
+    existing ??
+    (
+      await sql<{ id: string }[]>`
+        insert into leads (name, phone, organization, message, source)
+        values (${`WhatsApp +${input.phone}`}, ${input.phone}, ${host}, ${note}, 'demo-whatsapp')
+        returning id`
+    )[0];
   const [session] = await sql<DemoSession[]>`
     insert into demo_sessions (phone, chat_id, website, lead_id)
     values (${input.phone}, ${input.chatId}, ${website}, ${lead.id})
     returning *`;
-  await notifyN8n("lead.nuevo", {
-    lead: { id: lead.id, nombre: `WhatsApp +${input.phone}`, telefono: input.phone, organizacion: host, origen: "demo-whatsapp", web: website },
-  });
+  if (!existing) {
+    await notifyN8n("lead.nuevo", {
+      // Misma forma que el formulario de /pedi-una-demo, para que el aviso de n8n lo muestre igual.
+      lead: {
+        id: lead.id,
+        nombre: `WhatsApp +${input.phone}`,
+        email: null,
+        telefono: input.phone,
+        organizacion: host,
+        mensaje: note,
+        origen: "demo-whatsapp",
+        web: website,
+      },
+    });
+  }
   await wahaSendText(input.chatId, DEMO_TEXTS.started(website));
   return { handled: true, status: "analizando", analyze: session.id };
 }

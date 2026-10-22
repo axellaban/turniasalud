@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
@@ -79,6 +80,8 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
 
   if (url === `${WAHA}/api/sendText` || url === `${WAHA}/api/sendVoice`) return json({ id: "out" }, 201);
+  if (url === `${WAHA}/api/sessions/default`) return json({ name: "default", status: "WORKING", me: { id: "5491122223333@c.us", pushName: "Turnia" } });
+  if (url === "https://n8n.test/webhook/turnia") return json({ ok: true });
   if (url === CHANNEL) return json({ conversation_id: `conv_demo_${++fake.conversation}`, status: "queued" }, 202);
   if (url === "https://odontosur.com.ar/") return html("Odonto Sur | Banfield", `<a href="/equipo">Equipo</a><p>Odontología integral</p>`);
   if (url === "https://odontosur.com.ar/equipo") return html("Equipo", "<p>Dra. Ana Pérez · Dr. Luis Gil</p>");
@@ -143,6 +146,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     vi.stubEnv("ELEVENLABS_PHONE_NUMBER_ID", "");
     vi.stubEnv("APP_URL", "https://turnia.example");
     vi.stubEnv("WAHA_URL", WAHA);
+    vi.stubEnv("DEMO_WHATSAPP_NUMBER", "");
     vi.stubEnv("WAHA_API_KEY", "waha-key");
     vi.stubEnv("WAHA_WEBHOOK_HMAC", HMAC_KEY);
     vi.stubEnv("ELEVENLABS_CHANNEL_URL", CHANNEL);
@@ -294,5 +298,46 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     await runAfter();
     expect(await send("quiero probar la demo con odontosur.com.ar")).toEqual({ ok: true, demo: "terminada" });
     expect(fake.texts().at(-1)).toContain("Ya probaste varias demos hoy");
+  });
+  it("la landing y /api/health toman el número del chip de WAHA y dicen qué falta", async () => {
+    const Landing = (await import("@/app/(marketing)/probar-demo/page")).default;
+    const html = renderToStaticMarkup((await Landing()) as React.ReactElement);
+    expect(html).toContain("Probar demo");
+    expect(html).not.toContain("se habilita en breve");
+
+    const health = await (await import("@/app/api/health/route")).GET();
+    expect(health.status).toBe(200);
+    expect((await health.json()).demo).toEqual({ base: true, whatsapp: true, whatsapp_source: "waha", claude: true, llamada_telefonica: false });
+
+    // Sin WAHA, el botón no se ofrece (nadie contestaría).
+    vi.stubEnv("WAHA_API_KEY", "");
+    const off = renderToStaticMarkup((await Landing()) as React.ReactElement);
+    expect(off).toContain("se habilita en breve");
+    vi.stubEnv("WAHA_API_KEY", "waha-key");
+  });
+
+  it("el panel muestra lo que probó cada interesado, con la conversación", async () => {
+    const page = (await import("@/app/panel/(app)/demos/page")).default;
+    const html = renderToStaticMarkup((await page({ searchParams: Promise.resolve({}) } as never)) as React.ReactElement);
+    expect(html).toContain("Lo que probó en la demo");
+    expect(html).toContain("https://odontosur.com.ar/");
+    expect(html).toContain("clínica armada: Odonto Sur");
+    expect(html).toContain("Hola, quiero un turno para limpieza");
+    expect(html).toContain("No se pudo leer la web");
+    // Un solo pedido por interesado, con las tres demos adentro.
+    expect(html).toContain("Lo que probó en la demo (3)");
+    expect(html.match(/<h2[^>]*>WhatsApp \+5491166667777<\/h2>/g)).toHaveLength(1);
+  });
+
+  it("los eventos de las clínicas de demo no le avisan nada al equipo por n8n", async () => {
+    vi.stubEnv("N8N_WEBHOOK_URL", "https://n8n.test/webhook/turnia");
+    const { notifyN8n } = await vi.importActual<typeof import("@/lib/n8n")>("@/lib/n8n");
+    const [demo] = await sql<{ id: string }[]>`select id from clinics where is_demo limit 1`;
+    await notifyN8n("turno.reservado", { clinic_id: demo.id });
+    expect(fake.calls).toHaveLength(0);
+    await notifyN8n("turno.reservado", { clinic_id: MAIN });
+    await notifyN8n("lead.nuevo", { lead: { id: "x" } });
+    expect(fake.calls.map((c) => (c.body as { event: string }).event)).toEqual(["turno.reservado", "lead.nuevo"]);
+    vi.stubEnv("N8N_WEBHOOK_URL", "");
   });
 });

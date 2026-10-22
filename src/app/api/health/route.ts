@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isConfigured } from "@/lib/env";
 import { sql } from "@/lib/db";
+import { demoStatus, type DemoStatusReport } from "@/lib/demo/config";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,10 @@ export async function GET() {
     }
   }
   const ok = database === "ok";
+  // Demo con tu web (/probar-demo): qué está listo, sin valores.
+  const demo: DemoStatusReport | null = ok ? await demoStatus() : null;
   return NextResponse.json(
-    { ok, service: "turnia-salud", database, clinics, configured },
+    { ok, service: "turnia-salud", database, clinics, configured, demo },
     { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } },
   );
 }

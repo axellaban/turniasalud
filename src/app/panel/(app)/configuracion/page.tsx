@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { getCatalog, getClinic, getScheduleBlocks } from "@/lib/clinic";
 import { formatDateTime, localDateKey } from "@/lib/time";
 import { sql } from "@/lib/db";
 import { WAHA_ENV_VARS, env, isConfigured, missingWahaEnv } from "@/lib/env";
+import { demoStatus } from "@/lib/demo/config";
 import {
   addAppointmentType,
   addProfessional,
@@ -43,11 +45,12 @@ export default async function SettingsPage() {
   const t = clinic.templates ?? {};
   // getCatalog solo trae activos: para poder reactivar, traemos todo de nuevo.
   const now = new Date();
-  const [professionals, types, blocks, audios] = await Promise.all([
+  const [professionals, types, blocks, audios, demo] = await Promise.all([
     sql<Professional[]>`select * from professionals where clinic_id = ${clinic.id} order by full_name`,
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} order by specialty, name`,
     getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 365 * 86400_000)),
     estadoAudios(),
+    demoStatus(),
   ]);
   const proName = new Map(professionals.map((p) => [p.id, p.full_name]));
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
@@ -393,6 +396,25 @@ export default async function SettingsPage() {
               <CopyRow label="Reply Webhook URL del Custom Channel (ElevenLabs → agente → Channels)" value={`${base}/api/elevenlabs/canal`} />
               <p className="text-xs text-brand-900/50">Los valores se cargan en Vercel → Settings → Environment Variables. Acá nunca se muestran.</p>
             </div>
+          </Card>
+
+          <Card>
+            <h2 className="mb-1 font-semibold text-brand-950">Demo con tu web</h2>
+            <p className="mb-3 text-xs text-brand-900/60">
+              <Badge tone={demo.base && demo.whatsapp ? "green" : "yellow"}>{demo.base && demo.whatsapp ? "Activa" : "Falta configurar"}</Badge>{" "}
+              El interesado deja su web en <Link href="/probar-demo" className="underline">/probar-demo</Link> y la prueba por WhatsApp.
+            </p>
+            <ul className="space-y-1 text-sm">
+              <li>{demo.base ? "✅" : "❌"} Base actualizada <span className="text-xs text-brand-900/50">(se actualiza sola en cada deploy de producción)</span></li>
+              <li>
+                {demo.whatsapp ? "✅" : "❌"} WhatsApp de la demo{" "}
+                <span className="text-xs text-brand-900/50">
+                  {demo.whatsapp_source === "variable" ? "(DEMO_WHATSAPP_NUMBER)" : demo.whatsapp_source === "waha" ? "(número del chip de WAHA)" : "(necesita WAHA conectado)"}
+                </span>
+              </li>
+              <li>{demo.claude ? "✅" : "⚠️"} <code className="text-xs">ANTHROPIC_API_KEY</code> <span className="text-xs text-brand-900/50">{demo.claude ? "" : "(sin clave arma una ficha básica)"}</span></li>
+              <li>{demo.llamada_telefonica ? "✅" : "➖"} <code className="text-xs">ELEVENLABS_PHONE_NUMBER_ID</code> <span className="text-xs text-brand-900/50">{demo.llamada_telefonica ? "(llama al celular)" : "(opcional: sin número, la llamada es desde el navegador)"}</span></li>
+            </ul>
           </Card>
 
           <Card>

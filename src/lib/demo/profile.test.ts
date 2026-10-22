@@ -18,6 +18,12 @@ describe("perfil de la demo", () => {
     expect(p.preguntas_frecuentes).toContain("implantes dentales");
   });
 
+  it("no usa títulos genéricos como nombre", () => {
+    const home = { ...site, pages: [{ ...site.pages[0], title: "Home" }], text: "Odontología" };
+    expect(fallbackProfile(home).nombre).toBe("odontosur.com.ar");
+    expect(fallbackProfile({ ...home, text: "Nombre del sitio: Odonto Sur SRL\nOdontología" }).nombre).toBe("Odonto Sur SRL");
+  });
+
   it("corrige horarios, días, duraciones y precios imposibles que pueda devolver el modelo", () => {
     const raw: DemoProfile = {
       nombre: "  Odonto   Sur ",

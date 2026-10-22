@@ -144,7 +144,10 @@ const SPECIALTIES: Array<[RegExp, string]> = [
 /** Perfil mínimo sin modelo: nombre, teléfono, especialidad probable y el texto de la web como preguntas frecuentes. Puro. */
 export function fallbackProfile(site: ScrapeResult): DemoProfile {
   const host = new URL(site.url).hostname.replace(/^www\./, "");
-  const title = site.pages[0]?.title.split(/\s[|\-–—·]\s/)[0]?.trim();
+  const siteName = /Nombre del sitio: (.+)/.exec(site.text)?.[1]?.trim();
+  const titlePart = site.pages[0]?.title.split(/\s[|\-–—·]\s/)[0]?.trim();
+  // "Home", "Inicio" o "Bienvenidos" no son nombres.
+  const title = siteName || (titlePart && !/^(home|inicio|index|bienvenid[oa]s?|p[aá]gina principal)$/i.test(titlePart) ? titlePart : null);
   const phone = /Teléfono: ([+\d][\d\s().-]{6,})/.exec(site.text)?.[1]?.trim() ?? null;
   const address = /"streetAddress"\s*:\s*"([^"]+)"/.exec(site.text)?.[1] ?? null;
   const counts = SPECIALTIES.map(([re, name]) => [name, (site.text.match(new RegExp(re.source, "gi")) ?? []).length] as const)

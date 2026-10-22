@@ -1,6 +1,6 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 21/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
+Actualización: 22/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
 ## Prioridad 1: cerrar la demo y la captación de interesados
 
@@ -27,7 +27,8 @@ Actualización: 21/10/2026 (Argentina). Este registro prevalece sobre los pendie
 ## Prioridad 2b: lead magnet "Probá la demo con tu web" (después de WAHA)
 
 - [x] Landing `/probar-demo`, flujo por WhatsApp, lectura de la web, ficha con Claude, clínica temporal y modos llamada/audio/chat. Tests de integración con servicios simulados. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
-- [ ] **Puesta en marcha pendiente, la hace la próxima IA** con computer use cuando el usuario lo pida: unir la rama `claude/zealous-hamilton-qw7l41` a `main`, correr el SQL en Neon, cargar `ANTHROPIC_API_KEY` y `DEMO_WHATSAPP_NUMBER` en Vercel, revisar los permisos de ElevenLabs y probar los tres modos. Checklist paso a paso en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-pendiente-para-la-próxima-ia).
+- [x] Unido a `main`. La base se actualiza sola en cada deploy de producción y el número de la landing sale solo de WAHA.
+- [ ] **Lo que queda lo hace la próxima IA** con computer use cuando el usuario lo pida: comprobar el deploy, cargar `ANTHROPIC_API_KEY` en Vercel, revisar los permisos de ElevenLabs y, con WAHA conectado, probar los tres modos. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
 
 ## Prioridad 3: primera clínica y ampliaciones
 

@@ -15,6 +15,8 @@ const PAGE_TIMEOUT_MS = 8000;
 const TOTAL_BUDGET_MS = 35000;
 const MAX_HTML_BYTES = 2_000_000;
 const MAX_REDIRECTS = 4;
+/** Tope de texto por página, para que una sola página enorme no tape a las demás. */
+const MAX_PAGE_CHARS = 12_000;
 const CONCURRENCY = 4;
 /** Tope de texto que se le pasa al modelo (≈ 25.000 tokens). */
 export const MAX_TEXT_CHARS = 90_000;
@@ -75,6 +77,8 @@ export function decodeEntities(text: string): string {
 export function htmlToText(html: string): { title: string; text: string; links: string[] } {
   const title = decodeEntities(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "").replace(/\s+/g, " ").trim();
   const extras: string[] = [];
+  const siteName = /<meta[^>]+property=["']og:site_name["'][^>]*content=["']([^"']*)["']/i.exec(html)?.[1];
+  if (siteName?.trim()) extras.push(`Nombre del sitio: ${decodeEntities(siteName.trim())}`);
   const description = /<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html)?.[1];
   if (description) extras.push(decodeEntities(description));
   for (const m of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
@@ -108,8 +112,10 @@ export function htmlToText(html: string): { title: string; text: string; links: 
 const PRIORITY = [
   /contact/, /turno/, /profesional/, /equipo/, /staff/, /medic/, /doctor/, /dra?[-_.]/, /especialidad/, /servicio/,
   /tratamiento/, /prestacion/, /practica/, /obras?[-_]?social/, /cobertura/, /prepaga/, /convenio/, /nosotros/,
-  /quienes/, /institucional/, /horario/, /sede/, /ubicacion/, /donde/, /precio/, /arancel/, /faq/, /pregunta/, /estudio/,
+  /quienes/, /horario/, /sede/, /ubicacion/, /donde/, /precio/, /arancel/, /faq/, /pregunta/, /estudio/, /paciente/,
 ];
+/** Secciones que no ayudan a atender pacientes: van al final de la cola. */
+const LOW_VALUE = /\/(blog|novedades|noticias|news|prensa|eventos?|cursos?|docencia|investigacion|alumni|donar|donacion|donaciones|trabaj|empleo|rrhh|carrera|beneficios|extranet|intranet|portal|autogestion|category|categoria|20\d\d)/;
 const SKIP = /\.(pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|mp4|mp3|webm|docx?|xlsx?|pptx?|css|js|xml|json)(\?|$)|\/(wp-(admin|json|login)|feed|cart|carrito|checkout|login|tag|author)\b/i;
 
 /** Links internos que vale la pena leer, los más útiles primero. Puro. */
@@ -131,11 +137,21 @@ export function rankLinks(base: URL, hrefs: string[]): string[] {
     const path = decodeURIComponent(url.pathname).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     let score = path.split("/").filter(Boolean).length * 2 + (url.search ? 3 : 0);
     if (PRIORITY.some((re) => re.test(path))) score -= 10;
-    if (/\/(blog|novedades|noticias|news|20\d\d)\b/.test(path)) score += 6;
+    if (LOW_VALUE.test(path)) score += 12;
     const key = url.toString();
     out.set(key, Math.min(out.get(key) ?? Infinity, score));
   }
   return [...out.entries()].sort((a, b) => a[1] - b[1]).map(([u]) => u);
+}
+
+/** Destino de un <meta http-equiv="refresh"> en una página casi vacía (si no, null). Puro. */
+export function metaRefreshTarget(html: string): string | null {
+  const tag = /<meta[^>]+http-equiv=["']?refresh["']?[^>]*>/i.exec(html)?.[0];
+  if (!tag) return null;
+  const target = /content=["']?\s*\d*\s*;?\s*url\s*=\s*['"]?([^"'>\s]+)/i.exec(tag)?.[1];
+  if (!target) return null;
+  // Solo si la página no tiene contenido propio (si no, es un refresco de la misma página).
+  return htmlToText(html).text.length < 300 ? decodeEntities(target) : null;
 }
 
 /** fetch con control de cada redirección (no puede saltar a una IP interna). */
@@ -162,6 +178,12 @@ async function fetchPage(start: string, resolve: Resolver): Promise<{ url: strin
     const length = Number(res.headers.get("content-length") ?? 0);
     if (length > MAX_HTML_BYTES) return null;
     const html = (await res.text()).slice(0, MAX_HTML_BYTES);
+    // Algunas webs viejas redirigen con <meta http-equiv="refresh" content="0;url=…">.
+    const refresh = metaRefreshTarget(html);
+    if (refresh) {
+      url = new URL(refresh, url);
+      continue;
+    }
     return { url: url.toString(), html };
   }
   return null;
@@ -184,6 +206,7 @@ export async function scrapeSite(website: string, opts: { resolve?: Resolver; ma
   });
   if (!home) throw new ScrapeError(`No pudimos abrir ${new URL(start).hostname}.`);
   const base = new URL(home.url);
+  const site = base.hostname.replace(/^www\./, "");
 
   const pages: ScrapedPage[] = [];
   const visited = new Set<string>([start, home.url]);
@@ -199,7 +222,7 @@ export async function scrapeSite(website: string, opts: { resolve?: Resolver; ma
       seenLines.add(key);
       return true;
     });
-    if (fresh.length) pages.push({ url, title: parsed.title, text: fresh.join("\n") });
+    if (fresh.length) pages.push({ url, title: parsed.title, text: fresh.join("\n").slice(0, MAX_PAGE_CHARS) });
     queue = rankLinks(base, [...queue, ...parsed.links]).filter((u) => !visited.has(u));
   };
   add(home.url, home.html);
@@ -210,6 +233,8 @@ export async function scrapeSite(website: string, opts: { resolve?: Resolver; ma
     const results = await Promise.all(batch.map((u) => fetchPage(u, resolve).catch(() => null)));
     for (const r of results) {
       if (!r || (visited.has(r.url) && !batch.includes(r.url))) continue;
+      // Un link interno que redirige a otro sitio (subdominios de docencia, portales) no cuenta.
+      if (new URL(r.url).hostname.replace(/^www\./, "") !== site) continue;
       visited.add(r.url);
       add(r.url, r.html);
     }

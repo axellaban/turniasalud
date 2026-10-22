@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Icono } from "@/components/site/iconos";
+import { demoWhatsappNumber } from "@/lib/demo/config";
+import { missingWahaEnv } from "@/lib/env";
 import { ProbarDemoForm } from "./probar-demo-form";
 
 export const metadata: Metadata = {
@@ -8,7 +10,7 @@ export const metadata: Metadata = {
   description: "Dejá la web de tu consultorio y probá a Turnia por WhatsApp: te atiende como la recepcionista de tu clínica, por llamada, audio o chat.",
 };
 
-// Se lee en cada visita: el número de WhatsApp se carga en Vercel sin volver a compilar.
+// Se lee en cada visita: el número sale de DEMO_WHATSAPP_NUMBER o del chip conectado a WAHA.
 export const dynamic = "force-dynamic";
 
 const PASOS = [
@@ -17,8 +19,9 @@ const PASOS = [
   { t: "Elegís cómo probarla", d: "Llamada de voz, audios de WhatsApp o chat. Te atiende como a un paciente que quiere un turno.", i: "grafico" as const },
 ];
 
-export default function ProbarDemoPage() {
-  const whatsapp = (process.env.DEMO_WHATSAPP_NUMBER ?? "").replace(/\D/g, "");
+export default async function ProbarDemoPage() {
+  // Sin WAHA nadie contestaría el mensaje: el botón se habilita recién con WAHA configurado.
+  const whatsapp = missingWahaEnv().length ? "" : ((await demoWhatsappNumber()).number ?? "");
   return (
     <section className="bg-gradient-to-b from-[#eef2ff] to-white">
       <div className="mx-auto max-w-[880px] px-4 pb-24 pt-16 text-center sm:px-6 md:pt-24">

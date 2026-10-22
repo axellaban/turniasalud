@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { htmlToText, isPrivateAddress, rankLinks, scrapeSite, ScrapeError } from "./scraper";
+import { htmlToText, isPrivateAddress, metaRefreshTarget, rankLinks, scrapeSite, ScrapeError } from "./scraper";
 
 describe("htmlToText", () => {
   it("saca el texto, los teléfonos, los mails y los datos estructurados, sin scripts ni estilos", () => {
@@ -26,18 +26,27 @@ describe("htmlToText", () => {
   });
 });
 
+describe("metaRefreshTarget", () => {
+  it("sigue las redirecciones viejas con meta refresh solo si la página está vacía", () => {
+    expect(metaRefreshTarget(`<html><head><meta http-equiv="Refresh" content="0;url=http://www.sg.com.ar"></head><body></body></html>`)).toBe("http://www.sg.com.ar");
+    expect(metaRefreshTarget(`<meta http-equiv="refresh" content="300"><p>${"Contenido real ".repeat(40)}</p>`)).toBeNull();
+    expect(metaRefreshTarget("<p>Hola</p>")).toBeNull();
+  });
+});
+
 describe("rankLinks", () => {
   it("se queda con el mismo sitio, sin archivos, y lee primero lo útil para dar turnos", () => {
     const base = new URL("https://www.odontosur.com.ar/");
     const ranked = rankLinks(base, [
       "/blog/2024/consejos", "/contacto", "https://odontosur.com.ar/profesionales", "https://otro.com/x", "/folleto.pdf",
-      "/contacto#mapa", "/servicios/implantes?utm_source=ig", "mailto:x@y.com", "/wp-admin/", "/a/b/c/d",
+      "/contacto#mapa", "/servicios/implantes?utm_source=ig", "mailto:x@y.com", "/wp-admin/", "/a/b/c/d", "/institucional/donar",
     ]);
     expect(ranked).toEqual([
       "https://www.odontosur.com.ar/contacto",
       "https://odontosur.com.ar/profesionales",
       "https://www.odontosur.com.ar/servicios/implantes",
       "https://www.odontosur.com.ar/a/b/c/d",
+      "https://www.odontosur.com.ar/institucional/donar",
       "https://www.odontosur.com.ar/blog/2024/consejos",
     ]);
   });
@@ -75,6 +84,21 @@ describe("scrapeSite", () => {
     expect(site.text.match(/Siempreviva/g)).toHaveLength(1);
     expect(site.text).toContain("Dra. Ana Pérez");
     expect(fetchMock.mock.calls.map(([u]) => String(u))).not.toContain("https://otro.com/");
+  });
+
+  it("sigue la redirección de la home a otro dominio, pero no la de una página interna", async () => {
+    const pages: Record<string, () => Response> = {
+      "https://viejo.com.ar/": () => page(`</head><meta http-equiv="refresh" content="0;url=https://nuevo.com.ar/">`),
+      "https://nuevo.com.ar/": () => page(`<a href="/alumnos">Alumnos</a><a href="/turnos">Turnos</a><p>Sanatorio Nuevo</p>`, "Sanatorio Nuevo"),
+      "https://nuevo.com.ar/alumnos": () => new Response(null, { status: 301, headers: { location: "https://campus.otro.com/" } }),
+      "https://campus.otro.com/": () => page("<p>Campus virtual</p>"),
+      "https://nuevo.com.ar/turnos": () => page("<p>Pedí tu turno al 4000-0000</p>"),
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => pages[String(input)]?.() ?? new Response("", { status: 404 })));
+    const site = await scrapeSite("viejo.com.ar", { resolve: publicDns });
+    expect(site.url).toBe("https://nuevo.com.ar/");
+    expect(site.pages.map((p) => p.url)).toEqual(["https://nuevo.com.ar/", "https://nuevo.com.ar/turnos"]);
+    expect(site.text).not.toContain("Campus virtual");
   });
 
   it("no sigue redirecciones ni dominios que apuntan a la red interna", async () => {

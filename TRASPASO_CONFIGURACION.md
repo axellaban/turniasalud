@@ -2,6 +2,13 @@
 
 Actualizado el 21/10/2026. **Antes del registro histórico, leer [`ESTADO_Y_PRIORIDADES.md`](ESTADO_Y_PRIORIDADES.md)**: audios generados, prueba de voz y webhook confirmados, avisos de demo y bandeja comercial. Luego continuar con `CONTEXTO_PROYECTO.md`.
 
+## 22/10/2026: la base se actualiza sola en cada deploy
+
+- `npm run build` corre primero `scripts/migrate-db.mjs`: en los builds de **producción** de Vercel aplica `supabase/schema.sql` (idempotente, en una transacción, con lock) usando `DATABASE_URL`. Los previews, CI y builds locales no tocan la base. Nunca corre `seed.sql`. `vercel.json` fija `buildCommand: "npm run build"` para que el dashboard no lo pise.
+- Ya no hay que pegar `schema.sql` en el SQL Editor de Neon después de cada cambio. Verificación: log del build (`[db] Base actualizada…`) o `/api/health` → `demo.base: true`.
+- Si la base no responde durante el build, el build falla y queda publicado el deploy anterior. Para publicar igual: `SKIP_DB_MIGRATION=1` en Vercel (y sacarla después).
+- Probado contra una base con el esquema anterior (`35840bd`) y datos: actualiza sin perder filas y se puede repetir.
+
 ## Estado actual: desplegado y funcionando con Postgres directo (21/10/2026)
 
 El usuario completó los pasos de despliegue con Claude computer use. Todo salió como se esperaba:
@@ -19,7 +26,7 @@ Sin tocar, a decisión del usuario: `NEON_DATA_API_URL`, `NEON_SERVER_PRIVATE_KE
 - **Campañas automáticas** (`g0H8xbQvRNv5FxQj`): suma "Todos los días 19:00 · Encuestas post-consulta" → job `encuestas`. Además se le cargó la zona horaria `America/Argentina/Buenos_Aires`, que no tenía: sin ella, los horarios corrían con la hora por defecto del servidor. **Sigue sin activar.**
 - **Eventos** (`PEaOkLPBrLIfFE0Q`): suma las ramas `turno.confirmado` y `tarea.resuelta`, que terminan en NoOp (no mandan nada). n8n publicó la versión nueva sola. Prueba sintética sin pacientes: ejecuciones 50198 y 50199, `success`, cada evento cayó en su rama.
 
-**WhatsApp por WAHA: código listo (21/10/2026, noche), sin conectar todavía.** Se construyó la opción B de [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md) sin credenciales reales (WAHA y ElevenLabs simulados en los tests). Para activarla: correr de nuevo `schema.sql` en Neon (columna `whatsapp_provider`, tablas `channel_conversations` y `channel_events`), crear el Custom Channel en el agente con Reply URL `https://turniasalud.vercel.app/api/elevenlabs/canal`, cargar en Vercel `WAHA_URL`, `WAHA_API_KEY`, `WAHA_WEBHOOK_HMAC`, `ELEVENLABS_CHANNEL_URL`, `ELEVENLABS_CHANNEL_SECRET` y `ELEVENLABS_CHANNEL_SIGNING_SECRET` (y `WAHA_SESSION` si no es `default`), elegir WAHA en Configuración y apuntar el webhook de la sesión de WAHA a `/api/waha/webhook` con evento `message` y la clave HMAC. Para los audios, la clave de ElevenLabs necesita el permiso Speech to Text. No activar campañas hasta probar con el chip.
+**WhatsApp por WAHA: código listo (21/10/2026, noche), sin conectar todavía.** Se construyó la opción B de [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md) sin credenciales reales (WAHA y ElevenLabs simulados en los tests). Para activarla (la base ya no se toca a mano: cada deploy de producción aplica `schema.sql` solo, ver más abajo): crear el Custom Channel en el agente con Reply URL `https://turniasalud.vercel.app/api/elevenlabs/canal`, cargar en Vercel `WAHA_URL`, `WAHA_API_KEY`, `WAHA_WEBHOOK_HMAC`, `ELEVENLABS_CHANNEL_URL`, `ELEVENLABS_CHANNEL_SECRET` y `ELEVENLABS_CHANNEL_SIGNING_SECRET` (y `WAHA_SESSION` si no es `default`), elegir WAHA en Configuración y apuntar el webhook de la sesión de WAHA a `/api/waha/webhook` con evento `message` y la clave HMAC. Para los audios, la clave de ElevenLabs necesita el permiso Speech to Text. No activar campañas hasta probar con el chip.
 
 Plan original: ** El usuario tiene WAHA en su VPS y prefiere usarlo para el MVP con un chip nuevo, conectado al mismo agente con el Custom Channel de ElevenLabs. Ya se le explicaron los riesgos (API no oficial, posible bloqueo, solo texto, Custom Channel en alpha). Falta que confirme el plan y cargue las variables `WAHA_*` y `ELEVENLABS_CHANNEL_*`. La alternativa oficial (Meta Cloud API conectada a ElevenLabs) también está descripta ahí.
 

@@ -43,7 +43,7 @@ La app se conecta directo a Postgres con una sola variable, `DATABASE_URL`, solo
 
 **Supabase (alternativa):** corré los mismos dos archivos en Supabase → SQL Editor y cargá en Vercel como `DATABASE_URL` la cadena de **Project Settings → Database → Connection string → Transaction pooler** (puerto 6543).
 
-> `schema.sql` se puede volver a correr cuando quieras: crea lo que falta y actualiza bases de versiones anteriores sin borrar datos. Hacelo cada vez que actualices el código.
+> **Después de la primera vez no hace falta volver a pegarlo:** cada deploy de producción en Vercel aplica `schema.sql` solo, antes del build (`scripts/migrate-db.mjs`, en una transacción). Crea lo que falta y actualiza bases de versiones anteriores sin borrar datos; nunca corre `seed.sql`. En el log del build aparece `[db] Base actualizada…`. Si la base no responde, el build se corta y queda publicado el deploy anterior (para publicar igual: `SKIP_DB_MIGRATION=1` en Vercel). Los previews no tocan la base. A mano: `DATABASE_URL=… npm run db:migrate`.
 
 ### 2. Deploy en Vercel
 1. En Vercel: **Add New → Project → Import** este repositorio de GitHub.
@@ -80,7 +80,7 @@ Hay dos formas de conectarlo. Se elige en Panel → Configuración → **Cómo s
 #### 4a. WhatsApp por WAHA (para probar con un chip)
 Usa **WAHA** en tu servidor y el **Custom Channel** de ElevenLabs (en alpha), que conecta ese WhatsApp con el mismo agente, sus herramientas y la memoria del paciente.
 
-0. **Base:** en Neon → SQL Editor, volvé a correr [`supabase/schema.sql`](supabase/schema.sql) completo. Agrega la columna `whatsapp_provider` y las tablas `channel_conversations` y `channel_events`; no borra datos.
+0. **Base:** se actualiza sola en el deploy de producción (columna `whatsapp_provider`, tablas `channel_conversations` y `channel_events`). No hay que tocar Neon.
 1. **Chip y WAHA:** en el dashboard de WAHA creá (o usá) la sesión `default` y escaneá el QR con el WhatsApp del chip nuevo.
 2. **ElevenLabs:** abrí el agente "Turnia · …" → **Channels** → **Custom Channel** → **Add trigger**. En *Reply Webhook URL* poné `https://turniasalud.vercel.app/api/elevenlabs/canal` → **Add**. Copiá los tres valores que muestra.
 3. **Vercel → Settings → Environment Variables** (como *Secret*, en Production):
@@ -148,11 +148,11 @@ En ElevenLabs → **Phone numbers** importá un número de Twilio o un SIP trunk
 - **Video del hero:** subí `public/videos/hero.mp4` (opcional `hero.webm` y `hero-mobile.mp4`). Sin video se ve la foto.
 
 ### 9. Lead magnet: "Probá la demo con tu web" (`/probar-demo`)
-La persona pega la web de su consultorio y toca **PROBAR DEMO**: se abre WhatsApp con «Quiero probar la demo de Turnia. Te paso mi web: …». Turnia lee la web, arma una clínica de prueba con esos datos y le ofrece **1 llamada de voz, 2 audios de WhatsApp o 3 chat**; el agente la atiende como la recepcionista de ese consultorio. Cada interesado aparece en Panel → Pedidos de demo (origen `demo-whatsapp`) y dispara `lead.nuevo` a n8n. Requiere WhatsApp por WAHA (paso 4) funcionando. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
+La persona pega la web de su consultorio y toca **PROBAR DEMO**: se abre WhatsApp con «Quiero probar la demo de Turnia. Te paso mi web: …». Turnia lee la web, arma una clínica de prueba con esos datos y le ofrece **1 llamada de voz, 2 audios de WhatsApp o 3 chat**; el agente la atiende como la recepcionista de ese consultorio. Cada interesado aparece una sola vez en Panel → Pedidos de demo (origen `demo-whatsapp`), con lo que probó y sus conversaciones, y dispara `lead.nuevo` a n8n. Requiere WhatsApp por WAHA (paso 4) funcionando: el número del botón sale solo del chip conectado. Estado en Panel → Configuración → "Demo con tu web" y en `/api/health` (`demo`). Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
 
 | Variable en Vercel | Para qué |
 |---|---|
-| `DEMO_WHATSAPP_NUMBER` | Número del chip de WAHA con código de país, ej. `5491122223333`. Sin esto la landing muestra "se habilita en breve" |
+| `DEMO_WHATSAPP_NUMBER` | Opcional: por defecto se usa el número del chip conectado a WAHA. Cargalo solo para forzar otro (con código de país, ej. `5491122223333`). Sin WAHA, la landing muestra "se habilita en breve" |
 | `ANTHROPIC_API_KEY` | Recomendada: Claude ordena la web en profesionales, prestaciones, horarios y coberturas. Sin clave la demo funciona con un perfil básico |
 | `ELEVENLABS_PHONE_NUMBER_ID` | Opcional: número de Twilio importado en ElevenLabs para que la opción 1 **llame al celular**. Sin esto, la opción 1 manda un link para hablar desde el navegador |
 | `ELEVENLABS_VOICE_ID` | Opcional: voz de los audios. Por defecto, la voz del agente |
@@ -195,7 +195,7 @@ Los tests de integración cubren todas las herramientas del agente (incluidas re
 | `POST /api/automations/:job` | n8n (`recordatorios`, `recall`, `reactivacion`, `ausentes`, `lista-espera`, `encuestas`) | header `x-turnia-secret` |
 | `POST /api/elevenlabs/token` | Demo web | sesión del panel |
 | `POST /api/demo/llamada` | Llamada por la web del lead magnet | token del link enviado por WhatsApp |
-| `GET /api/health` | Monitoreo: consulta la base, 503 si no responde | público |
+| `GET /api/health` | Monitoreo: consulta la base (503 si no responde) y dice qué le falta a la demo con tu web | público |
 | `GET /privacidad` | Pacientes y Meta | público |
 
 ### Pendientes conocidos del MVP
