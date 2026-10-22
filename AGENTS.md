@@ -12,8 +12,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Antes de trabajar en este repo leé, en este orden:
 
+0. [`ESTADO_Y_PRIORIDADES.md`](ESTADO_Y_PRIORIDADES.md): cierre operativo más reciente, pruebas en producción y próximos pasos; prevalece sobre el registro histórico.
 1. [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md): estado real de Vercel, Neon, ElevenLabs y n8n (el bloqueo `jwk not found` ya está resuelto).
 2. [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md): WhatsApp por WAHA + Custom Channel de ElevenLabs. **Código hecho**; falta conectarlo con el chip y las variables del usuario y probarlo en vivo.
-3. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): web pública copycat de assorthealth.com (**hecha**, con su key visual). Falta generar los audios de las demos y subir el video del hero.
+3. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): web pública copycat de assorthealth.com (**hecha**, con su key visual). Los siete audios ya están generados; falta el video propio del hero.
 4. [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md): demo instantánea `/probar-demo` (web del interesado → WhatsApp → llamada, audio o chat). **Código hecho**; se prueba en vivo cuando WAHA esté conectado.
 5. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
