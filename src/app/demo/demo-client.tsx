@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
+import { requestMicrophone } from "@/lib/microphone";
 
 type Line = { id: number; role: "user" | "agent" | "system"; text: string };
 
@@ -63,7 +64,7 @@ function Demo() {
     setLines([]);
     setLoading(true);
     try {
-      if (mode === "voz") await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (mode === "voz") await requestMicrophone();
       const res = await fetch("/api/elevenlabs/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

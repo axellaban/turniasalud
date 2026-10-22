@@ -140,7 +140,8 @@ function DemoDetails({ sessions, conversations }: { sessions: DemoActivity[]; co
                 {demo.pages_read ? ` · leyó ${demo.pages_read} página${demo.pages_read === 1 ? "" : "s"}` : ""}
                 {demo.clinic_name ? ` · clínica armada: ${demo.clinic_name}` : ""}
                 {demo.error ? ` · ${demo.error}` : ""}
-                {!demo.clinic_id && demo.status !== "error" && demo.status !== "analizando" ? " · la demo ya se borró (se guardan 7 días)" : ""}
+                {!demo.clinic_id && demo.pages_read ? " · la clínica temporal ya se limpió" : ""}
+                {!demo.clinic_id && !demo.pages_read && demo.status === "terminada" ? " · terminó antes de preparar la clínica" : ""}
               </p>
               {chats.map((c, i) => (
                 <div key={i} className="mt-2 space-y-1 rounded-lg bg-white p-2 text-xs">

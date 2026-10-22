@@ -384,5 +384,10 @@ create table if not exists demo_sessions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Idempotencia del mensaje original y reclamo único del análisis en segundo plano.
+alter table demo_sessions add column if not exists request_message_id text;
+alter table demo_sessions add column if not exists analysis_started_at timestamptz;
+alter table demo_sessions add column if not exists call_attempts integer not null default 0;
+create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
 alter table demo_sessions enable row level security;

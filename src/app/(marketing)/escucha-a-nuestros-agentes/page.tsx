@@ -15,7 +15,7 @@ export default function EscuchaPage() {
       <div className="mx-auto max-w-[860px] px-4 sm:px-6">
         <h1 className="text-center text-[44px] font-medium leading-[1.05] tracking-tight text-brand-800 sm:text-[64px]">Escuchá a nuestros agentes</h1>
         <p className="mx-auto mt-4 max-w-xl text-center text-[17px] text-tinta">
-          Así atiende Turnia conversaciones reales de pacientes en distintas especialidades.
+          Así atiende Turnia ejemplos simulados de conversaciones con pacientes en distintas especialidades.
         </p>
         <ul className="mt-14 space-y-5">
           {CONVERSACIONES.map((c) => (

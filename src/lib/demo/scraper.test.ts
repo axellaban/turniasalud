@@ -1,5 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { htmlToText, isPrivateAddress, metaRefreshTarget, rankLinks, scrapeSite, ScrapeError } from "./scraper";
+
+const transport = vi.hoisted(() => ({ lookups: [] as import("node:net").LookupFunction[] }));
+vi.mock("undici", async (importOriginal) => {
+  const original = await importOriginal<typeof import("undici")>();
+  return { ...original, Agent: class extends original.Agent {
+    constructor(options: ConstructorParameters<typeof original.Agent>[0]) {
+      super(options);
+      if (options?.connect && typeof options.connect === "object" && "lookup" in options.connect && options.connect.lookup) transport.lookups.push(options.connect.lookup);
+    }
+  } };
+});
 
 describe("htmlToText", () => {
   it("saca el texto, los teléfonos, los mails y los datos estructurados, sin scripts ni estilos", () => {
@@ -24,6 +35,9 @@ describe("htmlToText", () => {
     expect(text).not.toContain("color:red");
     expect(links).toEqual(["/equipo"]);
   });
+  it("tolera teléfonos con escapes incompletos", () => {
+    expect(htmlToText('<a href="tel:+54%">Llamar</a>').text).toContain("Teléfono: +54%");
+  });
 });
 
 describe("metaRefreshTarget", () => {
@@ -35,6 +49,9 @@ describe("metaRefreshTarget", () => {
 });
 
 describe("rankLinks", () => {
+  it("un link con escapes mal formados no aborta la lectura del sitio", () => {
+    expect(rankLinks(new URL("https://clinica.com/"), ["/contacto%", "/equipo"]).length).toBe(2);
+  });
   it("se queda con el mismo sitio, sin archivos, y lee primero lo útil para dar turnos", () => {
     const base = new URL("https://www.odontosur.com.ar/");
     const ranked = rankLinks(base, [
@@ -54,7 +71,7 @@ describe("rankLinks", () => {
 
 describe("isPrivateAddress", () => {
   it("bloquea redes internas y deja pasar internet", () => {
-    for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:10.0.0.1"]) {
+    for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:10.0.0.1", "::ffff:7f00:1", "0:0:0:0:0:ffff:7f00:1", "192.0.2.1", "198.51.100.2", "203.0.113.1", "2001:db8::1", "2002:7f00:1::", "64:ff9b::7f00:1"]) {
       expect(isPrivateAddress(ip), ip).toBe(true);
     }
     for (const ip of ["8.8.8.8", "200.45.1.10", "2800:3f0:4002:80b::200e"]) expect(isPrivateAddress(ip), ip).toBe(false);
@@ -62,7 +79,8 @@ describe("isPrivateAddress", () => {
 });
 
 describe("scrapeSite", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  beforeEach(() => { transport.lookups = []; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
   const page = (body: string, title = "Clínica") => new Response(`<html><head><title>${title}</title></head><body>${body}</body></html>`, { headers: { "content-type": "text/html" } });
   const publicDns = async () => ["200.45.1.10"];
 
@@ -108,4 +126,63 @@ describe("scrapeSite", () => {
     await expect(scrapeSite("https://interno.com", { resolve: async () => ["127.0.0.1"] })).rejects.toThrow(/no permitida/);
     await expect(scrapeSite("https://no-existe.com", { resolve: async () => [] })).rejects.toThrow(/No existe/);
   });
+  it("conecta a la IP pública validada sin volver a consultar un DNS que cambió", async () => {
+    const dns = vi.fn().mockResolvedValueOnce(["200.45.1.10"]).mockResolvedValue(["127.0.0.1"]);
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      const result = await new Promise((resolve) => {
+        transport.lookups.at(-1)!("clinica.com", { all: true }, (error, addresses) => resolve({ error, addresses }));
+      });
+      expect(result).toEqual({ error: null, addresses: [{ address: "200.45.1.10", family: 4 }] });
+      return page("Consultorio");
+    }));
+    await scrapeSite("clinica.com", { resolve: dns });
+    expect(dns).toHaveBeenCalledOnce();
+  });
+
+  it("corta un HTML sin Content-Length al superar el límite de bytes", async () => {
+    const cancel = vi.fn();
+    let chunks = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) { chunks++; controller.enqueue(new Uint8Array(700_000)); },
+      cancel,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { headers: { "content-type": "text/html" } })));
+    await expect(scrapeSite("clinica.com", { resolve: publicDns })).rejects.toBeInstanceOf(ScrapeError);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(chunks).toBeLessThanOrEqual(4);
+  });
+
+  it("el plazo incluye un DNS que nunca responde", async () => {
+    vi.useFakeTimers();
+    // AbortSignal.timeout usa el reloj nativo de Node, fuera de los fake timers.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timeout", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = expect(scrapeSite("clinica.com", { resolve: () => new Promise(() => {}) })).rejects.toBeInstanceOf(ScrapeError);
+    await vi.advanceTimersByTimeAsync(8001);
+    await result;
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("las redirecciones comparten el plazo de la página en lugar de reiniciarlo", async () => {
+    vi.useFakeTimers();
+    // AbortSignal.timeout usa el reloj nativo de Node, fuera de los fake timers.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timeout", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return new Response(null, { status: 302, headers: { location: "https://clinica.com/otra" } });
+    }));
+    const result = expect(scrapeSite("clinica.com", { resolve: publicDns })).rejects.toBeInstanceOf(ScrapeError);
+    await vi.advanceTimersByTimeAsync(8001);
+    await result;
+  });
+
 });

@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 const PASOS = [
   { t: "Dejás tu web", d: "Te abrimos WhatsApp con el mensaje listo. Solo tenés que enviarlo.", i: "whatsapp" as const },
-  { t: "Turnia la lee entera", d: "Aprende tus profesionales, prestaciones, horarios, coberturas y preguntas frecuentes.", i: "estetoscopio" as const },
+  { t: "Turnia lee tu web", d: "Aprende tus profesionales, prestaciones, horarios, coberturas y preguntas frecuentes.", i: "estetoscopio" as const },
   { t: "Elegís cómo probarla", d: "Llamada de voz, audios de WhatsApp o chat. Te atiende como a un paciente que quiere un turno.", i: "grafico" as const },
 ];
 
@@ -25,12 +25,12 @@ export default async function ProbarDemoPage() {
   return (
     <section className="bg-gradient-to-b from-[#eef2ff] to-white">
       <div className="mx-auto max-w-[880px] px-4 pb-24 pt-16 text-center sm:px-6 md:pt-24">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-600">Demo en 1 minuto</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-600">Demo con tu consultorio</p>
         <h1 className="mx-auto mt-4 max-w-[760px] text-[38px] font-medium leading-[1.06] tracking-tight text-brand-950 sm:text-[56px]">
           Probá a Turnia <span className="text-brand-600">con tu propia clínica</span>
         </h1>
         <p className="mx-auto mt-5 max-w-[620px] text-[17px] leading-relaxed text-tinta">
-          Pegá la web de tu consultorio. Turnia la lee de punta a punta y te atiende por WhatsApp como si fueras un paciente:
+          Pegá la web de tu consultorio. Turnia lee sus secciones principales y te atiende por WhatsApp como si fueras un paciente:
           con tus profesionales, tus prestaciones y tus horarios.
         </p>
 

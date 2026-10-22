@@ -128,46 +128,56 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
 }
 
 async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome> {
-  const [{ count }] = await sql<{ count: number }[]>`
-    select count(*)::int as count from demo_sessions where phone = ${input.phone} and created_at > now() - interval '1 day'`;
-  if (count >= MAX_DEMOS_PER_DAY) {
+  // WAHA reintenta entregas fallidas y puede entregar varios mensajes juntos.
+  // La cuota, el interesado y la sesión se deciden bajo el mismo lock por teléfono.
+  const result = await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`turnia-demo:${input.phone}`}, 0))`;
+    const [retry] = await tx<DemoSession[]>`
+      select * from demo_sessions where phone = ${input.phone} and request_message_id = ${input.messageId}`;
+    if (retry) return { session: retry, createdLead: false };
+
+    const [{ count }] = await tx<{ count: number }[]>`
+      select count(*)::int as count from demo_sessions where phone = ${input.phone} and created_at > now() - interval '1 day'`;
+    if (count >= MAX_DEMOS_PER_DAY) return null;
+
+    await tx`
+      update channel_conversations set closed_at = now()
+      where phone = ${input.phone} and closed_at is null and clinic_id in (
+        select clinic_id from demo_sessions where phone = ${input.phone} and status not in ('terminada', 'error'))`;
+    await tx`
+      update demo_sessions set status = 'terminada', updated_at = now()
+      where phone = ${input.phone} and status not in ('terminada', 'error')`;
+
+    // Un interesado es un solo pedido en el panel, aunque pruebe varias webs.
+    const note = `Probó la demo con su web: ${website}`;
+    const [existing] = await tx<{ id: string }[]>`
+      update leads set message = concat_ws(' · ', message, ${note}::text), updated_at = now()
+      where id = (
+        select id from leads where phone = ${input.phone} and source = 'demo-whatsapp'
+        order by created_at desc limit 1)
+      returning id`;
+    const lead = existing ?? (await tx<{ id: string }[]>`
+      insert into leads (name, phone, organization, message, source)
+      values (${`WhatsApp +${input.phone}`}, ${input.phone}, ${hostOf(website)}, ${note}, 'demo-whatsapp')
+      returning id`)[0];
+    const [session] = await tx<DemoSession[]>`
+      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id)
+      values (${input.phone}, ${input.chatId}, ${website}, ${lead.id}, ${input.messageId})
+      returning *`;
+    return { session, createdLead: !existing };
+  });
+  if (!result) {
     await wahaSendText(input.chatId, DEMO_TEXTS.tooMany);
     return { handled: true, status: "terminada" };
   }
-
-  const previous = await latestSession(input.phone);
-  if (previous) await closeAgentConversations(previous);
-  // Las que fallaron quedan como error, para verlo en el panel.
-  await sql`
-    update demo_sessions set status = 'terminada', updated_at = now()
-    where phone = ${input.phone} and status not in ('terminada', 'error')`;
-
-  // Un interesado es un solo pedido en el panel, aunque pruebe varias webs.
+  const { session } = result;
   const host = hostOf(website);
   const note = `Probó la demo con su web: ${website}`;
-  const [existing] = await sql<{ id: string }[]>`
-    update leads set message = concat_ws(' · ', message, ${note}::text), updated_at = now()
-    where id = (
-      select id from leads where phone = ${input.phone} and source = 'demo-whatsapp'
-      order by created_at desc limit 1)
-    returning id`;
-  const lead =
-    existing ??
-    (
-      await sql<{ id: string }[]>`
-        insert into leads (name, phone, organization, message, source)
-        values (${`WhatsApp +${input.phone}`}, ${input.phone}, ${host}, ${note}, 'demo-whatsapp')
-        returning id`
-    )[0];
-  const [session] = await sql<DemoSession[]>`
-    insert into demo_sessions (phone, chat_id, website, lead_id)
-    values (${input.phone}, ${input.chatId}, ${website}, ${lead.id})
-    returning *`;
-  if (!existing) {
+  if (result.createdLead) {
     await notifyN8n("lead.nuevo", {
       // Misma forma que el formulario de /pedi-una-demo, para que el aviso de n8n lo muestre igual.
       lead: {
-        id: lead.id,
+        id: session.lead_id,
         nombre: `WhatsApp +${input.phone}`,
         email: null,
         telefono: input.phone,
@@ -178,6 +188,7 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
       },
     });
   }
+  if (session.status !== "analizando") return { handled: true, status: session.status };
   await wahaSendText(input.chatId, DEMO_TEXTS.started(website));
   return { handled: true, status: "analizando", analyze: session.id };
 }
@@ -187,17 +198,20 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
  * Corre después de responder el webhook (puede tardar ~1 minuto).
  */
 export async function analyzeDemo(sessionId: string): Promise<void> {
-  const [session] = await sql<DemoSession[]>`select * from demo_sessions where id = ${sessionId}`;
-  if (!session || session.status !== "analizando") return;
+  // Un reintento del webhook puede volver a programar este trabajo. Solo uno
+  // reclama la sesión antes de consultar la web o consumir créditos de Claude.
+  const [session] = await sql<DemoSession[]>`
+    update demo_sessions set analysis_started_at = now()
+    where id = ${sessionId} and status = 'analizando' and analysis_started_at is null
+    returning *`;
+  if (!session) return;
   try {
     const site = await scrapeSite(session.website);
+    const [active] = await sql`select id from demo_sessions where id = ${session.id} and status = 'analizando'`;
+    if (!active) return;
     const profile = await buildProfile(site);
-    const clinic = await createDemoClinic(profile, site.url);
-    const [current] = await sql<DemoSession[]>`
-      update demo_sessions set status = 'eligiendo', clinic_id = ${clinic.id}, pages_read = ${site.pages.length}, updated_at = now()
-      where id = ${session.id} and status = 'analizando'
-      returning *`;
-    if (!current) return; // la persona salió o pidió otra demo mientras leíamos
+    const clinic = await createDemoClinic(profile, site.url, { id: session.id, pages: site.pages.length });
+    if (!clinic) return; // la persona salió o pidió otra demo mientras leíamos
     if (session.lead_id) {
       await sql`
         update leads set organization = ${clinic.name}, specialty = ${clinic.specialty}, updated_at = now()
@@ -207,8 +221,10 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
   } catch (e) {
     const scrapeFailed = e instanceof ScrapeError;
     console.error("Demo: no se pudo preparar", session.website, e instanceof Error ? e.message : e);
-    await setStatus(session.id, "error", { error: e instanceof Error ? e.message.slice(0, 300) : "error" });
-    await wahaSendText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
+    const [failed] = await sql`
+      update demo_sessions set status = 'error', error = ${e instanceof Error ? e.message.slice(0, 300) : "error"}, updated_at = now()
+      where id = ${session.id} and status in ('analizando', 'eligiendo') returning id`;
+    if (failed) await wahaSendText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
   }
 }
 
@@ -248,6 +264,10 @@ async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): 
   const phoneNumberId = process.env.ELEVENLABS_PHONE_NUMBER_ID;
   const main = await getClinic();
   if (phoneNumberId && main.elevenlabs_agent_id) {
+    if (!(await reserveDemoCall(session.id))) {
+      await wahaSendText(session.chat_id, DEMO_TEXTS.callLimit);
+      return;
+    }
     try {
       await startPhoneCall({
         agentId: main.elevenlabs_agent_id,
@@ -255,15 +275,26 @@ async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): 
         toNumber: `+${session.phone}`,
         dynamicVariables: await demoDynamicVariables(clinic, session.phone),
       });
-      await wahaSendText(session.chat_id, DEMO_TEXTS.callPhone(agent, clinic.name, session.phone));
-      return;
     } catch (e) {
+      await releaseDemoCall(session.id);
       console.error("Demo: no se pudo llamar; mando el link de llamada web", e instanceof Error ? e.message : e);
+      await sendCallLink(session, agent, clinic.name);
+      return;
     }
+    // La llamada ya salió: un fallo de WhatsApp no debe devolver la cuota ni
+    // provocar que el reintento del webhook vuelva a llamar a la persona.
+    await wahaSendText(session.chat_id, DEMO_TEXTS.callPhone(agent, clinic.name, session.phone)).catch((e) => {
+      console.error("Demo: llamada iniciada, pero no se pudo avisar por WhatsApp", e instanceof Error ? e.message : e);
+    });
+    return;
   }
+  await sendCallLink(session, agent, clinic.name);
+}
+
+async function sendCallLink(session: DemoSession, agent: string, clinicName: string): Promise<void> {
   const token = session.call_token ?? randomBytes(18).toString("base64url");
   await sql`update demo_sessions set call_token = ${token} where id = ${session.id}`;
-  await wahaSendText(session.chat_id, DEMO_TEXTS.callLink(agent, clinic.name, `${env.appUrl()}/probar-demo/llamada/${token}`));
+  await wahaSendText(session.chat_id, DEMO_TEXTS.callLink(agent, clinicName, `${env.appUrl()}/probar-demo/llamada/${token}`));
 }
 
 /** Variables del agente para la clínica de la demo (llamadas por teléfono o por la web). */
@@ -276,10 +307,25 @@ export async function sessionForCallToken(token: string): Promise<{ session: Dem
   if (!/^[A-Za-z0-9_-]{20,40}$/.test(token)) return null;
   const [session] = await sql<DemoSession[]>`
     select * from demo_sessions
-    where call_token = ${token} and status <> 'terminada' and updated_at > now() - make_interval(hours => ${ACTIVE_HOURS})`;
+    where call_token = ${token} and status = 'llamada' and updated_at > now() - make_interval(hours => ${ACTIVE_HOURS})`;
   if (!session?.clinic_id) return null;
   const clinic = await demoClinic(session.clinic_id);
   return clinic ? { session, clinic } : null;
+}
+
+/** Cuota compartida por el enlace y las llamadas telefónicas de una demo. */
+export async function reserveDemoCall(sessionId: string): Promise<boolean> {
+  const [claimed] = await sql`
+    update demo_sessions set call_attempts = call_attempts + 1
+    where id = ${sessionId} and status = 'llamada' and call_attempts < 3
+      and updated_at > now() - make_interval(hours => ${ACTIVE_HOURS})
+    returning id`;
+  return Boolean(claimed);
+}
+
+/** Un fallo antes de entregar el token o iniciar la llamada no consume la cuota. */
+export async function releaseDemoCall(sessionId: string): Promise<void> {
+  await sql`update demo_sessions set call_attempts = greatest(0, call_attempts - 1) where id = ${sessionId}`;
 }
 
 const WEEKDAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -293,7 +339,9 @@ const canon = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g
  * Cada tipo de turno tiene al menos un profesional de su especialidad, para
  * que consultar_disponibilidad siempre encuentre horarios.
  */
-export async function createDemoClinic(profile: DemoProfile, website: string): Promise<Clinic> {
+export async function createDemoClinic(profile: DemoProfile, website: string): Promise<Clinic>;
+export async function createDemoClinic(profile: DemoProfile, website: string, session: { id: string; pages: number }): Promise<Clinic | null>;
+export async function createDemoClinic(profile: DemoProfile, website: string, session?: { id: string; pages: number }): Promise<Clinic | null> {
   const main = await getClinic();
   const hours = profile.horarios.length ? profile.horarios : DEFAULT_HOURS;
 
@@ -322,6 +370,10 @@ export async function createDemoClinic(profile: DemoProfile, website: string): P
 
   const faq = [profile.descripcion, profile.preguntas_frecuentes].filter(Boolean).join("\n").trim() || null;
   return sql.begin(async (tx) => {
+    if (session) {
+      const [active] = await tx`select id from demo_sessions where id = ${session.id} and status = 'analizando' for update`;
+      if (!active) return null;
+    }
     // Las demos viejas no se acumulan: se borran con todo lo que tengan.
     await tx`delete from clinics where is_demo and created_at < now() - make_interval(days => ${KEEP_DEMO_CLINICS_DAYS})`;
     const [clinic] = await tx<Clinic[]>`
@@ -357,6 +409,9 @@ export async function createDemoClinic(profile: DemoProfile, website: string): P
         await tx`insert into schedules (professional_id, weekday, start_time, end_time) values (${pro.id}, ${h.dia}, ${h.desde}, ${h.hasta})`;
       }
     }
+    if (session) await tx`
+      update demo_sessions set status = 'eligiendo', clinic_id = ${clinic.id}, pages_read = ${session.pages}, updated_at = now()
+      where id = ${session.id}`;
     return clinic;
   });
 }

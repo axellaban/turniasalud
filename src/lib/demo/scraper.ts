@@ -1,6 +1,7 @@
 import "server-only";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { Agent } from "undici";
 import { normalizeWebsite } from "./website";
 
 export { normalizeWebsite };
@@ -31,29 +32,51 @@ export class ScrapeError extends Error {}
 export function isPrivateAddress(ip: string): boolean {
   const v = isIP(ip);
   if (v === 4) {
-    const [a, b] = ip.split(".").map(Number);
+    const [a, b, c] = ip.split(".").map(Number);
     return (
       a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224
+      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2)) || (a === 192 && b === 88 && c === 99) ||
+      (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+      (a === 203 && b === 0 && c === 113) || a >= 224
     );
   }
   if (v === 6) {
-    const x = ip.toLowerCase();
-    if (x === "::" || x === "::1") return true;
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(x);
-    if (mapped) return isPrivateAddress(mapped[1]);
-    return /^(fc|fd|fe8|fe9|fea|feb|ff)/.test(x);
+    const x = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
+    // Solo unicast global. También excluye IPv4 mapeada (en decimal o hex),
+    // traducción, redes locales y multicast; no hacen falta para leer una web.
+    return !/^[23]/.test(x) || /^2001:(?:[0-1]?[0-9a-f]{1,2}|db8):/.test(x) || /^2002:|^3fff:/.test(x);
   }
   return true;
 }
 
 const defaultResolver: Resolver = async (hostname) => (await lookup(hostname, { all: true })).map((r) => r.address);
 
-async function assertPublic(url: URL, resolve: Resolver): Promise<void> {
+async function publicAddresses(url: URL, resolve: Resolver, signal: AbortSignal): Promise<string[]> {
   if (!normalizeWebsite(url.toString())) throw new ScrapeError(`Dirección no permitida: ${url.hostname}`);
-  const addresses = await resolve(url.hostname).catch(() => []);
+  const addresses = await beforeAbort(resolve(url.hostname).catch(() => []), signal);
   if (!addresses.length) throw new ScrapeError(`No existe el dominio ${url.hostname}`);
   if (addresses.some(isPrivateAddress)) throw new ScrapeError(`Dirección no permitida: ${url.hostname}`);
+  return addresses;
+}
+
+/** Incluye DNS y lectura del cuerpo en el mismo plazo, incluso con un proveedor lento. */
+async function beforeAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  let onAbort: () => void = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([work, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+function decodeUri(text: string): string {
+  try { return decodeURIComponent(text); } catch { return text; }
 }
 
 const ENTITIES: Record<string, string> = {
@@ -89,7 +112,7 @@ export function htmlToText(html: string): { title: string; text: string; links: 
   const links: string[] = [];
   for (const m of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#][^"']*)["'][^>]*>/gi)) {
     const href = decodeEntities(m[1].trim());
-    if (/^tel:/i.test(href)) extras.push(`Teléfono: ${decodeURIComponent(href.slice(4)).trim()}`);
+    if (/^tel:/i.test(href)) extras.push(`Teléfono: ${decodeUri(href.slice(4)).trim()}`);
     else if (/^mailto:/i.test(href)) extras.push(`Email: ${href.slice(7).split("?")[0]}`);
     else if (/^https?:\/\/(wa\.me|api\.whatsapp\.com)\//i.test(href)) extras.push(`WhatsApp: ${href}`);
     else links.push(href);
@@ -134,7 +157,7 @@ export function rankLinks(base: URL, hrefs: string[]): string[] {
     if (SKIP.test(url.pathname)) continue;
     url.hash = "";
     for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid|gclid)/.test(key)) url.searchParams.delete(key);
-    const path = decodeURIComponent(url.pathname).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const path = decodeUri(url.pathname).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     let score = path.split("/").filter(Boolean).length * 2 + (url.search ? 3 : 0);
     if (PRIORITY.some((re) => re.test(path))) score -= 10;
     if (LOW_VALUE.test(path)) score += 12;
@@ -154,37 +177,78 @@ export function metaRefreshTarget(html: string): string | null {
   return htmlToText(html).text.length < 300 ? decodeEntities(target) : null;
 }
 
-/** fetch con control de cada redirección (no puede saltar a una IP interna). */
-async function fetchPage(start: string, resolve: Resolver): Promise<{ url: string; html: string } | null> {
+/** Lee como máximo 2 MB descomprimidos; Content-Length puede faltar o mentir. */
+async function boundedHtml(res: Response, signal: AbortSignal): Promise<string | null> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let html = "";
+  try {
+    while (true) {
+      const { done, value } = await beforeAbort(reader.read(), signal);
+      if (done) return html + decoder.decode();
+      size += value.byteLength;
+      if (size > MAX_HTML_BYTES) return null;
+      html += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    // Cancelar corta descargas interminables, también al vencer el plazo.
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+/** Cada salto valida DNS y conecta SOLO a las direcciones que se validaron. */
+async function fetchPage(start: string, resolve: Resolver, deadline: number): Promise<{ url: string; html: string } | null> {
   let url = new URL(start);
+  const signal = AbortSignal.timeout(Math.max(0, Math.min(PAGE_TIMEOUT_MS, deadline - Date.now())));
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertPublic(url, resolve);
-    const res = await fetch(url, {
-      redirect: "manual",
-      cache: "no-store",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; TurniaDemoBot/1.0; +https://turniasalud.vercel.app/probar-demo)",
-        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
-        "Accept-Language": "es-AR,es;q=0.9",
+    const addresses = await publicAddresses(url, resolve, signal);
+    // Evita que fetch vuelva a resolver un DNS que cambió a una IP privada
+    // después de validarlo. Host y SNI conservan el dominio de la web.
+    const dispatcher = new Agent({
+      connect: {
+        lookup(_hostname, options, callback) {
+          if (options.all) callback(null, addresses.map((address) => ({ address, family: isIP(address) })));
+          else callback(null, addresses[0], isIP(addresses[0]));
+        },
       },
-      signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
     });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-      url = new URL(res.headers.get("location")!, url);
-      continue;
+    try {
+      const init: RequestInit & { dispatcher: Agent } = {
+        dispatcher,
+        redirect: "manual",
+        cache: "no-store",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; TurniaDemoBot/1.0; +https://turniasalud.vercel.app/probar-demo)",
+          Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+          "Accept-Language": "es-AR,es;q=0.9",
+        },
+        signal,
+      };
+      const res = await beforeAbort(fetch(url, init), signal);
+      if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+        void res.body?.cancel().catch(() => {});
+        url = new URL(res.headers.get("location")!, url);
+        continue;
+      }
+      if (!res.ok || !/html/i.test(res.headers.get("content-type") ?? "text/html") ||
+          Number(res.headers.get("content-length") ?? 0) > MAX_HTML_BYTES) {
+        void res.body?.cancel().catch(() => {});
+        return null;
+      }
+      const html = await boundedHtml(res, signal);
+      if (html === null) return null;
+      const refresh = metaRefreshTarget(html);
+      if (refresh) {
+        url = new URL(refresh, url);
+        continue;
+      }
+      return { url: url.toString(), html };
+    } finally {
+      await dispatcher.destroy();
     }
-    if (!res.ok) return null;
-    if (!/html/i.test(res.headers.get("content-type") ?? "text/html")) return null;
-    const length = Number(res.headers.get("content-length") ?? 0);
-    if (length > MAX_HTML_BYTES) return null;
-    const html = (await res.text()).slice(0, MAX_HTML_BYTES);
-    // Algunas webs viejas redirigen con <meta http-equiv="refresh" content="0;url=…">.
-    const refresh = metaRefreshTarget(html);
-    if (refresh) {
-      url = new URL(refresh, url);
-      continue;
-    }
-    return { url: url.toString(), html };
   }
   return null;
 }
@@ -200,7 +264,7 @@ export async function scrapeSite(website: string, opts: { resolve?: Resolver; ma
   const maxPages = opts.maxPages ?? MAX_PAGES;
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-  const home = await fetchPage(start, resolve).catch((e) => {
+  const home = await fetchPage(start, resolve, deadline).catch((e) => {
     if (e instanceof ScrapeError) throw e;
     throw new ScrapeError(`No pudimos abrir ${new URL(start).hostname}.`);
   });
@@ -230,7 +294,7 @@ export async function scrapeSite(website: string, opts: { resolve?: Resolver; ma
   while (queue.length && pages.length < maxPages && Date.now() < deadline) {
     const batch = queue.splice(0, Math.min(CONCURRENCY, maxPages - pages.length));
     batch.forEach((u) => visited.add(u));
-    const results = await Promise.all(batch.map((u) => fetchPage(u, resolve).catch(() => null)));
+    const results = await Promise.all(batch.map((u) => fetchPage(u, resolve, deadline).catch(() => null)));
     for (const r of results) {
       if (!r || (visited.has(r.url) && !batch.includes(r.url))) continue;
       // Un link interno que redirige a otro sitio (subdominios de docencia, portales) no cuenta.

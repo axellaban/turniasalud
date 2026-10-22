@@ -19,6 +19,20 @@ Orden recomendado para la próxima sesión con navegador:
 
 La actualización automática de `schema.sql` en los builds de producción ya está implementada y `demo.base: true` confirma que la tabla de la demo existe. No repetir la carga manual de SQL por rutina.
 
+## Trabajo autónomo del 22/10: lead magnet
+
+Se reforzó el código de `/probar-demo`: lector con DNS fijo y límites reales de bytes/tiempo, cuota y creación de demos bajo transacción, reintentos idempotentes, análisis único, cancelación sin clínicas huérfanas, máximo de tres llamadas por demo y cierre de la captura temporal del micrófono. Los textos aclaran que las conversaciones y la agenda son simuladas. Detalle, benchmark de cuatro webs y verificación en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#revisión-y-endurecimiento-del-22102026).
+
+Verificación local: **137 tests correctos** con Postgres 17 descartable; TypeScript, lint y build correctos. No se usaron API pagas en las pruebas. CI y publicación de esta tanda se registran al cerrar el PR.
+
+Consolas revisadas sin modificar credenciales:
+- Anthropic: saldo positivo, recarga automática desactivada; ninguna clave exclusiva de Turnia. Crear `turnia-demo-web` requiere confirmación de seguridad en ese momento.
+- ElevenLabs: Text to Speech habilitado; Speech to Text confirmado en No Access. Habilitarlo amplía permisos y requiere confirmación de seguridad en ese momento. Se canceló la edición.
+- WAHA: el servicio existente está asociado a otro flujo. No se cambió su configuración ni se reutilizaron sus claves. Falta un servicio/sesión exclusivo y la vinculación del chip mediante QR.
+- Gmail sigue pospuesto por pedido expreso del usuario.
+
+Estas confirmaciones no se pueden suplir con la instrucción de avanzar mientras el usuario duerme. No se contrataron planes ni se recargó saldo.
+
 ## Prioridad 1: cerrar la demo y la captación de interesados
 
 - [x] Neon responde `database: "ok"`; proyecto exclusivo de Turnia, base `neondb`, rama principal `br-cold-wildflower-b6ubnhi1`.
@@ -47,7 +61,7 @@ La actualización automática de `schema.sql` en los builds de producción ya es
 
 - [x] Landing `/probar-demo`, flujo por WhatsApp, lectura de la web, ficha con Claude, clínica temporal y modos llamada/audio/chat. Tests de integración con servicios simulados. Detalle en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md).
 - [x] Unido a `main` (PR #6) y publicado: `/api/health` → `demo.base: true` (la base se actualizó sola en el deploy). El número de la landing sale solo de WAHA.
-- [ ] **Lo que queda lo hace la próxima IA** con computer use cuando el usuario lo pida: cargar `ANTHROPIC_API_KEY` en Vercel, revisar los permisos de ElevenLabs y, con WAHA conectado, probar los tres modos. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
+- [ ] **Configuración revisada, con pasos que requieren al usuario al retomar:** cargar `ANTHROPIC_API_KEY` en Vercel, revisar los permisos de ElevenLabs y, con WAHA conectado, probar los tres modos. Checklist en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia).
 
 ## Prioridad 3: primera clínica y ampliaciones
 

@@ -71,12 +71,12 @@ const FOOTER = "Escribí *MENU* para cambiar de modo o *SALIR* para terminar.";
 
 export const DEMO_TEXTS = {
   started: (website: string) =>
-    `¡Hola! 👋 Soy Turnia. Estoy leyendo *${hostOf(website)}* de punta a punta para aprender todo sobre tu consultorio: profesionales, prestaciones, horarios y coberturas.\n\nDame unos segundos…`,
+    `¡Hola! 👋 Soy Turnia. Estoy leyendo las secciones principales de *${hostOf(website)}* para conocer tu consultorio: profesionales, prestaciones, horarios y coberturas.\n\nPuede tardar un par de minutos…`,
   stillReading: "Sigo leyendo tu web, ya casi termino… ⏳",
   options: (opts: { name: string; professionals: number; types: number; coverages: number }) =>
     [
       `¡Listo! Ya conozco *${opts.name}*${opts.professionals ? `: ${opts.professionals} profesional${opts.professionals === 1 ? "" : "es"}` : ""}${opts.types ? `${opts.professionals ? "," : ":"} ${opts.types} tipo${opts.types === 1 ? "" : "s"} de turno` : ""}${opts.coverages ? ` y ${opts.coverages} cobertura${opts.coverages === 1 ? "" : "s"}` : ""}.`,
-      "Ahora probá a tu recepcionista virtual como si fueras un paciente. ¿Cómo querés que te atienda? Respondé con el número:",
+      "Esta es una simulación: la agenda y los turnos son de prueba y no se envían al consultorio. Probala con datos ficticios. ¿Cómo querés que te atienda? Respondé con el número:",
       CHOICES,
     ].join("\n\n"),
   chooseAgain: `Respondé con el número de la opción:\n\n${CHOICES}`,
@@ -88,6 +88,7 @@ export const DEMO_TEXTS = {
     `Perfecto. ${agent}, la recepcionista de *${name}*, te está llamando al +${phone}. Atendé y hablale como si fueras un paciente que quiere sacar turno. 📞\n\nSi no te entra la llamada, respondé *1* para que te llame de nuevo. ${FOOTER}`,
   callLink: (agent: string, name: string, link: string) =>
     `Perfecto. Abrí este link para hablar por voz con ${agent}, la recepcionista de *${name}*, desde el celular (te va a pedir permiso para usar el micrófono):\n\n${link}\n\nHablale como si fueras un paciente que quiere sacar turno. 📞\n\n${FOOTER}`,
+  callLimit: "Ya usaste las 3 llamadas de esta demo. Escribí *MENU* para probar chat o audio.",
   inCall: `Estás en modo llamada. Respondé *1* para que te vuelva a llamar o elegí otra opción:\n\n${CHOICES}`,
   ended: (name: string | null) =>
     `¡Gracias por probar Turnia! 🙌 Así atendería${name ? ` *${name}*` : " tu consultorio"} las 24 horas, por WhatsApp y por teléfono.\n\nEn breve alguien del equipo te escribe para contarte cómo dejarla funcionando. Si querés probar con otra web, mandá «Quiero probar la demo» con la dirección.`,

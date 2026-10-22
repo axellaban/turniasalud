@@ -95,12 +95,13 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (url === "https://api.elevenlabs.io/v1/convai/agents/agent_test") return json({ conversation_config: { tts: { voice_id: "voz_sofi" } } });
   if (url.startsWith("https://api.elevenlabs.io/v1/text-to-speech/voz_sofi")) return new Response(new Uint8Array([79, 103, 103, 83]));
   if (url.startsWith("https://api.elevenlabs.io/v1/convai/conversation/token")) return json({ token: "tok_voz" });
+  if (url === "https://api.elevenlabs.io/v1/convai/twilio/outbound-call") return json({ success: true, conversation_id: "phone_demo" });
   throw new Error(`fetch inesperado en el test: ${init.method ?? "GET"} ${url}`);
 }
 
 let messageId = 0;
-function whatsapp(text: string) {
-  const raw = JSON.stringify({ event: "message", session: "default", payload: { id: `d${++messageId}`, from: CHAT, fromMe: false, body: text, hasMedia: false } });
+function whatsapp(text: string, phone = LEAD, id = `d${++messageId}`) {
+  const raw = JSON.stringify({ event: "message", session: "default", payload: { id, from: `${phone}@c.us`, fromMe: false, body: text, hasMedia: false } });
   const hmac = createHmac("sha512", HMAC_KEY).update(raw).digest("hex");
   return new Request("https://turnia.example/api/waha/webhook", { method: "POST", body: raw, headers: { "x-webhook-hmac": hmac, "x-webhook-hmac-algorithm": "sha512" } });
 }
@@ -174,7 +175,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
 
   it("lee la web, arma la clínica de la demo y ofrece llamada, audio o chat", async () => {
     expect(await send("¡Hola! Quiero probar la demo de Turnia. Te paso mi web: https://odontosur.com.ar/")).toEqual({ ok: true, demo: "analizando" });
-    expect(fake.texts()[0]).toContain("Estoy leyendo *odontosur.com.ar*");
+    expect(fake.texts()[0]).toContain("Estoy leyendo las secciones principales de *odontosur.com.ar*");
     expect(mocks.notifyN8n).toHaveBeenCalledWith("lead.nuevo", expect.objectContaining({ lead: expect.objectContaining({ telefono: LEAD, origen: "demo-whatsapp" }) }));
     const [lead] = await sql`select name, email, phone, source from leads where phone = ${LEAD}`;
     expect(lead).toEqual({ name: `WhatsApp +${LEAD}`, email: null, phone: LEAD, source: "demo-whatsapp" });
@@ -270,6 +271,21 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect(bad.status).toBe(404);
   });
 
+  it("el enlace limita las llamadas simultáneas y MENU lo desactiva", async () => {
+    const { call_token, clinic_id } = await session();
+    const request = () => new Request("https://turnia.example/api/demo/llamada", { method: "POST", body: JSON.stringify({ token: call_token }) });
+    // Una llamada se usó en el test anterior. Solo quedan dos, incluso en paralelo.
+    const responses = await Promise.all(Array.from({ length: 5 }, () => callRoute(request())));
+    expect(responses.filter((r) => r.status === 200)).toHaveLength(2);
+    expect(responses.filter((r) => r.status === 429)).toHaveLength(3);
+    const [row] = await sql`select call_attempts from demo_sessions where call_token = ${call_token}`;
+    expect(row.call_attempts).toBe(3);
+    expect(fake.calls.filter((c) => c.url.includes("/conversation/token"))).toHaveLength(2);
+    await send("MENU");
+    expect((await callRoute(request())).status).toBe(404);
+    expect((await session()).clinic_id).toBe(clinic_id);
+  });
+
   it("SALIR termina la demo y lo que sigue va a la clínica de siempre", async () => {
     const { call_token } = await session();
     expect(await send("salir")).toEqual({ ok: true, demo: "terminada" });
@@ -340,4 +356,102 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect(fake.calls.map((c) => (c.body as { event: string }).event)).toEqual(["turno.reservado", "lead.nuevo"]);
     vi.stubEnv("N8N_WEBHOOK_URL", "");
   });
+  it("mensajes simultáneos no superan la cuota ni duplican el interesado", async () => {
+    const phone = "5491166668801";
+    const responses = await Promise.all(Array.from({ length: 12 }, (_, i) => inbound(whatsapp("demo odontosur.com.ar", phone, `quota-${i}`))));
+    for (const response of responses) expect(response.status).toBe(200);
+    const sessions = await sql`select status from demo_sessions where phone = ${phone}`;
+    expect(sessions).toHaveLength(3);
+    expect(sessions.filter((s) => s.status === "analizando")).toHaveLength(1);
+    expect(await sql`select id from leads where phone = ${phone}`).toHaveLength(1);
+    expect(mocks.notifyN8n).toHaveBeenCalledOnce();
+    // No ejecutar los after pendientes de este caso: los proveedores son falsos.
+    mocks.after.splice(0);
+  });
+
+  it("si falla el primer envío, el reintento usa la misma demo y analiza una sola vez", async () => {
+    const phone = "5491166668802";
+    const failedSend = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("WAHA temporalmente caído"));
+    expect((await inbound(whatsapp("demo odontosur.com.ar", phone, "retry-one"))).status).toBe(502);
+    expect((await inbound(whatsapp("demo odontosur.com.ar", phone, "retry-one"))).status).toBe(200);
+    expect(await sql`select id from demo_sessions where phone = ${phone}`).toHaveLength(1);
+    expect(await sql`select id from leads where phone = ${phone}`).toHaveLength(1);
+    expect(mocks.notifyN8n).toHaveBeenCalledOnce();
+    const [{ id }] = await sql`select id from demo_sessions where phone = ${phone}`;
+    const { analyzeDemo } = await import("@/lib/demo/session");
+    await Promise.all([analyzeDemo(id), analyzeDemo(id), runAfter()]);
+    expect(fake.calls.filter((c) => c.url.includes("api.anthropic.com/v1/messages"))).toHaveLength(1);
+    expect(await sql`select clinic_id from demo_sessions where phone = ${phone} and status = 'eligiendo'`).toHaveLength(1);
+    failedSend.mockRestore();
+  });
+
+  it("SALIR durante Claude no crea una clínica huérfana ni revive la demo", async () => {
+    const phone = "5491166668803";
+    await inbound(whatsapp("demo odontosur.com.ar", phone));
+    const [{ id }] = await sql`select id from demo_sessions where phone = ${phone}`;
+    const [{ count: before }] = await sql`select count(*)::int as count from clinics where is_demo`;
+    let reached!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>((resolve) => { reached = resolve; });
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input instanceof Request ? input.url : input).includes("api.anthropic.com/v1/messages")) {
+        reached();
+        await pending;
+      }
+      return fakeFetch(input, init);
+    });
+    const { analyzeDemo } = await import("@/lib/demo/session");
+    const analysis = analyzeDemo(id);
+    await entered;
+    expect((await inbound(whatsapp("SALIR", phone))).status).toBe(200);
+    finish();
+    await analysis;
+    const [state] = await sql`select status, clinic_id, error from demo_sessions where id = ${id}`;
+    expect(state).toEqual({ status: "terminada", clinic_id: null, error: null });
+    const [{ count: after }] = await sql`select count(*)::int as count from clinics where is_demo`;
+    expect(after).toBe(before);
+    expect(fake.texts().some((text) => text.includes("Ya conozco"))).toBe(false);
+    vi.mocked(fetch).mockImplementation(fakeFetch);
+    mocks.after.splice(0);
+  });
+
+  it("un fallo del proveedor no consume una llamada web", async () => {
+    const [{ clinic_id }] = await sql`select clinic_id from demo_sessions where phone = ${LEAD} and clinic_id is not null limit 1`;
+    const token = "call-provider-error-token-123";
+    await sql`insert into demo_sessions (phone, chat_id, website, status, clinic_id, call_token)
+      values ('5491166668804', '5491166668804@c.us', 'https://odontosur.com.ar/', 'llamada', ${clinic_id}, ${token})`;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("ElevenLabs temporalmente caído"));
+    const request = () => new Request("https://turnia.example/api/demo/llamada", { method: "POST", body: JSON.stringify({ token }) });
+    expect((await callRoute(request())).status).toBe(500);
+    const [failed] = await sql`select call_attempts from demo_sessions where call_token = ${token}`;
+    expect(failed.call_attempts).toBe(0);
+    expect((await callRoute(request())).status).toBe(200);
+    error.mockRestore();
+  });
+
+  it("una llamada telefónica iniciada no se repite si falla el aviso por WhatsApp", async () => {
+    const phone = "5491166668805";
+    await inbound(whatsapp("demo odontosur.com.ar", phone));
+    await runAfter();
+    vi.stubEnv("ELEVENLABS_PHONE_NUMBER_ID", "numero-twilio-falso");
+    fake.reset();
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input) === `${WAHA}/api/sendText` && String(init?.body).includes("te está llamando")) throw new Error("WAHA caído");
+      return fakeFetch(input, init);
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await inbound(whatsapp("1", phone, "phone-call-once"))).status).toBe(200);
+    const retry = await inbound(whatsapp("1", phone, "phone-call-once"));
+    expect(await retry.json()).toEqual({ duplicate: true });
+    expect(fake.calls.filter((c) => c.url.includes("twilio/outbound-call"))).toHaveLength(1);
+    const [state] = await sql`select call_attempts from demo_sessions where phone = ${phone}`;
+    expect(state.call_attempts).toBe(1);
+    vi.mocked(fetch).mockImplementation(fakeFetch);
+    vi.stubEnv("ELEVENLABS_PHONE_NUMBER_ID", "");
+    error.mockRestore();
+  });
+
 });
