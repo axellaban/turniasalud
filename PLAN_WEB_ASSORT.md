@@ -17,7 +17,11 @@ Hecho, con `tsc`, `eslint`, build y tests en verde (capturas revisadas a 1440 y 
 - **Demos de audio**: 7 guiones originales en `content/conversaciones.json`, reproductor `components/site/reproductor-demo.tsx` (variantes `orbe` y `tarjeta`, transcripción sincronizada) y generador `scripts/generar-audios.mjs`. Ver `public/audios/README.md`.
 - **Fotos**: `public/img/*.jpg` son fotos de Unsplash (licencia Unsplash: uso comercial libre, sin atribución obligatoria). No son de Assort.
 
-### Pendiente
+### Estado operativo del 22/10/2026
+
+Los siete audios ya están generados y publicados, con Sol y Agustín; reproducción y transcripción verificadas. Duración total 18:09,09; Analytics de Text to Speech: 7,05K créditos. El punto 1 del plan histórico de abajo está completado. Para pendientes vigentes, prevalece `ESTADO_Y_PRIORIDADES.md`. Los ejemplos son simulados, sin testimonios ni resultados inventados.
+
+### Pendiente histórico
 1. **Generar los audios** desde **Panel → Configuración → Audios de la web** (botón "Generar los 7 que faltan"). Se generan en Vercel con ElevenLabs Text to Dialogue (`eleven_v3`) y las 2 voces favoritas (Sofi = la femenina; o `VOZ_AGENTE` / `VOZ_PACIENTE`), se guardan en la tabla `web_audios` y se sirven en `/api/audios/<slug>.mp3|json` (con Range). Requisitos: haber corrido `schema.sql`; que la clave tenga **Text to Speech** y **Voices: Read** (la actual "Turnia Salud · Vercel" no tiene Text to Speech: editarla en ElevenLabs o crear otra y cargarla en Vercel como `ELEVENLABS_TTS_API_KEY`); créditos para ~17.600 caracteres (la clave tiene tope de 10.000: subirlo o generar en dos tandas). Mientras no haya audio, el reproductor muestra la conversación como lectura animada ("Ver la conversación"), sin cartel de "próximamente". `scripts/generar-audios.mjs` sigue sirviendo para generarlos en una computadora y subirlos a `public/audios/`.
 2. **Video del hero**: subir `public/videos/hero.mp4` (y opcional `hero.webm`, `hero-mobile.mp4`). Mientras no exista se ve `public/img/hero.jpg`. Los videos de Assort no se copian.
 3. Revisar los textos con el usuario. Verificar las líneas de ayuda de salud mental citadas en `content/especialidades.ts` (0800-999-0091 y 135) antes de publicar.

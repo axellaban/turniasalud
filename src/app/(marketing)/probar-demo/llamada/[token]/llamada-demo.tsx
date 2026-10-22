@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
+import { requestMicrophone } from "@/lib/microphone";
 
 type Info = { token: string; dynamicVariables: Record<string, string>; userId: string; clinicName: string; agentName: string; error?: string };
 
@@ -29,7 +30,7 @@ function Llamada({ token }: { token: string }) {
     setEnded(false);
     setLoading(true);
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      await requestMicrophone();
       const res = await fetch("/api/demo/llamada", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
