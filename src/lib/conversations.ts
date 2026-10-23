@@ -43,7 +43,7 @@ export function satisfactionScore(data: PostCallPayload): number | null {
 export function detectChannel(data: PostCallPayload, phone: string): Conversation["channel"] {
   const vars = data.conversation_initiation_client_data?.dynamic_variables ?? {};
   const channel = String(vars.system__channel ?? "").toLowerCase();
-  // El Custom Channel solo se usa para WhatsApp por WAHA.
+  if (phone.startsWith("telegram:")) return "telegram";
   if (data.metadata?.whatsapp || channel.includes("whatsapp") || channel.includes("custom")) return "whatsapp";
   if (data.metadata?.phone_call || /(twilio|sip|phone|telephon)/.test(channel)) return "telefono";
   if (phone.startsWith("web-")) return "web";

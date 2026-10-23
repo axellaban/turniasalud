@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Icono } from "@/components/site/iconos";
-import { demoWhatsappNumber } from "@/lib/demo/config";
-import { missingWahaEnv } from "@/lib/env";
+import { demoStatus } from "@/lib/demo/config";
 import { ProbarDemoForm } from "./probar-demo-form";
 
 export const metadata: Metadata = {
   title: "Probá la demo con tu web",
-  description: "Dejá la web de tu consultorio y probá a Turnia por WhatsApp: te atiende como la recepcionista de tu clínica, por llamada, audio o chat.",
+  description: "Dejá la web de tu consultorio y probá a Turnia por chat, audio o llamada: te atiende como la recepcionista de tu clínica, por llamada, audio o chat.",
 };
 
 // Se lee en cada visita: el número sale de DEMO_WHATSAPP_NUMBER o del chip conectado a WAHA.
@@ -16,12 +15,16 @@ export const dynamic = "force-dynamic";
 const PASOS = [
   { t: "Dejás tu web", d: "Te abrimos WhatsApp con el mensaje listo. Solo tenés que enviarlo.", i: "whatsapp" as const },
   { t: "Turnia lee tu web", d: "Aprende tus profesionales, prestaciones, horarios, coberturas y preguntas frecuentes.", i: "estetoscopio" as const },
-  { t: "Elegís cómo probarla", d: "Llamada de voz, audios de WhatsApp o chat. Te atiende como a un paciente que quiere un turno.", i: "grafico" as const },
+  { t: "Elegís cómo probarla", d: "Llamada de voz, notas de voz o chat. Te atiende como a un paciente que quiere un turno.", i: "grafico" as const },
 ];
 
 export default async function ProbarDemoPage() {
   // Sin WAHA nadie contestaría el mensaje: el botón se habilita recién con WAHA configurado.
-  const whatsapp = missingWahaEnv().length ? "" : ((await demoWhatsappNumber()).number ?? "");
+  const status = await demoStatus();
+  const channel = status.canal;
+  const ready = status.base && (channel === "telegram" ? status.telegram : channel === "whatsapp" && status.whatsapp);
+  const channelName = channel === "telegram" ? "Telegram" : "WhatsApp";
+  const steps = PASOS.map((step, i) => i === 0 ? { ...step, d: channel === "telegram" ? "Te abrimos Telegram. Tocá Iniciar para empezar con tu web." : "Te abrimos WhatsApp con el mensaje listo. Solo tenés que enviarlo." } : step);
   return (
     <section className="bg-gradient-to-b from-[#eef2ff] to-white">
       <div className="mx-auto max-w-[880px] px-4 pb-24 pt-16 text-center sm:px-6 md:pt-24">
@@ -30,14 +33,14 @@ export default async function ProbarDemoPage() {
           Probá a Turnia <span className="text-brand-600">con tu propia clínica</span>
         </h1>
         <p className="mx-auto mt-5 max-w-[620px] text-[17px] leading-relaxed text-tinta">
-          Pegá la web de tu consultorio. Turnia lee sus secciones principales y te atiende por WhatsApp como si fueras un paciente:
+          Pegá la web de tu consultorio. Turnia lee sus secciones principales y te atiende por {channelName} como si fueras un paciente:
           con tus profesionales, tus prestaciones y tus horarios.
         </p>
 
-        <ProbarDemoForm whatsapp={whatsapp} />
+        <ProbarDemoForm channel={channel} ready={ready} />
 
         <ol className="mt-16 grid gap-6 text-left sm:grid-cols-3">
-          {PASOS.map((p, i) => (
+          {steps.map((p, i) => (
             <li key={p.t} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-950/5">
               <span className="flex items-center gap-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600">

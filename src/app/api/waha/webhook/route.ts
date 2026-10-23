@@ -6,6 +6,8 @@ import { AUDIO_FAILED_REPLY, MEDIA_ONLY_REPLY, claimEvent, forwardToAgent, relea
 import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
 import { parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wahaSendText, type WahaEvent } from "@/lib/waha";
 
+import { messagingSettings } from "@/lib/messaging-settings";
+
 export const dynamic = "force-dynamic";
 // La demo del lead magnet lee la web del interesado después de responder (after).
 export const maxDuration = 300;
@@ -23,6 +25,8 @@ export async function POST(request: Request) {
   if (!verifyWahaHmac(raw, request.headers.get("x-webhook-hmac"), request.headers.get("x-webhook-hmac-algorithm"), secret)) {
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
+
+  if ((await messagingSettings()).active_channel !== "whatsapp") return NextResponse.json({ ignored: "canal pausado" });
 
   let event: WahaEvent;
   try {

@@ -84,7 +84,7 @@ function Llamada({ token }: { token: string }) {
       {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {ended && !error && (
         <p className="mt-6 rounded-2xl bg-white p-4 text-sm text-tinta ring-1 ring-brand-950/5">
-          Volvé a WhatsApp para probar otro modo (escribí <b>MENU</b>) o para terminar (<b>SALIR</b>).
+          Volvé al chat para probar otro modo (escribí <b>MENU</b>) o para terminar (<b>SALIR</b>).
         </p>
       )}
     </div>

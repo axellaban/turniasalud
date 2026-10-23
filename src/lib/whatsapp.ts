@@ -1,3 +1,4 @@
+import { requireActiveChannel } from "./messaging-settings";
 import "server-only";
 import { buildDynamicVariables } from "./clinic";
 import { sendWhatsAppTemplate } from "./elevenlabs";
@@ -66,6 +67,7 @@ export type PatientMessage = {
 
 /** Le escribe al paciente. Devuelve el ID de conversación de ElevenLabs si ya existe (Meta). */
 export async function sendPatientMessage(clinic: Clinic, msg: PatientMessage): Promise<{ conversation_id: string | null }> {
+  await requireActiveChannel("whatsapp");
   const problem = whatsappReadiness(clinic);
   if (problem) throw new Error(problem);
 

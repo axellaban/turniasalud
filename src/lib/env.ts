@@ -21,6 +21,7 @@ export const env = {
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
   agentLlm: () => process.env.AGENT_LLM || "claude-sonnet-5-5",
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
+  telegramBotToken: () => required("TELEGRAM_BOT_TOKEN"),
   // WhatsApp por WAHA + Custom Channel de ElevenLabs
   wahaUrl: () => required("WAHA_URL").replace(/\/$/, ""),
   wahaApiKey: () => required("WAHA_API_KEY"),

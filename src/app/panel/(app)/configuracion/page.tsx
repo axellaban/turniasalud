@@ -21,6 +21,9 @@ import { ScheduleBlockForm } from "./block-form";
 import { AudiosWeb } from "./audios-web";
 import { estadoAudios } from "@/lib/web-audios";
 import type { AppointmentType, Professional } from "@/lib/types";
+import { messagingSettings } from "@/lib/messaging-settings";
+import { telegramConfigured } from "@/lib/telegram";
+import { Canales } from "./canales";
 
 // Generar los audios de la web puede tardar ~1 minuto por conversación.
 export const maxDuration = 300;
@@ -38,6 +41,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 
 export default async function SettingsPage() {
   const clinic = await getClinic();
+  const messaging = await messagingSettings();
   const catalog = await getCatalog(clinic.id);
   const configured = isConfigured();
   const missingWaha = new Set(missingWahaEnv());
@@ -61,6 +65,10 @@ export default async function SettingsPage() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          <Card>
+            <h2 className="mb-3 font-semibold text-brand-950">Canal de la demo y del agente</h2>
+            <Canales settings={messaging} telegramConfigured={telegramConfigured()} whatsappConfigured={configured.waha} />
+          </Card>
           <Card>
             <h2 className="mb-4 font-semibold text-brand-950">Clínica</h2>
             <form action={saveClinic} className="grid gap-4 sm:grid-cols-2">
@@ -376,7 +384,7 @@ export default async function SettingsPage() {
             <h2 className="mb-1 font-semibold text-brand-950">WhatsApp por WAHA</h2>
             <p className="mb-3 text-xs text-brand-900/60">
               {clinic.whatsapp_provider === "waha" ? (
-                <Badge tone={configured.waha ? "green" : "yellow"}>{configured.waha ? "Activo" : "Faltan datos"}</Badge>
+                <Badge tone={messaging.active_channel === "whatsapp" ? "green" : "yellow"}>{messaging.active_channel === "whatsapp" ? "Habilitado" : "Pausado"}</Badge>
               ) : (
                 "No está elegido arriba: las campañas salen por Meta."
               )}
@@ -401,8 +409,8 @@ export default async function SettingsPage() {
           <Card>
             <h2 className="mb-1 font-semibold text-brand-950">Demo con tu web</h2>
             <p className="mb-3 text-xs text-brand-900/60">
-              <Badge tone={demo.base && demo.whatsapp ? "green" : "yellow"}>{demo.base && demo.whatsapp ? "Activa" : "Falta configurar"}</Badge>{" "}
-              El interesado deja su web en <Link href="/probar-demo" className="underline">/probar-demo</Link> y la prueba por WhatsApp.
+              <Badge tone={demo.base && (demo.canal === "telegram" ? demo.telegram : demo.whatsapp) ? "green" : "yellow"}>{demo.base && (demo.canal === "telegram" ? demo.telegram : demo.whatsapp) ? "Activa" : "Falta configurar"}</Badge>{" "}
+              El interesado deja su web en <Link href="/probar-demo" className="underline">/probar-demo</Link> y la prueba por el canal habilitado arriba.
             </p>
             <ul className="space-y-1 text-sm">
               <li>{demo.base ? "✅" : "❌"} Base actualizada <span className="text-xs text-brand-900/50">(se actualiza sola en cada deploy de producción)</span></li>

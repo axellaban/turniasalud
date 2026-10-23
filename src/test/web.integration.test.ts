@@ -30,6 +30,7 @@ describe.runIf(baseUrl)("Pedí una demo", () => {
     await resetTestDatabase(url);
     vi.stubEnv("DATABASE_URL", url);
     ({ sql } = await import("@/lib/db"));
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
     ({ pedirDemo } = await import("@/app/(marketing)/pedi-una-demo/actions"));
   }, 60000);
 
@@ -101,6 +102,7 @@ describe.runIf(baseUrl)("Audios de la web generados desde el panel", () => {
       }),
     );
     ({ sql } = await import("@/lib/db"));
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
     audios = await import("@/lib/web-audios");
     ({ GET } = await import("@/app/api/audios/[archivo]/route"));
   }, 60000);

@@ -20,6 +20,7 @@ type Row = {
 const FILTERS = [
   { key: "", label: "Todas" },
   { key: "whatsapp", label: "WhatsApp" },
+  { key: "telegram", label: "Telegram" },
   { key: "telefono", label: "Teléfono" },
   { key: "web", label: "Web" },
 ];

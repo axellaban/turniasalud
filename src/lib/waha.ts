@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "./env";
+import { requireActiveChannel } from "./messaging-settings";
 
 // WAHA (WhatsApp HTTP API): WhatsApp Web con un chip común, en el VPS del
 // dueño. Es una API no oficial: el número puede quedar bloqueado si se mandan
@@ -125,6 +126,7 @@ async function waha(path: string, init: RequestInit = {}): Promise<Response> {
 }
 
 export async function wahaSendText(chatId: string, text: string): Promise<{ id?: string }> {
+  await requireActiveChannel("whatsapp");
   const res = await waha("/api/sendText", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,6 +172,7 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
 
 /** Nota de voz. Con convert: true WAHA la deja en el formato exacto de WhatsApp (puede requerir WAHA Plus). */
 export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void> {
+  await requireActiveChannel("whatsapp");
   await waha("/api/sendVoice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

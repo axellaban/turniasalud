@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { demoRequestText } from "@/lib/demo/flow";
+import type { MessagingChannel } from "@/lib/messaging-settings";
 import { normalizeWebsite } from "@/lib/demo/website";
 
 /** Campo de la web + PROBAR DEMO: abre WhatsApp con el mensaje armado. */
-export function ProbarDemoForm({ whatsapp }: { whatsapp: string }) {
+export function ProbarDemoForm({ channel, ready }: { channel: MessagingChannel; ready: boolean }) {
   const [web, setWeb] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function probar(e: React.FormEvent) {
+  const [pending, setPending] = useState(false);
+
+  async function probar(e: React.FormEvent) {
     e.preventDefault();
     const website = normalizeWebsite(web);
     if (!website) {
@@ -17,13 +19,22 @@ export function ProbarDemoForm({ whatsapp }: { whatsapp: string }) {
       return;
     }
     setError(null);
-    window.location.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(demoRequestText(website))}`;
+    setPending(true);
+    try {
+      const response = await fetch("/api/demo/iniciar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ website }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "No se pudo abrir la demo.");
+      window.location.href = result.url;
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "No se pudo abrir la demo.");
+      setPending(false);
+    }
   }
 
-  if (!whatsapp) {
+  if (!ready) {
     return (
       <p className="mx-auto mt-10 max-w-[560px] rounded-2xl bg-white p-5 text-sm text-tinta ring-1 ring-brand-950/5">
-        La demo por WhatsApp se habilita en breve.
+        La demo está pausada por el momento. Volvé en breve o pedí una demo guiada.
       </p>
     );
   }
@@ -52,9 +63,10 @@ export function ProbarDemoForm({ whatsapp }: { whatsapp: string }) {
         />
         <button
           type="submit"
+          disabled={pending}
           className="rounded-xl bg-brand-600 px-7 py-3.5 text-sm font-semibold uppercase tracking-wider text-white hover:bg-brand-700"
         >
-          Probar demo
+          {pending ? "Abriendo…" : "Probar demo"}
         </button>
       </div>
       {error ? (
@@ -62,7 +74,7 @@ export function ProbarDemoForm({ whatsapp }: { whatsapp: string }) {
           {error}
         </p>
       ) : (
-        <p className="mt-3 text-xs text-tinta/80">Se abre WhatsApp con el mensaje listo. Solo tenés que enviarlo.</p>
+        <p className="mt-3 text-xs text-tinta/80">{channel === "telegram" ? "Se abre Telegram. Tocá Iniciar para que Turnia reciba tu web y prepare la demo." : "Se abre WhatsApp con el mensaje listo. Solo tenés que enviarlo."}</p>
       )}
     </form>
   );

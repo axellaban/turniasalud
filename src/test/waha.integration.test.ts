@@ -137,6 +137,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     vi.stubEnv("ELEVENLABS_CHANNEL_SIGNING_SECRET", SIGNING);
     vi.stubGlobal("fetch", vi.fn(fakeFetch));
     ({ sql } = await import("@/lib/db"));
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
     inbound = (await import("@/app/api/waha/webhook/route")).POST;
     reply = (await import("@/app/api/elevenlabs/canal/route")).POST;
     const { createSessionToken } = await import("@/lib/session");

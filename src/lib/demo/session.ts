@@ -6,7 +6,8 @@ import { buildDynamicVariables, getClinic } from "../clinic";
 import { forwardToAgent } from "../channel";
 import { startPhoneCall } from "../elevenlabs";
 import { notifyN8n } from "../n8n";
-import { wahaSendText } from "../waha";
+import { sendChatText } from "../messaging";
+import { channelForChat, chatIsActive, requireActiveChannel } from "../messaging-settings";
 import type { Clinic } from "../types";
 import { DEMO_TEXTS, demoAgentContext, hostOf, parseCommand, parseDemoRequest, parseModeChoice, type DemoMode, type DemoStatus } from "./flow";
 import { buildProfile, type DemoProfile } from "./profile";
@@ -27,6 +28,7 @@ const DEFAULT_HOURS = [1, 2, 3, 4, 5].map((dia) => ({ dia, desde: "09:00", hasta
 
 export type DemoSession = {
   id: string;
+  channel_revision: number;
   phone: string;
   chat_id: string;
   website: string;
@@ -61,6 +63,7 @@ async function setStatus(id: string, status: DemoStatus, extra: { error?: string
  * (lo atiende la clínica de siempre).
  */
 export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome | null> {
+  await requireActiveChannel(channelForChat(input.chatId));
   // Los audios llegan transcriptos con este prefijo; para elegir opciones no cuenta.
   const said = input.text.replace(/^\(audio\)\s*/, "");
   const request = parseDemoRequest(said);
@@ -79,31 +82,31 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
     await setStatus(session.id, "terminada");
     await closeAgentConversations(session);
     const clinic = session.clinic_id ? await demoClinic(session.clinic_id) : null;
-    await wahaSendText(input.chatId, DEMO_TEXTS.ended(clinic?.name ?? null));
+    await sendChatText(input.chatId, DEMO_TEXTS.ended(clinic?.name ?? null));
     return { handled: true, status: "terminada" };
   }
 
   if (session.status === "analizando") {
     if (Date.now() - new Date(session.created_at).getTime() > STUCK_MINUTES * 60_000) {
       await setStatus(session.id, "error", { error: "El análisis no terminó a tiempo." });
-      await wahaSendText(input.chatId, DEMO_TEXTS.failed);
+      await sendChatText(input.chatId, DEMO_TEXTS.failed);
       return { handled: true, status: "error" };
     }
-    await wahaSendText(input.chatId, DEMO_TEXTS.stillReading);
+    await sendChatText(input.chatId, DEMO_TEXTS.stillReading);
     return { handled: true, status: "analizando" };
   }
 
   const clinic = session.clinic_id ? await demoClinic(session.clinic_id) : null;
   if (!clinic) {
     await setStatus(session.id, "error", { error: "La clínica de la demo ya no existe." });
-    await wahaSendText(input.chatId, DEMO_TEXTS.failed);
+    await sendChatText(input.chatId, DEMO_TEXTS.failed);
     return { handled: true, status: "error" };
   }
 
   if (command === "menu") {
     await closeAgentConversations(session);
     await setStatus(session.id, "eligiendo");
-    await wahaSendText(input.chatId, await optionsText(clinic));
+    await sendChatText(input.chatId, await optionsText(clinic));
     return { handled: true, status: "eligiendo" };
   }
 
@@ -111,7 +114,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
     const mode = parseModeChoice(said);
     if (!mode) {
       await sql`update demo_sessions set updated_at = now() where id = ${session.id}`;
-      await wahaSendText(input.chatId, session.status === "llamada" ? DEMO_TEXTS.inCall : DEMO_TEXTS.chooseAgain);
+      await sendChatText(input.chatId, session.status === "llamada" ? DEMO_TEXTS.inCall : DEMO_TEXTS.chooseAgain);
       return { handled: true, status: session.status };
     }
     await startMode({ ...session, chat_id: input.chatId }, clinic, mode);
@@ -128,6 +131,9 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
 }
 
 async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome> {
+  const settings = await requireActiveChannel(channelForChat(input.chatId));
+  const source = `demo-${channelForChat(input.chatId)}`;
+  const name = input.phone.startsWith("telegram:") ? `Telegram ${input.phone.slice(9)}` : `WhatsApp +${input.phone}`;
   // WAHA reintenta entregas fallidas y puede entregar varios mensajes juntos.
   // La cuota, el interesado y la sesión se deciden bajo el mismo lock por teléfono.
   const result = await sql.begin(async (tx) => {
@@ -153,21 +159,21 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
     const [existing] = await tx<{ id: string }[]>`
       update leads set message = concat_ws(' · ', message, ${note}::text), updated_at = now()
       where id = (
-        select id from leads where phone = ${input.phone} and source = 'demo-whatsapp'
+        select id from leads where phone = ${input.phone} and source = ${source}
         order by created_at desc limit 1)
       returning id`;
     const lead = existing ?? (await tx<{ id: string }[]>`
       insert into leads (name, phone, organization, message, source)
-      values (${`WhatsApp +${input.phone}`}, ${input.phone}, ${hostOf(website)}, ${note}, 'demo-whatsapp')
+      values (${name}, ${input.phone}, ${hostOf(website)}, ${note}, ${source})
       returning id`)[0];
     const [session] = await tx<DemoSession[]>`
-      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id)
-      values (${input.phone}, ${input.chatId}, ${website}, ${lead.id}, ${input.messageId})
+      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, channel_revision)
+      values (${input.phone}, ${input.chatId}, ${website}, ${lead.id}, ${input.messageId}, ${settings.revision})
       returning *`;
     return { session, createdLead: !existing };
   });
   if (!result) {
-    await wahaSendText(input.chatId, DEMO_TEXTS.tooMany);
+    await sendChatText(input.chatId, DEMO_TEXTS.tooMany);
     return { handled: true, status: "terminada" };
   }
   const { session } = result;
@@ -178,18 +184,18 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
       // Misma forma que el formulario de /pedi-una-demo, para que el aviso de n8n lo muestre igual.
       lead: {
         id: session.lead_id,
-        nombre: `WhatsApp +${input.phone}`,
+        nombre: name,
         email: null,
         telefono: input.phone,
         organizacion: host,
         mensaje: note,
-        origen: "demo-whatsapp",
+        origen: source,
         web: website,
       },
     });
   }
   if (session.status !== "analizando") return { handled: true, status: session.status };
-  await wahaSendText(input.chatId, DEMO_TEXTS.started(website));
+  await sendChatText(input.chatId, DEMO_TEXTS.started(website));
   return { handled: true, status: "analizando", analyze: session.id };
 }
 
@@ -204,11 +210,12 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
     update demo_sessions set analysis_started_at = now()
     where id = ${sessionId} and status = 'analizando' and analysis_started_at is null
     returning *`;
-  if (!session) return;
+  if (!session || !(await chatIsActive(session.chat_id, session.channel_revision))) return;
   try {
     const site = await scrapeSite(session.website);
     const [active] = await sql`select id from demo_sessions where id = ${session.id} and status = 'analizando'`;
     if (!active) return;
+    if (!(await chatIsActive(session.chat_id, session.channel_revision))) return;
     const profile = await buildProfile(site);
     const clinic = await createDemoClinic(profile, site.url, { id: session.id, pages: site.pages.length });
     if (!clinic) return; // la persona salió o pidió otra demo mientras leíamos
@@ -217,14 +224,14 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
         update leads set organization = ${clinic.name}, specialty = ${clinic.specialty}, updated_at = now()
         where id = ${session.lead_id}`;
     }
-    await wahaSendText(session.chat_id, await optionsText(clinic));
+    await sendChatText(session.chat_id, await optionsText(clinic));
   } catch (e) {
     const scrapeFailed = e instanceof ScrapeError;
     console.error("Demo: no se pudo preparar", session.website, e instanceof Error ? e.message : e);
     const [failed] = await sql`
       update demo_sessions set status = 'error', error = ${e instanceof Error ? e.message.slice(0, 300) : "error"}, updated_at = now()
       where id = ${session.id} and status in ('analizando', 'eligiendo') returning id`;
-    if (failed) await wahaSendText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
+    if (failed) await sendChatText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
   }
 }
 
@@ -258,14 +265,14 @@ async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): 
       where id = ${session.lead_id}`;
   }
   const agent = clinic.agent_name;
-  if (mode === "chat") return void (await wahaSendText(session.chat_id, DEMO_TEXTS.chat(agent, clinic.name)));
-  if (mode === "audio") return void (await wahaSendText(session.chat_id, DEMO_TEXTS.audio(agent, clinic.name)));
+  if (mode === "chat") return void (await sendChatText(session.chat_id, DEMO_TEXTS.chat(agent, clinic.name)));
+  if (mode === "audio") return void (await sendChatText(session.chat_id, DEMO_TEXTS.audio(agent, clinic.name)));
 
   const phoneNumberId = process.env.ELEVENLABS_PHONE_NUMBER_ID;
   const main = await getClinic();
-  if (phoneNumberId && main.elevenlabs_agent_id) {
+  if (channelForChat(session.chat_id) === "whatsapp" && phoneNumberId && main.elevenlabs_agent_id) {
     if (!(await reserveDemoCall(session.id))) {
-      await wahaSendText(session.chat_id, DEMO_TEXTS.callLimit);
+      await sendChatText(session.chat_id, DEMO_TEXTS.callLimit);
       return;
     }
     try {
@@ -283,7 +290,7 @@ async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): 
     }
     // La llamada ya salió: un fallo de WhatsApp no debe devolver la cuota ni
     // provocar que el reintento del webhook vuelva a llamar a la persona.
-    await wahaSendText(session.chat_id, DEMO_TEXTS.callPhone(agent, clinic.name, session.phone)).catch((e) => {
+    await sendChatText(session.chat_id, DEMO_TEXTS.callPhone(agent, clinic.name, session.phone)).catch((e) => {
       console.error("Demo: llamada iniciada, pero no se pudo avisar por WhatsApp", e instanceof Error ? e.message : e);
     });
     return;
@@ -294,7 +301,7 @@ async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): 
 async function sendCallLink(session: DemoSession, agent: string, clinicName: string): Promise<void> {
   const token = session.call_token ?? randomBytes(18).toString("base64url");
   await sql`update demo_sessions set call_token = ${token} where id = ${session.id}`;
-  await wahaSendText(session.chat_id, DEMO_TEXTS.callLink(agent, clinicName, `${env.appUrl()}/probar-demo/llamada/${token}`));
+  await sendChatText(session.chat_id, DEMO_TEXTS.callLink(agent, clinicName, `${env.appUrl()}/probar-demo/llamada/${token}`));
 }
 
 /** Variables del agente para la clínica de la demo (llamadas por teléfono o por la web). */
@@ -308,7 +315,7 @@ export async function sessionForCallToken(token: string): Promise<{ session: Dem
   const [session] = await sql<DemoSession[]>`
     select * from demo_sessions
     where call_token = ${token} and status = 'llamada' and updated_at > now() - make_interval(hours => ${ACTIVE_HOURS})`;
-  if (!session?.clinic_id) return null;
+  if (!session?.clinic_id || !(await chatIsActive(session.chat_id, session.channel_revision))) return null;
   const clinic = await demoClinic(session.clinic_id);
   return clinic ? { session, clinic } : null;
 }

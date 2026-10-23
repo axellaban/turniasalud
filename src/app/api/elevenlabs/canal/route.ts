@@ -32,8 +32,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Conversación todavía no registrada" }, { status: 409 });
   }
   if (outcome.status === "send_failed") {
-    console.error("WAHA: no se pudo mandar la respuesta del agente", outcome.error);
-    return NextResponse.json({ error: "No se pudo enviar por WhatsApp" }, { status: 502 });
+    console.error("Canal: no se pudo mandar la respuesta del agente", outcome.error);
+    return NextResponse.json({ error: "No se pudo enviar al canal activo" }, { status: 502 });
   }
   return NextResponse.json({ received: true, ...outcome });
 }

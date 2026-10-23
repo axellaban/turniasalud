@@ -66,7 +66,7 @@ export function parseCommand(text: string): "menu" | "salir" | null {
 
 export const hostOf = (website: string) => new URL(website).hostname.replace(/^www\./, "");
 
-const CHOICES = "1️⃣ *Llamada de voz*\n2️⃣ *Audio de WhatsApp*\n3️⃣ *Chat*";
+const CHOICES = "1️⃣ *Llamada de voz*\n2️⃣ *Notas de voz*\n3️⃣ *Chat*";
 const FOOTER = "Escribí *MENU* para cambiar de modo o *SALIR* para terminar.";
 
 export const DEMO_TEXTS = {
@@ -91,7 +91,7 @@ export const DEMO_TEXTS = {
   callLimit: "Ya usaste las 3 llamadas de esta demo. Escribí *MENU* para probar chat o audio.",
   inCall: `Estás en modo llamada. Respondé *1* para que te vuelva a llamar o elegí otra opción:\n\n${CHOICES}`,
   ended: (name: string | null) =>
-    `¡Gracias por probar Turnia! 🙌 Así atendería${name ? ` *${name}*` : " tu consultorio"} las 24 horas, por WhatsApp y por teléfono.\n\nEn breve alguien del equipo te escribe para contarte cómo dejarla funcionando. Si querés probar con otra web, mandá «Quiero probar la demo» con la dirección.`,
+    `¡Gracias por probar Turnia! 🙌 Así atendería${name ? ` *${name}*` : " tu consultorio"} las 24 horas, por chat, audios y llamadas de voz.\n\nEn breve alguien del equipo te escribe para contarte cómo dejarla funcionando. Si querés probar con otra web, mandá «Quiero probar la demo» con la dirección.`,
   scrapeFailed: (website: string) =>
     `No pude abrir *${hostOf(website)}* 😕. ¿Revisás que la dirección esté bien y me la mandás de nuevo? Por ejemplo: «Quiero probar la demo, mi web es miclinica.com.ar».`,
   failed: "Perdón, tuve un problema para preparar la demo. ¿Me mandás tu web de nuevo en un ratito?",
