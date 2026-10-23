@@ -41,7 +41,9 @@ describe("Login del panel por formulario", () => {
   it("solo redirige a rutas propias del panel", () => {
     expect(safeNext("/panel/clinicas")).toBe("/panel/clinicas");
     expect(safeNext("/demo")).toBe("/demo");
-    for (const bad of ["https://evil.test", "//evil.test", "/panel/login", "/otra", undefined, ["/panel"]]) expect(safeNext(bad)).toBe("/panel");
+    expect(safeNext("/panel/demos?q=Telegram")).toBe("/panel/demos?q=Telegram");
+    expect(safeNext("/panel/configuracion/equipo")).toBe("/panel/configuracion/equipo");
+    for (const bad of ["https://evil.test", "//evil.test", "/panel/login", "/panel/clinica", "/panel/no-existe", "/otra", undefined, ["/panel"]]) expect(safeNext(bad)).toBe("/panel");
   });
 
   it("rechaza formularios enviados desde otro sitio", async () => {
