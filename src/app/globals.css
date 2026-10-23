@@ -71,6 +71,11 @@ body {
   100% { box-shadow: 0 0 0 18px rgb(33 87 225 / 0); }
 }
 
+@keyframes turnia-onda {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
 @keyframes turnia-aparecer {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }

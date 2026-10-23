@@ -4,6 +4,7 @@ import { HeroVideo } from "@/components/site/hero";
 import { Flecha } from "@/components/site/iconos";
 import { BandaVeredicto, CarruselCasos, CarruselDestacados, RuedaCapacidades, type Caso, type Destacado } from "@/components/site/interactivos";
 import { ReproductorDemo } from "@/components/site/reproductor-demo";
+import { ESCENA_HOME } from "@/content/escena-home";
 import {
   BandaProbalo,
   GrillaEspecialidades,
@@ -84,11 +85,11 @@ export default function Home() {
       <MotorProtocolos />
       <RuedaCapacidades />
 
-      <section id="en-accion" className="mx-auto max-w-[1100px] scroll-mt-28 px-4 pb-4 pt-10 sm:px-6">
+      <section id="en-accion" className="mx-auto max-w-[1100px] scroll-mt-24 px-4 pb-4 pt-10 sm:px-6">
         <Titulo linea1="Plataforma de agentes de IA" linea2="del primer mensaje al seguimiento" />
-        <div className="mt-12">
+        <div className="mt-8">
           {demo ? (
-            <ReproductorDemo conversacion={demo} variante="orbe" />
+            <ReproductorDemo conversacion={demo} variante="escena" pasos={ESCENA_HOME} />
           ) : (
             <Link href="/escucha-a-nuestros-agentes" className="block rounded-3xl bg-brand-50 p-10 text-center font-medium text-brand-700">
               Escuchá a nuestros agentes <Flecha className="inline h-4 w-4" />
