@@ -25,6 +25,7 @@ vi.mock("next/navigation", () => ({
     throw new Error("notFound");
   },
   usePathname: () => "/panel",
+  useRouter: () => ({ refresh: () => {} }),
 }));
 
 const baseUrl = testDatabaseUrl();
@@ -367,7 +368,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     form.set("whatsapp_provider", "meta");
     await actions.saveClinic(form);
     const [clinic] = await sql<Array<{ whatsapp_provider: string }>>`select whatsapp_provider from clinics where id = ${CLINIC}`;
-    expect(clinic.whatsapp_provider).toBe("meta");
+    expect(clinic.whatsapp_provider).toBe("waha"); // Guardar el contexto conserva la conexión.
 
     const { GET } = await import("@/app/api/health/route");
     expect((await (await GET()).json()).configured).toMatchObject({ waha: true });

@@ -23,6 +23,11 @@ export type Clinic = {
   /** Clínica temporal de la demo del lead magnet (/probar-demo), armada con la web del interesado. */
   is_demo: boolean;
   demo_source_url: string | null;
+  retained_at: string | null;
+  updated_at: string;
+  context_revision: number;
+  payment_methods: string | null;
+  agent_context: string | null;
   created_at: string;
 };
 

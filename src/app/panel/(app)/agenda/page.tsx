@@ -1,6 +1,7 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getCatalog, getClinic, getScheduleBlocks } from "@/lib/clinic";
+import { getCatalog, getScheduleBlocks } from "@/lib/clinic";
 import { addDaysKey, formatTime, localDateKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { setAppointmentStatus } from "../../actions";
@@ -24,7 +25,7 @@ type Row = {
 };
 
 export default async function AgendaPage({ searchParams }: PageProps<"/panel/agenda">) {
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const tz = clinic.timezone;
   const { fecha } = await searchParams;
   const dayKey = parseDateKey(typeof fecha === "string" ? fecha : null) ?? localDateKey(new Date(), tz);

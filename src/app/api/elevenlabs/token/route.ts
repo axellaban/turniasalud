@@ -1,3 +1,5 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
+import { demoDynamicVariables } from "@/lib/demo/session";
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
@@ -17,8 +19,10 @@ export async function POST(request: Request) {
   }
   const body = (await request.json().catch(() => ({}))) as { phone?: string; mode?: "voz" | "chat" };
   try {
-    const clinic = await getClinic();
-    if (!clinic.elevenlabs_agent_id) {
+    const clinic = await getPanelClinic();
+    const main = await getClinic();
+    const agentId = clinic.elevenlabs_agent_id || main.elevenlabs_agent_id;
+    if (!agentId) {
       return NextResponse.json(
         { error: "Todavía no creaste el agente. Entrá al panel → Configuración → “Crear/actualizar agente”." },
         { status: 409 },
@@ -27,12 +31,12 @@ export async function POST(request: Request) {
     const phone = normalizePhone(body.phone) || `web-${randomBytes(4).toString("hex")}`;
     const chat = body.mode === "chat";
     const [credential, dynamicVariables] = await Promise.all([
-      chat ? getSignedUrl(clinic.elevenlabs_agent_id) : getConversationToken(clinic.elevenlabs_agent_id),
-      buildDynamicVariables(clinic, phone),
+      chat ? getSignedUrl(agentId) : getConversationToken(agentId),
+      clinic.is_demo ? demoDynamicVariables(clinic, phone) : buildDynamicVariables(clinic, phone),
     ]);
     return NextResponse.json({
       ...(chat ? { signedUrl: credential } : { token: credential }),
-      agentId: clinic.elevenlabs_agent_id,
+      agentId,
       clinicName: clinic.name,
       dynamicVariables,
       userId: phone,

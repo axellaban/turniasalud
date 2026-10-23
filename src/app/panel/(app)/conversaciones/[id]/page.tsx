@@ -1,7 +1,8 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
-import { getClinic, isUuid } from "@/lib/clinic";
+import { isUuid } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Badge, Card, CHANNEL_LABEL, PageHeader, StatusBadge } from "@/components/ui";
@@ -9,7 +10,7 @@ import type { Conversation } from "@/lib/types";
 
 export default async function ConversationDetail({ params }: PageProps<"/panel/conversaciones/[id]">) {
   const { id } = await params;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   type Detail = Conversation & { patients: { id: string; full_name: string | null; phone: string; coverage: string | null } | null };
   const [c] = isUuid(id)
     ? await sql<Detail[]>`

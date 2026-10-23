@@ -1,6 +1,6 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getClinic } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { setTaskStatus } from "../../actions";
@@ -35,7 +35,7 @@ type Row = {
 };
 
 export default async function TasksPage({ searchParams }: PageProps<"/panel/tareas">) {
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const { ver } = await searchParams;
   const showResolved = ver === "resueltas";
   const result = await sql<Row[]>`

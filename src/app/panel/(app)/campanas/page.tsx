@@ -1,6 +1,6 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getClinic } from "@/lib/clinic";
 import { CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { formatDateTime } from "@/lib/time";
 import { CAMPAIGN_TYPES, type Campaign } from "@/lib/types";
@@ -8,7 +8,7 @@ import { createCampaignAction } from "../../actions";
 import { Card, Empty, Field, PageHeader, StatusBadge, buttonClass, inputClass } from "@/components/ui";
 
 export default async function CampaignsPage() {
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const campaigns = await sql<Array<Campaign & { sent: number; replied: number; booked: number }>>`
     select c.*,
       count(r.id) filter (where r.status not in ('pendiente', 'error'))::int as sent,

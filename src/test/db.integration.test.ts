@@ -30,6 +30,7 @@ vi.mock("next/navigation", () => ({
     throw new Error("notFound");
   },
   usePathname: () => "/panel",
+  useRouter: () => ({ refresh: () => {} }),
 }));
 
 const url = testDatabaseUrl();
@@ -530,6 +531,7 @@ describe.runIf(url)("integración con Postgres", () => {
     const [done] = await sql<Array<{ status: string }>>`select status from appointments where id = ${appt.id}`;
     expect(done.status).toBe("atendido");
 
+    const previousClinic = await clinicLib.getClinic();
     await actions.saveClinic(form({
       name: "Centro Médico Plaza (demo)", agent_name: "Sofi", accepted_coverages: "OSDE, Galeno",
       template_recordatorio: "recordatorio_turno", template_idioma: "es_AR", whatsapp_phone_number_id: "wa_test",
@@ -537,7 +539,8 @@ describe.runIf(url)("integración con Postgres", () => {
     }));
     const clinic = await clinicLib.getClinic();
     expect(clinic.accepted_coverages).toEqual(["OSDE", "Galeno"]);
-    expect(clinic.templates).toEqual({ recordatorio: "recordatorio_turno", idioma: "es_AR" });
+    expect(clinic.templates).toEqual(previousClinic.templates);
+    expect(clinic.whatsapp_phone_number_id).toBe(previousClinic.whatsapp_phone_number_id);
     expect(clinic.handoff_phone).toBe("+541155550100");
     const vars = await clinicLib.buildDynamicVariables(clinic, "5491155550001");
     expect(vars.urgency_instructions).toContain("Fuera del horario de atención: Guardia odontológica");

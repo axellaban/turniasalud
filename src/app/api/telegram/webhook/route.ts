@@ -45,12 +45,16 @@ export async function POST(request: Request) {
     let text = (msg.text ?? msg.caption ?? "").trim();
     const start = /^\/start(?:@\w+)?(?:\s+(\S+))?$/i.exec(text);
     if (start) {
+      if (start[1]?.startsWith("p_")) {
+        text = `Probar perfil de Turnia: ${start[1]}`;
+      } else {
       const website = await claimDemoHandoff(start[1] ?? "", phone);
       if (!website) {
         await telegramSendText(chatId, `¡Hola! Para probarme como recepcionista de tu consultorio, dejá tu web acá y tocá Probar demo: ${env.appUrl()}/probar-demo`);
         return NextResponse.json({ ok: true });
       }
       text = demoRequestText(website);
+      }
     }
     const audio = msg.voice ?? msg.audio;
     if (audio) {

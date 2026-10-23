@@ -67,6 +67,9 @@ export async function getScheduleBlocks(clinicId: string, from: Date | string, t
 export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
   return [
     `Nombre: ${clinic.name}`,
+    `Especialidad: ${clinic.specialty}`,
+    clinic.website && `Web: ${clinic.website}`,
+    clinic.handoff_phone && `Teléfono de recepción para derivaciones: ${clinic.handoff_phone}`,
     openNow !== undefined &&
       `Ahora mismo: ${openNow ? "dentro del horario de atención (hay profesionales atendiendo)" : "fuera del horario de atención"}`,
     clinic.address && `Dirección: ${clinic.address}`,
@@ -75,6 +78,8 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
     clinic.accepted_coverages.length && `Coberturas aceptadas: ${clinic.accepted_coverages.join(", ")}`,
     clinic.faq && `Preguntas frecuentes:\n${clinic.faq}`,
     clinic.policies && `Políticas:\n${clinic.policies}`,
+    clinic.payment_methods && `Formas de pago:\n${clinic.payment_methods}`,
+    clinic.agent_context && `Instrucciones de esta clínica:\n${clinic.agent_context}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -93,7 +98,7 @@ export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], time
   });
   const typeLines = catalog.appointmentTypes.map(
     (t) =>
-      `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}`,
+      `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${t.price ? ` | Precio de referencia: $${t.price}` : ""}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}`,
   );
   const names = new Map(catalog.professionals.map((p) => [p.id, p.full_name]));
   const blockLines = blocks.map((b) => {

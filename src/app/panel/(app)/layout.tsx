@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { logout } from "../actions";
+import { ClinicSwitcher } from "./clinic-switcher";
 import { PanelNav } from "./nav";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
           <button className="text-sm text-brand-200 hover:text-white">Cerrar sesión</button>
         </form>
       </aside>
-      <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+      <div className="min-w-0 flex-1"><ClinicSwitcher /><main className="px-4 py-6 sm:px-8 sm:py-8">{children}</main></div>
     </div>
   );
 }

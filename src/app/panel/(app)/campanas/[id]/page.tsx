@@ -1,7 +1,8 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
-import { getClinic, isUuid } from "@/lib/clinic";
+import { isUuid } from "@/lib/clinic";
 import { CAMPAIGN_LABELS, computeAudience } from "@/lib/campaigns";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
@@ -12,7 +13,7 @@ import { renderTemplate, templateKeyFor, whatsappReadiness } from "@/lib/whatsap
 
 export default async function CampaignDetail({ params }: PageProps<"/panel/campanas/[id]">) {
   const { id } = await params;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const [campaign] = isUuid(id) ? await sql<Campaign[]>`select * from campaigns where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!campaign) notFound();
   const [audience, sentRows] = await Promise.all([

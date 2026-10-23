@@ -1,6 +1,6 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getClinic } from "@/lib/clinic";
 import { isConfigured } from "@/lib/env";
 import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } from "@/lib/time";
 import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, Stat, StatusBadge } from "@/components/ui";
@@ -21,7 +21,7 @@ export default async function PanelHome() {
     );
   }
 
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const tz = clinic.timezone;
   const now = new Date();
   const since = new Date(now.getTime() - 7 * 86400_000).toISOString();

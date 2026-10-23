@@ -3,12 +3,12 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { json, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { createCampaign, sendCampaign, CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { resolveTask } from "@/lib/tasks";
-import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions, verifySessionToken } from "@/lib/session";
+import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/session";
 import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 import { bookAppointment, registerPatient, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
@@ -18,11 +18,10 @@ import { getConversacion } from "@/content/conversaciones";
 import { selectMessagingChannel, messagingSettings } from "@/lib/messaging-settings";
 import { connectTelegram, telegramConfigured } from "@/lib/telegram";
 import { missingWahaEnv } from "@/lib/env";
+import { getPanelClinic, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { normalizeWebsite } from "@/lib/demo/website";
 
-async function requireSession() {
-  const store = await cookies();
-  if (!verifySessionToken(store.get(SESSION_COOKIE)?.value)) redirect("/panel/login");
-}
+const requireSession = requirePanelSession;
 
 const text = (form: FormData, key: string) => {
   const value = form.get(key);
@@ -62,7 +61,7 @@ export async function setAppointmentStatus(form: FormData) {
   const id = uuid(form, "id");
   const status = text(form, "status");
   if (!id || !status || !APPOINTMENT_STATUSES.includes(status)) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`
     update appointments set status = ${status},
       cancelled_at = case when ${status} = 'cancelado' then now() else cancelled_at end
@@ -100,7 +99,7 @@ export async function saveMessagingChannel(_previous: FormState, form: FormData)
 
 export async function createManualAppointment(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const phone = normalizePhone(text(form, "phone"));
   const date = text(form, "date");
   const time = text(form, "time");
@@ -131,7 +130,7 @@ export async function setTaskStatus(form: FormData) {
   const id = uuid(form, "id");
   const status = text(form, "status");
   if (!id || !status || !["abierta", "en_curso", "resuelta"].includes(status)) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`
     update tasks set status = ${status}, resolved_at = case when ${status} = 'resuelta' then now() else null end
     where id = ${id} and clinic_id = ${clinic.id}`;
@@ -143,7 +142,7 @@ export async function setContactOptOut(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`update patients set contact_opt_out = ${form.get("opt_out") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
   revalidatePath(`/panel/pacientes/${id}`);
 }
@@ -152,7 +151,7 @@ export async function resolveTaskAction(_prev: FormState | undefined, form: Form
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return { ok: false, message: "Falta la tarea." };
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const result = await resolveTask(clinic.id, id, text(form, "response"));
   revalidatePath("/panel/tareas");
   revalidatePath("/panel");
@@ -164,17 +163,16 @@ export async function resolveTaskAction(_prev: FormState | undefined, form: Form
 // ---------------------------------------------------------------------------
 export async function saveClinic(form: FormData) {
   await requireSession();
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const coverages = (text(form, "accepted_coverages") ?? "")
     .split(",")
     .map((c) => c.trim())
     .filter(Boolean);
-  const templates: Record<string, string> = { ...clinic.templates };
-  for (const key of ["recordatorio", "recall", "lista_espera", "reactivacion", "no_show", "encuesta", "respuesta", "idioma"]) {
-    const value = text(form, `template_${key}`);
-    if (value) templates[key] = value;
-    else delete templates[key];
-  }
+  const websiteInput = text(form, "website");
+  const website = websiteInput ? normalizeWebsite(websiteInput) : null;
+  if (websiteInput && !website) throw new Error("Revisá la dirección de la web.");
+  const timezone = text(form, "timezone") ?? clinic.timezone;
+  try { new Intl.DateTimeFormat("es", { timeZone: timezone }); } catch { throw new Error("Zona horaria inválida."); }
   await sql`
     update clinics set ${sql({
       name: text(form, "name") ?? clinic.name,
@@ -187,20 +185,55 @@ export async function saveClinic(form: FormData) {
       faq: text(form, "faq"),
       policies: text(form, "policies"),
       urgency_instructions: text(form, "urgency_instructions"),
-      whatsapp_phone_number_id: text(form, "whatsapp_phone_number_id"),
-      whatsapp_provider: text(form, "whatsapp_provider") === "waha" ? "waha" : "meta",
-      elevenlabs_voice_id: text(form, "elevenlabs_voice_id"),
+      website,
+      timezone,
+      payment_methods: text(form, "payment_methods"),
+      agent_context: text(form, "agent_context"),
       handoff_phone: text(form, "handoff_phone"),
       after_hours_instructions: text(form, "after_hours_instructions"),
-      templates: json(templates),
-    })}
+    })}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
     where id = ${clinic.id}`;
+  revalidatePath("/panel/configuracion");
+}
+
+export async function saveClinicWithFeedback(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireSession();
+  try {
+    await saveClinic(form);
+    return { ok: true, message: "Perfil guardado y conservado. Las conversaciones nuevas usan esta información." };
+  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar el perfil." }; }
+}
+
+export async function saveProfessional(form: FormData) {
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  const name = text(form, "full_name");
+  const specialty = text(form, "specialty");
+  if (!id || !name || !specialty) return;
+  const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+  await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
+  revalidatePath("/panel/configuracion");
+}
+
+export async function saveAppointmentType(form: FormData) {
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  const name = text(form, "name");
+  const specialty = text(form, "specialty");
+  const duration = Number(form.get("duration_min"));
+  const recall = Number(form.get("recall_months"));
+  if (!id || !name || !specialty || !Number.isFinite(duration) || duration < 5 || duration > 480) return;
+  await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${parsePrice(text(form, "price"))},
+    instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
+    is_first_visit = ${form.get("is_first_visit") === "on"} where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
 export async function addProfessional(form: FormData) {
   await requireSession();
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const name = text(form, "full_name");
   const specialty = text(form, "specialty");
   if (!name || !specialty) return;
@@ -216,6 +249,7 @@ export async function addProfessional(form: FormData) {
       bio: text(form, "bio"),
       accepted_coverages: coverages.length ? coverages : null,
     })}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
@@ -223,8 +257,9 @@ export async function toggleProfessional(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`update professionals set active = ${form.get("active") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
@@ -235,30 +270,32 @@ export async function addSchedule(form: FormData) {
   const end = text(form, "end_time");
   const weekdays = form.getAll("weekday").map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
   if (!professionalId || !start || !end || !weekdays.length || end <= start) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`
     insert into schedules (professional_id, weekday, start_time, end_time)
     select p.id, w.weekday, ${start}::time, ${end}::time
     from professionals p, unnest(${weekdays}::smallint[]) as w(weekday)
     where p.id = ${professionalId} and p.clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
 export async function deleteSchedule(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   if (id) {
     await sql`
       delete from schedules s using professionals p
       where s.id = ${id} and p.id = s.professional_id and p.clinic_id = ${clinic.id}`;
   }
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
 export async function addAppointmentType(form: FormData) {
   await requireSession();
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const name = text(form, "name");
   const specialty = text(form, "specialty");
   const duration = Number(text(form, "duration_min") ?? 30);
@@ -276,6 +313,7 @@ export async function addAppointmentType(form: FormData) {
       recall_months: Number.isFinite(recall) && recall > 0 ? Math.round(recall) : null,
       is_first_visit: form.get("is_first_visit") === "on",
     })}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
@@ -290,8 +328,9 @@ export async function setAppointmentTypePrice(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`update appointment_types set price = ${parsePrice(text(form, "price"))} where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
   revalidatePath("/panel");
 }
@@ -301,7 +340,7 @@ export async function setAppointmentTypePrice(form: FormData) {
 // ---------------------------------------------------------------------------
 export async function addScheduleBlock(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const fromKey = parseDateKey(text(form, "date_from"));
   const toKey = parseDateKey(text(form, "date_to")) ?? fromKey;
   if (!fromKey || !toKey || toKey < fromKey) return { ok: false, message: "Revisá las fechas." };
@@ -327,6 +366,7 @@ export async function addScheduleBlock(_prev: FormState | undefined, form: FormD
     where clinic_id = ${clinic.id} and status in ('confirmado', 'pendiente')
       and starts_at < ${endsAt} and ends_at > ${startsAt}
       ${professionalId ? sql`and professional_id = ${professionalId}` : sql``}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
   revalidatePath("/panel/agenda");
   return {
@@ -341,8 +381,9 @@ export async function deleteScheduleBlock(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`delete from schedule_blocks where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
   revalidatePath("/panel/agenda");
 }
@@ -351,8 +392,9 @@ export async function toggleAppointmentType(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   await sql`update appointment_types set active = ${form.get("active") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id);
   revalidatePath("/panel/configuracion");
 }
 
@@ -362,6 +404,7 @@ export async function runAgentSetup(): Promise<AgentSetupState> {
   await requireSession();
   try {
     const clinic = await getClinic();
+    if ((await getPanelClinic()).id !== clinic.id) return { ok: false, message: "La conexión del agente se administra desde la clínica principal." };
     const result = await setupAgent(clinic);
     revalidatePath("/panel/configuracion");
     return {
@@ -380,13 +423,14 @@ export async function runAgentSetup(): Promise<AgentSetupState> {
 // ---------------------------------------------------------------------------
 export async function createCampaignAction(form: FormData) {
   await requireSession();
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic(form);
   const type = text(form, "type") as CampaignType | null;
   if (!type || !CAMPAIGN_TYPES.includes(type)) return;
   const templateKey = type === "personalizada" ? "" : type;
   // Por WAHA no hay templates de Meta: se manda el texto sugerido para ese tipo.
   const template = text(form, "template_name") ?? clinic.templates?.[templateKey] ?? (clinic.whatsapp_provider === "waha" ? type : null);
   if (!template) return;
+  if (clinic.is_demo) throw new Error("Los perfiles de demo usan datos ficticios y no envían campañas.");
   const campaign = await createCampaign({
     clinicId: clinic.id,
     name: text(form, "name") ?? CAMPAIGN_LABELS[type].label,
@@ -404,6 +448,9 @@ export async function sendCampaignAction(_prev: SendState | undefined, form: For
   await requireSession();
   const id = uuid(form, "id");
   if (!id) return { ok: false, message: "Falta la campaña." };
+  const clinic = await getPanelClinic(form);
+  if (clinic.is_demo) return { ok: false, message: "Los perfiles de demo no envían campañas." };
+  if (!(await sql`select id from campaigns where id = ${id} and clinic_id = ${clinic.id}`).length) return { ok: false, message: "La campaña no pertenece a esta clínica." };
   try {
     const r = await sendCampaign(id);
     revalidatePath(`/panel/campanas/${id}`);

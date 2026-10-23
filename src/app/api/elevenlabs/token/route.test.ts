@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: mocks.cookie }) }) }));
+vi.mock("@/lib/panel-clinic", () => ({ getPanelClinic: mocks.getClinic }));
 vi.mock("@/lib/clinic", () => ({ getClinic: mocks.getClinic, buildDynamicVariables: mocks.buildDynamicVariables }));
 vi.mock("@/lib/elevenlabs", () => ({ getConversationToken: mocks.getConversationToken, getSignedUrl: mocks.getSignedUrl }));
 

@@ -9,7 +9,7 @@ import type { ScrapeResult } from "./scraper";
 // armar la clínica de la demo. Con ANTHROPIC_API_KEY lo hace Claude; sin
 // clave, o si falla, se arma un perfil básico con lo que se ve a simple vista.
 
-const Profile = z.object({
+export const Profile = z.object({
   nombre: z.string().describe("Nombre del consultorio, clínica o profesional, como aparece en la web"),
   especialidad: z.string().describe('Especialidad principal, ej. "Odontología", o "Multiespecialidad"'),
   descripcion: z.string().describe("Qué hacen, en 1 o 2 oraciones"),

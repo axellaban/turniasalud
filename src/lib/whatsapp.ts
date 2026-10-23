@@ -67,6 +67,7 @@ export type PatientMessage = {
 
 /** Le escribe al paciente. Devuelve el ID de conversación de ElevenLabs si ya existe (Meta). */
 export async function sendPatientMessage(clinic: Clinic, msg: PatientMessage): Promise<{ conversation_id: string | null }> {
+  if (clinic.is_demo) throw new Error("Modo demo: no se envían avisos ni campañas a pacientes.");
   await requireActiveChannel("whatsapp");
   const problem = whatsappReadiness(clinic);
   if (problem) throw new Error(problem);
