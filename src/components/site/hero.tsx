@@ -17,7 +17,7 @@ const VIDEOS = { movil: hay("hero-mobile.mp4"), webm: hay("hero.webm"), mp4: hay
  */
 export function HeroVideo() {
   return (
-    <section className="relative -mt-[76px] min-h-[680px] overflow-hidden bg-brand-950 sm:min-h-[720px]">
+    <section className="relative -mt-[76px] min-h-[100svh] overflow-hidden bg-brand-950 sm:min-h-[720px]">
       <video
         id="hero-video"
         className="absolute inset-0 h-full w-full object-cover"
@@ -33,13 +33,14 @@ export function HeroVideo() {
         {VIDEOS.webm && <source src="/videos/hero.webm" type="video/webm" />}
         {VIDEOS.mp4 && <source src="/videos/hero.mp4" type="video/mp4" />}
       </video>
-      <div className="absolute inset-0 bg-[#0b0d1a]/45 sm:bg-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0b0d1a]/85 via-[#0b0d1a]/45 to-transparent" />
+      {/* Celular: la cara arriba y el texto abajo, sobre un velo que oscurece hacia abajo (como Assort). */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(11,13,26,.92)_0%,rgba(11,13,26,.62)_48%,rgba(11,13,26,.22)_100%)] sm:hidden" />
+      <div className="absolute inset-0 hidden bg-gradient-to-r from-[#0b0d1a]/85 via-[#0b0d1a]/45 to-transparent sm:block" />
       <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#0b0d1a]/50 to-transparent" />
 
-      <div className="relative mx-auto flex min-h-[680px] max-w-[1240px] flex-col justify-center gap-10 px-4 pb-12 pt-32 sm:min-h-[720px] sm:px-6 lg:block lg:pb-16 lg:pt-44">
+      <div className="relative mx-auto flex min-h-[100svh] max-w-[1240px] flex-col justify-end gap-6 px-4 pb-6 pt-28 sm:min-h-[720px] sm:justify-center sm:gap-10 sm:px-6 sm:pb-12 sm:pt-32 lg:block lg:pb-16 lg:pt-44">
         <div className="max-w-xl text-white">
-          <p className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium backdrop-blur">
+          <p className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-medium backdrop-blur min-[400px]:text-xs">
             <span className="flex text-sun-300" aria-hidden="true">
               ★★★★★
             </span>
@@ -54,11 +55,11 @@ export function HeroVideo() {
             El agente de IA de Turnia atiende el WhatsApp y el teléfono de tu clínica: da turnos sobre tu agenda real, toma la
             admisión, deriva lo urgente y le escribe a tus pacientes para que vuelvan.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link href="/probar-demo" className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50">
+          <div className="mt-8 flex flex-wrap items-center gap-2 sm:gap-3">
+            <Link href="/probar-demo" className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50 sm:px-5">
               Probalo con tu web <Flecha />
             </Link>
-            <Link href="#llamada" className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10">
+            <Link href="#llamada" className="inline-flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10 sm:px-5">
               Miralo en acción
             </Link>
           </div>
