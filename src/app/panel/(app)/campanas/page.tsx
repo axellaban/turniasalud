@@ -5,7 +5,7 @@ import { CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { formatDateTime } from "@/lib/time";
 import { CAMPAIGN_TYPES, type Campaign } from "@/lib/types";
 import { createCampaignAction } from "../../actions";
-import { Card, Empty, Field, PageHeader, StatusBadge, buttonClass, inputClass } from "@/components/ui";
+import { Card, Empty, Field, Notice, PageHeader, StatusBadge, buttonClass, inputClass } from "@/components/ui";
 
 export default async function CampaignsPage() {
   const clinic = await getPanelClinic();
@@ -26,6 +26,7 @@ export default async function CampaignsPage() {
         title="Campañas"
         description="Turnia Activa: le escribimos a tus pacientes por WhatsApp para llenar la agenda. Si responden, los atiende el agente."
       />
+      {clinic.is_demo && <Notice tone="info" className="mb-6">Esta ficha es una demo: sus pacientes son de prueba, así que las campañas quedan deshabilitadas. Se activan cuando la clínica pasa a atender pacientes reales.</Notice>}
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-4">
           {campaigns.length ? (
@@ -42,9 +43,9 @@ export default async function CampaignsPage() {
                       <StatusBadge value={c.status} />
                     </div>
                     <div className="mt-3 flex flex-wrap gap-5 text-sm text-brand-900/70">
-                      <span>📤 {s.sent} enviados</span>
-                      <span>💬 {s.replied} respondieron</span>
-                      <span>📅 {s.booked} agendaron</span>
+                      <span>{s.sent} enviados</span>
+                      <span>{s.replied} respondieron</span>
+                      <span>{s.booked} agendaron</span>
                       <span className="text-brand-900/45">{formatDateTime(c.sent_at ?? c.created_at, clinic.timezone)}</span>
                     </div>
                   </Card>
@@ -67,6 +68,7 @@ export default async function CampaignsPage() {
         <Card className="h-fit">
           <h2 className="mb-3 font-semibold text-brand-950">Nueva campaña</h2>
           <form action={createCampaignAction} className="space-y-3">
+            <fieldset disabled={clinic.is_demo} className="space-y-3 disabled:opacity-60">
             <Field label="Tipo">
               <select name="type" className={inputClass} defaultValue="recall">
                 {CAMPAIGN_TYPES.map((t) => (
@@ -86,6 +88,7 @@ export default async function CampaignsPage() {
               <textarea name="goal" rows={3} className={inputClass} />
             </Field>
             <button className={`${buttonClass} w-full`}>Crear y revisar audiencia</button>
+            </fieldset>
           </form>
         </Card>
       </div>

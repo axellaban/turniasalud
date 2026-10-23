@@ -466,3 +466,27 @@ create table if not exists clinic_access (
 );
 create index if not exists clinic_access_clinic_idx on clinic_access (clinic_id, created_at desc);
 alter table clinic_access enable row level security;
+
+-- Revisión de la ficha con la que arrancó cada charla: si la clínica cambia, el agente
+-- arranca otra conversación con los datos nuevos. Null en las anteriores: siguen igual.
+alter table channel_conversations add column if not exists context_revision integer;
+
+-- Intentos fallidos de ingreso al panel (hash del origen, sin la IP en claro).
+create table if not exists login_failures (
+  id bigint generated always as identity primary key,
+  requester_hash text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists login_failures_requester_idx on login_failures (requester_hash, created_at);
+alter table login_failures enable row level security;
+
+-- Quién cambió qué de cada ficha (el administrador o el consultorio con su código).
+create table if not exists clinic_changes (
+  id bigint generated always as identity primary key,
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  actor text not null,
+  area text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists clinic_changes_clinic_idx on clinic_changes (clinic_id, created_at desc);
+alter table clinic_changes enable row level security;

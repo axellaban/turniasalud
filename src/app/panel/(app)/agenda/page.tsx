@@ -115,7 +115,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                 </div>
                 {block && (
                   <p className="mb-3 rounded-lg bg-sun-100 px-3 py-2 text-xs text-brand-950">
-                    🚫 Agenda bloqueada{" "}
+                    Agenda bloqueada{" "}
                     {new Date(block.starts_at) <= dayStart && new Date(block.ends_at) >= dayEnd
                       ? "todo el día"
                       : `${formatTime(block.starts_at, tz)}–${formatTime(block.ends_at, tz)}`}
@@ -134,11 +134,11 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                           <p className="text-xs text-brand-900/55">
                             {a.type_name} · {a.coverage ?? "sin cobertura"} · {displayPhone(a.phone)}
                           </p>
-                          {a.notes && <p className="mt-0.5 text-xs text-brand-900/55">📝 {a.notes}</p>}
+                          {a.notes && <p className="mt-0.5 text-xs text-brand-900/55">Nota: {a.notes}</p>}
                         </div>
                         <span className="text-xs text-brand-900/50">{CHANNEL_LABEL[a.source] ?? a.source}</span>
                         {a.confirmed_at ? (
-                          <span className="text-xs font-medium text-brand-700" title="El paciente confirmó que viene">✔ Confirmó asistencia</span>
+                          <span className="text-xs font-medium text-brand-700" title="El paciente confirmó que viene">Confirmó asistencia</span>
                         ) : a.reminder_sent_at ? (
                           <span className="text-xs text-brand-900/50">Recordatorio enviado</span>
                         ) : null}

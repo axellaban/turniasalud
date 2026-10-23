@@ -19,9 +19,11 @@ export default async function ClinicsPage({ searchParams }: PageProps<"/panel/cl
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim().slice(0, 160) : "";
   const estado = FILTERS.find((f) => f.key === params.estado)?.key ?? "";
-  const clinics = await sql<(Clinic & { accesses: number })[]>`
-    select c.*, (select count(*)::int from clinic_access a where a.clinic_id = c.id and a.revoked_at is null) as accesses
+  const clinics = await sql<(Clinic & { accesses: number; last_actor: string | null; last_area: string | null; last_change: string | null })[]>`
+    select c.*, (select count(*)::int from clinic_access a where a.clinic_id = c.id and a.revoked_at is null) as accesses,
+      ch.actor as last_actor, ch.area as last_area, ch.created_at as last_change
     from clinics c
+    left join lateral (select actor, area, created_at from clinic_changes where clinic_id = c.id order by created_at desc limit 1) ch on true
     where strpos(lower(concat_ws(' ', c.name, c.specialty, c.website)), lower(${q})) > 0
       ${estado === "conservadas" ? sql`and (not c.is_demo or c.retained_at is not null)` : estado === "temporales" ? sql`and c.is_demo and c.retained_at is null` : sql``}
     order by c.is_demo, c.updated_at desc, c.created_at desc limit 100`;
@@ -50,7 +52,8 @@ export default async function ClinicsPage({ searchParams }: PageProps<"/panel/cl
               {clinic.accesses > 0 && <Badge tone="blue">Con acceso propio</Badge>}
             </div>
             <p className="mt-0.5 text-sm text-brand-900/60">{clinic.specialty}{clinic.website && <> · <a className="break-all text-brand-600 underline" href={clinic.website} target="_blank" rel="noreferrer">{clinic.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a></>}</p>
-            <p className="mt-1 text-xs text-brand-900/50">Creada: {formatDateTime(clinic.created_at, clinic.timezone)} · Actualizada: {formatDateTime(clinic.updated_at, clinic.timezone)} · Ref. {clinic.id.slice(0, 8)}</p>
+            <p className="mt-1 text-xs text-brand-900/50">Creada: {formatDateTime(clinic.created_at, clinic.timezone)} · Ref. {clinic.id.slice(0, 8)}</p>
+            {clinic.last_change && <p className="mt-0.5 text-xs text-brand-900/60">Última edición: <span className={clinic.last_actor === "Turnia" ? "" : "font-semibold text-brand-700"}>{clinic.last_actor}</span> · {clinic.last_area} · {formatDateTime(clinic.last_change, clinic.timezone)}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <form action={selectClinic}><input type="hidden" name="clinic_id" value={clinic.id} /><button className={clinic.id === active.id ? secondaryButtonClass : buttonClass}>Abrir configuración</button></form>

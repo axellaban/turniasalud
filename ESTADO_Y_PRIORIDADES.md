@@ -2,6 +2,26 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Auditoría del panel: arreglos — 23/10/2026
+
+Hecho por prioridad después de auditar el flujo completo (código y navegador):
+1. **No se pierde lo escrito.** Antes, si guardar fallaba (web o zona horaria mal escritas), React vaciaba el formulario. Los formularios del panel se envían ahora sin ese reseteo automático. Las reglas, además, guardan un **borrador en el navegador**: después de una recarga, un corte o un deploy, se ofrece «Recuperarlos». El borrador queda atado a la revisión de la ficha y no pisa cambios guardados por otra persona.
+2. **El agente toma los cambios en la charla abierta.** Cada conversación guarda la revisión de la ficha con la que empezó (`channel_conversations.context_revision`). Si la ficha cambia, el próximo mensaje arranca una conversación nueva de ElevenLabs con los datos actuales y un resumen de lo último que se habló. Ya no hace falta esperar 15 minutos ni escribir MENU.
+3. **Deploys.** `deploymentId` usa `VERCEL_DEPLOYMENT_ID`: una pestaña vieja se recarga al navegar. Si una acción quedó desfasada, el panel muestra «Hay una versión nueva del panel» con un botón para recargar, y el borrador se recupera. **Pendiente del usuario:** activar *Skew Protection* en Vercel → proyecto → Settings → Advanced (depende del plan), para que esto no pase nunca.
+4. Cambiar de clínica en el selector con cambios sin guardar ahora pide confirmación.
+5. Login con límite: 10 intentos fallidos por origen cada 15 minutos (`login_failures`, solo hash del origen). Si la base no responde, no bloquea.
+6. **Ficha completa al X %** en Inicio y en Reglas, con lo que falta y un enlace a cada dato. El consultorio que entra con su código va directo a Configuración.
+7. En el celular, «Ficha completa» y «Probar el agente» quedan antes del formulario. Después de guardar, la barra ofrece «Probar los cambios».
+8. **Historial de cambios** (`clinic_changes`): quién (Turnia o el nombre del acceso del consultorio), qué sección y cuándo. Se ve en Reglas («Últimos cambios») y en Clínicas («Última edición»).
+- Menores:
+  - zona horaria como lista;
+  - coberturas como etiquetas;
+  - Tareas con pestañas Pendientes/Resueltas y «Resolver sin respuesta» diferenciado;
+  - campañas deshabilitadas con aviso en las demos;
+  - sin emojis en el panel;
+  - sesión y clínica leídas una vez por página.
+- Validación: 171 pruebas, TypeScript, lint y build. Recorrido en Chromium de cada arreglo, sin errores de página.
+
 ## Rediseño del panel y acceso propio del consultorio — 23/10/2026
 
 - **Login sin 404** ([PR #18](https://github.com/axellaban/turniasalud/pull/18), en producción): el login y el cierre de sesión son formularios comunes hacia `/api/panel/login` y `/api/panel/logout`, no Server Actions. Una pestaña abierta antes de un deploy ya no termina en 404. Con la sesión vigente, `/panel/login?next=…` lleva directo al destino. Link fijo: `https://turniasalud.vercel.app/panel/login?next=/panel/clinicas`.
@@ -27,7 +47,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - Guardar, conservar, leer la web o preparar una prueba protege el perfil de la limpieza de demos de siete días (`retained_at`). Conserva `is_demo`: su agenda sigue siendo simulada y no envía avisos ni campañas a pacientes.
 - Las nuevas extracciones guardan en Neon `clinic_imports`: URL, fecha, texto por página y ficha estructurada. Las demos anteriores conservan su ficha pero no tienen archivado el texto original. Se puede leer su web ahora para guardar una nueva referencia; no presentarla como la lectura histórica.
 - «Leer web y revisar propuesta» guarda una propuesta sin sobrescribir contexto. Cada campo se aplica por selección explícita; el reemplazo opcional de catálogo desactiva el anterior y conserva turnos e historial. Una revisión desactualizada o de otra clínica se rechaza. Límite de tres lecturas por clínica/hora.
-- «Probar este perfil» genera un enlace (hoy de 7 días, ver arriba) al canal habilitado para usar la misma clínica y sus correcciones, sin re-scrapear ni crear otra ficha. Telegram requiere tocar Start. La llamada privada de `/demo` también usa el perfil seleccionado y el agente compartido, sin crear agentes en ElevenLabs. Empezar una conversación nueva para usar contexto editado.
+- «Probar este perfil» genera un enlace (hoy de 7 días, ver arriba) al canal habilitado para usar la misma clínica y sus correcciones, sin re-scrapear ni crear otra ficha. Telegram requiere tocar Start. La llamada privada de `/demo` también usa el perfil seleccionado y el agente compartido, sin crear agentes en ElevenLabs. Desde la auditoría del 23/10 el agente toma el contexto editado en el próximo mensaje.
 - Validación local: **161 pruebas**, TypeScript, lint y build correctos con Node 24 y Postgres descartable; APIs externas simuladas. Revisión con Chrome: guardar y recargar, cambiar entre clínicas, aplicar solo dirección y conservar pagos/instrucciones manuales. Migración aditiva en el build de producción; sin `seed.sql`.
 - WAHA, su sesión y servicio, credenciales, webhook y despliegue no se modificaron. Telegram sigue seleccionado. n8n continúa despublicado; Gmail y campañas siguen pospuestos. No se regeneraron audios ni se modificó ElevenLabs ni planes.
 - Publicado por [PR #14](https://github.com/axellaban/turniasalud/pull/14), merge `a8d64bd`. CI y Vercel aprobados; producción [7AGU3CRKJpf4jdT8g9Xd6H3JMuM1](https://vercel.com/labans-projects-c5c64fdc/turniasalud/7AGU3CRKJpf4jdT8g9Xd6H3JMuM1). Comprobación real: panel autenticado con Clínicas y selector, `/api/health` 200 con `database: "ok"`, cuatro fichas y canal Telegram; webhooks WAHA/ElevenLabs sin firma 401.

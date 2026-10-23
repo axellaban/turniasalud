@@ -8,6 +8,7 @@ const ERRORS: Record<string, string> = {
   config: "Falta configurar PANEL_PASSWORD en Vercel.",
   revoked: "Este acceso ya no está habilitado. Pedile un código nuevo a Turnia.",
   unavailable: "No pudimos verificar el código. Probá de nuevo en un momento.",
+  too_many: "Demasiados intentos fallidos. Esperá 15 minutos y volvé a probar.",
 };
 
 export function LoginForm({ next, error }: { next: string; error?: string }) {

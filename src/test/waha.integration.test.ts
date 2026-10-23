@@ -356,7 +356,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const html = renderToStaticMarkup((await page()) as React.ReactElement);
     vi.stubEnv("ELEVENLABS_CHANNEL_SIGNING_SECRET", SIGNING);
     expect(html).toContain("WhatsApp por WAHA");
-    expect(html).toContain("❌ <code class=\"text-xs\">ELEVENLABS_CHANNEL_SIGNING_SECRET</code>");
+    expect(html).toContain("Falta</span></span><code class=\"text-xs\">ELEVENLABS_CHANNEL_SIGNING_SECRET</code>");
     expect(html).toContain("/api/waha/webhook");
     expect(html).toContain("/api/elevenlabs/canal");
     expect(html).not.toContain(API_KEY);

@@ -4,19 +4,19 @@ import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { setTaskStatus } from "../../actions";
-import { Badge, Card, Empty, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
+import { Badge, Card, Empty, PageHeader, StatusBadge, smallButtonClass, Tabs } from "@/components/ui";
 import { ResolveTaskForm } from "./resolve-form";
 
 const TYPE_LABEL: Record<string, string> = {
-  receta: "💊 Receta",
-  consulta_clinica: "🩺 Consulta clínica",
-  resultados: "🧪 Resultados",
-  orden_medica: "📄 Orden médica",
-  administrativo: "🗂️ Administrativo",
-  derivacion_humana: "🙋 Hablar con una persona",
-  urgencia: "🚨 Urgencia",
-  facturacion: "💳 Facturación",
-  otro: "📌 Otro",
+  receta: "Receta",
+  consulta_clinica: "Consulta clínica",
+  resultados: "Resultados",
+  orden_medica: "Orden médica",
+  administrativo: "Administrativo",
+  derivacion_humana: "Hablar con una persona",
+  urgencia: "Urgencia",
+  facturacion: "Facturación",
+  otro: "Otro",
 };
 
 const PRIORITY_ORDER: Record<string, number> = { urgente: 0, alta: 1, normal: 2, baja: 3 };
@@ -46,6 +46,9 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
     where t.clinic_id = ${clinic.id} and ${showResolved ? sql`t.status = 'resuelta'` : sql`t.status <> 'resuelta'`}
     order by t.created_at desc
     limit 200`;
+  const [counts] = await sql<{ open: number; resolved: number }[]>`
+    select count(*) filter (where status <> 'resuelta')::int as open, count(*) filter (where status = 'resuelta')::int as resolved
+    from tasks where clinic_id = ${clinic.id}`;
   const canNotify = Boolean(clinic.templates?.respuesta && clinic.whatsapp_phone_number_id && clinic.elevenlabs_agent_id);
   const rows = [...result].sort(
     (a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9),
@@ -56,12 +59,11 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
       <PageHeader
         title="Tareas"
         description="Lo que el agente no puede resolver solo llega acá, con todo el contexto para no volver a preguntar."
-        actions={
-          <Link href={showResolved ? "/panel/tareas" : "/panel/tareas?ver=resueltas"} className={smallButtonClass}>
-            {showResolved ? "Ver abiertas" : "Ver resueltas"}
-          </Link>
-        }
       />
+      <Tabs current={showResolved ? "/panel/tareas?ver=resueltas" : "/panel/tareas"} items={[
+        { href: "/panel/tareas", label: "Pendientes", count: counts.open },
+        { href: "/panel/tareas?ver=resueltas", label: "Resueltas", count: counts.resolved },
+      ]} />
       {rows.length ? (
         <div className="grid gap-4 md:grid-cols-2">
           {rows.map((t) => (
@@ -102,8 +104,8 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
                         Tomar
                       </button>
                     )}
-                    <button name="status" value="resuelta" className={smallButtonClass}>
-                      Resolver
+                    <button name="status" value="resuelta" className={smallButtonClass} title="Marcarla resuelta sin mandarle nada al paciente">
+                      {t.patients ? "Resolver sin respuesta" : "Resolver"}
                     </button>
                   </form>
                 ) : (
