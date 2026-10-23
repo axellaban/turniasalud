@@ -1,13 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { submitKeepingValues } from "@/components/keep-form";
 import { addScheduleBlock } from "../../actions";
 import { Field, buttonClass, inputClass } from "@/components/ui";
 
 export function ScheduleBlockForm({ professionals, today, clinicId }: { clinicId?: string; professionals: Array<{ id: string; name: string }>; today: string }) {
   const [state, action, pending] = useActionState(addScheduleBlock, undefined);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (state?.ok) form.current?.reset(); }, [state]);
   return (
-    <form action={action} className="grid gap-3 sm:grid-cols-2">
+    <form ref={form} onSubmit={submitKeepingValues(action)} className="grid gap-3 sm:grid-cols-2">
       {clinicId && <input type="hidden" name="clinic_id" value={clinicId} />}
       <Field label="Quién no atiende">
         <select name="professional_id" className={inputClass} defaultValue="">

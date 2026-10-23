@@ -18,7 +18,7 @@ import { getConversacion } from "@/content/conversaciones";
 import { selectMessagingChannel, messagingSettings } from "@/lib/messaging-settings";
 import { connectTelegram, telegramConfigured } from "@/lib/telegram";
 import { missingWahaEnv } from "@/lib/env";
-import { getPanelClinic, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizeWebsite } from "@/lib/demo/website";
 
 const requireSession = requirePanelSession;
@@ -194,6 +194,7 @@ export async function saveClinic(form: FormData) {
       after_hours_instructions: text(form, "after_hours_instructions"),
     })}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
     where id = ${clinic.id}`;
+  await logClinicChange(clinic.id, "Reglas del consultorio");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -213,7 +214,7 @@ export async function saveProfessional(form: FormData) {
   if (!id || !name || !specialty) return;
   const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
   await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Equipo");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -228,7 +229,7 @@ export async function saveAppointmentType(form: FormData) {
   await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${parsePrice(text(form, "price"))},
     instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
     is_first_visit = ${form.get("is_first_visit") === "on"} where id = ${id} and clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -250,7 +251,7 @@ export async function addProfessional(form: FormData) {
       bio: text(form, "bio"),
       accepted_coverages: coverages.length ? coverages : null,
     })}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Equipo");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -260,7 +261,7 @@ export async function toggleProfessional(form: FormData) {
   if (!id) return;
   const clinic = await getPanelClinic(form);
   await sql`update professionals set active = ${form.get("active") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Equipo");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -277,7 +278,7 @@ export async function addSchedule(form: FormData) {
     select p.id, w.weekday, ${start}::time, ${end}::time
     from professionals p, unnest(${weekdays}::smallint[]) as w(weekday)
     where p.id = ${professionalId} and p.clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Horarios");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -290,7 +291,7 @@ export async function deleteSchedule(form: FormData) {
       delete from schedules s using professionals p
       where s.id = ${id} and p.id = s.professional_id and p.clinic_id = ${clinic.id}`;
   }
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Horarios");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -314,7 +315,7 @@ export async function addAppointmentType(form: FormData) {
       recall_months: Number.isFinite(recall) && recall > 0 ? Math.round(recall) : null,
       is_first_visit: form.get("is_first_visit") === "on",
     })}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -331,7 +332,7 @@ export async function setAppointmentTypePrice(form: FormData) {
   if (!id) return;
   const clinic = await getPanelClinic(form);
   await sql`update appointment_types set price = ${parsePrice(text(form, "price"))} where id = ${id} and clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel");
 }
@@ -367,7 +368,7 @@ export async function addScheduleBlock(_prev: FormState | undefined, form: FormD
     where clinic_id = ${clinic.id} and status in ('confirmado', 'pendiente')
       and starts_at < ${endsAt} and ends_at > ${startsAt}
       ${professionalId ? sql`and professional_id = ${professionalId}` : sql``}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Feriados y bloqueos");
   revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");
   return {
@@ -384,7 +385,7 @@ export async function deleteScheduleBlock(form: FormData) {
   if (!id) return;
   const clinic = await getPanelClinic(form);
   await sql`delete from schedule_blocks where id = ${id} and clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Feriados y bloqueos");
   revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");
 }
@@ -395,7 +396,7 @@ export async function toggleAppointmentType(form: FormData) {
   if (!id) return;
   const clinic = await getPanelClinic(form);
   await sql`update appointment_types set active = ${form.get("active") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
-  await touchClinic(clinic.id);
+  await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
 }
 

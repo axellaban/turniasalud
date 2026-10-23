@@ -136,6 +136,18 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await session.handleDemoMessage({ ...input, messageId: "ask", text: "¿Dónde atienden?" });
     expect(JSON.stringify(mocks.agent.mock.calls)).toContain("FAQ corregida guardada");
     expect(JSON.stringify(mocks.agent.mock.calls)).toContain("Instrucción guardada");
+    // Mismo chat, sin cambios en la ficha: sigue la misma conversación del agente.
+    await session.handleDemoMessage({ ...input, messageId: "ask-2", text: "¿Atienden sábados?" });
+    const call = (n: number) => (mocks.agent.mock.calls as unknown as Array<[{ conversationId?: string; dynamicVariables: Record<string, string> }]>).at(n)![0];
+    expect(call(-1).conversationId).toBe("profile-conv");
+    // El consultorio edita la ficha: el próximo mensaje arranca otra conversación con los datos nuevos.
+    expect(await actions.saveClinicWithFeedback({}, form({ clinic_id: a, name: "Clínica Alfa", agent_name: "Ana", faq: "Ahora atendemos sábados" }))).toMatchObject({ ok: true });
+    await session.handleDemoMessage({ ...input, messageId: "ask-3", text: "¿Entonces atienden sábados?" });
+    expect(call(-1).conversationId).toBeUndefined();
+    expect(JSON.stringify(call(-1).dynamicVariables)).toContain("Ahora atendemos sábados");
+    expect(call(-1).dynamicVariables.conversation_context).toContain("Paciente: ¿Atienden sábados?");
+    await session.handleDemoMessage({ ...input, messageId: "ask-4", text: "Gracias" });
+    expect(call(-1).conversationId).toBe("profile-conv");
     // El enlace del perfil sigue sirviendo después de usarlo, también desde otro chat.
     expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:999")).toBe(a);
     expect(await session.handleDemoMessage({ ...input, messageId: "saved-again", text: `Probar perfil de Turnia: ${token}` })).toEqual({ handled: true, status: "eligiendo" });
@@ -224,6 +236,8 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(await actions.saveClinicWithFeedback({}, form({ clinic_id: a, name: "Alfa por el consultorio", agent_name: "Ana" }))).toMatchObject({ ok: true });
     expect((await clinic(a)).name).toBe("Alfa por el consultorio");
     expect((await clinic(b)).name).toBe("Clínica Beta");
+    // Queda registrado quién cambió qué.
+    expect((await sql`select actor, area from clinic_changes where clinic_id = ${a}`)[0]).toMatchObject({ actor: "Dr. Alfa", area: "Reglas del consultorio" });
 
     // Lo del administrador queda cerrado.
     const denied = "redirect:/panel";
@@ -254,6 +268,23 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const login = (await import("@/app/panel/login/page")).default;
     expect(renderToStaticMarkup(await login({ searchParams: Promise.resolve({ error: "revoked" }) } as never))).toContain("ya no está habilitado");
     expect(new URL((await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body }))).headers.get("location")!).pathname).toBe("/panel/login");
+  });
+  it("limita los intentos fallidos de ingreso por origen", async () => {
+    vi.stubEnv("PANEL_PASSWORD", "clave-admin");
+    await sql`delete from login_failures`;
+    const { POST } = await import("@/app/api/panel/login/route");
+    const attempt = async (password: string, ip = "203.0.113.7") => {
+      const body = new FormData(); body.set("password", password); body.set("next", "/panel");
+      const res = await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body, headers: { "x-forwarded-for": `${ip}, 10.0.0.1` } }));
+      return new URL(res.headers.get("location")!);
+    };
+    for (let i = 0; i < 10; i++) expect((await attempt("mala")).searchParams.get("error")).toBe("password");
+    expect((await attempt("clave-admin")).searchParams.get("error")).toBe("too_many");
+    expect((await attempt("clave-admin", "198.51.100.2")).pathname).toBe("/panel");
+    expect(JSON.stringify(await sql`select * from login_failures`)).not.toContain("203.0.113.7");
+    // El consultorio sin destino pedido entra directo a su configuración.
+    const { code } = await clinics.createAccess({}, form({ clinic_id: a }));
+    expect((await attempt(code!, "198.51.100.3")).pathname).toBe("/panel/configuracion");
   });
   it("borrar la clínica borra sus accesos", async () => {
     await clinics.createAccess({}, form({ clinic_id: a }));

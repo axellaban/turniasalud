@@ -3,7 +3,9 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { isConfigured } from "@/lib/env";
 import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } from "@/lib/time";
-import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, Stat, StatusBadge } from "@/components/ui";
+import { Badge, Card, CHANNEL_LABEL, CheckMark, Empty, PageHeader, Stat, StatusBadge } from "@/components/ui";
+import { profileCompleteness } from "@/lib/profile-completeness";
+import { CompletenessCard } from "./completeness-card";
 
 export default async function PanelHome() {
   const configured = isConfigured();
@@ -22,6 +24,7 @@ export default async function PanelHome() {
   }
 
   const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
+  const completeness = await profileCompleteness(clinic);
   const tz = clinic.timezone;
   const now = new Date();
   const since = new Date(now.getTime() - 7 * 86400_000).toISOString();
@@ -115,7 +118,7 @@ export default async function PanelHome() {
           <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
             {checklist.map((c) => (
               <li key={c.label} className={c.done ? "text-brand-700" : "text-brand-950/70"}>
-                {c.done ? "✅" : "⬜"} {c.label}
+                <CheckMark ok={c.done} />{c.label}
               </li>
             ))}
           </ul>
@@ -124,6 +127,8 @@ export default async function PanelHome() {
           </Link>
         </Card>
       )}
+
+      {completeness.percent < 100 && <div className="mb-6"><CompletenessCard {...completeness} /></div>}
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card>
@@ -167,7 +172,7 @@ export default async function PanelHome() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-brand-900/50">Nada urgente. 🎉</p>
+              <p className="text-sm text-brand-900/50">Nada urgente.</p>
             )}
             <Link href="/panel/tareas" className="mt-3 inline-block text-sm text-brand-700 hover:underline">
               Ver tareas

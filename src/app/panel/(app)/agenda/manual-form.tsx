@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { submitKeepingValues } from "@/components/keep-form";
 import { createManualAppointment } from "../../actions";
 import { Field, buttonClass, inputClass } from "@/components/ui";
 
@@ -8,12 +9,15 @@ type Option = { id: string; name: string; specialty: string };
 
 export function ManualAppointmentForm({ defaultDate, professionals, types }: { defaultDate: string; professionals: Option[]; types: Option[] }) {
   const [state, action, pending] = useActionState(createManualAppointment, undefined);
+  const form = useRef<HTMLFormElement>(null);
+  // Turno reservado: se vacía para no reservarlo dos veces. Con error, lo escrito queda.
+  useEffect(() => { if (state?.ok) form.current?.reset(); }, [state]);
   const [typeId, setTypeId] = useState(types[0]?.id ?? "");
   const specialty = types.find((t) => t.id === typeId)?.specialty;
   const pros = professionals.filter((p) => p.specialty === specialty);
 
   return (
-    <form action={action} className="space-y-3">
+    <form ref={form} onSubmit={submitKeepingValues(action)} className="space-y-3">
       <Field label="Celular del paciente">
         <input name="phone" required placeholder="11 5555-0001" className={inputClass} />
       </Field>

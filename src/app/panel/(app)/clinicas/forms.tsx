@@ -1,5 +1,6 @@
 "use client";
 import { useActionState, useEffect } from "react";
+import { submitKeepingValues } from "@/components/keep-form";
 import { useRouter } from "next/navigation";
 import { createClinic, launchProfile, refreshClinic, applyImport, deleteClinic, deleteTemporaryDemos } from "../../clinics-actions";
 import { buttonClass, dangerButtonClass, inputClass, Field, secondaryButtonClass } from "@/components/ui";
@@ -23,7 +24,7 @@ export function DeleteTemporaryDemosButton({ count }: { count: number }) {
 
 export function NewClinicForm() {
   const [state, action, pending] = useActionState(createClinic, {});
-  return <form action={action} className="grid gap-3 sm:grid-cols-2">
+  return <form onSubmit={submitKeepingValues(action)} className="grid gap-3 sm:grid-cols-2">
     <Field label="Nombre de la nueva clínica"><input name="name" required maxLength={120} className={inputClass} /></Field>
     <Field label="Especialidad principal"><input name="specialty" placeholder="Odontología" maxLength={80} className={inputClass} /></Field>
     <Field label="Web (opcional)"><input name="website" placeholder="https://miclinica.com.ar" className={inputClass} /></Field>
@@ -70,7 +71,7 @@ export function ImportReview({ clinicId, importId, revision, rows, catalog }: {
   catalog: string;
 }) {
   const [state, action, pending] = useActionState(applyImport, {});
-  return <form action={action} className="space-y-3">
+  return <form onSubmit={submitKeepingValues(action)} className="space-y-3">
     <input type="hidden" name="clinic_id" value={clinicId} /><input type="hidden" name="import_id" value={importId} /><input type="hidden" name="revision" value={revision} />
     <p className="text-sm text-brand-900/70">Marcá solo los datos que querés aplicar. Urgencias, instrucciones adicionales, formas de pago y conexiones se conservan.</p>
     {rows.map((row) => <label key={row.key} className="block rounded-xl border border-brand-900/10 p-3 text-sm">

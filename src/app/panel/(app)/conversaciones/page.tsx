@@ -45,7 +45,8 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
           <Link
             key={f.key}
             href={f.key ? `/panel/conversaciones?canal=${f.key}` : "/panel/conversaciones"}
-            className={`rounded-full px-3 py-1 text-sm ${
+            aria-current={(canal ?? "") === f.key ? "page" : undefined}
+            className={`rounded-full px-3 py-1 text-sm font-medium ${
               (canal ?? "") === f.key ? "bg-brand-600 text-white" : "bg-white text-brand-800 ring-1 ring-brand-200"
             }`}
           >
@@ -80,8 +81,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
         </Card>
       ) : (
         <Empty>
-          Todavía no hay conversaciones registradas. Aparecen acá cuando termina cada conversación (webhook post-conversación de
-          ElevenLabs).
+          Todavía no hay conversaciones. Cada charla del agente aparece acá cuando termina, con su resumen y resultado.
         </Empty>
       )}
     </>

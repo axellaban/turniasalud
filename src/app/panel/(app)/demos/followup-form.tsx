@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { submitKeepingValues } from "@/components/keep-form";
 import { Field, buttonClass, inputClass } from "@/components/ui";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/leads";
 import { updateLead } from "./actions";
@@ -8,7 +9,7 @@ import { updateLead } from "./actions";
 export function FollowupForm({ id, status, notes }: { id: string; status: LeadStatus; notes: string | null }) {
   const [state, action, pending] = useActionState(updateLead, undefined);
   return (
-    <form action={action} className="space-y-3 border-t border-brand-900/10 pt-4">
+    <form onSubmit={submitKeepingValues(action)} className="space-y-3 border-t border-brand-900/10 pt-4">
       <input type="hidden" name="id" value={id} />
       <Field label="Estado de seguimiento">
         <select name="status" defaultValue={status} className={inputClass}>

@@ -13,9 +13,9 @@ export function PageHeader({ title, description, actions }: { title: string; des
   );
 }
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function Card({ children, className = "", id }: { children: ReactNode; className?: string; id?: string }) {
   // p-0 en className: listas que llegan hasta el borde de la tarjeta.
-  return <div className={`rounded-2xl border border-brand-900/10 bg-white ${/\bp-0\b/.test(className) ? "" : "p-5"} ${className}`}>{children}</div>;
+  return <div id={id} className={`rounded-2xl border border-brand-900/10 bg-white ${/\bp-0\b/.test(className) ? "" : "p-5"} ${className}`}>{children}</div>;
 }
 
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
@@ -107,12 +107,12 @@ export function Notice({ tone = "info", children, className = "" }: { tone?: key
 }
 
 export const CHANNEL_LABEL: Record<string, string> = {
-  whatsapp: "💬 WhatsApp",
-  telegram: "✈️ Telegram",
-  telefono: "📞 Teléfono",
-  web: "🌐 Web",
-  panel: "🖥️ Panel",
-  campana: "📣 Campaña",
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+  telefono: "Teléfono",
+  web: "Web",
+  panel: "Panel",
+  campana: "Campaña",
 };
 
 export const STATUS_TONE: Record<string, keyof typeof TONES> = {
@@ -144,4 +144,18 @@ export const STATUS_TONE: Record<string, keyof typeof TONES> = {
 export function StatusBadge({ value }: { value: string | null | undefined }) {
   if (!value) return null;
   return <Badge tone={STATUS_TONE[value] ?? "gray"}>{value.replace(/_/g, " ")}</Badge>;
+}
+
+/** Listo / falta / opcional, con ícono y texto para lectores de pantalla. */
+export function CheckMark({ ok, optional = false, warn = false }: { ok: boolean; optional?: boolean; warn?: boolean }) {
+  const state = ok ? "Listo" : optional ? "Opcional" : warn ? "Revisar" : "Falta";
+  const tone = ok ? "bg-emerald/15 text-emerald" : optional ? "bg-neutral-100 text-neutral-500" : warn ? "bg-sun-100 text-sun-600" : "bg-red-50 text-red-600";
+  return (
+    <span className={`mr-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-[-2px] ${tone}`} title={state}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5" aria-hidden>
+        <path d={ok ? "M5 12.5l4.5 4.5L19 7.5" : optional ? "M6 12h12" : warn ? "M12 6v7M12 17h.01" : "M7 7l10 10M17 7L7 17"} />
+      </svg>
+      <span className="sr-only">{state}</span>
+    </span>
+  );
 }

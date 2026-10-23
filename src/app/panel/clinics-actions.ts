@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
-import { CLINIC_COOKIE, getPanelClinic, requireAdmin, touchClinic } from "@/lib/panel-clinic";
+import { CLINIC_COOKIE, getPanelClinic, logClinicChange, requireAdmin, touchClinic } from "@/lib/panel-clinic";
 import { createClinicAccess, revokeClinicAccess } from "@/lib/clinic-access";
 import { sessionCookieOptions } from "@/lib/session";
 import { normalizeWebsite } from "@/lib/demo/website";
@@ -107,6 +107,7 @@ export async function applyImport(_previous: FormState, form: FormData): Promise
   if (!isUuid(id) || !Number.isSafeInteger(revision)) return { ok: false, message: "Revisión inválida. Recargá la página." };
   try {
     await applyClinicImport(clinic.id, id, form.getAll("fields").filter((v): v is string => typeof v === "string"), revision);
+    await logClinicChange(clinic.id, "Datos leídos de la web");
     revalidatePath("/panel", "layout");
     return { ok: true, message: "Se aplicaron únicamente los datos elegidos. Las conversaciones nuevas usarán la ficha actualizada." };
   } catch (e) { return { ok: false, message: e instanceof Error ? e.message : "No se pudo aplicar la propuesta." }; }

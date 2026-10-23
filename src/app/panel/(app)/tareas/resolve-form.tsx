@@ -1,14 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
+import { submitKeepingValues } from "@/components/keep-form";
 import { resolveTaskAction } from "../../actions";
 import { smallButtonClass } from "@/components/ui";
 
 /** Resolver un pedido escribiendo la respuesta que le llega al paciente por WhatsApp. */
 export function ResolveTaskForm({ id, canNotify }: { id: string; canNotify: boolean }) {
   const [state, action, pending] = useActionState(resolveTaskAction, undefined);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (state?.ok) form.current?.reset(); }, [state]);
   return (
-    <form action={action} className="mt-3 space-y-2">
+    <form ref={form} onSubmit={submitKeepingValues(action)} className="mt-3 space-y-2">
       <input type="hidden" name="id" value={id} />
       <textarea
         name="response"

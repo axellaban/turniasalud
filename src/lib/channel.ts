@@ -19,6 +19,12 @@ const CAMPAIGN_REPLY_HOURS = 72;
 
 export type TranscriptLine = { role: "user" | "agent"; message: string; at: string };
 
+/** Lo último que se habló, para que el agente siga el hilo al arrancar una conversación nueva. */
+export function recapTranscript(lines: TranscriptLine[], max = 1200): string {
+  const text = lines.slice(-6).map((l) => `${l.role === "user" ? "Paciente" : "Agente"}: ${l.message.replace(/\s+/g, " ").trim()}`).join(" | ");
+  return text.length > max ? `…${text.slice(-max)}` : text;
+}
+
 export type ChannelConversation = {
   id: string;
   channel_revision: number;
@@ -31,6 +37,8 @@ export type ChannelConversation = {
   transcript: TranscriptLine[];
   /** El agente contesta con notas de voz (modo audio de la demo). */
   reply_with_voice: boolean;
+  /** Revisión de la ficha de la clínica con la que arrancó la conversación del agente. */
+  context_revision: number | null;
   last_activity_at: string;
   closed_at: string | null;
   created_at: string;
@@ -110,18 +118,24 @@ export async function forwardToAgent(
     // Dos mensajes seguidos del mismo paciente no pueden abrir dos conversaciones.
     await tx`select pg_advisory_xact_lock(hashtextextended(${`${clinic.id}:${input.phone}`}, 0))`;
     const open = await findOpen(tx, clinic.id, input.phone);
+    // Si la ficha de la clínica cambió durante la charla (alguien editó reglas, horarios o
+    // prestaciones), el agente arranca una conversación nueva con los datos actuales y un
+    // resumen de lo que ya se habló. ElevenLabs fija las variables al empezar cada conversación.
+    const revision = clinic.context_revision ?? null;
+    const stale = Boolean(open?.elevenlabs_conversation_id) && open!.context_revision != null && revision != null && open!.context_revision !== revision;
     await tx`
       update channel_conversations set closed_at = now()
       where clinic_id = ${clinic.id} and phone = ${input.phone} and closed_at is null and id is distinct from ${open?.id ?? null}::uuid`;
 
     vars.conversation_context = open?.context ?? opts.context ?? INBOUND_CONTEXT;
     if (channelForChat(input.chatId) === "telegram") vars.conversation_context += " Canal actual: Telegram. Respondé en texto breve sin Markdown; cuando el usuario elige audio, Turnia convierte tu respuesta con tu voz de ElevenLabs. No pidas un teléfono para identificarlo: patient_phone es su identidad de Telegram.";
+    if (stale && open?.transcript.length) vars.conversation_context += ` La información de la clínica se actualizó durante esta charla: usá la de ahora. Lo último que se habló: ${recapTranscript(open.transcript)}`;
     vars.campaign_id = open?.campaign_id ?? "ninguna";
     const res = await sendChannelMessage({
       messageId: input.messageId,
       text: input.text,
       userIdentifier: input.phone,
-      conversationId: open?.elevenlabs_conversation_id,
+      conversationId: stale ? undefined : open?.elevenlabs_conversation_id,
       dynamicVariables: vars,
     });
 
@@ -130,6 +144,7 @@ export async function forwardToAgent(
       await tx`
         update channel_conversations set
           elevenlabs_conversation_id = ${res.conversation_id},
+          context_revision = ${revision},
           chat_id = ${input.chatId},
           transcript = transcript || ${userLine},
           last_activity_at = now()
@@ -144,13 +159,14 @@ export async function forwardToAgent(
           elevenlabs_conversation_id: res.conversation_id,
           context: opts.context ?? null,
           reply_with_voice: opts.replyWithVoice ?? false,
+          context_revision: revision,
           transcript: userLine,
         })}
         on conflict (elevenlabs_conversation_id) do update set
           closed_at = null, chat_id = excluded.chat_id, last_activity_at = now(),
           transcript = channel_conversations.transcript || excluded.transcript`;
     }
-    return { conversation_id: res.conversation_id, continued: Boolean(open?.elevenlabs_conversation_id) };
+    return { conversation_id: res.conversation_id, continued: Boolean(open?.elevenlabs_conversation_id) && !stale };
   });
 }
 
