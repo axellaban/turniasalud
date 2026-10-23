@@ -8,7 +8,7 @@ import { getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { createCampaign, sendCampaign, CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { resolveTask } from "@/lib/tasks";
-import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/session";
+import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 import { bookAppointment, registerPatient, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
@@ -41,8 +41,7 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
   if (!passwordMatches(String(form.get("password") ?? ""))) return { error: "Contraseña incorrecta." };
   const store = await cookies();
   store.set(SESSION_COOKIE, createSessionToken(), sessionCookieOptions);
-  const next = String(form.get("next") ?? "/panel");
-  redirect(next === "/demo" || next === "/panel" || next.startsWith("/panel/") ? next : "/panel");
+  redirect(safeNext(form.get("next")));
 }
 
 export async function logout() {

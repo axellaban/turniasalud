@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
-import { logout } from "../actions";
 import { ClinicSwitcher } from "./clinic-switcher";
 import { PanelNav } from "./nav";
 
@@ -14,12 +13,12 @@ export default function PanelLayout({ children }: LayoutProps<"/panel">) {
           <Link href="/panel">
             <Logo light />
           </Link>
-          <form action={logout} className="md:hidden">
+          <form method="post" action="/api/panel/logout" className="md:hidden">
             <button className="text-xs text-brand-200">Salir</button>
           </form>
         </div>
         <PanelNav />
-        <form action={logout} className="hidden px-5 py-6 md:block">
+        <form method="post" action="/api/panel/logout" className="hidden px-5 py-6 md:block">
           <button className="text-sm text-brand-200 hover:text-white">Cerrar sesión</button>
         </form>
       </aside>
