@@ -6,13 +6,14 @@ import { AgenteEnVivo } from "./agente-en-vivo";
 
 // El hero usa cada video solo si el archivo está publicado; si no, el póster (y no hay pedidos 404).
 const hay = (archivo: string) => existsSync(join(process.cwd(), "public", "videos", archivo));
-const VIDEOS = { movil: hay("hero-mobile.mp4"), webm: hay("hero.webm"), mp4: hay("hero.mp4") };
+const VIDEOS = { movil: hay("hero-mobile.mp4"), webm: hay("hero.webm"), mp4: hay("hero.mp4"), poster: hay("hero-poster.jpg") };
 
 /**
  * Hero a todo ancho con video de fondo y overlay oscuro a la izquierda, como el de Assort.
  * Sobre el video, el agente «escribe» mensajes sincronizados con cada escena (AgenteEnVivo).
- * Para usar un video, subí `public/videos/hero.mp4` y `hero.webm` (y opcional
- * `hero-mobile.mp4`). Mientras no existan, se ve la foto del póster y los mensajes rotan solos.
+ * El video son cuatro clips de Mixkit (licencia libre, uso comercial; ver PLAN_WEB_ASSORT.md),
+ * uno por mensaje: `hero.mp4`/`hero.webm` y un recorte vertical `hero-mobile.mp4`. Su póster
+ * es el primer cuadro, para que no haya salto. Sin archivos, se ve la foto y los mensajes rotan solos.
  */
 export function HeroVideo() {
   return (
@@ -20,7 +21,7 @@ export function HeroVideo() {
       <video
         id="hero-video"
         className="absolute inset-0 h-full w-full object-cover"
-        poster="/img/hero.jpg"
+        poster={VIDEOS.poster ? "/videos/hero-poster.jpg" : "/img/hero.jpg"}
         autoPlay
         muted
         loop
@@ -57,7 +58,7 @@ export function HeroVideo() {
             <Link href="/probar-demo" className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50">
               Probalo con tu web <Flecha />
             </Link>
-            <Link href="#en-accion" className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10">
+            <Link href="#llamada" className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10">
               Miralo en acción
             </Link>
           </div>

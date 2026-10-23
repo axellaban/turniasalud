@@ -345,7 +345,7 @@ function VarianteEscena({ conversacion, r, pasos }: { conversacion: Conversacion
 
   return (
     <div
-      className="relative overflow-hidden rounded-[28px] px-4 pb-5 pt-7 sm:px-8 lg:flex lg:h-[min(600px,calc(100svh-290px))] lg:min-h-[500px] lg:flex-col lg:px-10 lg:pb-5 lg:pt-7"
+      className="relative overflow-hidden rounded-[28px] px-4 pb-5 pt-7 sm:px-8 lg:flex lg:h-[min(600px,calc(100svh-120px))] lg:min-h-[460px] lg:flex-col lg:px-10 lg:pb-5 lg:pt-7"
       style={{ background: "radial-gradient(130% 95% at 50% 32%, #f6f7ff 0%, #e4e8fd 30%, #b9c6f5 68%, #8fa6ee 100%)" }}
     >
       <p className="text-center text-lg font-medium tracking-tight text-brand-950 sm:text-xl">Escuchá a Sofi en acción</p>
@@ -376,7 +376,7 @@ function VarianteEscena({ conversacion, r, pasos }: { conversacion: Conversacion
             disabled={!disponible}
             aria-label={etiqueta}
             aria-pressed={r.sonando}
-            className={`group relative grid h-28 w-28 place-items-center rounded-full outline-none focus-visible:ring-4 focus-visible:ring-white/90 disabled:cursor-default sm:h-40 sm:w-40 lg:h-48 lg:w-48 ${r.sonando ? "turnia-sonando" : ""}`}
+            className={`group relative grid h-28 w-28 place-items-center rounded-full outline-none focus-visible:ring-4 focus-visible:ring-white/90 disabled:cursor-default sm:h-40 sm:w-40 lg:h-48 lg:w-48 lg:[@media(max-height:760px)]:h-40 lg:[@media(max-height:760px)]:w-40 ${r.sonando ? "turnia-sonando" : ""}`}
           >
             <span aria-hidden="true" className="absolute -inset-12 rounded-full bg-white/55 blur-3xl" />
             {r.sonando && (
