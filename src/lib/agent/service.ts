@@ -21,6 +21,7 @@ export class ToolError extends Error {}
 const ACTIVE = ["confirmado", "pendiente"];
 
 export function sourceFromChannel(channel: string | undefined, phone: string): AppointmentSource {
+  if (phone.startsWith("telegram:")) return "telegram";
   const c = (channel ?? "").toLowerCase();
   if (c === "panel") return "panel";
   // El Custom Channel de ElevenLabs solo se usa para WhatsApp por WAHA.

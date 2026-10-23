@@ -15,6 +15,9 @@ import { normalizePhone } from "@/lib/phone";
 import { addDaysKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
+import { selectMessagingChannel, messagingSettings } from "@/lib/messaging-settings";
+import { connectTelegram, telegramConfigured } from "@/lib/telegram";
+import { missingWahaEnv } from "@/lib/env";
 
 async function requireSession() {
   const store = await cookies();
@@ -68,6 +71,32 @@ export async function setAppointmentStatus(form: FormData) {
 }
 
 export type FormState = { ok?: boolean; message?: string };
+
+export async function setupTelegramChannel(_previous: FormState, _form: FormData): Promise<FormState> {
+  void _previous; void _form;
+  await requireSession();
+  if (!telegramConfigured()) return { ok: false, message: "Falta TELEGRAM_BOT_TOKEN o la conexión del agente en Vercel." };
+  try {
+    await connectTelegram();
+    await sql`update messaging_settings set telegram_ready = true, updated_at = now() where id`;
+    revalidatePath("/panel/configuracion");
+    return { ok: true, message: "Bot conectado. Ahora podés elegir Telegram y guardar el canal." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo conectar Telegram." };
+  }
+}
+
+export async function saveMessagingChannel(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireSession();
+  const channel = form.get("channel");
+  if (channel !== "pausado" && channel !== "telegram" && channel !== "whatsapp") return { ok: false, message: "Elegí un canal válido." };
+  if (channel === "telegram" && (!telegramConfigured() || !(await messagingSettings()).telegram_ready)) return { ok: false, message: "Primero conectá el bot de Telegram." };
+  if (channel === "whatsapp" && missingWahaEnv().length) return { ok: false, message: "Falta la configuración de WhatsApp." };
+  await selectMessagingChannel(channel);
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/probar-demo");
+  return { ok: true, message: channel === "pausado" ? "Turnia quedó pausada en ambos canales." : `Canal guardado: ${channel === "telegram" ? "Telegram" : "WhatsApp"}. El otro canal queda pausado.` };
+}
 
 export async function createManualAppointment(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();

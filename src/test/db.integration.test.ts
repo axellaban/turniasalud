@@ -55,6 +55,7 @@ describe.runIf(url)("integración con Postgres", () => {
     vi.stubEnv("ELEVENLABS_API_KEY", "clave-falsa");
     vi.stubEnv("ELEVENLABS_WEBHOOK_SECRET", "wsec_prueba");
     ({ sql } = await import("@/lib/db"));
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
     service = await import("@/lib/agent/service");
     clinicLib = await import("@/lib/clinic");
     const { createSessionToken } = await import("@/lib/session");

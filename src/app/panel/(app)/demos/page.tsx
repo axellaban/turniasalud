@@ -64,7 +64,7 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
       count(*) filter (where status = 'demo_agendada')::int as agendadas from leads`,
     sql<{ count: number }[]>`select count(*)::int as count from leads ${where}`,
   ]);
-  const activity = await demoActivity(rows.filter((r) => r.source === "demo-whatsapp").map((r) => r.id));
+  const activity = await demoActivity(rows.filter((r) => (r.source === "demo-whatsapp" || r.source === "demo-telegram")).map((r) => r.id));
   const pageUrl = (n: number) => `/panel/demos?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { estado: status } : {}), pagina: String(n) })}`;
 
   return (
@@ -102,16 +102,16 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
             <p className="mt-2 text-xs text-brand-900/50">Recibido: {formatDateTime(lead.created_at, "America/Argentina/Buenos_Aires")}</p>
             <dl className="my-4 grid gap-2 text-sm">
               {lead.email && <div><dt className="font-medium text-brand-900">Email</dt><dd><a href={`mailto:${lead.email}`} className="break-all text-brand-600 underline">{lead.email}</a></dd></div>}
-              {lead.phone && <div><dt className="font-medium text-brand-900">Teléfono / WhatsApp</dt><dd className="break-words">{/^\d{8,15}$/.test(lead.phone) ? <a href={`https://wa.me/${lead.phone}`} className="text-brand-600 underline">+{lead.phone}</a> : lead.phone}</dd></div>}
+              {lead.phone && <div><dt className="font-medium text-brand-900">{lead.source === "demo-telegram" ? "Usuario de Telegram" : "Teléfono / WhatsApp"}</dt><dd className="break-words">{/^\d{8,15}$/.test(lead.phone) ? <a href={`https://wa.me/${lead.phone}`} className="text-brand-600 underline">+{lead.phone}</a> : lead.phone}</dd></div>}
               <div><dt className="font-medium text-brand-900">Especialidad y equipo</dt><dd>{[lead.specialty, lead.size, lead.role].filter(Boolean).join(" · ") || "Sin indicar"}</dd></div>
-              {lead.message && <div><dt className="font-medium text-brand-900">{lead.source === "demo-whatsapp" ? "Demo por WhatsApp" : "Qué busca resolver"}</dt><dd className="whitespace-pre-wrap break-words text-brand-900/75">{lead.message}</dd></div>}
+              {lead.message && <div><dt className="font-medium text-brand-900">{lead.source === "demo-telegram" ? "Demo por Telegram" : lead.source === "demo-whatsapp" ? "Demo por WhatsApp" : "Qué busca resolver"}</dt><dd className="whitespace-pre-wrap break-words text-brand-900/75">{lead.message}</dd></div>}
               {lead.source && <div><dt className="font-medium text-brand-900">Origen</dt><dd className="break-all text-brand-900/60">{lead.source}</dd></div>}
             </dl>
             <DemoDetails sessions={activity.sessions.filter((x) => x.lead_id === lead.id)} conversations={activity.conversations} />
             <FollowupForm id={lead.id} status={lead.status} notes={lead.notes} />
           </Card>
         ))}
-      </div> : <Empty>{q || status ? "No hay pedidos con estos filtros." : "Todavía no hay pedidos de demo. Aparecen acá cuando alguien completa el formulario de la web o prueba la demo por WhatsApp."}</Empty>}
+      </div> : <Empty>{q || status ? "No hay pedidos con estos filtros." : "Todavía no hay pedidos de demo. Aparecen acá cuando alguien completa el formulario de la web o prueba la demo por chat."}</Empty>}
       <nav aria-label="Páginas de pedidos de demo" className="mt-6 flex items-center justify-between gap-3">
         {page > 1 ? <Link href={pageUrl(page - 1)} className={secondaryButtonClass}>Anterior</Link> : <span />}
         <span className="text-sm text-brand-900/60">Página {page}</span>

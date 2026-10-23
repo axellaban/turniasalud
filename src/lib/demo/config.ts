@@ -2,6 +2,8 @@ import "server-only";
 import { sql } from "../db";
 import { missingWahaEnv } from "../env";
 import { wahaOwnNumber } from "../waha";
+import { messagingSettings, type MessagingChannel } from "../messaging-settings";
+import { telegramConfigured } from "../telegram";
 
 // Estado de la demo del lead magnet (/probar-demo): lo usan la landing, el
 // panel y /api/health para saber qué falta, sin mostrar valores secretos.
@@ -26,6 +28,8 @@ export async function demoSchemaReady(): Promise<boolean> {
 }
 
 export type DemoStatusReport = {
+  canal: MessagingChannel;
+  telegram: boolean;
   /** Tablas de la demo creadas en la base. */
   base: boolean;
   /** Hay número de WhatsApp para el botón PROBAR DEMO y WAHA para atenderlo. */
@@ -38,8 +42,11 @@ export type DemoStatusReport = {
 };
 
 export async function demoStatus(): Promise<DemoStatusReport> {
-  const [base, wa] = await Promise.all([demoSchemaReady(), demoWhatsappNumber()]);
+  const settings = await messagingSettings();
+  const [base, wa] = await Promise.all([demoSchemaReady(), settings.active_channel === "whatsapp" ? demoWhatsappNumber() : Promise.resolve({ number: null, source: null })]);
   return {
+    canal: settings.active_channel,
+    telegram: telegramConfigured() && settings.telegram_ready,
     base,
     whatsapp: Boolean(wa.number) && missingWahaEnv().length === 0,
     whatsapp_source: wa.source,

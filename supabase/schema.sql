@@ -391,3 +391,34 @@ alter table demo_sessions add column if not exists call_attempts integer not nul
 create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
 alter table demo_sessions enable row level security;
+
+-- Selector operativo global. Ningún despliegue reactiva WhatsApp automáticamente.
+create table if not exists messaging_settings (
+  id boolean primary key default true check (id),
+  active_channel text not null default 'pausado' check (active_channel in ('pausado', 'telegram', 'whatsapp')),
+  revision integer not null default 0,
+  telegram_ready boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+insert into messaging_settings (id) values (true) on conflict do nothing;
+alter table messaging_settings enable row level security;
+alter table channel_conversations add column if not exists channel_revision integer not null default 0;
+alter table demo_sessions add column if not exists channel_revision integer not null default 0;
+
+-- Token opaco de la landing: conserva la URL sin sobrepasar los 64 caracteres de /start.
+create table if not exists demo_handoffs (
+  token text primary key,
+  website text not null,
+  requester_hash text not null,
+  claimed_by text,
+  expires_at timestamptz not null default now() + interval '15 minutes',
+  created_at timestamptz not null default now()
+);
+create index if not exists demo_handoffs_requester_idx on demo_handoffs (requester_hash, created_at);
+alter table demo_handoffs enable row level security;
+
+alter table conversations drop constraint if exists conversations_channel_check;
+alter table conversations add constraint conversations_channel_check check (channel in ('whatsapp', 'telegram', 'telefono', 'web'));
+
+alter table appointments drop constraint if exists appointments_source_check;
+alter table appointments add constraint appointments_source_check check (source in ('whatsapp', 'telegram', 'telefono', 'web', 'panel', 'campana'));

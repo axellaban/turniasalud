@@ -10,14 +10,14 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as { token?: string };
   const found = await sessionForCallToken(String(body.token ?? ""));
-  if (!found) return NextResponse.json({ error: "Este link ya venció. Pedí la demo de nuevo por WhatsApp." }, { status: 404 });
+  if (!found) return NextResponse.json({ error: "Este link ya venció. Pedí la demo de nuevo desde el chat." }, { status: 404 });
   let reserved = false;
   try {
     const main = await getClinic();
     if (!main.elevenlabs_agent_id) return NextResponse.json({ error: "La demo por voz todavía no está disponible." }, { status: 409 });
     reserved = await reserveDemoCall(found.session.id);
     if (!reserved) return NextResponse.json(
-      { error: "Ya usaste las 3 llamadas de esta demo. Volvé a WhatsApp y escribí MENU para probar chat o audio." },
+      { error: "Ya usaste las 3 llamadas de esta demo. Volvé al chat y escribí MENU para probar chat o audio." },
       { status: 429, headers: { "Cache-Control": "no-store" } },
     );
     const [token, dynamicVariables] = await Promise.all([

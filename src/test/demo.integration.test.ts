@@ -155,6 +155,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     vi.stubEnv("ELEVENLABS_CHANNEL_SIGNING_SECRET", SIGNING);
     vi.stubGlobal("fetch", vi.fn(fakeFetch));
     ({ sql } = await import("@/lib/db"));
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
     await sql`update clinics set elevenlabs_agent_id = 'agent_test', whatsapp_provider = 'waha' where id = ${MAIN}`;
     inbound = (await import("@/app/api/waha/webhook/route")).POST;
     reply = (await import("@/app/api/elevenlabs/canal/route")).POST;
@@ -323,12 +324,12 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
 
     const health = await (await import("@/app/api/health/route")).GET();
     expect(health.status).toBe(200);
-    expect((await health.json()).demo).toEqual({ base: true, whatsapp: true, whatsapp_source: "waha", claude: true, llamada_telefonica: false });
+    expect((await health.json()).demo).toEqual({ canal: "whatsapp", telegram: false, base: true, whatsapp: true, whatsapp_source: "waha", claude: true, llamada_telefonica: false });
 
     // Sin WAHA, el botón no se ofrece (nadie contestaría).
     vi.stubEnv("WAHA_API_KEY", "");
     const off = renderToStaticMarkup((await Landing()) as React.ReactElement);
-    expect(off).toContain("se habilita en breve");
+    expect(off).toContain("La demo está pausada");
     vi.stubEnv("WAHA_API_KEY", "waha-key");
   });
 

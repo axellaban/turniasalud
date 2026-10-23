@@ -4,7 +4,8 @@ import { INBOUND_CONTEXT, buildDynamicVariables, findPatientByPhone, getClinic }
 import { agentVoiceId, sendChannelMessage, textToSpeech } from "./elevenlabs";
 import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
-import { wahaSendText, wahaSendVoice } from "./waha";
+import { sendChatText, sendChatVoice } from "./messaging";
+import { channelForChat, chatIsActive, requireActiveChannel, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
 
 // Conversaciones de WhatsApp por WAHA + Custom Channel de ElevenLabs.
@@ -20,6 +21,7 @@ export type TranscriptLine = { role: "user" | "agent"; message: string; at: stri
 
 export type ChannelConversation = {
   id: string;
+  channel_revision: number;
   clinic_id: string;
   phone: string;
   chat_id: string;
@@ -73,12 +75,14 @@ export async function registerOutbound(
   clinicId: string,
   msg: { phone: string; chatId: string; text: string; context: string; campaignId?: string },
 ): Promise<void> {
+  const settings = await requireActiveChannel(channelForChat(msg.chatId));
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${`${clinicId}:${msg.phone}`}, 0))`;
     await tx`update channel_conversations set closed_at = now() where clinic_id = ${clinicId} and phone = ${msg.phone} and closed_at is null`;
     await tx`
       insert into channel_conversations ${tx({
         clinic_id: clinicId,
+        channel_revision: settings.revision,
         phone: msg.phone,
         chat_id: msg.chatId,
         campaign_id: msg.campaignId ?? null,
@@ -99,6 +103,7 @@ export async function forwardToAgent(
   input: { messageId: string; chatId: string; phone: string; text: string },
   opts: { context?: string; replyWithVoice?: boolean } = {},
 ): Promise<{ conversation_id: string; continued: boolean }> {
+  const settings = await requireActiveChannel(channelForChat(input.chatId));
   // Fuera de la transacción: son varias consultas y no conviene retener la conexión.
   const vars = await buildDynamicVariables(clinic, input.phone);
   return sql.begin(async (tx) => {
@@ -110,6 +115,7 @@ export async function forwardToAgent(
       where clinic_id = ${clinic.id} and phone = ${input.phone} and closed_at is null and id is distinct from ${open?.id ?? null}::uuid`;
 
     vars.conversation_context = open?.context ?? opts.context ?? INBOUND_CONTEXT;
+    if (channelForChat(input.chatId) === "telegram") vars.conversation_context += " Canal actual: Telegram. Respondé en texto breve sin Markdown; cuando el usuario elige audio, Turnia convierte tu respuesta con tu voz de ElevenLabs. No pidas un teléfono para identificarlo: patient_phone es su identidad de Telegram.";
     vars.campaign_id = open?.campaign_id ?? "ninguna";
     const res = await sendChannelMessage({
       messageId: input.messageId,
@@ -132,6 +138,7 @@ export async function forwardToAgent(
       await tx`
         insert into channel_conversations ${tx({
           clinic_id: clinic.id,
+          channel_revision: settings.revision,
           phone: input.phone,
           chat_id: input.chatId,
           elevenlabs_conversation_id: res.conversation_id,
@@ -191,7 +198,7 @@ export const FAILED_REPLY = "Perdón, tuve un problema para responderte. ¿Me lo
 
 export type ReplyOutcome =
   | { status: "unknown_conversation" }
-  | { status: "duplicate" }
+  | { status: "duplicate" | "inactive" }
   | { status: "send_failed"; error: string }
   | { status: "sent" | "empty"; ended: boolean };
 
@@ -200,6 +207,8 @@ export async function handleReply(reply: ChannelReply): Promise<ReplyOutcome> {
     select * from channel_conversations where elevenlabs_conversation_id = ${reply.conversation_id}`;
   // Puede llegar antes de que terminemos de guardar la conversación: un 409 hace que ElevenLabs reintente.
   if (!conv) return { status: "unknown_conversation" };
+
+  if (conv.closed_at || !(await chatIsActive(conv.chat_id, conv.channel_revision))) return { status: "inactive" };
 
   const { text: agentText, ended, responseIds } = summarizeReply(reply);
   const ids = [...(reply.user_message_ids ?? [])].sort();
@@ -213,8 +222,9 @@ export async function handleReply(reply: ChannelReply): Promise<ReplyOutcome> {
   if (text) {
     try {
       if (conv.reply_with_voice && !failed) await sendVoiceReply(conv, text);
-      else await wahaSendText(conv.chat_id, text);
+      else await sendChatText(conv.chat_id, text);
     } catch (e) {
+      if (e instanceof ChannelPausedError) return { status: "inactive" };
       await releaseEvent(key);
       return { status: "send_failed", error: e instanceof Error ? e.message : String(e) };
     }
@@ -251,11 +261,14 @@ async function sendVoiceReply(conv: ChannelConversation, text: string): Promise<
     const voiceId = await replyVoiceId();
     if (!voiceId) throw new Error("no hay voz configurada");
     const spoken = text.replace(/[*_~`]/g, "").replace(/https?:\/\/\S+/g, "el link que te escribo");
-    await wahaSendVoice(conv.chat_id, await textToSpeech(spoken, voiceId));
-    if (/https?:\/\//.test(text)) await wahaSendText(conv.chat_id, text);
+    const audio = await textToSpeech(spoken, voiceId);
+    if (!(await chatIsActive(conv.chat_id, conv.channel_revision))) throw new ChannelPausedError();
+    await sendChatVoice(conv.chat_id, audio);
+    if (/https?:\/\//.test(text)) await sendChatText(conv.chat_id, text);
   } catch (e) {
+    if (e instanceof ChannelPausedError) throw e;
     console.error("Demo: no se pudo mandar la nota de voz; va como texto", e instanceof Error ? e.message : e);
-    await wahaSendText(conv.chat_id, text);
+    await sendChatText(conv.chat_id, text);
   }
 }
 
@@ -278,7 +291,7 @@ async function savePanelConversation(conv: ChannelConversation, ended: boolean):
     patient_id: patient?.id ?? null,
     campaign_id: conv.campaign_id,
     elevenlabs_conversation_id: conv.elevenlabs_conversation_id,
-    channel: "whatsapp",
+    channel: channelForChat(conv.chat_id),
     direction,
     started_at: conv.created_at,
     status: ended ? "done" : "in-progress",
@@ -300,7 +313,7 @@ async function savePanelConversation(conv: ChannelConversation, ended: boolean):
     await notifyN8n("conversacion.finalizada", {
       clinic_id: conv.clinic_id,
       conversation_id: conv.elevenlabs_conversation_id,
-      channel: "whatsapp",
+      channel: channelForChat(conv.chat_id),
       patient: patient ? { id: patient.id, name: patient.full_name, phone: patient.phone } : null,
       summary: null,
       intent: null,

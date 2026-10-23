@@ -63,6 +63,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 
 export const CHANNEL_LABEL: Record<string, string> = {
   whatsapp: "💬 WhatsApp",
+  telegram: "✈️ Telegram",
   telefono: "📞 Teléfono",
   web: "🌐 Web",
   panel: "🖥️ Panel",

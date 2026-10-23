@@ -79,7 +79,7 @@ export type Patient = {
 };
 
 export type AppointmentStatus = "confirmado" | "pendiente" | "cancelado" | "ausente" | "atendido" | "reprogramado";
-export type AppointmentSource = "whatsapp" | "telefono" | "web" | "panel" | "campana";
+export type AppointmentSource = "whatsapp" | "telegram" | "telefono" | "web" | "panel" | "campana";
 
 export type Appointment = {
   id: string;
@@ -106,7 +106,7 @@ export type Conversation = {
   patient_id: string | null;
   campaign_id: string | null;
   elevenlabs_conversation_id: string | null;
-  channel: "whatsapp" | "telefono" | "web";
+  channel: "whatsapp" | "telegram" | "telefono" | "web";
   direction: "entrante" | "saliente";
   started_at: string;
   duration_secs: number | null;
