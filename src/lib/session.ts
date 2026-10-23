@@ -56,3 +56,9 @@ export const sessionCookieOptions = {
   path: "/",
   maxAge: MAX_AGE_SECS,
 };
+
+/** Destino después de ingresar: solo rutas propias del panel o la demo. */
+export function safeNext(value: unknown): string {
+  const next = typeof value === "string" ? value : "";
+  return next === "/demo" || next === "/panel" || (next.startsWith("/panel/") && !next.startsWith("/panel/login")) ? next : "/panel";
+}
