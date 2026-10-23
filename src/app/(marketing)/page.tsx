@@ -87,7 +87,8 @@ export default function Home() {
 
       <section id="en-accion" className="mx-auto max-w-[1100px] scroll-mt-24 px-4 pb-4 pt-10 sm:px-6">
         <Titulo linea1="Plataforma de agentes de IA" linea2="del primer mensaje al seguimiento" />
-        <div className="mt-8">
+        {/* La llamada ocupa una pantalla: «Miralo en acción» baja directo a esta tarjeta. */}
+        <div id="llamada" className="mt-8 scroll-mt-24">
           {demo ? (
             <ReproductorDemo conversacion={demo} variante="escena" pasos={ESCENA_HOME} />
           ) : (

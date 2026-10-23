@@ -12,9 +12,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Antes de trabajar en este repo leé, en este orden:
 
-0. [`ESTADO_Y_PRIORIDADES.md`](ESTADO_Y_PRIORIDADES.md): cierre operativo más reciente, pruebas en producción y próximos pasos; prevalece sobre el registro histórico.
-1. [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md): estado real de Vercel, Neon, ElevenLabs y n8n (el bloqueo `jwk not found` ya está resuelto).
-2. [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md): WhatsApp por WAHA + Custom Channel de ElevenLabs. **Código hecho**; falta conectarlo con el chip y las variables del usuario y probarlo en vivo.
-3. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): web pública copycat de assorthealth.com (**hecha**, con su key visual). Los siete audios ya están generados; falta el video propio del hero.
-4. [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md): demo instantánea `/probar-demo` (web del interesado → WhatsApp → llamada, audio o chat). **Código hecho**; se prueba en vivo cuando WAHA esté conectado.
-5. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
+0. [`PENDIENTES.md`](PENDIENTES.md): **todo lo que falta, por prioridad, y las reglas que no se rompen.** Empezá por acá.
+1. [`ESTADO_Y_PRIORIDADES.md`](ESTADO_Y_PRIORIDADES.md): cierre operativo más reciente, pruebas en producción y próximos pasos; prevalece sobre el registro histórico.
+2. [`TRASPASO_CONFIGURACION.md`](TRASPASO_CONFIGURACION.md): estado real de Vercel, Neon, ElevenLabs y n8n (el bloqueo `jwk not found` ya está resuelto).
+3. [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md): WhatsApp por WAHA + Custom Channel de ElevenLabs. **Código hecho**; falta conectarlo con el chip y las variables del usuario y probarlo en vivo.
+4. [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md): web pública copycat de assorthealth.com (**hecha**, con su key visual). Los siete audios ya están generados y el video del hero está publicado (clips de stock con licencia).
+5. [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md): demo instantánea `/probar-demo` (web del interesado → WhatsApp → llamada, audio o chat). **Código hecho**; se prueba en vivo cuando WAHA esté conectado.
+6. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.

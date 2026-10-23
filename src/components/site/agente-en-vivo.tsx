@@ -4,19 +4,19 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * Mensajes del agente que se escriben sobre el video del hero, sincronizados con
- * el momento del video (cada escena corresponde a otra persona en pantalla).
+ * el momento del video: cada escena es otra persona (clips de 8 s con fundido de 0,6 s).
  * Sin video (o si no arranca), rotan solos sobre la foto.
  */
 const ESCENAS = [
-  { en: 1.0, texto: "Sra. García, su tratamiento de inyecciones requiere una visita cada 4 semanas. Ya va por el día 26. ¿Le confirmo el jueves a las 9:30?" },
-  { en: 8.0, texto: "Veo que la semana pasada estuvo en nuestra guardia. El alta indica un control dentro de los 7 días y tengo un turno mañana con la Dra. Lin. ¿Se lo reservo?" },
-  { en: 15.5, texto: "El Dr. Torres atiende hombro. Para el dolor de rodilla, su derivación corresponde al equipo de la Dra. Paz. Tengo el jueves a las 14:15." },
-  { en: 23.5, texto: "Acabo de recibir su derivación a otorrino. Ya cargué su ficha, verifiqué su cobertura de OSDE y que el profesional está en cartilla. El Dr. Ramírez tiene el lunes a las 10." },
+  { en: 0.3, texto: "Sra. García, su tratamiento de inyecciones requiere una visita cada 4 semanas. Ya va por el día 26. ¿Le confirmo el jueves a las 9:30?" },
+  { en: 7.7, texto: "Veo que la semana pasada estuvo en nuestra guardia. El alta indica un control dentro de los 7 días y tengo un turno mañana con la Dra. Lin. ¿Se lo reservo?" },
+  { en: 15.1, texto: "El Dr. Torres atiende hombro. Para el dolor de rodilla, su derivación corresponde al equipo de la Dra. Paz. Tengo el jueves a las 14:15." },
+  { en: 22.5, texto: "Acabo de recibir su derivación a otorrino. Ya cargué su ficha, verifiqué su cobertura de OSDE y que el profesional está en cartilla. El Dr. Ramírez tiene el lunes a las 10." },
 ];
 const VELOCIDAD_MS = 20;
 const SALIDA_MS = 450;
 /** Sin video: tiempo entre escenas. */
-const CICLO_MS = 7500;
+const CICLO_MS = 7400;
 
 export function AgenteEnVivo({ videoId }: { videoId: string }) {
   const [escena, setEscena] = useState<number | null>(null);
@@ -52,7 +52,10 @@ export function AgenteEnVivo({ videoId }: { videoId: string }) {
       reloj = window.setInterval(() => { n = (n + 1) % ESCENAS.length; mostrar(n); }, CICLO_MS);
     };
     const tieneVideo = Boolean(video && video.querySelector("source") && video.networkState !== HTMLMediaElement.NETWORK_NO_SOURCE);
-    if (tieneVideo) {
+    // Con «reducir movimiento», el video queda quieto en su primer cuadro y los mensajes rotan solos.
+    const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (quieto) video?.pause();
+    if (tieneVideo && !quieto) {
       raf = requestAnimationFrame(seguirVideo);
       // Si en 2 segundos el video no arrancó (sin archivo, ahorro de datos), rotan solos.
       timers.current.push(window.setTimeout(() => { if (!video || video.paused || video.readyState < 2) { cancelAnimationFrame(raf); usarReloj(); } }, 2000));

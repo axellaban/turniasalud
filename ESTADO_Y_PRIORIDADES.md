@@ -1,6 +1,6 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
+Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
 ## Guardar prestación y profesional — 23/10/2026
 
@@ -8,11 +8,13 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - Probado en navegador (precio inválido → error y valores intactos; precio válido → guardado, se cierra y persiste al recargar) y con test de integración.
 - Si alguien tenía el panel abierto durante un deploy, conviene recargar una vez.
 
-## Home: hero con mensajes del agente y llamada en una pantalla — 23/10/2026
+## Home: video del hero y llamada en una pantalla — 23/10/2026
 
-- **Hero**: sobre el fondo, el agente «escribe» cuatro mensajes en español adaptados a Argentina (guardia, derivación, OSDE, cartilla), con onda de voz y salida suave. Es la misma secuencia y los mismos tiempos que la home de Assort (segundos 1, 8, 15,5 y 23,5 del video). Con video, se sincroniza con su reproducción; sin video, rota cada 7,5 s sobre la foto. Respeta «reducir movimiento».
-- **El video de fondo todavía no está publicado.** El archivo que pasó el usuario es el video del hero de Assort Health (de su CDN). Usarlo en Turnia implica usar material con derechos de un competidor, así que no se subió: queda pendiente que el usuario decida. Para activarlo alcanza con subir `public/videos/hero.mp4` y `hero.webm` (opcional `hero-mobile.mp4`). El código detecta cada archivo y no pide los que no están.
-- **«Escuchá a Sofi en acción»** (variante `escena`, datos en `src/content/escena-home.ts`): entra en una pantalla de escritorio. Al centro va el orbe con play. A la izquierda, Sofi con su objetivo y lo que dice; a la derecha, el paciente con lo que dice y los datos que el agente detecta (DNI, cobertura, turno, receta). El texto se escribe al ritmo del audio real, con los segmentos de `home.json`. Debajo están la barra de progreso, el play y la transcripción completa desplegable.
+- **Video del hero publicado** (`public/videos/`): cuatro clips de Mixkit con licencia libre para uso comercial, uno por mensaje del agente, con fundido entre personas. Hay versión de escritorio (mp4 y webm, 1080p, ~4 y ~2 MB), un recorte vertical para el celular y un póster con el primer cuadro. No se usó el video de Assort (tiene derechos). Detalle de los clips y cómo reemplazarlos en [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md).
+- **Celular igual que Assort**: el hero ocupa toda la pantalla, con la cara arriba y el texto abajo sobre un velo que oscurece hacia abajo. La barra queda transparente sobre el video, con el logo en blanco y solo el menú; al bajar vuelve a la barra blanca con «Pedí una demo». El menú del celular suma «Probá la demo con tu web» y «Pedí una demo». Revisado en 390×844 y 375×667.
+- **Mensajes sincronizados** con cada persona (0,3 / 7,7 / 15,1 / 22,5 s, en `agente-en-vivo.tsx`). Con «reducir movimiento», el video queda quieto y los mensajes rotan solos.
+- **«Escuchá a Sofi en acción»** (variante `escena`, datos en `src/content/escena-home.ts`): Sofi a la izquierda con su objetivo, el paciente a la derecha con los datos que detecta el agente, el orbe al centro y el texto al ritmo del audio real. «Miralo en acción» baja directo a la tarjeta (`#llamada`), que entra completa en la pantalla: medido en 1440×900, 1366×650, 1280×720, 1024×700 y 390×844. Audio comprobado en producción.
+- **Skew Protection de Vercel**: no está disponible en el plan actual (Hobby) y no hace falta contratarlo. El panel ya cubre el caso: `deploymentId`, aviso «Hay una versión nueva del panel» con recarga y borrador recuperado.
 
 ## Límite de demos por persona — 23/10/2026
 
@@ -44,7 +46,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
   - 175 pruebas (incluye las del proxy, Origin y contraseña rotada), TypeScript, lint y build.
   - Recorrido completo en Chromium con 31 comprobaciones, como administrador en escritorio y como consultorio en celular, dos veces seguidas y sin errores de página. Cubre crear clínica, completar la ficha al 100 %, equipo, prestaciones, bloqueos con error y con éxito, turno manual, código y WhatsApp, cambio de clínica, Sistema, Tareas, ingreso del consultorio, bloqueo de secciones, cierre de sesión y el historial visto por el administrador.
 - **Pendiente del usuario** (no se puede hacer desde el código):
-  - activar Skew Protection en Vercel → Settings → Advanced;
+  - ~~activar Skew Protection~~: no disponible en el plan Hobby; queda cubierto por el aviso de versión nueva;
   - rotar las credenciales que quedaron expuestas en el diagnóstico de WAHA (ver la sección del 23/10).
 
 ## Auditoría del panel: arreglos — 23/10/2026
@@ -52,7 +54,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
 Hecho por prioridad después de auditar el flujo completo (código y navegador):
 1. **No se pierde lo escrito.** Antes, si guardar fallaba (web o zona horaria mal escritas), React vaciaba el formulario. Los formularios del panel se envían ahora sin ese reseteo automático. Las reglas, además, guardan un **borrador en el navegador**: después de una recarga, un corte o un deploy, se ofrece «Recuperarlos». El borrador queda atado a la revisión de la ficha y no pisa cambios guardados por otra persona.
 2. **El agente toma los cambios en la charla abierta.** Cada conversación guarda la revisión de la ficha con la que empezó (`channel_conversations.context_revision`). Si la ficha cambia, el próximo mensaje arranca una conversación nueva de ElevenLabs con los datos actuales y un resumen de lo último que se habló. Ya no hace falta esperar 15 minutos ni escribir MENU.
-3. **Deploys.** `deploymentId` usa `VERCEL_DEPLOYMENT_ID`: una pestaña vieja se recarga al navegar. Si una acción quedó desfasada, el panel muestra «Hay una versión nueva del panel» con un botón para recargar, y el borrador se recupera. **Pendiente del usuario:** activar *Skew Protection* en Vercel → proyecto → Settings → Advanced (depende del plan), para que esto no pase nunca.
+3. **Deploys.** `deploymentId` usa `VERCEL_DEPLOYMENT_ID`: una pestaña vieja se recarga al navegar. Si una acción quedó desfasada, el panel muestra «Hay una versión nueva del panel» con un botón para recargar, y el borrador se recupera. *Skew Protection* requiere plan Pro de Vercel; con Hobby no se activa y no se contrata.
 4. Cambiar de clínica en el selector con cambios sin guardar ahora pide confirmación.
 5. Login con límite: 10 intentos fallidos por origen cada 15 minutos (`login_failures`, solo hash del origen). Si la base no responde, no bloquea.
 6. **Ficha completa al X %** en Inicio y en Reglas, con lo que falta y un enlace a cada dato. El consultorio que entra con su código va directo a Configuración.
@@ -221,7 +223,7 @@ Estas confirmaciones no se pueden suplir con la instrucción de avanzar mientras
 - Hacer una conversación hablada completa con una persona, comprobar una herramienta y el registro final; el circuito de reserva por chat ya tuvo una prueba anterior exitosa.
 - Revisar acceso, consentimiento, conservación de datos y los textos de privacidad antes de usar pacientes reales. No activar Zero Retention a ciegas: el plan de Custom Channel documenta incompatibilidad.
 - Configurar derivación telefónica si se elige teléfono de recepción. Agendas externas, roles por clínica, admisión digital y cobranzas son ampliaciones posteriores.
-- Video propio del hero, casos reales y precios: pendientes de contenido; la web usa una foto de respaldo.
+- Casos reales y precios: pendientes de contenido. El video del hero ya está publicado con clips de stock con licencia; se puede reemplazar por uno propio.
 - Dependencias de desarrollo: `npm audit` reportó cinco entradas de severidad alta en la cadena de ESLint/fast-glob/micromatch/braces. `braces` 3.0.3 sigue siendo la última versión consultada; no se aplicó el `--force` que propone bajar `eslint-config-next` a Next 14. No forma parte del servidor publicado. Revisar al salir una corrección compatible.
 
 ## Continuidad sin computer use

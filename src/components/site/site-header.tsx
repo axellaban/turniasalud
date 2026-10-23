@@ -112,6 +112,16 @@ export function SiteHeader() {
     setMovil(false);
   }
 
+  // En la home, arriba de todo y en el celular, la barra es transparente sobre el video (como Assort).
+  const [arriba, setArriba] = useState(true);
+  useEffect(() => {
+    const onScroll = () => setArriba(window.scrollY < 24);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  const sobreVideo = pathname === "/" && arriba && !movil;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (setAbierto(null), setMovil(false));
     window.addEventListener("keydown", onKey);
@@ -140,11 +150,14 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 px-3 pt-3 sm:px-6">
       <nav
-        className="relative mx-auto flex max-w-[1240px] items-center justify-between gap-4 rounded-xl bg-white/95 px-4 py-2.5 shadow-[0_8px_30px_rgb(8_24_63/0.08)] ring-1 ring-brand-950/5 backdrop-blur"
+        className={`relative mx-auto flex max-w-[1240px] items-center justify-between gap-4 rounded-xl bg-white/95 px-4 py-2.5 shadow-[0_8px_30px_rgb(8_24_63/0.08)] ring-1 ring-brand-950/5 backdrop-blur transition-[background-color,box-shadow] duration-300 ${
+          sobreVideo ? "max-lg:bg-transparent max-lg:shadow-none max-lg:ring-0 max-lg:backdrop-blur-none" : ""
+        }`}
         aria-label="Principal"
       >
         <Link href="/" aria-label="Turnia Salud, inicio" className="shrink-0">
-          <Logo />
+          <span className="lg:hidden"><Logo light={sobreVideo} /></span>
+          <span className="hidden lg:inline"><Logo /></span>
         </Link>
 
         <ul className="hidden items-center gap-1 lg:flex">
@@ -178,12 +191,12 @@ export function SiteHeader() {
           <Link href="/panel" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-950/80 hover:text-brand-700 sm:inline-block">
             Ingresar
           </Link>
-          <Link href="/pedi-una-demo" className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700">
+          <Link href="/pedi-una-demo" className={`rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 ${sobreVideo ? "max-lg:hidden" : ""}`}>
             Pedí una demo
           </Link>
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-lg text-brand-950 hover:bg-brand-50 lg:hidden"
+            className={`grid h-10 w-10 place-items-center rounded-lg lg:hidden ${sobreVideo ? "text-white hover:bg-white/10" : "text-brand-950 hover:bg-brand-50"}`}
             aria-label={movil ? "Cerrar menú" : "Abrir menú"}
             aria-expanded={movil}
             onClick={() => setMovil(!movil)}
@@ -244,6 +257,16 @@ export function SiteHeader() {
             <li>
               <Link href="/escucha-a-nuestros-agentes" className="block py-3 font-medium text-brand-950">
                 Escuchá a nuestros agentes
+              </Link>
+            </li>
+            <li>
+              <Link href="/probar-demo" className="block py-3 font-medium text-brand-700">
+                Probá la demo con tu web
+              </Link>
+            </li>
+            <li>
+              <Link href="/pedi-una-demo" className="block py-3 font-medium text-brand-950">
+                Pedí una demo
               </Link>
             </li>
             <li>
