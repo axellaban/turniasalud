@@ -2,6 +2,11 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Direcciones mal escritas y verificación del guardado — 23/10/2026
+
+- `/panel/clinica` (en singular) daba el 404 negro de Next. Ahora las variantes habituales redirigen a la sección correcta: `clinica`, `demo`, `paciente`, `conversacion`, `chats`, `tarea`, `campana`, `config`, `inicio`, con o sin tilde. Las direcciones inexistentes muestran una página propia con «Ir al panel». Después del login, `next` solo acepta secciones reales; si no, va a Inicio.
+- **Guardado verificado contra el build de producción** (`next start`). Se completaron los 14 campos de las reglas más zona horaria y coberturas (quitar y agregar), se guardó en ~0,1 s, se recargó y cada valor persistió. La web se guarda normalizada, con «/» final. También persistieron: editar profesional, quitar horario, desactivar/activar, editar precio y duración, quitar bloqueo y el historial de cada sección. El recorrido completo de 31 comprobaciones también pasó sobre ese build.
+
 ## Segunda auditoría del panel — 23/10/2026
 
 - **Seguridad**

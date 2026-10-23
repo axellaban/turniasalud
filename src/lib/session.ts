@@ -92,10 +92,14 @@ export const sessionCookieOptions = {
   maxAge: MAX_AGE_SECS,
 };
 
-/** Destino después de ingresar: solo rutas propias del panel o la demo. */
+const PANEL_SECTIONS = ["agenda", "conversaciones", "tareas", "pacientes", "campanas", "configuracion", "clinicas", "demos", "sistema"];
+
+/** Destino después de ingresar: una sección real del panel o la demo; si no, el inicio. */
 export function safeNext(value: unknown): string {
   const next = typeof value === "string" ? value : "";
-  return next === "/demo" || next === "/panel" || (next.startsWith("/panel/") && !next.startsWith("/panel/login")) ? next : "/panel";
+  if (next === "/demo" || next === "/panel") return next;
+  const section = /^\/panel\/([a-z]+)(?:[/?]|$)/.exec(next)?.[1];
+  return section && PANEL_SECTIONS.includes(section) ? next : "/panel";
 }
 
 /**

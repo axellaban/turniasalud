@@ -8,6 +8,19 @@ const nextConfig: NextConfig = {
   // se recarga entera al navegar, en lugar de llamar a acciones que ya no existen.
   // Localmente y en CI no hay id y no cambia nada.
   deploymentId: process.env.VERCEL_DEPLOYMENT_ID || undefined,
+  // Direcciones parecidas a las del panel (singular, sin tilde, abreviadas) llevan a la
+  // página correcta en lugar de un 404. Son temporales (307): no quedan cacheadas.
+  async redirects() {
+    const alias: Array<[string, string]> = [
+      ["clinica", "clinicas"], ["clínica", "clinicas"], ["clínicas", "clinicas"],
+      ["demo", "demos"], ["pedidos", "demos"],
+      ["paciente", "pacientes"], ["conversacion", "conversaciones"], ["conversación", "conversaciones"], ["chats", "conversaciones"],
+      ["tarea", "tareas"], ["campana", "campanas"], ["campaña", "campanas"], ["campañas", "campanas"],
+      ["config", "configuracion"], ["configuración", "configuracion"], ["ajustes", "configuracion"],
+      ["inicio", ""], ["home", ""],
+    ];
+    return alias.map(([from, to]) => ({ source: `/panel/${encodeURI(from)}`, destination: `/panel${to ? `/${to}` : ""}`, permanent: false }));
+  },
   turbopack: {
     rules: {
       "*.css": {
