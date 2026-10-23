@@ -490,3 +490,6 @@ create table if not exists clinic_changes (
 );
 create index if not exists clinic_changes_clinic_idx on clinic_changes (clinic_id, created_at desc);
 alter table clinic_changes enable row level security;
+
+-- Demos por persona por día desde la landing o el chat. Null = sin límite (se ajusta en Sistema).
+alter table messaging_settings add column if not exists demo_daily_limit integer;

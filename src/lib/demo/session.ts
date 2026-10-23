@@ -24,7 +24,6 @@ import { ScrapeError, scrapeSite } from "./scraper";
 const ACTIVE_HOURS = 24;
 /** Si el análisis no terminó en este tiempo (la función se cortó), se avisa y se puede reintentar. */
 const STUCK_MINUTES = 4;
-const MAX_DEMOS_PER_DAY = 3;
 const KEEP_DEMO_CLINICS_DAYS = 7;
 /** Horario de prueba cuando la web no dice cuándo atienden. */
 const DEFAULT_HOURS = [1, 2, 3, 4, 5].map((dia) => ({ dia, desde: "09:00", hasta: "18:00" }));
@@ -173,7 +172,8 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
 
     const [{ count }] = await tx<{ count: number }[]>`
       select count(*)::int as count from demo_sessions where phone = ${input.phone} and not reused_profile and created_at > now() - interval '1 day'`;
-    if (count >= MAX_DEMOS_PER_DAY) return null;
+    // El límite diario por persona se ajusta en Panel → Sistema (sin límite por defecto).
+    if (settings.demo_daily_limit && count >= settings.demo_daily_limit) return null;
 
     await tx`
       update channel_conversations set closed_at = now()

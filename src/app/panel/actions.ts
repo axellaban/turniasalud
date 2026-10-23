@@ -15,7 +15,7 @@ import { normalizePhone } from "@/lib/phone";
 import { addDaysKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
-import { selectMessagingChannel, messagingSettings } from "@/lib/messaging-settings";
+import { selectMessagingChannel, messagingSettings, setDemoDailyLimit } from "@/lib/messaging-settings";
 import { connectTelegram, telegramConfigured } from "@/lib/telegram";
 import { missingWahaEnv } from "@/lib/env";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
@@ -96,6 +96,16 @@ export async function saveMessagingChannel(_previous: FormState, form: FormData)
   revalidatePath("/panel/sistema");
   revalidatePath("/probar-demo");
   return { ok: true, message: channel === "pausado" ? "Turnia quedó pausada en ambos canales." : `Canal guardado: ${channel === "telegram" ? "Telegram" : "WhatsApp"}. El otro canal queda pausado.` };
+}
+
+export async function saveDemoLimit(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireAdmin();
+  const raw = String(form.get("demo_daily_limit") ?? "").trim();
+  const limit = raw === "" ? 0 : Number(raw);
+  if (!Number.isInteger(limit) || limit < 0 || limit > 1000) return { ok: false, message: "Poné un número entero entre 0 y 1000 (0 = sin límite)." };
+  await setDemoDailyLimit(limit);
+  revalidatePath("/panel/sistema");
+  return { ok: true, message: limit ? `Límite guardado: ${limit} demos por persona por día.` : "Sin límite de demos por persona." };
 }
 
 export async function createManualAppointment(_prev: FormState | undefined, form: FormData): Promise<FormState> {

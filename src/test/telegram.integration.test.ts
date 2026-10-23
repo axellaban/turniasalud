@@ -193,7 +193,7 @@ describe.runIf(base)("Telegram y selector de canales", () => {
     expect((await settings.messagingSettings()).active_channel).toBe("pausado");
     expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(409);
     await settings.selectMessagingChannel("telegram");
-    for (let i = 0; i < 10; i++) expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(200);
+    for (let i = 0; i < 30; i++) expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(200);
     expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(429);
   });
 });

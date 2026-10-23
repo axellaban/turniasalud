@@ -247,6 +247,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await expect(clinics.createClinic({}, form({ name: "Otra" }))).rejects.toThrow(denied);
     await expect(clinics.createAccess({}, form({ clinic_id: a }))).rejects.toThrow(denied);
     await expect(actions.saveMessagingChannel({}, form({ channel: "pausado" }))).rejects.toThrow(denied);
+    await expect(actions.saveDemoLimit({}, form({ demo_daily_limit: "1" }))).rejects.toThrow(denied);
     for (const path of ["clinicas", "sistema", "demos"]) await expect((async () => (await import(`@/app/panel/(app)/${path}/page`)).default({ searchParams: Promise.resolve({}) }))()).rejects.toThrow(denied);
     expect(await sql`select id from clinics where id = ${b}`).toHaveLength(1);
     expect((await sql`select active_channel from messaging_settings`)[0].active_channel).toBe("telegram");
@@ -285,6 +286,13 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     // El consultorio sin destino pedido entra directo a su configuración.
     const { code } = await clinics.createAccess({}, form({ clinic_id: a }));
     expect((await attempt(code!, "198.51.100.3")).pathname).toBe("/panel/configuracion");
+  });
+  it("el administrador ajusta el límite diario de demos (0 = sin límite)", async () => {
+    expect(await actions.saveDemoLimit({}, form({ demo_daily_limit: "5" }))).toMatchObject({ ok: true });
+    expect((await sql`select demo_daily_limit from messaging_settings`)[0].demo_daily_limit).toBe(5);
+    expect(await actions.saveDemoLimit({}, form({ demo_daily_limit: "-2" }))).toMatchObject({ ok: false });
+    expect(await actions.saveDemoLimit({}, form({ demo_daily_limit: "0" }))).toMatchObject({ ok: true, message: "Sin límite de demos por persona." });
+    expect((await sql`select demo_daily_limit from messaging_settings`)[0].demo_daily_limit).toBeNull();
   });
   it("borrar la clínica borra sus accesos", async () => {
     await clinics.createAccess({}, form({ clinic_id: a }));
