@@ -136,7 +136,25 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await session.handleDemoMessage({ ...input, messageId: "ask", text: "¿Dónde atienden?" });
     expect(JSON.stringify(mocks.agent.mock.calls)).toContain("FAQ corregida guardada");
     expect(JSON.stringify(mocks.agent.mock.calls)).toContain("Instrucción guardada");
-    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:999")).toBeNull();
+    // El enlace del perfil sigue sirviendo después de usarlo, también desde otro chat.
+    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:999")).toBe(a);
+    expect(await session.handleDemoMessage({ ...input, messageId: "saved-again", text: `Probar perfil de Turnia: ${token}` })).toEqual({ handled: true, status: "eligiendo" });
+    const [{ days }] = await sql`select extract(epoch from expires_at - created_at) / 86400 as days from demo_handoffs where token = ${token}`;
+    expect(Number(days)).toBeCloseTo(7, 1);
+  });
+  it("borra una ficha de demo o todas las temporales y nunca la principal", async () => {
+    await sql`update clinics set retained_at = now() where id = ${a}`;
+    const temporal = (await session.createDemoClinic({ ...PROFILE, nombre: "Clínica Gamma" }, "https://gamma.example/")).id;
+    choose(b);
+    await clinics.deleteClinic(form({ clinic_id: b }));
+    expect(await sql`select id from clinics where id = ${b}`).toHaveLength(0);
+    expect((await panel.getPanelClinic()).id).toBe(MAIN);
+    await expect(clinics.deleteClinic(form({ clinic_id: MAIN }))).rejects.toThrow("Solo se pueden borrar fichas de demo.");
+    await clinics.deleteTemporaryDemos();
+    expect(await sql`select id from clinics where id = ${temporal}`).toHaveLength(0);
+    expect((await sql`select id from clinics order by is_demo`).map((c) => c.id)).toEqual([MAIN, a]);
+    mocks.cookies.delete("turnia_session");
+    await expect(clinics.deleteClinic(form({ clinic_id: a }))).rejects.toThrow("redirect:/panel/login");
   });
   it("los enlaces de perfil aceptan tokens que terminan en guion y verifican vencimiento", async () => {
     const token = `p_${"a".repeat(23)}-`;

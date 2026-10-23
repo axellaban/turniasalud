@@ -431,6 +431,9 @@ alter table clinics add column if not exists payment_methods text;
 alter table clinics add column if not exists agent_context text;
 alter table demo_sessions add column if not exists reused_profile boolean not null default false;
 alter table demo_handoffs add column if not exists clinic_id uuid references clinics(id) on delete cascade;
+-- Los enlaces de perfil del panel valen 7 días y se pueden reutilizar (idempotente: no acorta ninguno).
+update demo_handoffs set expires_at = created_at + interval '7 days'
+  where clinic_id is not null and expires_at < created_at + interval '7 days';
 
 -- Referencias de cada lectura: texto realmente leído y ficha propuesta, sin HTML ejecutable.
 create table if not exists clinic_imports (

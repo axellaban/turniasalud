@@ -1,8 +1,27 @@
 "use client";
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClinic, launchProfile, refreshClinic, applyImport } from "../../clinics-actions";
+import { createClinic, launchProfile, refreshClinic, applyImport, deleteClinic, deleteTemporaryDemos } from "../../clinics-actions";
 import { buttonClass, inputClass, Field, secondaryButtonClass } from "@/components/ui";
+
+const dangerButtonClass = "inline-flex items-center justify-center gap-1 rounded-full px-4 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50";
+
+export function DeleteClinicButton({ clinicId, name }: { clinicId: string; name: string }) {
+  return <form action={deleteClinic} onSubmit={(e) => {
+    if (!confirm(`¿Borrar la ficha «${name}»? Se eliminan su agenda de prueba, pacientes, conversaciones y lecturas. No se puede deshacer.`)) e.preventDefault();
+  }}>
+    <input type="hidden" name="clinic_id" value={clinicId} />
+    <button className={dangerButtonClass}>Borrar ficha</button>
+  </form>;
+}
+
+export function DeleteTemporaryDemosButton({ count }: { count: number }) {
+  return <form action={deleteTemporaryDemos} onSubmit={(e) => {
+    if (!confirm(`¿Borrar ${count === 1 ? "la demo temporal" : `las ${count} demos temporales`}? Las demos conservadas y la clínica principal quedan.`)) e.preventDefault();
+  }}>
+    <button disabled={!count} className={`${dangerButtonClass} disabled:opacity-50`}>Borrar demos temporales ({count})</button>
+  </form>;
+}
 
 export function NewClinicForm() {
   const [state, action, pending] = useActionState(createClinic, {});
