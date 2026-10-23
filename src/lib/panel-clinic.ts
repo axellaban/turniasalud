@@ -65,7 +65,7 @@ export async function touchClinic(id: string, area?: string): Promise<void> {
   if (area) await logClinicChange(id, area);
 }
 
-export type ClinicChange = { actor: string; area: string; created_at: string };
+export type ClinicChange = { id: string; actor: string; area: string; created_at: string };
 
 export async function logClinicChange(clinicId: string, area: string): Promise<void> {
   const user = await getPanelUser();
@@ -80,5 +80,5 @@ export async function logClinicChange(clinicId: string, area: string): Promise<v
 }
 
 export async function recentClinicChanges(clinicId: string, limit = 6): Promise<ClinicChange[]> {
-  return sql<ClinicChange[]>`select actor, area, created_at from clinic_changes where clinic_id = ${clinicId} order by created_at desc limit ${limit}`;
+  return sql<ClinicChange[]>`select id::text, actor, area, created_at from clinic_changes where clinic_id = ${clinicId} order by created_at desc limit ${limit}`;
 }

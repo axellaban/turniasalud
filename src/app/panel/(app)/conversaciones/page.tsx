@@ -3,6 +3,9 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
 import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, StatusBadge } from "@/components/ui";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Conversaciones · Panel" };
 
 type Row = {
   id: string;

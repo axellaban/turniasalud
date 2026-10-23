@@ -25,7 +25,7 @@ export async function selectClinic(form: FormData): Promise<void> {
   revalidatePath("/panel", "layout");
   // El selector del encabezado se queda en la misma sección; las tarjetas de Clínicas abren la configuración.
   const back = String(form.get("return_to") ?? "");
-  redirect(/^\/panel(\/[a-z]+)?$/.test(back) && back !== "/panel/login" ? back : "/panel/configuracion");
+  redirect(/^\/panel(\/[a-z]+){0,2}$/.test(back) && !back.startsWith("/panel/login") ? back : "/panel/configuracion");
 }
 
 export async function createClinic(_previous: FormState, form: FormData): Promise<FormState> {

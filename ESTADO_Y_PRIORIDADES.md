@@ -2,6 +2,29 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Segunda auditoría del panel — 23/10/2026
+
+- **Seguridad**
+  - Las sesiones de administrador quedan atadas a `PANEL_PASSWORD`: al cambiarla en Vercel se cierran todas las sesiones abiertas con la anterior. Antes seguían valiendo hasta 14 días. Este deploy pide volver a ingresar una vez. Las sesiones de los consultorios no se ven afectadas: esas se cortan con «Revocar».
+  - Login y cierre de sesión rechazan formularios enviados desde otro sitio (verificación de Origin).
+  - El proxy manda a Inicio, sin cargar la página, al consultorio que intenta abrir Clínicas, Pedidos de demo o Sistema. La página igual lo verifica.
+  - Al salir se borran los borradores guardados en el navegador.
+- **Experiencia**
+  - Cada página del panel tiene su título de pestaña.
+  - Esqueleto de carga al navegar.
+  - Login con «Mostrar» y una ayuda para el código del consultorio.
+  - El código se puede mandar por WhatsApp con un mensaje listo.
+  - Bienvenida al consultorio en Configuración, sin la etiqueta interna «Demo conservada».
+  - Cambiar de clínica conserva la pestaña.
+  - En el celular, la pestaña activa queda a la vista.
+  - Textos de «Lectura de la web» sin jerga interna.
+- **Validación**
+  - 175 pruebas (incluye las del proxy, Origin y contraseña rotada), TypeScript, lint y build.
+  - Recorrido completo en Chromium con 31 comprobaciones, como administrador en escritorio y como consultorio en celular, dos veces seguidas y sin errores de página. Cubre crear clínica, completar la ficha al 100 %, equipo, prestaciones, bloqueos con error y con éxito, turno manual, código y WhatsApp, cambio de clínica, Sistema, Tareas, ingreso del consultorio, bloqueo de secciones, cierre de sesión y el historial visto por el administrador.
+- **Pendiente del usuario** (no se puede hacer desde el código):
+  - activar Skew Protection en Vercel → Settings → Advanced;
+  - rotar las credenciales que quedaron expuestas en el diagnóstico de WAHA (ver la sección del 23/10).
+
 ## Auditoría del panel: arreglos — 23/10/2026
 
 Hecho por prioridad después de auditar el flujo completo (código y navegador):

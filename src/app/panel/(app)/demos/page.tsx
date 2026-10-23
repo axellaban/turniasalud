@@ -6,6 +6,9 @@ import { formatDateTime } from "@/lib/time";
 import { isLeadStatus, LEAD_STATUSES, type LeadStatus } from "@/lib/leads";
 import { Badge, Card, Empty, PageHeader, Stat, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { FollowupForm } from "./followup-form";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Pedidos de demo · Panel" };
 
 type Lead = {
   id: string; name: string; email: string | null; phone: string | null; organization: string | null;

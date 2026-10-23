@@ -39,6 +39,17 @@ describe("sesión del panel", () => {
     expect(() => createClinicSessionToken("no-es-uuid")).toThrow();
   });
 
+  it("cambiar la contraseña del panel cierra las sesiones de administrador, no las de los consultorios", () => {
+    const admin = createSessionToken();
+    const clinic = createClinicSessionToken("00000000-0000-4000-8000-0000000000aa");
+    process.env.PANEL_PASSWORD = "clave-nueva";
+    expect(verifySessionToken(admin)).toBe(false);
+    expect(verifySessionToken(createSessionToken())).toBe(true);
+    expect(verifySessionToken(clinic)).toBe(true);
+    process.env.PANEL_PASSWORD = "clave-de-prueba";
+    expect(verifySessionToken(admin)).toBe(true);
+  });
+
   it("compara la contraseña", () => {
     expect(passwordMatches("clave-de-prueba")).toBe(true);
     expect(passwordMatches("otra")).toBe(false);

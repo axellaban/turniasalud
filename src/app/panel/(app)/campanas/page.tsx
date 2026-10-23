@@ -6,6 +6,9 @@ import { formatDateTime } from "@/lib/time";
 import { CAMPAIGN_TYPES, type Campaign } from "@/lib/types";
 import { createCampaignAction } from "../../actions";
 import { Card, Empty, Field, Notice, PageHeader, StatusBadge, buttonClass, inputClass } from "@/components/ui";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Campañas · Panel" };
 
 export default async function CampaignsPage() {
   const clinic = await getPanelClinic();

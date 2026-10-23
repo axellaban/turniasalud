@@ -5,6 +5,9 @@ import { formatDate } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Card, Empty, PageHeader, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { Patient } from "@/lib/types";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Pacientes · Panel" };
 
 export default async function PatientsPage({ searchParams }: PageProps<"/panel/pacientes">) {
   const clinic = await getPanelClinic();

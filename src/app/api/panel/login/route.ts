@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { findClinicAccessByCode } from "@/lib/clinic-access";
 import { recordFailure, requesterKey, tooManyFailures } from "@/lib/login-attempts";
-import { SESSION_COOKIE, createClinicSessionToken, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
+import { SESSION_COOKIE, createClinicSessionToken, createSessionToken, passwordMatches, safeNext, sameOrigin, sessionCookieOptions } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,7 @@ function back(request: Request, next: string, error: string) {
 }
 
 export async function POST(request: Request) {
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Origen no permitido" }, { status: 403 });
   const form = await request.formData().catch(() => null);
   const next = safeNext(form?.get("next"));
   const password = String(form?.get("password") ?? "");

@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 // Sesión del panel: cookie firmada con HMAC. El administrador entra con
 // PANEL_PASSWORD; cada consultorio puede tener un código propio que solo abre
@@ -13,8 +13,15 @@ function secret(): string {
   return value;
 }
 
+// Las sesiones de administrador quedan atadas a la contraseña vigente: al cambiar
+// PANEL_PASSWORD en Vercel se cierran todas las sesiones abiertas con la anterior.
+function passwordFingerprint(): string {
+  return createHash("sha256").update(`turnia-panel:${process.env.PANEL_PASSWORD ?? ""}`).digest("hex").slice(0, 16);
+}
+
 function sign(payload: string): string {
-  return createHmac("sha256", secret()).update(payload).digest("base64url");
+  const bound = payload.startsWith("panel.") ? `${payload}|${passwordFingerprint()}` : payload;
+  return createHmac("sha256", secret()).update(bound).digest("base64url");
 }
 
 export type SessionClaims = { role: "admin" } | { role: "clinic"; accessId: string };
@@ -89,4 +96,19 @@ export const sessionCookieOptions = {
 export function safeNext(value: unknown): string {
   const next = typeof value === "string" ? value : "";
   return next === "/demo" || next === "/panel" || (next.startsWith("/panel/") && !next.startsWith("/panel/login")) ? next : "/panel";
+}
+
+/**
+ * Un formulario de otro sitio no puede iniciar ni cerrar la sesión: si el navegador
+ * manda Origin, tiene que ser este mismo sitio. Sin Origin (clientes viejos) se acepta.
+ */
+export function sameOrigin(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  try {
+    const host = new URL(origin).host;
+    return [request.headers.get("x-forwarded-host"), request.headers.get("host"), new URL(request.url).host].some((h) => h === host);
+  } catch {
+    return false;
+  }
 }

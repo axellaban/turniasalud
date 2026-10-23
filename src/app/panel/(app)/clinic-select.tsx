@@ -6,7 +6,9 @@ import { confirmDiscardUnsaved } from "@/components/unsaved-changes";
 
 /** Cambia de clínica al elegirla y se queda en la misma sección del panel. */
 export function ClinicSelect({ current, options }: { current: string; options: Array<{ id: string; label: string }> }) {
-  const section = usePathname().split("/").slice(0, 3).join("/");
+  // Se queda en la misma sección (y pestaña); las páginas de un paciente o una
+  // conversación vuelven a su listado, porque son de la clínica anterior.
+  const section = usePathname().split("/").filter((part) => part && !/\d/.test(part)).slice(0, 3).map((part) => `/${part}`).join("");
   return (
     <form action={selectClinic} className="flex min-w-0 flex-1 items-center gap-2">
       <input type="hidden" name="return_to" value={section} />

@@ -6,6 +6,9 @@ import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } 
 import { Badge, Card, CHANNEL_LABEL, CheckMark, Empty, PageHeader, Stat, StatusBadge } from "@/components/ui";
 import { profileCompleteness } from "@/lib/profile-completeness";
 import { CompletenessCard } from "./completeness-card";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Inicio · Panel" };
 
 export default async function PanelHome() {
   const configured = isConfigured();
