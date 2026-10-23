@@ -1,4 +1,4 @@
-import { getPanelClinic } from "@/lib/panel-clinic";
+import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { isConfigured } from "@/lib/env";
@@ -21,7 +21,7 @@ export default async function PanelHome() {
     );
   }
 
-  const clinic = await getPanelClinic();
+  const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
   const tz = clinic.timezone;
   const now = new Date();
   const since = new Date(now.getTime() - 7 * 86400_000).toISOString();
@@ -86,7 +86,10 @@ export default async function PanelHome() {
   ]);
 
   const resolutionRate = stats.conversations ? Math.round((stats.resolved / stats.conversations) * 100) : null;
-  const percent = (part: number, total: number) => (total ? `${Math.round((part / total) * 100)}%` : "—");
+  // Con pocos casos un porcentaje engaña (1 ausente = 100 %): se muestra recién desde 5.
+  const MIN_SAMPLE = 5;
+  const percent = (part: number, total: number) => (total >= MIN_SAMPLE ? `${Math.round((part / total) * 100)}%` : "—");
+  const sample = (total: number, text: string) => (total >= MIN_SAMPLE ? text : `${text} · pocos datos todavía`);
   const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
   const checklist = [
@@ -99,11 +102,12 @@ export default async function PanelHome() {
     },
     { done: Boolean(process.env.ELEVENLABS_WEBHOOK_SECRET), label: "Webhook post-conversación configurado" },
   ];
-  const pending = checklist.filter((c) => !c.done);
+  // La puesta en marcha es técnica y general: solo la ve el administrador.
+  const pending = user.role === "admin" ? checklist.filter((c) => !c.done) : [];
 
   return (
     <>
-      <PageHeader title={`Hola, ${clinic.name}`} description="Así viene la atención de los últimos 7 días." />
+      <PageHeader title={`Hola, ${clinic.name}`} description="Lo de hoy primero; abajo, cómo viene la atención." />
 
       {pending.length > 0 && (
         <Card className="mb-6 border-sun-300 bg-sun-100/50">
@@ -115,36 +119,13 @@ export default async function PanelHome() {
               </li>
             ))}
           </ul>
-          <Link href="/panel/configuracion" className="mt-3 inline-block text-sm font-semibold text-brand-700 hover:underline">
-            Ir a Configuración →
+          <Link href="/panel/sistema" className="mt-3 inline-block text-sm font-semibold text-brand-700 hover:underline">
+            Ir a Sistema →
           </Link>
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Conversaciones" value={stats.conversations} hint="WhatsApp, teléfono y web" />
-        <Stat label="Resueltas por IA" value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin intervención humana" />
-        <Stat label="Turnos dados por IA" value={stats.booked_by_ai} hint="últimos 7 días" />
-        <Stat label="Turnos recuperados" value={stats.recovered} hint="por campañas (histórico)" />
-      </div>
-
-      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 30 días</h2>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat
-          label="Satisfacción"
-          value={quality.satisfaction === null ? "—" : `${quality.satisfaction}/10`}
-          hint={`${quality.answers} respuestas a encuestas`}
-        />
-        <Stat label="Confirmaron asistencia" value={percent(quality.confirmed, quality.reminded)} hint={`de ${quality.reminded} recordatorios`} />
-        <Stat label="Ausentismo" value={percent(quality.absent, quality.absent + quality.attended)} hint={`${quality.absent} ausentes`} />
-        <Stat
-          label="Ingresos recuperados"
-          value={money.format(recovery.revenue)}
-          hint={`${recovery.appointments} turnos por campañas (90 días, precio de referencia)`}
-        />
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold text-brand-950">Turnos de hoy</h2>
@@ -222,6 +203,30 @@ export default async function PanelHome() {
           </Card>
         </div>
       </div>
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 7 días</h2>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat label="Conversaciones" value={stats.conversations} hint="WhatsApp, teléfono y web" />
+        <Stat label="Resueltas por IA" value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin intervención humana" />
+        <Stat label="Turnos dados por IA" value={stats.booked_by_ai} hint="últimos 7 días" />
+        <Stat label="Turnos recuperados" value={stats.recovered} hint="por campañas (histórico)" />
+      </div>
+
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 30 días</h2>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat
+          label="Satisfacción"
+          value={quality.satisfaction === null ? "—" : `${quality.satisfaction}/10`}
+          hint={`${quality.answers} respuestas a encuestas`}
+        />
+        <Stat label="Confirmaron asistencia" value={percent(quality.confirmed, quality.reminded)} hint={sample(quality.reminded, `de ${quality.reminded} recordatorios`)} />
+        <Stat label="Ausentismo" value={percent(quality.absent, quality.absent + quality.attended)} hint={sample(quality.absent + quality.attended, `${quality.absent} ${quality.absent === 1 ? "ausente" : "ausentes"} de ${quality.absent + quality.attended} ${quality.absent + quality.attended === 1 ? "turno" : "turnos"}`)} />
+        <Stat
+          label="Ingresos recuperados"
+          value={money.format(recovery.revenue)}
+          hint={`${recovery.appointments} turnos por campañas (90 días, precio de referencia)`}
+        />
+      </div>
+
     </>
   );
 }

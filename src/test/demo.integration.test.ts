@@ -10,6 +10,12 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 const mocks = vi.hoisted(() => ({
   notifyN8n: vi.fn(async () => {}),
   after: [] as Array<() => unknown>,
+  session: undefined as string | undefined,
+}));
+
+// Pedidos de demo es una pantalla del administrador: se simula su sesión.
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: (name: string) => (name === "turnia_session" && mocks.session ? { value: mocks.session } : undefined), set: () => {}, delete: () => {} }),
 }));
 
 vi.mock("@/lib/n8n", () => ({ notifyN8n: mocks.notifyN8n }));
@@ -335,6 +341,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
 
   it("el panel muestra lo que probó cada interesado, con la conversación", async () => {
     const page = (await import("@/app/panel/(app)/demos/page")).default;
+    mocks.session = (await import("@/lib/session")).createSessionToken();
     const html = renderToStaticMarkup((await page({ searchParams: Promise.resolve({}) } as never)) as React.ReactElement);
     expect(html).toContain("Lo que probó en la demo");
     expect(html).toContain("https://odontosur.com.ar/");

@@ -5,13 +5,13 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { isLeadStatus } from "@/lib/leads";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { SESSION_COOKIE, isAdminSessionToken } from "@/lib/session";
 
 export type LeadFormState = { ok?: boolean; message?: string };
 
 async function requireSession() {
   const store = await cookies();
-  if (!verifySessionToken(store.get(SESSION_COOKIE)?.value)) redirect("/panel/login");
+  if (!isAdminSessionToken(store.get(SESSION_COOKIE)?.value)) redirect("/panel/login");
 }
 
 // Los pedidos comerciales pertenecen a esta web y los gestiona su único

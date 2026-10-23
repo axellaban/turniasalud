@@ -349,9 +349,9 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     });
   });
 
-  it("Configuración muestra el proveedor y qué variables faltan, sin mostrar valores", async () => {
+  it("Sistema muestra el proveedor y qué variables faltan, sin mostrar valores", async () => {
     const actions = await import("@/app/panel/actions");
-    const page = (await import("@/app/panel/(app)/configuracion/page")).default;
+    const page = (await import("@/app/panel/(app)/sistema/page")).default;
     vi.stubEnv("ELEVENLABS_CHANNEL_SIGNING_SECRET", "");
     const html = renderToStaticMarkup((await page()) as React.ReactElement);
     vi.stubEnv("ELEVENLABS_CHANNEL_SIGNING_SECRET", SIGNING);

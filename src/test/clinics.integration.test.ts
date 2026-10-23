@@ -41,7 +41,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
   beforeEach(async () => {
     mocks.cookies.clear(); mocks.after.length = 0; mocks.sent.mockClear(); mocks.agent.mockClear();
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
-    await sql`delete from demo_sessions`; await sql`delete from demo_handoffs`; await sql`delete from clinics where is_demo`;
+    await sql`delete from demo_sessions`; await sql`delete from demo_handoffs`; await sql`delete from clinic_access`; await sql`delete from clinics where is_demo`;
     await sql`update messaging_settings set active_channel = 'telegram', revision = 0, telegram_ready = true where id`;
     a = (await session.createDemoClinic(PROFILE, "https://clinica.example/")).id;
     b = (await session.createDemoClinic({ ...PROFILE, nombre: "Clínica Beta" }, "https://beta.example/")).id;
@@ -191,12 +191,74 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(payload.clinicName).toBe("Clínica Alfa"); expect(payload.agentId).toBe("agent_test"); expect(payload.dynamicVariables.clinic_id).toBe(a);
   });
   it("muestra el editor completo y aísla las conexiones generales", async () => {
-    const page = (await import("@/app/panel/(app)/configuracion/page")).default;
-    const html = renderToStaticMarkup(await page());
-    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Protocolo de urgencias", "Instrucciones adicionales", "Formas de pago", "Editar profesional", "Editar prestación", "Probar este perfil", "Lecturas de la web"]) expect(html).toContain(label);
-    expect(html).not.toContain("Conectar bot de Telegram"); expect(html).not.toContain("Regenerar");
+    const render = async (path: string) => renderToStaticMarkup(await (await import(`@/app/panel/(app)/${path}/page`)).default());
+    const pages = await Promise.all(["configuracion", "configuracion/equipo", "configuracion/prestaciones", "configuracion/bloqueos", "configuracion/web"].map(render));
+    const html = pages.join("");
+    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Protocolo de urgencias", "Instrucciones adicionales", "Formas de pago", "Editar profesional", "Editar prestación", "Probar este perfil", "Lecturas de la web", "Bloquear agenda", "Acceso del consultorio"]) expect(html).toContain(label);
+    // Las conexiones generales viven solo en Sistema.
+    expect(html).not.toContain("Conectar bot de Telegram"); expect(html).not.toContain("Regenerar"); expect(html).not.toContain("WhatsApp por WAHA");
+    expect(renderToStaticMarkup(await (await import("@/app/panel/(app)/sistema/page")).default())).toContain("Conectar bot de Telegram");
     const list = (await import("@/app/panel/(app)/clinicas/page")).default;
     expect(renderToStaticMarkup(await list({ searchParams: Promise.resolve({}) } as never))).toContain("Clínica Beta");
+  });
+  it("el acceso del consultorio solo ve y edita su clínica, y se puede revocar", async () => {
+    const created = await clinics.createAccess({}, form({ clinic_id: a, label: "Dr. Alfa" }));
+    expect(created.code).toMatch(/^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
+    expect(JSON.stringify(await sql`select * from clinic_access`)).not.toContain(created.code!.replace(/-/g, ""));
+
+    // Ingreso con el código (en minúsculas y sin guiones también vale).
+    vi.stubEnv("PANEL_PASSWORD", "clave-admin");
+    const { POST } = await import("@/app/api/panel/login/route");
+    const body = new FormData(); body.set("password", created.code!.toLowerCase().replace(/-/g, " ")); body.set("next", "/panel/clinicas");
+    const res = await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body }));
+    expect(res.status).toBe(303);
+    const token = res.cookies.get("turnia_session")!.value;
+    expect((await import("@/lib/session")).readSessionToken(token)).toMatchObject({ role: "clinic" });
+    const bad = new FormData(); bad.set("password", "AAAA-BBBB-CCCC-DDDD"); bad.set("next", "/panel");
+    expect(new URL((await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body: bad }))).headers.get("location")!).searchParams.get("error")).toBe("password");
+
+    mocks.cookies.set("turnia_session", token);
+    choose(b); // aunque la cookie de selección apunte a otra clínica
+    expect((await panel.getPanelClinic()).id).toBe(a);
+    await expect(panel.getPanelClinic(form({ clinic_id: b }))).rejects.toThrow("La clínica seleccionada cambió");
+    expect(await actions.saveClinicWithFeedback({}, form({ clinic_id: a, name: "Alfa por el consultorio", agent_name: "Ana" }))).toMatchObject({ ok: true });
+    expect((await clinic(a)).name).toBe("Alfa por el consultorio");
+    expect((await clinic(b)).name).toBe("Clínica Beta");
+
+    // Lo del administrador queda cerrado.
+    const denied = "redirect:/panel";
+    await expect(clinics.selectClinic(form({ clinic_id: b }))).rejects.toThrow(denied);
+    await expect(clinics.deleteClinic(form({ clinic_id: b }))).rejects.toThrow(denied);
+    await expect(clinics.deleteTemporaryDemos()).rejects.toThrow(denied);
+    await expect(clinics.createClinic({}, form({ name: "Otra" }))).rejects.toThrow(denied);
+    await expect(clinics.createAccess({}, form({ clinic_id: a }))).rejects.toThrow(denied);
+    await expect(actions.saveMessagingChannel({}, form({ channel: "pausado" }))).rejects.toThrow(denied);
+    for (const path of ["clinicas", "sistema", "demos"]) await expect((async () => (await import(`@/app/panel/(app)/${path}/page`)).default({ searchParams: Promise.resolve({}) }))()).rejects.toThrow(denied);
+    expect(await sql`select id from clinics where id = ${b}`).toHaveLength(1);
+    expect((await sql`select active_channel from messaging_settings`)[0].active_channel).toBe("telegram");
+    const home = renderToStaticMarkup(await (await import("@/app/panel/(app)/page")).default());
+    expect(home).toContain("Alfa por el consultorio"); expect(home).not.toContain("Terminá la puesta en marcha");
+    const config = renderToStaticMarkup(await (await import("@/app/panel/(app)/configuracion/page")).default());
+    expect(config).not.toContain("Acceso del consultorio"); expect(config).not.toContain("/panel/sistema");
+
+    // Revocado, deja de valer en el acto y el login no entra en bucle.
+    const [{ id }] = await sql`select id from clinic_access where clinic_id = ${a}`;
+    mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
+    // Desde otra clínica seleccionada no se revoca un acceso ajeno.
+    await clinics.revokeAccess(form({ clinic_id: b, access_id: id }));
+    expect((await sql`select revoked_at from clinic_access where id = ${id}`)[0].revoked_at).toBeNull();
+    choose(a);
+    await clinics.revokeAccess(form({ clinic_id: a, access_id: id }));
+    mocks.cookies.set("turnia_session", token);
+    await expect(panel.getPanelClinic()).rejects.toThrow("redirect:/panel/login?error=revoked");
+    const login = (await import("@/app/panel/login/page")).default;
+    expect(renderToStaticMarkup(await login({ searchParams: Promise.resolve({ error: "revoked" }) } as never))).toContain("ya no está habilitado");
+    expect(new URL((await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body }))).headers.get("location")!).pathname).toBe("/panel/login");
+  });
+  it("borrar la clínica borra sus accesos", async () => {
+    await clinics.createAccess({}, form({ clinic_id: a }));
+    await clinics.deleteClinic(form({ clinic_id: a }));
+    expect(await sql`select id from clinic_access`).toHaveLength(0);
   });
   it("no envía campañas ni avisos a pacientes de una clínica de demo", async () => {
     await expect((await import("@/lib/whatsapp")).sendPatientMessage(await clinic() as never, { phone: "5491100000000", templateKey: "respuesta", templateName: "respuesta", params: ["Ficticio", "prueba"], context: "test" })).rejects.toThrow("Modo demo");

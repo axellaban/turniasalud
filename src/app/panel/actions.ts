@@ -18,7 +18,7 @@ import { getConversacion } from "@/content/conversaciones";
 import { selectMessagingChannel, messagingSettings } from "@/lib/messaging-settings";
 import { connectTelegram, telegramConfigured } from "@/lib/telegram";
 import { missingWahaEnv } from "@/lib/env";
-import { getPanelClinic, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { getPanelClinic, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizeWebsite } from "@/lib/demo/website";
 
 const requireSession = requirePanelSession;
@@ -72,12 +72,13 @@ export type FormState = { ok?: boolean; message?: string };
 
 export async function setupTelegramChannel(_previous: FormState, _form: FormData): Promise<FormState> {
   void _previous; void _form;
-  await requireSession();
+  await requireAdmin();
   if (!telegramConfigured()) return { ok: false, message: "Falta TELEGRAM_BOT_TOKEN o la conexión del agente en Vercel." };
   try {
     await connectTelegram();
     await sql`update messaging_settings set telegram_ready = true, updated_at = now() where id`;
-    revalidatePath("/panel/configuracion");
+    revalidatePath("/panel/configuracion", "layout");
+    revalidatePath("/panel/sistema");
     return { ok: true, message: "Bot conectado. Ahora podés elegir Telegram y guardar el canal." };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo conectar Telegram." };
@@ -85,13 +86,14 @@ export async function setupTelegramChannel(_previous: FormState, _form: FormData
 }
 
 export async function saveMessagingChannel(_previous: FormState, form: FormData): Promise<FormState> {
-  await requireSession();
+  await requireAdmin();
   const channel = form.get("channel");
   if (channel !== "pausado" && channel !== "telegram" && channel !== "whatsapp") return { ok: false, message: "Elegí un canal válido." };
   if (channel === "telegram" && (!telegramConfigured() || !(await messagingSettings()).telegram_ready)) return { ok: false, message: "Primero conectá el bot de Telegram." };
   if (channel === "whatsapp" && missingWahaEnv().length) return { ok: false, message: "Falta la configuración de WhatsApp." };
   await selectMessagingChannel(channel);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
+  revalidatePath("/panel/sistema");
   revalidatePath("/probar-demo");
   return { ok: true, message: channel === "pausado" ? "Turnia quedó pausada en ambos canales." : `Canal guardado: ${channel === "telegram" ? "Telegram" : "WhatsApp"}. El otro canal queda pausado.` };
 }
@@ -192,7 +194,7 @@ export async function saveClinic(form: FormData) {
       after_hours_instructions: text(form, "after_hours_instructions"),
     })}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
     where id = ${clinic.id}`;
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function saveClinicWithFeedback(_previous: FormState, form: FormData): Promise<FormState> {
@@ -212,7 +214,7 @@ export async function saveProfessional(form: FormData) {
   const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
   await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function saveAppointmentType(form: FormData) {
@@ -227,7 +229,7 @@ export async function saveAppointmentType(form: FormData) {
     instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
     is_first_visit = ${form.get("is_first_visit") === "on"} where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function addProfessional(form: FormData) {
@@ -249,7 +251,7 @@ export async function addProfessional(form: FormData) {
       accepted_coverages: coverages.length ? coverages : null,
     })}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function toggleProfessional(form: FormData) {
@@ -259,7 +261,7 @@ export async function toggleProfessional(form: FormData) {
   const clinic = await getPanelClinic(form);
   await sql`update professionals set active = ${form.get("active") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function addSchedule(form: FormData) {
@@ -276,7 +278,7 @@ export async function addSchedule(form: FormData) {
     from professionals p, unnest(${weekdays}::smallint[]) as w(weekday)
     where p.id = ${professionalId} and p.clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function deleteSchedule(form: FormData) {
@@ -289,7 +291,7 @@ export async function deleteSchedule(form: FormData) {
       where s.id = ${id} and p.id = s.professional_id and p.clinic_id = ${clinic.id}`;
   }
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export async function addAppointmentType(form: FormData) {
@@ -313,7 +315,7 @@ export async function addAppointmentType(form: FormData) {
       is_first_visit: form.get("is_first_visit") === "on",
     })}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 /** "$45.000", "45000" o "45.000,50" → 45000 / 45000.5 (formato argentino). */
@@ -330,7 +332,7 @@ export async function setAppointmentTypePrice(form: FormData) {
   const clinic = await getPanelClinic(form);
   await sql`update appointment_types set price = ${parsePrice(text(form, "price"))} where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel");
 }
 
@@ -366,7 +368,7 @@ export async function addScheduleBlock(_prev: FormState | undefined, form: FormD
       and starts_at < ${endsAt} and ends_at > ${startsAt}
       ${professionalId ? sql`and professional_id = ${professionalId}` : sql``}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");
   return {
     ok: true,
@@ -383,7 +385,7 @@ export async function deleteScheduleBlock(form: FormData) {
   const clinic = await getPanelClinic(form);
   await sql`delete from schedule_blocks where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");
 }
 
@@ -394,18 +396,19 @@ export async function toggleAppointmentType(form: FormData) {
   const clinic = await getPanelClinic(form);
   await sql`update appointment_types set active = ${form.get("active") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id);
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
 }
 
 export type AgentSetupState = { ok?: boolean; message?: string };
 
 export async function runAgentSetup(): Promise<AgentSetupState> {
-  await requireSession();
+  await requireAdmin();
   try {
+    // El agente compartido es el de la clínica principal, sin importar la clínica elegida en el panel.
     const clinic = await getClinic();
-    if ((await getPanelClinic()).id !== clinic.id) return { ok: false, message: "La conexión del agente se administra desde la clínica principal." };
     const result = await setupAgent(clinic);
-    revalidatePath("/panel/configuracion");
+    revalidatePath("/panel/configuracion", "layout");
+    revalidatePath("/panel/sistema");
     return {
       ok: true,
       message: `${result.created ? "Agente creado" : "Agente actualizado"} (${result.agentId}) con ${result.toolIds.length} herramientas${
@@ -469,7 +472,7 @@ export type AudioWebState = { ok: boolean; message: string; slug: string; duraci
 
 /** Genera (o regenera) el audio de una conversación de la web con las voces favoritas de ElevenLabs. */
 export async function generarAudioWeb(slug: string): Promise<AudioWebState> {
-  await requireSession();
+  await requireAdmin();
   const conversacion = getConversacion(slug);
   if (!conversacion) return { ok: false, message: "No existe esa conversación.", slug };
   try {

@@ -1,4 +1,5 @@
 import { selectClinic } from "../../clinics-actions";
+import { requireAdmin } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
@@ -49,6 +50,7 @@ async function demoActivity(leadIds: string[]) {
 }
 
 export default async function DemoRequestsPage({ searchParams }: PageProps<"/panel/demos">) {
+  await requireAdmin();
   const params = await searchParams;
   const q = typeof params.q === "string" ? params.q.trim().slice(0, 160) : "";
   const status = isLeadStatus(params.estado) ? params.estado : null;
