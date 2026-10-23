@@ -56,16 +56,6 @@ describe("Login del panel por formulario", () => {
     expect((await logout(new Request("https://turnia.test/api/panel/logout", { method: "POST", headers: { origin: "https://evil.test" } }))).status).toBe(403);
   });
 
-  it("rechaza formularios enviados desde otro sitio", async () => {
-    const body = new FormData(); body.set("password", "clave-correcta"); body.set("next", "/panel");
-    const res = await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body, headers: { origin: "https://evil.test" } }));
-    expect(res.status).toBe(403);
-    expect(res.cookies.get(SESSION_COOKIE)).toBeUndefined();
-    const same = await POST(new Request("https://turnia.test/api/panel/login", { method: "POST", body, headers: { origin: "https://turnia.test" } }));
-    expect(same.status).toBe(303);
-    expect((await logout(new Request("https://turnia.test/api/panel/logout", { method: "POST", headers: { origin: "https://evil.test" } }))).status).toBe(403);
-  });
-
   it("cerrar sesión borra la cookie", async () => {
     const res = await logout(new Request("https://turnia.test/api/panel/logout", { method: "POST" }));
     expect(res.status).toBe(303);

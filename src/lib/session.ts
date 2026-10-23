@@ -116,18 +116,3 @@ export function sameOrigin(request: Request): boolean {
     return false;
   }
 }
-
-/**
- * Un formulario de otro sitio no puede iniciar ni cerrar la sesión: si el navegador
- * manda Origin, tiene que ser este mismo sitio. Sin Origin (clientes viejos) se acepta.
- */
-export function sameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    const host = new URL(origin).host;
-    return [request.headers.get("x-forwarded-host"), request.headers.get("host"), new URL(request.url).host].some((h) => h === host);
-  } catch {
-    return false;
-  }
-}
