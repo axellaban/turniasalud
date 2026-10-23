@@ -1,3 +1,4 @@
+import { selectClinic } from "../../clinics-actions";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
@@ -143,6 +144,7 @@ function DemoDetails({ sessions, conversations }: { sessions: DemoActivity[]; co
                 {!demo.clinic_id && demo.pages_read ? " · la clínica temporal ya se limpió" : ""}
                 {!demo.clinic_id && !demo.pages_read && demo.status === "terminada" ? " · terminó antes de preparar la clínica" : ""}
               </p>
+              {demo.clinic_id && <form action={selectClinic} className="mt-2"><input type="hidden" name="clinic_id" value={demo.clinic_id} /><button className={buttonClass}>Abrir configuración de la clínica</button></form>}
               {chats.map((c, i) => (
                 <div key={i} className="mt-2 space-y-1 rounded-lg bg-white p-2 text-xs">
                   <p className="font-medium text-brand-900/70">{c.channel === "telefono" ? "Llamada telefónica" : "Conversación"} · {formatDateTime(c.started_at, "America/Argentina/Buenos_Aires")}</p>

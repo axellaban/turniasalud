@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const ITEMS = [
   { href: "/panel", label: "Inicio", icon: "🏠" },
+  { href: "/panel/clinicas", label: "Clínicas", icon: "🏥" },
   { href: "/panel/agenda", label: "Agenda", icon: "📅" },
   { href: "/panel/conversaciones", label: "Conversaciones", icon: "💬" },
   { href: "/panel/tareas", label: "Tareas", icon: "✅" },

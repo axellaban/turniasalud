@@ -27,3 +27,17 @@ export async function claimDemoHandoff(token: string, userId: string): Promise<s
     returning website`;
   return row?.website ?? null;
 }
+
+/** Solo se emite desde el panel autenticado; no crea otra clínica ni consume una extracción. */
+export async function createProfileHandoff(clinicId: string, website: string | null): Promise<string> {
+  const token = `p_${randomBytes(18).toString("base64url")}`;
+  await sql`insert into demo_handoffs (token, website, requester_hash, clinic_id) values (${token}, ${website || env.appUrl()}, 'admin-profile', ${clinicId})`;
+  return token;
+}
+
+export async function claimProfileHandoff(token: string, userId: string): Promise<string | null> {
+  if (!/^p_[a-zA-Z0-9_-]{24}$/.test(token)) return null;
+  const [row] = await sql<{ clinic_id: string }[]>`update demo_handoffs set claimed_by = ${userId}
+    where token = ${token} and clinic_id is not null and expires_at > now() and (claimed_by is null or claimed_by = ${userId}) returning clinic_id`;
+  return row?.clinic_id ?? null;
+}

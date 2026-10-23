@@ -1,13 +1,13 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getClinic } from "@/lib/clinic";
 import { formatDate } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Card, Empty, PageHeader, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { Patient } from "@/lib/types";
 
 export default async function PatientsPage({ searchParams }: PageProps<"/panel/pacientes">) {
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const { q } = await searchParams;
   const search = typeof q === "string" ? q.trim() : "";
   const pattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;

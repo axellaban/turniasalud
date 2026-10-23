@@ -2,6 +2,18 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Perfiles de clínicas editables — 23/10/2026
+
+- Implementado `/panel/clinicas`: listado, búsqueda, creación manual y selector de clínica. Configuración, agenda, pacientes, conversaciones y tareas consultan la clínica seleccionada; los webhooks siguen resolviendo su clínica sin usar la selección del administrador.
+- Configuración permite editar el contexto completo de cada ficha: identidad, dirección, web, zona horaria, horarios, coberturas, FAQ, políticas, urgencias, fuera de horario, derivación, formas de pago e instrucciones adicionales. También profesionales, prestaciones, precios, indicaciones, horarios y bloqueos. Las conexiones generales se administran desde la clínica principal; guardar contexto no modifica proveedor, claves, número, voz ni templates.
+- Guardar, conservar, leer la web o preparar una prueba protege el perfil de la limpieza de demos de siete días (`retained_at`). Conserva `is_demo`: su agenda sigue siendo simulada y no envía avisos ni campañas a pacientes.
+- Las nuevas extracciones guardan en Neon `clinic_imports`: URL, fecha, texto por página y ficha estructurada. Las demos anteriores conservan su ficha pero no tienen archivado el texto original. Se puede leer su web ahora para guardar una nueva referencia; no presentarla como la lectura histórica.
+- «Leer web y revisar propuesta» guarda una propuesta sin sobrescribir contexto. Cada campo se aplica por selección explícita; el reemplazo opcional de catálogo desactiva el anterior y conserva turnos e historial. Una revisión desactualizada o de otra clínica se rechaza. Límite de tres lecturas por clínica/hora.
+- «Probar este perfil» genera un enlace de 15 minutos al canal habilitado para usar la misma clínica y sus correcciones, sin re-scrapear ni crear otra ficha. Telegram requiere tocar Start. La llamada privada de `/demo` también usa el perfil seleccionado y el agente compartido, sin crear agentes en ElevenLabs. Empezar una conversación nueva para usar contexto editado.
+- Validación local: **161 pruebas**, TypeScript, lint y build correctos con Node 24 y Postgres descartable; APIs externas simuladas. Revisión con Chrome: guardar y recargar, cambiar entre clínicas, aplicar solo dirección y conservar pagos/instrucciones manuales. Migración aditiva en el build de producción; sin `seed.sql`.
+- WAHA, su sesión y servicio, credenciales, webhook y despliegue no se modificaron. Telegram sigue seleccionado. n8n continúa despublicado; Gmail y campañas siguen pospuestos. No se regeneraron audios ni se modificó ElevenLabs ni planes.
+- Publicación y comprobación en producción: pendientes de registrar al cerrar este cambio.
+
 ## Canales y demo con Telegram — 23/10/2026
 
 **Este bloque prevalece sobre todo el registro histórico que sigue.** El usuario resolvió WAHA por su cuenta y confirmó que funciona. Instrucción expresa: **dejar WAHA exactamente como está**; no cambiar motor, imagen, sesión, credenciales, webhook, conexión ni despliegue. La imagen derivada de la rama histórica `codex/waha-qr-refresh` no es la configuración actual y no se debe desplegar.

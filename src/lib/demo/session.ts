@@ -1,6 +1,9 @@
 import "server-only";
+import { claimProfileHandoff } from "./handoff";
 import { randomBytes } from "node:crypto";
 import { sql } from "../db";
+import { saveInitialImport } from "../clinic-imports";
+import type { ScrapeResult } from "./scraper";
 import { env } from "../env";
 import { buildDynamicVariables, getClinic } from "../clinic";
 import { forwardToAgent } from "../channel";
@@ -66,6 +69,15 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
   await requireActiveChannel(channelForChat(input.chatId));
   // Los audios llegan transcriptos con este prefijo; para elegir opciones no cuenta.
   const said = input.text.replace(/^\(audio\)\s*/, "");
+  const savedToken = /\bp_[A-Za-z0-9_-]{24}(?![A-Za-z0-9_-])/.exec(said)?.[0];
+  if (savedToken && /perfil/i.test(said)) {
+    const clinicId = await claimProfileHandoff(savedToken, input.phone);
+    if (!clinicId) {
+      await sendChatText(input.chatId, "Este enlace de perfil venció o ya lo usó otra persona. Generá otro desde el panel.");
+      return { handled: true, status: "terminada" };
+    }
+    return startSavedProfile(input, clinicId);
+  }
   const request = parseDemoRequest(said);
   const session = await latestSession(input.phone);
   if (request) return startDemo(input, request.website);
@@ -130,6 +142,23 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
   return { handled: true, status: session.status };
 }
 
+async function startSavedProfile(input: DemoInput, clinicId: string): Promise<DemoOutcome> {
+  const settings = await requireActiveChannel(channelForChat(input.chatId));
+  const [clinic] = await sql<Clinic[]>`select * from clinics where id = ${clinicId} and is_demo`;
+  if (!clinic) throw new Error("La clínica del perfil ya no existe.");
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`turnia-demo:${input.phone}`}, 0))`;
+    const [existing] = await tx`select id from demo_sessions where phone = ${input.phone} and request_message_id = ${input.messageId}`;
+    if (existing) return;
+    await tx`update channel_conversations set closed_at = now() where phone = ${input.phone} and closed_at is null`;
+    await tx`update demo_sessions set status = 'terminada', updated_at = now() where phone = ${input.phone} and status not in ('terminada', 'error')`;
+    await tx`insert into demo_sessions (phone, chat_id, website, clinic_id, status, request_message_id, channel_revision, reused_profile)
+      values (${input.phone}, ${input.chatId}, ${clinic.website || env.appUrl()}, ${clinic.id}, 'eligiendo', ${input.messageId}, ${settings.revision}, true)`;
+  });
+  await sendChatText(input.chatId, await optionsText(clinic));
+  return { handled: true, status: "eligiendo" };
+}
+
 async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome> {
   const settings = await requireActiveChannel(channelForChat(input.chatId));
   const source = `demo-${channelForChat(input.chatId)}`;
@@ -143,7 +172,7 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
     if (retry) return { session: retry, createdLead: false };
 
     const [{ count }] = await tx<{ count: number }[]>`
-      select count(*)::int as count from demo_sessions where phone = ${input.phone} and created_at > now() - interval '1 day'`;
+      select count(*)::int as count from demo_sessions where phone = ${input.phone} and not reused_profile and created_at > now() - interval '1 day'`;
     if (count >= MAX_DEMOS_PER_DAY) return null;
 
     await tx`
@@ -217,7 +246,7 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
     if (!active) return;
     if (!(await chatIsActive(session.chat_id, session.channel_revision))) return;
     const profile = await buildProfile(site);
-    const clinic = await createDemoClinic(profile, site.url, { id: session.id, pages: site.pages.length });
+    const clinic = await createDemoClinic(profile, site.url, { id: session.id, pages: site.pages.length, site });
     if (!clinic) return; // la persona salió o pidió otra demo mientras leíamos
     if (session.lead_id) {
       await sql`
@@ -347,8 +376,8 @@ const canon = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g
  * que consultar_disponibilidad siempre encuentre horarios.
  */
 export async function createDemoClinic(profile: DemoProfile, website: string): Promise<Clinic>;
-export async function createDemoClinic(profile: DemoProfile, website: string, session: { id: string; pages: number }): Promise<Clinic | null>;
-export async function createDemoClinic(profile: DemoProfile, website: string, session?: { id: string; pages: number }): Promise<Clinic | null> {
+export async function createDemoClinic(profile: DemoProfile, website: string, session: { id: string; pages: number; site?: ScrapeResult }): Promise<Clinic | null>;
+export async function createDemoClinic(profile: DemoProfile, website: string, session?: { id: string; pages: number; site?: ScrapeResult }): Promise<Clinic | null> {
   const main = await getClinic();
   const hours = profile.horarios.length ? profile.horarios : DEFAULT_HOURS;
 
@@ -382,7 +411,7 @@ export async function createDemoClinic(profile: DemoProfile, website: string, se
       if (!active) return null;
     }
     // Las demos viejas no se acumulan: se borran con todo lo que tengan.
-    await tx`delete from clinics where is_demo and created_at < now() - make_interval(days => ${KEEP_DEMO_CLINICS_DAYS})`;
+    await tx`delete from clinics where is_demo and retained_at is null and created_at < now() - make_interval(days => ${KEEP_DEMO_CLINICS_DAYS})`;
     const [clinic] = await tx<Clinic[]>`
       insert into clinics ${tx({
         name: profile.nombre,
@@ -416,6 +445,7 @@ export async function createDemoClinic(profile: DemoProfile, website: string, se
         await tx`insert into schedules (professional_id, weekday, start_time, end_time) values (${pro.id}, ${h.dia}, ${h.desde}, ${h.hasta})`;
       }
     }
+    if (session?.site) await saveInitialImport(tx, clinic.id, profile, session.site);
     if (session) await tx`
       update demo_sessions set status = 'eligiendo', clinic_id = ${clinic.id}, pages_read = ${session.pages}, updated_at = now()
       where id = ${session.id}`;

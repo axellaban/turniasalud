@@ -1,5 +1,10 @@
+import { ProfileSaveForm } from "./profile-save";
+import { ProfileTest, ReadWebsite, ImportReview } from "../clinicas/forms";
+import { retainClinic, discardImport } from "../../clinics-actions";
+import { IMPORT_FIELDS, profileFields, type ClinicImport } from "@/lib/clinic-imports";
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
-import { getCatalog, getClinic, getScheduleBlocks } from "@/lib/clinic";
+import { getClinic, clinicInfoText, getCatalog, getScheduleBlocks } from "@/lib/clinic";
 import { formatDateTime, localDateKey } from "@/lib/time";
 import { sql } from "@/lib/db";
 import { WAHA_ENV_VARS, env, isConfigured, missingWahaEnv } from "@/lib/env";
@@ -11,7 +16,8 @@ import {
   deleteSchedule,
   deleteScheduleBlock,
   setAppointmentTypePrice,
-  saveClinic,
+  saveProfessional,
+  saveAppointmentType,
   toggleAppointmentType,
   toggleProfessional,
 } from "../../actions";
@@ -40,13 +46,16 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 }
 
 export default async function SettingsPage() {
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
+  const mainClinic = await getClinic();
+  const isMain = mainClinic.id === clinic.id;
+  const imports = await sql<ClinicImport[]>`select * from clinic_imports where clinic_id = ${clinic.id} order by created_at desc limit 20`;
+  const reading = imports.some((item) => item.status === "reading");
   const messaging = await messagingSettings();
   const catalog = await getCatalog(clinic.id);
   const configured = isConfigured();
   const missingWaha = new Set(missingWahaEnv());
   const base = env.appUrl().replace(/\/$/, "");
-  const t = clinic.templates ?? {};
   // getCatalog solo trae activos: para poder reactivar, traemos todo de nuevo.
   const now = new Date();
   const [professionals, types, blocks, audios, demo] = await Promise.all([
@@ -61,17 +70,17 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Configuración" description="Todo lo que el agente sabe de tu clínica sale de acá." />
+      <PageHeader title={`Configuración · ${clinic.name}`} description="Completá el contexto de esta clínica. Los cambios se usan en conversaciones nuevas." actions={<Link href="/panel/clinicas" className={buttonClass}>Ver clínicas</Link>} />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          <Card>
+          {isMain && <Card>
             <h2 className="mb-3 font-semibold text-brand-950">Canal de la demo y del agente</h2>
             <Canales settings={messaging} telegramConfigured={telegramConfigured()} whatsappConfigured={configured.waha} />
-          </Card>
+          </Card>}
           <Card>
             <h2 className="mb-4 font-semibold text-brand-950">Clínica</h2>
-            <form action={saveClinic} className="grid gap-4 sm:grid-cols-2">
+            <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision}>
               <Field label="Nombre de la clínica">
                 <input name="name" defaultValue={clinic.name} className={inputClass} required />
               </Field>
@@ -123,58 +132,12 @@ export default async function SettingsPage() {
                 </Field>
               </div>
 
-              <div className="sm:col-span-2 mt-2 border-t border-brand-900/10 pt-4">
-                <h3 className="font-semibold text-brand-950">WhatsApp y voz</h3>
-              </div>
-              <div className="sm:col-span-2">
-                <Field
-                  label="Cómo se conecta WhatsApp"
-                  hint="Meta es la vía oficial. WAHA usa un chip común: sirve para probar, pero WhatsApp puede bloquear el número si se mandan muchos mensajes."
-                >
-                  <select name="whatsapp_provider" defaultValue={clinic.whatsapp_provider} className={inputClass}>
-                    <option value="meta">Oficial: WhatsApp Business de Meta conectado a ElevenLabs</option>
-                    <option value="waha">WAHA: chip común en tu servidor + Custom Channel de ElevenLabs</option>
-                  </select>
-                </Field>
-              </div>
-              <Field label="ID del número de WhatsApp (solo Meta)" hint="ElevenLabs → WhatsApp → menú del número → “Copy phone number ID”.">
-                <input name="whatsapp_phone_number_id" defaultValue={clinic.whatsapp_phone_number_id ?? ""} className={inputClass} />
-              </Field>
-              <Field label="ID de voz de ElevenLabs (opcional)" hint="Si lo dejás vacío, elegimos una voz argentina automáticamente.">
-                <input name="elevenlabs_voice_id" defaultValue={clinic.elevenlabs_voice_id ?? ""} className={inputClass} />
-              </Field>
-              <Field
-                label="Teléfono para pasar llamadas a una persona (opcional)"
-                hint="Formato internacional, ej. +541155550100. Solo en llamadas telefónicas; después tocá “Crear / actualizar agente”."
-              >
-                <input name="handoff_phone" defaultValue={clinic.handoff_phone ?? ""} placeholder="+541155550100" className={inputClass} />
-              </Field>
-
-              <div className="sm:col-span-2 mt-2 border-t border-brand-900/10 pt-4">
-                <h3 className="font-semibold text-brand-950">Templates de WhatsApp (nombres en WhatsApp Manager)</h3>
-                <p className="text-xs text-brand-900/50">
-                  Todos usan {"{{1}}"} = nombre y {"{{2}}"} = detalle. Los textos sugeridos están en el README. Con WAHA no hacen falta: se
-                  manda ese mismo texto como mensaje común.
-                </p>
-              </div>
-              {[
-                ["recordatorio", "Recordatorio de turno", "recordatorio_turno"],
-                ["recall", "Recall de controles", "recall_control"],
-                ["lista_espera", "Turno liberado (lista de espera)", "turno_liberado"],
-                ["reactivacion", "Reactivación", "reactivacion_paciente"],
-                ["no_show", "Recupero de ausentes", "turno_perdido"],
-                ["encuesta", "Encuesta post-consulta", "encuesta_visita"],
-                ["respuesta", "Respuesta a pedidos (recetas, resultados)", "respuesta_pedido"],
-                ["idioma", "Código de idioma de los templates", "es_AR"],
-              ].map(([key, label, placeholder]) => (
-                <Field key={key} label={label}>
-                  <input name={`template_${key}`} defaultValue={t[key] ?? ""} placeholder={placeholder} className={inputClass} />
-                </Field>
-              ))}
-              <div className="sm:col-span-2">
-                <button className={buttonClass}>Guardar cambios</button>
-              </div>
-            </form>
+              <Field label="Web del consultorio"><input name="website" defaultValue={clinic.website ?? ""} placeholder="https://miclinica.com.ar" className={inputClass} /></Field>
+              <Field label="Zona horaria"><input name="timezone" defaultValue={clinic.timezone} placeholder="America/Argentina/Buenos_Aires" className={inputClass} /></Field>
+              <div className="sm:col-span-2"><Field label="Formas de pago"><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} className={inputClass} /></Field></div>
+              <div className="sm:col-span-2"><Field label="Instrucciones adicionales del agente" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio de esta clínica."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
+              <Field label="Teléfono de derivación a recepción"><input name="handoff_phone" defaultValue={clinic.handoff_phone ?? ""} className={inputClass} /></Field>
+            </ProfileSaveForm>
           </Card>
 
           <Card>
@@ -189,15 +152,25 @@ export default async function SettingsPage() {
                         {p.full_name} <span className="font-normal text-brand-900/50">· {p.specialty}</span>
                         {p.accepted_coverages?.length ? <span className="ml-2 text-xs text-brand-900/50">Solo: {p.accepted_coverages.join(", ")}</span> : null}
                       </p>
-                      <form action={toggleProfessional}>
+                      <form action={toggleProfessional}><input type="hidden" name="clinic_id" value={clinic.id} />
                         <input type="hidden" name="id" value={p.id} />
                         <input type="hidden" name="active" value={String(!p.active)} />
                         <button className={smallButtonClass}>{p.active ? "Desactivar" : "Activar"}</button>
                       </form>
                     </div>
+                    <details className="mt-3"><summary className="cursor-pointer text-sm font-medium text-brand-700">Editar profesional</summary>
+                      <form action={saveProfessional} className="mt-3 grid gap-3 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
+                        <input type="hidden" name="id" value={p.id} />
+                        <Field label="Nombre del profesional"><input name="full_name" required defaultValue={p.full_name} className={inputClass} /></Field>
+                        <Field label="Especialidad del profesional"><input name="specialty" required defaultValue={p.specialty} list="specialties" className={inputClass} /></Field>
+                        <Field label="Coberturas del profesional"><input name="accepted_coverages" defaultValue={p.accepted_coverages?.join(", ") ?? ""} className={inputClass} /></Field>
+                        <Field label="Descripción del profesional"><input name="bio" defaultValue={p.bio ?? ""} className={inputClass} /></Field>
+                        <button className={buttonClass}>Guardar profesional</button>
+                      </form>
+                    </details>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {blocks.map((s) => (
-                        <form key={s.id} action={deleteSchedule} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-xs text-brand-800">
+                        <form key={s.id} action={deleteSchedule} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-xs text-brand-800"><input type="hidden" name="clinic_id" value={clinic.id} />
                           <input type="hidden" name="id" value={s.id} />
                           {WEEKDAYS[s.weekday]} {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
                           <button title="Quitar" className="ml-1 text-brand-900/40 hover:text-red-600">
@@ -207,7 +180,7 @@ export default async function SettingsPage() {
                       ))}
                       {!blocks.length && <span className="text-xs text-brand-900/50">Sin horarios: el agente no va a ofrecer turnos.</span>}
                     </div>
-                    <form action={addSchedule} className="mt-3 flex flex-wrap items-end gap-2 text-xs">
+                    <form action={addSchedule} className="mt-3 flex flex-wrap items-end gap-2 text-xs"><input type="hidden" name="clinic_id" value={clinic.id} />
                       <input type="hidden" name="professional_id" value={p.id} />
                       <div className="flex gap-1">
                         {WEEKDAYS.map((w, i) => (
@@ -225,7 +198,7 @@ export default async function SettingsPage() {
                 );
               })}
             </div>
-            <form action={addProfessional} className="mt-5 grid gap-3 rounded-xl bg-brand-50/50 p-4 sm:grid-cols-2">
+            <form action={addProfessional} className="mt-5 grid gap-3 rounded-xl bg-brand-50/50 p-4 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
               <Field label="Nuevo profesional">
                 <input name="full_name" required placeholder="Dra. Ana López" className={inputClass} />
               </Field>
@@ -256,20 +229,34 @@ export default async function SettingsPage() {
                     </span>
                   </span>
                   {x.is_first_visit && <Badge tone="blue">primera vez</Badge>}
-                  <form action={setAppointmentTypePrice} className="flex items-center gap-1">
+                  <details className="w-full"><summary className="cursor-pointer text-sm font-medium text-brand-700">Editar prestación</summary>
+                    <form action={saveAppointmentType} className="mt-3 grid gap-3 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
+                      <input type="hidden" name="id" value={x.id} />
+                      <Field label="Nombre de la prestación"><input name="name" required defaultValue={x.name} className={inputClass} /></Field>
+                      <Field label="Especialidad de la prestación"><input name="specialty" required defaultValue={x.specialty} list="specialties" className={inputClass} /></Field>
+                      <Field label="Duración del turno (min)"><input name="duration_min" type="number" min={5} max={480} required defaultValue={x.duration_min} className={inputClass} /></Field>
+                      <Field label="Precio"><input name="price" defaultValue={x.price ? String(Number(x.price)).replace(".", ",") : ""} className={inputClass} /></Field>
+                      <Field label="Control periódico (meses)"><input name="recall_months" type="number" min={1} max={60} defaultValue={x.recall_months ?? ""} className={inputClass} /></Field>
+                      <Field label="Indicaciones previas"><textarea name="instructions" defaultValue={x.instructions ?? ""} className={inputClass} /></Field>
+                      <label className="text-sm"><input type="checkbox" name="is_first_visit" defaultChecked={x.is_first_visit} /> Primera consulta</label>
+                      <button className={buttonClass}>Guardar prestación</button>
+                    </form>
+                  </details>
+
+                  <form action={setAppointmentTypePrice} className="flex items-center gap-1"><input type="hidden" name="clinic_id" value={clinic.id} />
                     <input type="hidden" name="id" value={x.id} />
                     <span className="text-xs text-brand-900/50">$</span>
                     <input
                       name="price"
                       inputMode="decimal"
-                      defaultValue={x.price ? String(Number(x.price)) : ""}
+                      defaultValue={x.price ? String(Number(x.price)).replace(".", ",") : ""}
                       placeholder="precio"
                       aria-label={`Precio de ${x.name}`}
                       className="w-24 rounded-lg border border-brand-900/15 px-2 py-1 text-xs"
                     />
                     <button className={smallButtonClass}>Guardar</button>
                   </form>
-                  <form action={toggleAppointmentType}>
+                  <form action={toggleAppointmentType}><input type="hidden" name="clinic_id" value={clinic.id} />
                     <input type="hidden" name="id" value={x.id} />
                     <input type="hidden" name="active" value={String(!x.active)} />
                     <button className={smallButtonClass}>{x.active ? "Desactivar" : "Activar"}</button>
@@ -277,7 +264,7 @@ export default async function SettingsPage() {
                 </li>
               ))}
             </ul>
-            <form action={addAppointmentType} className="mt-5 grid gap-3 rounded-xl bg-brand-50/50 p-4 sm:grid-cols-2">
+            <form action={addAppointmentType} className="mt-5 grid gap-3 rounded-xl bg-brand-50/50 p-4 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
               <Field label="Nombre">
                 <input name="name" required placeholder="Control de ortodoncia" className={inputClass} />
               </Field>
@@ -328,7 +315,7 @@ export default async function SettingsPage() {
                       {b.reason ? ` · ${b.reason}` : ""}
                     </span>
                   </span>
-                  <form action={deleteScheduleBlock}>
+                  <form action={deleteScheduleBlock}><input type="hidden" name="clinic_id" value={clinic.id} />
                     <input type="hidden" name="id" value={b.id} />
                     <button className={smallButtonClass}>Quitar</button>
                   </form>
@@ -337,6 +324,7 @@ export default async function SettingsPage() {
               {!blocks.length && <li className="text-brand-900/50">No hay bloqueos cargados.</li>}
             </ul>
             <ScheduleBlockForm
+              clinicId={clinic.id}
               professionals={professionals.filter((p) => p.active).map((p) => ({ id: p.id, name: p.full_name }))}
               today={localDateKey(now, clinic.timezone)}
             />
@@ -344,6 +332,35 @@ export default async function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          <Card>
+            <h2 className="mb-3 font-semibold text-brand-950">Perfil de la clínica</h2>
+            <p className="mb-3 text-sm text-brand-900/70">{!clinic.is_demo ? "Clínica principal" : clinic.retained_at ? "Demo conservada: mantiene su agenda de prueba." : "Demo temporal: al guardar o conservar, queda protegida de la limpieza."}</p>
+            {clinic.is_demo && <><form action={retainClinic} className="mb-3"><input type="hidden" name="clinic_id" value={clinic.id} /><button className={buttonClass} disabled={Boolean(clinic.retained_at)}>{clinic.retained_at ? "Perfil conservado" : "Conservar perfil"}</button></form><ProfileTest key={clinic.id} clinicId={clinic.id} /></>}
+            <Link href="/demo" className="mt-4 inline-block text-sm text-brand-600 underline">Probar por voz o texto desde el navegador</Link>
+          </Card>
+          <Card>
+            <h2 className="mb-3 font-semibold text-brand-950">Lecturas de la web</h2>
+            <ReadWebsite key={clinic.id} clinicId={clinic.id} reading={reading} hasWebsite={Boolean(clinic.website)} />
+            {!imports.length && <p className="mt-3 text-sm text-brand-900/60">Todavía no hay una referencia guardada. Las demos anteriores a esta función conservan la ficha; una nueva lectura guardará sus fuentes.</p>}
+          </Card>
+          {imports.map((item) => <Card key={item.id}>
+            <h3 className="font-semibold text-brand-950">{item.status === "reading" ? "Leyendo…" : item.status === "pending" ? "Propuesta para revisar" : item.status === "applied" ? "Lectura aplicada" : item.status === "error" ? "Lectura con error" : "Propuesta descartada"}</h3>
+            <p className="my-2 break-all text-xs text-brand-900/60">{formatDateTime(item.created_at, clinic.timezone)} · {item.source_url} · {item.pages.length} páginas</p>
+            {item.error && <p className="text-sm text-red-700">{item.error}</p>}
+            {item.status === "pending" && item.profile && <>
+              <ImportReview key={`${item.id}:${clinic.context_revision}`} clinicId={clinic.id} importId={item.id} revision={clinic.context_revision} rows={Object.entries(IMPORT_FIELDS).map(([key, label]) => {
+                const proposed = profileFields(item.profile!)[key as keyof typeof IMPORT_FIELDS];
+                const current = clinic[key as keyof typeof IMPORT_FIELDS];
+                return { key, label, current: Array.isArray(current) ? current.join(", ") : current ?? "", proposed: Array.isArray(proposed) ? proposed.join(", ") : proposed ?? "" };
+              })} catalog={`Profesionales: ${item.profile.profesionales.map((p) => p.nombre).join(", ") || "Equipo por especialidad"}\nPrestaciones: ${item.profile.prestaciones.map((p) => p.nombre).join(", ")}\nHorarios: ${item.profile.horarios.length ? item.profile.horarios.map((h) => `${WEEKDAYS[h.dia]} ${h.desde}–${h.hasta}`).join(", ") : "Agenda de prueba: lunes a viernes de 9 a 18"}`} />
+              <form action={discardImport} className="mt-3"><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="import_id" value={item.id} /><button className={smallButtonClass}>Descartar propuesta</button></form>
+            </>}
+            <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium text-brand-700">Ver texto leído y fuentes</summary>
+              {item.pages.map((page) => <div key={page.url} className="mt-3"><a href={page.url} target="_blank" rel="noreferrer" className="break-all text-brand-600 underline">{page.title || page.url}</a><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-brand-50 p-3 font-sans text-xs">{page.text}</pre></div>)}
+            </details>
+          </Card>)}
+          <Card><details><summary className="cursor-pointer font-semibold text-brand-950">Vista previa del contexto</summary><pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm text-brand-900/70">{clinicInfoText(clinic)}</pre></details></Card>
+          {isMain && <>
           <Card>
             <h2 className="font-semibold text-brand-950">Agente de IA</h2>
             <p className="mt-1 text-sm text-brand-900/60">
@@ -386,7 +403,7 @@ export default async function SettingsPage() {
               {clinic.whatsapp_provider === "waha" ? (
                 <Badge tone={messaging.active_channel === "whatsapp" ? "green" : "yellow"}>{messaging.active_channel === "whatsapp" ? "Habilitado" : "Pausado"}</Badge>
               ) : (
-                "No está elegido arriba: las campañas salen por Meta."
+                "Proveedor general actual: Meta. Editar el contexto conserva esta conexión."
               )}
             </p>
             <ul className="space-y-1 text-sm">
@@ -444,6 +461,7 @@ export default async function SettingsPage() {
               <li className="pt-2 text-xs text-brand-900/50">LLM del agente: {env.agentLlm()}</li>
             </ul>
           </Card>
+          </>}
         </div>
       </div>
     </>

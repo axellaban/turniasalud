@@ -1,7 +1,8 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
-import { getClinic, isUuid } from "@/lib/clinic";
+import { isUuid } from "@/lib/clinic";
 import { formatDate, formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Card, CHANNEL_LABEL, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
@@ -10,7 +11,7 @@ import type { Patient } from "@/lib/types";
 
 export default async function PatientDetail({ params }: PageProps<"/panel/pacientes/[id]">) {
   const { id } = await params;
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
   const [appointments, conversations, tasks] = await Promise.all([

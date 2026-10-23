@@ -1,6 +1,6 @@
+import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getClinic } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, StatusBadge } from "@/components/ui";
 
@@ -26,7 +26,7 @@ const FILTERS = [
 ];
 
 export default async function ConversationsPage({ searchParams }: PageProps<"/panel/conversaciones">) {
-  const clinic = await getClinic();
+  const clinic = await getPanelClinic();
   const { canal } = await searchParams;
   const channel = typeof canal === "string" && canal ? canal : null;
   const rows = await sql<Row[]>`

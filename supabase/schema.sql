@@ -422,3 +422,29 @@ alter table conversations add constraint conversations_channel_check check (chan
 
 alter table appointments drop constraint if exists appointments_source_check;
 alter table appointments add constraint appointments_source_check check (source in ('whatsapp', 'telegram', 'telefono', 'web', 'panel', 'campana'));
+
+-- Perfiles editables: conservar una demo mantiene su agenda simulada.
+alter table clinics add column if not exists retained_at timestamptz;
+alter table clinics add column if not exists updated_at timestamptz not null default now();
+alter table clinics add column if not exists context_revision integer not null default 0;
+alter table clinics add column if not exists payment_methods text;
+alter table clinics add column if not exists agent_context text;
+alter table demo_sessions add column if not exists reused_profile boolean not null default false;
+alter table demo_handoffs add column if not exists clinic_id uuid references clinics(id) on delete cascade;
+
+-- Referencias de cada lectura: texto realmente leído y ficha propuesta, sin HTML ejecutable.
+create table if not exists clinic_imports (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  source_url text not null,
+  status text not null check (status in ('reading', 'pending', 'applied', 'discarded', 'error')),
+  pages jsonb not null default '[]',
+  profile jsonb,
+  error text,
+  created_at timestamptz not null default now(),
+  applied_at timestamptz
+);
+create index if not exists clinic_imports_clinic_idx on clinic_imports (clinic_id, created_at desc);
+create unique index if not exists clinic_imports_reading_idx on clinic_imports (clinic_id) where status = 'reading';
+alter table clinic_imports enable row level security;
+alter table clinic_imports add column if not exists started_at timestamptz;
