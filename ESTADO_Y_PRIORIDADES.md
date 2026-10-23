@@ -2,6 +2,12 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Home: hero con mensajes del agente y llamada en una pantalla — 23/10/2026
+
+- **Hero**: sobre el fondo, el agente «escribe» cuatro mensajes en español adaptados a Argentina (guardia, derivación, OSDE, cartilla), con onda de voz y salida suave. Es la misma secuencia y los mismos tiempos que la home de Assort (segundos 1, 8, 15,5 y 23,5 del video). Con video, se sincroniza con su reproducción; sin video, rota cada 7,5 s sobre la foto. Respeta «reducir movimiento».
+- **El video de fondo todavía no está publicado.** El archivo que pasó el usuario es el video del hero de Assort Health (de su CDN). Usarlo en Turnia implica usar material con derechos de un competidor, así que no se subió: queda pendiente que el usuario decida. Para activarlo alcanza con subir `public/videos/hero.mp4` y `hero.webm` (opcional `hero-mobile.mp4`). El código detecta cada archivo y no pide los que no están.
+- **«Escuchá a Sofi en acción»** (variante `escena`, datos en `src/content/escena-home.ts`): entra en una pantalla de escritorio. Al centro va el orbe con play. A la izquierda, Sofi con su objetivo y lo que dice; a la derecha, el paciente con lo que dice y los datos que el agente detecta (DNI, cobertura, turno, receta). El texto se escribe al ritmo del audio real, con los segmentos de `home.json`. Debajo están la barra de progreso, el play y la transcripción completa desplegable.
+
 ## Límite de demos por persona — 23/10/2026
 
 - El mensaje «Ya probaste varias demos hoy» salía al llegar a 3 demos por persona por día; ese tope estaba fijo en el código. Ahora se ajusta en **Panel → Sistema → Demo con tu web → «Demos por persona por día»**. Por defecto no hay límite (0), así que se desbloqueó apenas se publicó. Cada demo lee una web y usa créditos de Claude: si la landing recibe abusos, poner un tope (por ejemplo, 5).

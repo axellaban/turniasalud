@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { formatearTiempo, type Conversacion } from "@/content/conversaciones";
 import { inicioDeLinea, leerSincronizacion, lineaActiva, type Sincronizacion } from "./reproductor-sync";
+import type { PasoEscena } from "@/content/escena-home";
 
 // Reproductor de las demos de audio. Lee /audios/<slug>.mp3 + .json (scripts/generar-audios.mjs)
 // o /api/audios/<slug>.mp3 + .json (generados desde Panel → Configuración). Si todavía no
@@ -20,8 +21,10 @@ const CSS = `
 .turnia-barra { transform: scaleY(.55); transform-origin: center; transition: transform .4s ease }
 .turnia-sonando .turnia-barra { animation: turnia-barra .85s ease-in-out infinite alternate }
 .turnia-anillo { animation: turnia-anillo 2.8s ease-out infinite }
+@keyframes turnia-entra { from { opacity: 0; transform: translateY(10px) scale(.98) } to { opacity: 1; transform: none } }
+.turnia-entra { animation: turnia-entra .55s cubic-bezier(.2,.7,.2,1) both }
 @media (prefers-reduced-motion: reduce) {
-  .turnia-sonando .turnia-barra, .turnia-anillo { animation: none }
+  .turnia-sonando .turnia-barra, .turnia-anillo, .turnia-entra { animation: none }
 }
 `;
 
@@ -194,10 +197,10 @@ function useReproductor(conversacion: Conversacion) {
       />
     ) : null;
 
-  return { estado, sonando, tiempo, duracion, activa, alternar, buscar, saltarALinea, audio };
+  return { estado, sonando, tiempo, duracion, activa, segmentos: sync?.segmentos ?? [], alternar, buscar, saltarALinea, audio };
 }
 
-export function ReproductorDemo({ conversacion, variante = "tarjeta" }: { conversacion: Conversacion; variante?: "orbe" | "tarjeta" }) {
+export function ReproductorDemo({ conversacion, variante = "tarjeta", pasos }: { conversacion: Conversacion; variante?: "orbe" | "tarjeta" | "escena"; pasos?: Record<number, PasoEscena> }) {
   const r = useReproductor(conversacion);
   return (
     <>
@@ -205,7 +208,8 @@ export function ReproductorDemo({ conversacion, variante = "tarjeta" }: { conver
         {CSS}
       </style>
       {r.audio}
-      {variante === "orbe" ? <VarianteOrbe conversacion={conversacion} r={r} /> : <VarianteTarjeta conversacion={conversacion} r={r} />}
+      {variante === "escena" ? <VarianteEscena conversacion={conversacion} r={r} pasos={pasos ?? {}} />
+        : variante === "orbe" ? <VarianteOrbe conversacion={conversacion} r={r} /> : <VarianteTarjeta conversacion={conversacion} r={r} />}
     </>
   );
 }
@@ -293,6 +297,147 @@ function VarianteOrbe({ conversacion, r }: { conversacion: Conversacion; r: Repr
         r={r}
         className="mx-auto mt-8 max-h-72 max-w-2xl rounded-2xl bg-white/55 p-3 ring-1 ring-white/80 backdrop-blur sm:p-4"
       />
+    </div>
+  );
+}
+
+/**
+ * Como la sección «Watch Assort in action»: entra en una pantalla. Al centro el orbe
+ * con play; a la izquierda Sofi (su objetivo y lo que dice, escrito al ritmo de su voz)
+ * y a la derecha el paciente (lo que dice y los datos que el agente va detectando).
+ */
+function VarianteEscena({ conversacion, r, pasos }: { conversacion: Conversacion; r: Reproductor; pasos: Record<number, PasoEscena> }) {
+  const [verTodo, setVerTodo] = useState(false);
+  const disponible = r.estado !== "cargando";
+  const conAudio = r.estado === "listo";
+  const lineas = conversacion.lineas;
+  const activa = r.activa;
+  const empezo = activa >= 0;
+  const hablaPaciente = empezo && lineas[activa]?.quien === "paciente";
+
+  const progreso = (linea: number, desde = 0, dura?: number) => {
+    const s = r.segmentos.find((x) => x.linea === linea);
+    if (!s) return 1;
+    const total = dura ?? Math.max(0.3, s.fin - s.inicio);
+    return Math.min(1, Math.max(0, (r.tiempo - s.inicio - desde) / total));
+  };
+  const escrito = (linea: number) => {
+    const texto = lineas[linea]?.texto ?? "";
+    return linea === activa ? texto.slice(0, Math.ceil(texto.length * progreso(linea))) : texto;
+  };
+  const ultima = (quien: "agente" | "paciente") => {
+    for (let i = activa; i >= 0; i--) if (lineas[i]?.quien === quien) return i;
+    return -1;
+  };
+  const ultimoPaso = <K extends keyof PasoEscena>(clave: K) => {
+    for (let i = Math.max(activa, 0); i >= 0; i--) if (pasos[i]?.[clave]) return { linea: i, valor: pasos[i][clave]! };
+    return null;
+  };
+  const iAgente = ultima("agente");
+  const iPaciente = ultima("paciente");
+  const objetivo = ultimoPaso("objetivo");
+  const dato = empezo ? ultimoPaso("dato") : null;
+  const datoEscrito = dato ? dato.valor.valor.slice(0, Math.ceil(dato.valor.valor.length * (dato.linea === activa ? progreso(dato.linea, 0.2, 1.2) : 1))) : "";
+  const etiqueta = r.sonando ? "Pausar la conversación" : `Escuchar la conversación: ${conversacion.titulo}`;
+
+  const tarjeta = "rounded-2xl bg-white/75 p-4 text-left shadow-[0_12px_40px_rgba(33,87,225,.14)] ring-1 ring-white backdrop-blur-md";
+  const cursor = <span aria-hidden="true" className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-brand-600/70" />;
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-[28px] px-4 pb-5 pt-7 sm:px-8 lg:flex lg:h-[min(600px,calc(100svh-290px))] lg:min-h-[500px] lg:flex-col lg:px-10 lg:pb-5 lg:pt-7"
+      style={{ background: "radial-gradient(130% 95% at 50% 32%, #f6f7ff 0%, #e4e8fd 30%, #b9c6f5 68%, #8fa6ee 100%)" }}
+    >
+      <p className="text-center text-lg font-medium tracking-tight text-brand-950 sm:text-xl">Escuchá a Sofi en acción</p>
+      <p className="mx-auto mt-1 hidden max-w-lg text-center text-sm text-brand-950/60 sm:block">{conversacion.descripcion}</p>
+
+      <div className="mt-5 grid flex-1 items-center gap-4 lg:mt-4 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-8">
+        {/* Sofi: objetivo y lo que dice. */}
+        <div className={`order-2 space-y-3 transition-opacity duration-500 lg:order-1 ${hablaPaciente ? "lg:opacity-60" : ""}`}>
+          {objetivo && (
+            <div key={`o${objetivo.linea}`} className={`turnia-entra inline-block ${tarjeta} px-4 py-2.5`}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-950">Objetivo</p>
+              <p className="text-sm text-brand-950/70">{objetivo.valor}</p>
+            </div>
+          )}
+          <div className={`${tarjeta} ${empezo && !hablaPaciente ? "ring-2 ring-brand-400/50" : ""}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-600">Sofi · recepcionista</p>
+            <p className="mt-1.5 flex h-[4.6rem] flex-col justify-end overflow-hidden text-[14px] leading-relaxed text-brand-950 sm:h-24 sm:text-[15px]">
+              <span>{iAgente >= 0 ? escrito(iAgente) : "Tocá play para escuchar una llamada real con el agente."}{iAgente === activa && empezo && cursor}</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Orbe central con play. */}
+        <div className="order-1 flex flex-col items-center lg:order-2">
+          <button
+            type="button"
+            onClick={r.alternar}
+            disabled={!disponible}
+            aria-label={etiqueta}
+            aria-pressed={r.sonando}
+            className={`group relative grid h-28 w-28 place-items-center rounded-full outline-none focus-visible:ring-4 focus-visible:ring-white/90 disabled:cursor-default sm:h-40 sm:w-40 lg:h-48 lg:w-48 ${r.sonando ? "turnia-sonando" : ""}`}
+          >
+            <span aria-hidden="true" className="absolute -inset-12 rounded-full bg-white/55 blur-3xl" />
+            {r.sonando && (
+              <>
+                <span aria-hidden="true" className="turnia-anillo absolute inset-0 rounded-full border-2 border-white/70" />
+                <span aria-hidden="true" className="turnia-anillo absolute inset-0 rounded-full border-2 border-white/60 [animation-delay:1.4s]" />
+              </>
+            )}
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 rounded-full transition-[filter,transform] duration-700 group-enabled:group-hover:scale-[1.03]"
+              style={{
+                background: "radial-gradient(circle at 34% 28%, #a9bcff 0%, #6f8ff0 20%, #2157e1 58%, #0e3ca7 100%)",
+                boxShadow: "inset 0 -14px 34px rgba(6, 22, 90, .45), inset 0 12px 26px rgba(255, 255, 255, .32), 0 24px 60px rgba(33, 87, 225, .35)",
+                filter: hablaPaciente ? "hue-rotate(28deg) saturate(.9)" : "none",
+              }}
+            />
+            <span aria-hidden="true" className="absolute left-[16%] top-[5%] h-[42%] w-[68%] rounded-full" style={{ background: "radial-gradient(ellipse at 50% 28%, rgba(255,255,255,.5) 0%, rgba(255,255,255,.12) 45%, rgba(255,255,255,0) 72%)" }} />
+            {r.sonando || r.tiempo > 0 ? (
+              <span aria-hidden="true" className="relative flex h-12 items-center gap-[5px]">
+                {BARRAS.map((alto, i) => (
+                  <span key={i} className="turnia-barra w-[3px] rounded-full bg-white/95" style={{ height: `${Math.round(alto * 44)}px`, animationDelay: `${(i * -0.17).toFixed(2)}s` }} />
+                ))}
+              </span>
+            ) : (
+              <IconoPlay sonando={false} className="relative ml-1 h-10 w-10 text-white" />
+            )}
+          </button>
+          <p className="mt-3 text-sm font-medium text-brand-950/70">
+            {r.sonando ? "Escuchando…" : r.tiempo > 0 ? "En pausa" : conAudio ? "Escuchar la llamada" : "Ver la conversación"}
+            <span className="tabular-nums text-brand-950/50"> · {disponible ? `${formatearTiempo(r.tiempo)} / ${formatearTiempo(r.duracion)}` : "…"}</span>
+          </p>
+        </div>
+
+        {/* Paciente: lo que dice y los datos detectados. */}
+        <div className={`order-3 space-y-3 transition-opacity duration-500 ${empezo && !hablaPaciente ? "lg:opacity-60" : ""}`}>
+          {dato && (
+            <div key={`d${dato.linea}`} className={`turnia-entra lg:ml-auto lg:max-w-[85%] ${tarjeta} px-4 py-2.5`}>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-950">{dato.valor.etiqueta}</p>
+              <p className="min-h-5 text-sm text-brand-950/70">{datoEscrito}</p>
+            </div>
+          )}
+          <div className={`${tarjeta} ${hablaPaciente ? "ring-2 ring-[#7b6cf6]/40" : ""}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6b5ce7]">Paciente</p>
+            <p className="mt-1.5 flex h-[4.6rem] flex-col justify-end overflow-hidden text-[14px] leading-relaxed text-brand-950 sm:h-24 sm:text-[15px]">
+              <span>{iPaciente >= 0 ? escrito(iPaciente) : "Jorge llama para sacar un turno y renovar una receta."}{iPaciente === activa && empezo && cursor}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-center gap-3">
+        {disponible && <BarraProgreso r={r} className="flex-1" acento="accent-brand-600" claro />}
+        <button type="button" onClick={() => setVerTodo((v) => !v)} aria-expanded={verTodo} className="shrink-0 rounded-full bg-white/70 px-3 py-1.5 text-xs font-medium text-brand-950 ring-1 ring-white hover:bg-white">
+          {verTodo ? "Ocultar transcripción" : "Transcripción completa"}
+        </button>
+        <button type="button" onClick={r.alternar} disabled={!disponible} aria-label={etiqueta} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/70 text-brand-950 ring-1 ring-white hover:bg-white disabled:opacity-60">
+          <IconoPlay sonando={r.sonando} className="h-4 w-4" />
+        </button>
+      </div>
+      {verTodo && <Transcripcion conversacion={conversacion} r={r} className="mt-3 max-h-56 rounded-2xl bg-white/55 p-3 ring-1 ring-white/80 backdrop-blur" />}
     </div>
   );
 }
