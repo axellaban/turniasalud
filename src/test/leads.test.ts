@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: "session-test" }) }) }));
 vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("REDIRECT_LOGIN"); } }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
-vi.mock("@/lib/session", () => ({ SESSION_COOKIE: "turnia_session", verifySessionToken: () => mocks.authenticated }));
+vi.mock("@/lib/session", () => ({ SESSION_COOKIE: "turnia_session", isAdminSessionToken: () => mocks.authenticated }));
 vi.mock("@/lib/db", () => ({ sql: mocks.query }));
 
 import { updateLead } from "@/app/panel/(app)/demos/actions";

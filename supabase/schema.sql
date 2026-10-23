@@ -451,3 +451,18 @@ create index if not exists clinic_imports_clinic_idx on clinic_imports (clinic_i
 create unique index if not exists clinic_imports_reading_idx on clinic_imports (clinic_id) where status = 'reading';
 alter table clinic_imports enable row level security;
 alter table clinic_imports add column if not exists started_at timestamptz;
+
+-- Acceso propio de un consultorio: un código que solo abre su clínica en el panel.
+-- Se guarda únicamente el hash del código; el código completo se muestra una vez.
+create table if not exists clinic_access (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  label text,
+  code_hash text not null unique,
+  code_hint text not null,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+create index if not exists clinic_access_clinic_idx on clinic_access (clinic_id, created_at desc);
+alter table clinic_access enable row level security;

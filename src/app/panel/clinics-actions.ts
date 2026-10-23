@@ -6,7 +6,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
-import { CLINIC_COOKIE, getPanelClinic, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { CLINIC_COOKIE, getPanelClinic, requireAdmin, touchClinic } from "@/lib/panel-clinic";
+import { createClinicAccess, revokeClinicAccess } from "@/lib/clinic-access";
 import { sessionCookieOptions } from "@/lib/session";
 import { normalizeWebsite } from "@/lib/demo/website";
 import { applyClinicImport, readClinicImport, requestClinicImport } from "@/lib/clinic-imports";
@@ -17,16 +18,18 @@ import { demoWhatsappNumber } from "@/lib/demo/config";
 import type { FormState } from "./actions";
 
 export async function selectClinic(form: FormData): Promise<void> {
-  await requirePanelSession();
+  await requireAdmin();
   const id = String(form.get("clinic_id") ?? "");
   if (!isUuid(id) || !(await sql`select id from clinics where id = ${id}`).length) throw new Error("Esta clínica ya no está disponible.");
   (await cookies()).set(CLINIC_COOKIE, id, sessionCookieOptions);
   revalidatePath("/panel", "layout");
-  redirect("/panel/configuracion");
+  // El selector del encabezado se queda en la misma sección; las tarjetas de Clínicas abren la configuración.
+  const back = String(form.get("return_to") ?? "");
+  redirect(/^\/panel(\/[a-z]+)?$/.test(back) && back !== "/panel/login" ? back : "/panel/configuracion");
 }
 
 export async function createClinic(_previous: FormState, form: FormData): Promise<FormState> {
-  await requirePanelSession();
+  await requireAdmin();
   const name = String(form.get("name") ?? "").trim().slice(0, 120);
   const input = String(form.get("website") ?? "").trim();
   const website = input ? normalizeWebsite(input) : null;
@@ -42,7 +45,7 @@ export async function createClinic(_previous: FormState, form: FormData): Promis
 
 /** Borra una ficha de demo con su agenda, pacientes e historial. La clínica principal nunca se borra. */
 export async function deleteClinic(form: FormData): Promise<void> {
-  await requirePanelSession();
+  await requireAdmin();
   const id = String(form.get("clinic_id") ?? "");
   if (!isUuid(id)) throw new Error("Clínica inválida.");
   const [deleted] = await sql`delete from clinics where id = ${id} and is_demo returning id`;
@@ -54,7 +57,7 @@ export async function deleteClinic(form: FormData): Promise<void> {
 
 /** Borra todas las demos temporales; las conservadas y la principal quedan. */
 export async function deleteTemporaryDemos(): Promise<void> {
-  await requirePanelSession();
+  await requireAdmin();
   const deleted = await sql<{ id: string }[]>`delete from clinics where is_demo and retained_at is null returning id`;
   const store = await cookies();
   if (deleted.some((c) => c.id === store.get(CLINIC_COOKIE)?.value)) store.delete(CLINIC_COOKIE);
@@ -81,7 +84,7 @@ export async function launchProfile(_previous: ProfileTestState, form: FormData)
   const url = settings.active_channel === "telegram"
     ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${token}`
     : `https://wa.me/${wa}?text=${encodeURIComponent(`¡Hola! Quiero probar este perfil de Turnia: ${token}`)}`;
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
   return { ok: true, url, message: "Enlace listo por 7 días; podés usarlo varias veces. Usa esta ficha guardada, sin volver a leer la web." };
 }
 
@@ -92,7 +95,7 @@ export async function refreshClinic(_previous: FormState, form: FormData): Promi
   try {
     const id = await requestClinicImport(clinic.id, website);
     after(async () => { await readClinicImport(id); });
-    revalidatePath("/panel/configuracion");
+    revalidatePath("/panel/configuracion", "layout");
     return { ok: true, message: "Leyendo la web. La ficha actual se conserva; después elegís qué datos aplicar." };
   } catch (e) { return { ok: false, message: e instanceof Error ? e.message : "No se pudo iniciar la lectura." }; }
 }
@@ -113,5 +116,25 @@ export async function discardImport(form: FormData): Promise<void> {
   const clinic = await getPanelClinic(form);
   const id = String(form.get("import_id") ?? "");
   if (isUuid(id)) await sql`update clinic_imports set status = 'discarded' where id = ${id} and clinic_id = ${clinic.id} and status = 'pending'`;
-  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/configuracion", "layout");
+}
+
+export type AccessState = FormState & { code?: string };
+
+/** Crea el código de acceso del consultorio. Se muestra una sola vez. */
+export async function createAccess(_previous: AccessState, form: FormData): Promise<AccessState> {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const label = String(form.get("label") ?? "").trim().slice(0, 80) || null;
+  const { code } = await createClinicAccess(clinic.id, label);
+  revalidatePath("/panel/configuracion", "layout");
+  return { ok: true, code, message: "Copiá el código ahora: por seguridad no se vuelve a mostrar." };
+}
+
+export async function revokeAccess(form: FormData): Promise<void> {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const id = String(form.get("access_id") ?? "");
+  if (isUuid(id)) await revokeClinicAccess(clinic.id, id);
+  revalidatePath("/panel/configuracion", "layout");
 }
