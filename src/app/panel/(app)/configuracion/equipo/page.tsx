@@ -1,7 +1,8 @@
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { getCatalog } from "@/lib/clinic";
 import { sql } from "@/lib/db";
-import { addProfessional, addSchedule, deleteSchedule, saveProfessional, toggleProfessional } from "../../../actions";
+import { addProfessional, addSchedule, deleteSchedule, saveProfessionalWithFeedback, toggleProfessional } from "../../../actions";
+import { EditDetails } from "../edit-details";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Professional } from "@/lib/types";
 import { ConfigHeader, WEEKDAYS } from "../header";
@@ -86,16 +87,14 @@ export default async function TeamPage() {
                 </form>
               </>}
 
-              <details className="mt-3"><summary className="cursor-pointer text-sm font-medium text-brand-700">Editar profesional</summary>
-                <form action={saveProfessional} className="mt-3 grid gap-3 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
+              <div className="mt-3"><EditDetails summary="Editar profesional" submit="Guardar profesional" action={saveProfessionalWithFeedback} className="mt-3 grid gap-3 sm:grid-cols-2">
+                <input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={p.id} />
                   <Field label="Nombre del profesional"><input name="full_name" required defaultValue={p.full_name} className={inputClass} /></Field>
                   <Field label="Especialidad del profesional"><input name="specialty" required defaultValue={p.specialty} list="specialties" className={inputClass} /></Field>
                   <Field label="Coberturas del profesional" hint="Solo si atiende algunas. Separadas por coma."><input name="accepted_coverages" defaultValue={p.accepted_coverages?.join(", ") ?? ""} className={inputClass} /></Field>
                   <Field label="Descripción del profesional"><input name="bio" defaultValue={p.bio ?? ""} className={inputClass} /></Field>
-                  <div className="sm:col-span-2"><button className={buttonClass}>Guardar profesional</button></div>
-                </form>
-              </details>
+              </EditDetails></div>
             </Card>
           );
         })}
