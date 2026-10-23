@@ -30,7 +30,10 @@ const isActive = (pathname: string, href: string) => (href === "/panel" ? pathna
 
 function LogoutButton({ className }: { className: string }) {
   return (
-    <form method="post" action="/api/panel/logout">
+    <form method="post" action="/api/panel/logout" onSubmit={() => {
+      // Los borradores de la ficha quedan en este navegador: al salir se borran.
+      try { for (const key of Object.keys(localStorage)) if (key.startsWith("turnia-borrador:")) localStorage.removeItem(key); } catch { /* sin almacenamiento */ }
+    }}>
       <button className={className}>
         <PanelIcon name="salir" />
         Cerrar sesión

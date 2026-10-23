@@ -8,6 +8,9 @@ import { setAppointmentStatus } from "../../actions";
 import { Card, CHANNEL_LABEL, Empty, PageHeader, StatusBadge, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import { ManualAppointmentForm } from "./manual-form";
 import { ManualPanel } from "./manual-panel";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Agenda · Panel" };
 
 type Row = {
   id: string;

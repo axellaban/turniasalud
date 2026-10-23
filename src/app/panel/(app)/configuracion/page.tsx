@@ -7,12 +7,15 @@ import { clinicInfoText } from "@/lib/clinic";
 import { listClinicAccess } from "@/lib/clinic-access";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
-import { Badge, Card, Field, buttonClass, inputClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
+import { Badge, Card, Field, Notice, buttonClass, inputClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import { ConfigHeader } from "./header";
 import { AccessCreator } from "./access-manager";
 import { CoverageInput } from "./coverage-input";
 import { CompletenessCard } from "../completeness-card";
 import { profileCompleteness } from "@/lib/profile-completeness";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Reglas del consultorio · Panel" };
 
 function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -64,6 +67,10 @@ export default async function SettingsPage() {
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion" />
+      {!admin && <Notice tone="info" className="mb-6">
+        <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio: datos, horarios, coberturas y lo que tiene que responder el agente.
+        Cambiá lo que necesites, tocá <strong>Guardar cambios</strong> y probalo desde <strong>Probar el agente</strong>: el agente usa la ficha nueva desde el próximo mensaje.
+      </Notice>}
       {/* En el celular primero va qué falta y cómo probar; en la compu, a la derecha del formulario. */}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[auto_1fr]">
         <div className="space-y-6 xl:col-start-2 xl:row-start-1">
@@ -131,7 +138,7 @@ export default async function SettingsPage() {
           <Card>
             <h2 className="font-semibold text-brand-950">Últimos cambios</h2>
             {changes.length ? <ul className="mt-3 space-y-2 text-sm">
-              {changes.map((c) => <li key={`${c.created_at}-${c.area}`} className="flex flex-wrap justify-between gap-x-2">
+              {changes.map((c) => <li key={c.id} className="flex flex-wrap justify-between gap-x-2">
                 <span><span className="font-medium text-brand-950">{c.actor}</span> <span className="text-brand-900/60">· {c.area}</span></span>
                 <span className="text-xs text-brand-900/50">{formatDateTime(c.created_at, clinic.timezone)}</span>
               </li>)}

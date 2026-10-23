@@ -6,6 +6,9 @@ import { selectClinic } from "../../clinics-actions";
 import { Badge, Card, Empty, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { DeleteClinicButton, DeleteTemporaryDemosButton, NewClinicForm } from "./forms";
 import { formatDateTime } from "@/lib/time";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Clínicas · Panel" };
 
 const FILTERS = [
   { key: "", label: "Todas" },

@@ -59,7 +59,7 @@ export function ReadWebsite({ clinicId, reading, hasWebsite }: { clinicId: strin
       <button disabled={!hasWebsite || pending || reading} className={buttonClass}>{reading || pending ? "Leyendo la web…" : "Leer web y revisar propuesta"}</button>
     </form>
     <p className="text-xs text-brand-900/60">La lectura prepara una propuesta y guarda el texto de sus páginas. Tus datos actuales se conservan hasta que elijas qué aplicar.</p>
-    {!hasWebsite && <p className="text-sm text-brand-800">Guardá una web en la ficha para habilitar la lectura.</p>}
+    {!hasWebsite && <p className="text-sm text-brand-800">Primero guardá la web en <a href="/panel/configuracion#datos" className="underline">Reglas del consultorio</a>.</p>}
     {state.message && (!state.ok || reading || pending) && <p role="status" className={`text-sm ${state.ok ? "text-brand-800" : "text-red-700"}`}>{state.message}</p>}
     {reading && <button type="button" onClick={() => router.refresh()} className={secondaryButtonClass}>Actualizar estado</button>}
   </div>;

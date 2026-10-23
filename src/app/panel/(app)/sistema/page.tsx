@@ -10,6 +10,9 @@ import { Badge, Card, CheckMark as Check, PageHeader } from "@/components/ui";
 import { AgentSetupButton } from "./agent-setup";
 import { AudiosWeb } from "./audios-web";
 import { Canales } from "./canales";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Sistema · Panel" };
 
 // Generar los audios de la web puede tardar ~1 minuto por conversación.
 export const maxDuration = 300;

@@ -6,6 +6,9 @@ import { displayPhone } from "@/lib/phone";
 import { setTaskStatus } from "../../actions";
 import { Badge, Card, Empty, PageHeader, StatusBadge, smallButtonClass, Tabs } from "@/components/ui";
 import { ResolveTaskForm } from "./resolve-form";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Tareas · Panel" };
 
 const TYPE_LABEL: Record<string, string> = {
   receta: "Receta",

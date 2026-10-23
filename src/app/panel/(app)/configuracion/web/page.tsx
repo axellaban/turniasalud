@@ -4,8 +4,11 @@ import { IMPORT_FIELDS, profileFields, type ClinicImport } from "@/lib/clinic-im
 import { formatDateTime } from "@/lib/time";
 import { discardImport } from "../../../clinics-actions";
 import { ImportReview, ReadWebsite } from "../../clinicas/forms";
-import { Badge, Card, smallButtonClass } from "@/components/ui";
+import { Badge, Card, Empty, smallButtonClass } from "@/components/ui";
 import { ConfigHeader, WEEKDAYS } from "../header";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Lectura de la web · Panel" };
 
 const STATUS: Record<ClinicImport["status"], { label: string; tone: "gray" | "green" | "yellow" | "red" | "blue" }> = {
   reading: { label: "Leyendo…", tone: "blue" },
@@ -25,11 +28,11 @@ export default async function WebsitePage() {
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <Card className="h-fit">
           <h2 className="mb-1 font-semibold text-brand-950">Lecturas de la web</h2>
-          {clinic.website ? <a href={clinic.website} target="_blank" rel="noreferrer" className="mb-3 block break-all text-sm text-brand-600 underline">{clinic.website}</a> : <p className="mb-3 text-sm text-brand-900/60">Sin web guardada.</p>}
+          {clinic.website && <a href={clinic.website} target="_blank" rel="noreferrer" className="mb-3 block break-all text-sm text-brand-600 underline">{clinic.website}</a>}
           <ReadWebsite key={clinic.id} clinicId={clinic.id} reading={reading} hasWebsite={Boolean(clinic.website)} />
         </Card>
         <div className="space-y-4">
-          {!imports.length && <Card><p className="text-sm text-brand-900/60">Todavía no hay una referencia guardada. Las demos anteriores a esta función conservan la ficha; una nueva lectura guardará sus fuentes.</p></Card>}
+          {!imports.length && <Empty>{clinic.website ? "Todavía no leíste la web. Tocá «Leer web y revisar propuesta» y elegí qué datos usar." : "Cuando guardes la web del consultorio en «Reglas del consultorio», vas a poder leerla y elegir qué datos usar."}</Empty>}
           {imports.map((item) => <Card key={item.id}>
             <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-brand-950">Lectura del {formatDateTime(item.created_at, clinic.timezone)}</h3><Badge tone={STATUS[item.status].tone}>{STATUS[item.status].label}</Badge></div>
             <p className="my-2 break-all text-xs text-brand-900/60">{item.source_url} · {item.pages.length} páginas</p>

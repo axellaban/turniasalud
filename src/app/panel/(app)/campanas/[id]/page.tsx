@@ -10,6 +10,9 @@ import type { Campaign } from "@/lib/types";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { SendCampaignButton } from "./send-button";
 import { renderTemplate, templateKeyFor, whatsappReadiness } from "@/lib/whatsapp";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Campaña · Panel" };
 
 export default async function CampaignDetail({ params }: PageProps<"/panel/campanas/[id]">) {
   const { id } = await params;

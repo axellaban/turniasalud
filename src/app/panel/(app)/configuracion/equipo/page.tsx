@@ -5,6 +5,9 @@ import { addProfessional, addSchedule, deleteSchedule, saveProfessional, toggleP
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Professional } from "@/lib/types";
 import { ConfigHeader, WEEKDAYS } from "../header";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Equipo y horarios · Panel" };
 
 /** La semana empieza el lunes. */
 const WEEK = [1, 2, 3, 4, 5, 6, 0];

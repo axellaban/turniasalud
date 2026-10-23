@@ -10,7 +10,7 @@ export function AccessCreator({ clinicId, loginUrl }: { clinicId: string; loginU
   const copy = async (text: string, what: string) => {
     try { await navigator.clipboard.writeText(text); setCopied(what); } catch { setCopied(null); }
   };
-  const message = state.code ? `Entrá a ${loginUrl} con este código: ${state.code}` : "";
+  const message = state.code ? `Hola, te paso el acceso al panel de Turnia para editar las reglas de tu consultorio.\nEntrá a ${loginUrl} y escribí este código donde dice «Contraseña o código»: ${state.code}\nEs personal: no lo compartas.` : "";
   return <div className="space-y-3">
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="clinic_id" value={clinicId} />
@@ -24,6 +24,7 @@ export function AccessCreator({ clinicId, loginUrl }: { clinicId: string; loginU
       <div className="mt-2 flex flex-wrap gap-2">
         <button type="button" onClick={() => copy(state.code!, "code")} className={secondaryButtonClass}>{copied === "code" ? "Copiado ✓" : "Copiar código"}</button>
         <button type="button" onClick={() => copy(message, "message")} className={secondaryButtonClass}>{copied === "message" ? "Copiado ✓" : "Copiar mensaje con link"}</button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>Enviar por WhatsApp ↗</a>
       </div>
     </Notice>}
   </div>;

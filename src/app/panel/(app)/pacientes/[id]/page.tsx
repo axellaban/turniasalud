@@ -8,6 +8,9 @@ import { displayPhone } from "@/lib/phone";
 import { Card, CHANNEL_LABEL, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
 import { setContactOptOut } from "../../../actions";
 import type { Patient } from "@/lib/types";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Paciente · Panel" };
 
 export default async function PatientDetail({ params }: PageProps<"/panel/pacientes/[id]">) {
   const { id } = await params;

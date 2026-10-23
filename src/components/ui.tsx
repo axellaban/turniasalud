@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ScrollActiveTab } from "./tabs-scroll";
 import type { ReactNode } from "react";
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
@@ -69,8 +70,10 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 
 /** Pestañas de una sección (cada una es su propia ruta: se pueden compartir y recargar). */
 export function Tabs({ items, current }: { items: Array<{ href: string; label: string; count?: number }>; current: string }) {
+  const id = `tabs-${items[0]?.href.replace(/[^a-z]/g, "")}`;
   return (
-    <nav aria-label="Secciones" className="-mx-4 mb-6 overflow-x-auto border-b border-brand-900/10 px-4 sm:mx-0 sm:px-0">
+    <nav id={id} aria-label="Secciones" className="relative -mx-4 mb-6 overflow-x-auto border-b border-brand-900/10 px-4 sm:mx-0 sm:px-0">
+      <ScrollActiveTab id={id} />
       <ul className="flex min-w-max gap-1">
         {items.map((item) => {
           const active = item.href === current;

@@ -7,6 +7,9 @@ import { Card, Empty, smallButtonClass } from "@/components/ui";
 import type { Professional } from "@/lib/types";
 import { ScheduleBlockForm } from "../block-form";
 import { ConfigHeader } from "../header";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Feriados y bloqueos · Panel" };
 
 export default async function BlocksPage() {
   const clinic = await getPanelClinic();

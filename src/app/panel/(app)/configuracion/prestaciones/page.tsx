@@ -4,6 +4,9 @@ import { addAppointmentType, saveAppointmentType, toggleAppointmentType } from "
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Professional } from "@/lib/types";
 import { ConfigHeader } from "../header";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Prestaciones · Panel" };
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const priceInput = (price: number | string | null) => (price ? String(Number(price)).replace(".", ",") : "");

@@ -7,6 +7,9 @@ import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Badge, Card, CHANNEL_LABEL, PageHeader, StatusBadge } from "@/components/ui";
 import type { Conversation } from "@/lib/types";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Conversación · Panel" };
 
 export default async function ConversationDetail({ params }: PageProps<"/panel/conversaciones/[id]">) {
   const { id } = await params;
