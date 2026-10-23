@@ -294,6 +294,20 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(await actions.saveDemoLimit({}, form({ demo_daily_limit: "0" }))).toMatchObject({ ok: true, message: "Sin límite de demos por persona." });
     expect((await sql`select demo_daily_limit from messaging_settings`)[0].demo_daily_limit).toBeNull();
   });
+  it("editar prestación y profesional responde si se guardó o por qué no", async () => {
+    const [type] = await sql`select id from appointment_types where clinic_id = ${a} limit 1`;
+    const [pro] = await sql`select id from professionals where clinic_id = ${a} limit 1`;
+    const base = { clinic_id: a, id: type.id, name: "Consulta de primera vez", specialty: "Odontología", duration_min: "45", price: "48000" };
+    expect(await actions.saveAppointmentTypeWithFeedback({}, form(base))).toEqual({ ok: true, message: "Prestación guardada." });
+    expect(Number((await sql`select price from appointment_types where id = ${type.id}`)[0].price)).toBe(48000);
+    expect(await actions.saveAppointmentTypeWithFeedback({}, form({ ...base, duration_min: "2" }))).toMatchObject({ ok: false, message: expect.stringContaining("duración") });
+    expect(await actions.saveAppointmentTypeWithFeedback({}, form({ ...base, price: "gratis" }))).toMatchObject({ ok: false, message: expect.stringContaining("precio") });
+    expect(await actions.saveAppointmentTypeWithFeedback({}, form({ ...base, name: "" }))).toMatchObject({ ok: false });
+    const [foreign] = await sql`select id from appointment_types where clinic_id = ${b} limit 1`;
+    expect(await actions.saveAppointmentTypeWithFeedback({}, form({ ...base, id: foreign.id }))).toMatchObject({ ok: false, message: expect.stringContaining("no pertenece") });
+    expect(await actions.saveProfessionalWithFeedback({}, form({ clinic_id: a, id: pro.id, full_name: "Dra. Nueva", specialty: "Odontología" }))).toEqual({ ok: true, message: "Profesional guardado." });
+    expect(await actions.saveProfessionalWithFeedback({}, form({ clinic_id: a, id: pro.id, full_name: "", specialty: "Odontología" }))).toMatchObject({ ok: false });
+  });
   it("borrar la clínica borra sus accesos", async () => {
     await clinics.createAccess({}, form({ clinic_id: a }));
     await clinics.deleteClinic(form({ clinic_id: a }));

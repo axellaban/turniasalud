@@ -2,6 +2,12 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Guardar prestación y profesional — 23/10/2026
+
+- «Guardar prestación» y «Guardar profesional» no avisaban nada: si un dato era inválido (precio con letras, duración fuera de 5–480, nombre vacío) se descartaba en silencio y parecía que no guardaba. Ahora cada edición responde «Prestación guardada ✓» / «Profesional guardado ✓» y se cierra, o muestra el error exacto sin perder lo escrito. Si la clínica elegida cambió en otra pestaña, también lo avisa ahí mismo.
+- Probado en navegador (precio inválido → error y valores intactos; precio válido → guardado, se cierra y persiste al recargar) y con test de integración.
+- Si alguien tenía el panel abierto durante un deploy, conviene recargar una vez.
+
 ## Home: hero con mensajes del agente y llamada en una pantalla — 23/10/2026
 
 - **Hero**: sobre el fondo, el agente «escribe» cuatro mensajes en español adaptados a Argentina (guardia, derivación, OSDE, cartilla), con onda de voz y salida suave. Es la misma secuencia y los mismos tiempos que la home de Assort (segundos 1, 8, 15,5 y 23,5 del video). Con video, se sincroniza con su reproducción; sin video, rota cada 7,5 s sobre la foto. Respeta «reducir movimiento».

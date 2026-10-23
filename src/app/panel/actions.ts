@@ -217,30 +217,64 @@ export async function saveClinicWithFeedback(_previous: FormState, form: FormDat
 }
 
 export async function saveProfessional(form: FormData) {
-  const clinic = await getPanelClinic(form);
+  await saveProfessionalWithFeedback({}, form);
+}
+
+/** Editar un profesional, con confirmación o el motivo por el que no se guardó. */
+export async function saveProfessionalWithFeedback(_previous: FormState, form: FormData): Promise<FormState> {
+  let clinic;
+  try {
+    clinic = await getPanelClinic(form);
+  } catch (error) {
+    // Otra pestaña cambió la clínica elegida: se avisa acá, sin perder lo escrito.
+    if (error instanceof Error && error.message.includes("clínica seleccionada")) return { ok: false, message: error.message };
+    throw error;
+  }
   const id = uuid(form, "id");
   const name = text(form, "full_name");
   const specialty = text(form, "specialty");
-  if (!id || !name || !specialty) return;
+  if (!id) return { ok: false, message: "No encontré el profesional. Recargá la página." };
+  if (!name || !specialty) return { ok: false, message: "Completá el nombre y la especialidad." };
   const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
-  await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id}`;
+  const rows = await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  if (!rows.length) return { ok: false, message: "Este profesional no pertenece a la clínica elegida. Recargá la página." };
   await touchClinic(clinic.id, "Equipo");
   revalidatePath("/panel/configuracion", "layout");
+  return { ok: true, message: "Profesional guardado." };
 }
 
 export async function saveAppointmentType(form: FormData) {
-  const clinic = await getPanelClinic(form);
+  await saveAppointmentTypeWithFeedback({}, form);
+}
+
+/** Editar una prestación, con confirmación o el motivo por el que no se guardó. */
+export async function saveAppointmentTypeWithFeedback(_previous: FormState, form: FormData): Promise<FormState> {
+  let clinic;
+  try {
+    clinic = await getPanelClinic(form);
+  } catch (error) {
+    // Otra pestaña cambió la clínica elegida: se avisa acá, sin perder lo escrito.
+    if (error instanceof Error && error.message.includes("clínica seleccionada")) return { ok: false, message: error.message };
+    throw error;
+  }
   const id = uuid(form, "id");
   const name = text(form, "name");
   const specialty = text(form, "specialty");
   const duration = Number(form.get("duration_min"));
   const recall = Number(form.get("recall_months"));
-  if (!id || !name || !specialty || !Number.isFinite(duration) || duration < 5 || duration > 480) return;
-  await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${parsePrice(text(form, "price"))},
+  if (!id) return { ok: false, message: "No encontré la prestación. Recargá la página." };
+  if (!name || !specialty) return { ok: false, message: "Completá el nombre y la especialidad." };
+  if (!Number.isFinite(duration) || duration < 5 || duration > 480) return { ok: false, message: "La duración tiene que estar entre 5 y 480 minutos." };
+  const rawPrice = text(form, "price");
+  const price = parsePrice(rawPrice);
+  if (rawPrice && price === null) return { ok: false, message: "Revisá el precio: usá solo números (por ejemplo, 48000)." };
+  const rows = await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${price},
     instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
-    is_first_visit = ${form.get("is_first_visit") === "on"} where id = ${id} and clinic_id = ${clinic.id}`;
+    is_first_visit = ${form.get("is_first_visit") === "on"} where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  if (!rows.length) return { ok: false, message: "Esta prestación no pertenece a la clínica elegida. Recargá la página." };
   await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
+  return { ok: true, message: "Prestación guardada." };
 }
 
 export async function addProfessional(form: FormData) {

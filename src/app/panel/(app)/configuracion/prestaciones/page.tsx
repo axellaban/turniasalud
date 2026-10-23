@@ -1,6 +1,7 @@
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { sql } from "@/lib/db";
-import { addAppointmentType, saveAppointmentType, toggleAppointmentType } from "../../../actions";
+import { addAppointmentType, saveAppointmentTypeWithFeedback, toggleAppointmentType } from "../../../actions";
+import { EditDetails } from "../edit-details";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Professional } from "@/lib/types";
 import { ConfigHeader } from "../header";
@@ -43,9 +44,8 @@ export default async function ServicesPage() {
                   <button className={smallButtonClass}>{x.active ? "Desactivar" : "Activar"}</button>
                 </form>
               </div>
-              <details className="mt-1">
-                <summary className="cursor-pointer text-sm font-medium text-brand-700">Editar prestación</summary>
-                <form action={saveAppointmentType} className="mt-3 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
+              <EditDetails summary="Editar prestación" submit="Guardar prestación" action={saveAppointmentTypeWithFeedback} className="mt-3 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2">
+                <input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={x.id} />
                   <Field label="Nombre de la prestación"><input name="name" required defaultValue={x.name} className={inputClass} /></Field>
                   <Field label="Especialidad de la prestación"><input name="specialty" required defaultValue={x.specialty} list="specialties" className={inputClass} /></Field>
@@ -54,9 +54,7 @@ export default async function ServicesPage() {
                   <Field label="Control periódico (meses)" hint="Para las campañas de recall. Vacío si no aplica."><input name="recall_months" type="number" min={1} max={60} defaultValue={x.recall_months ?? ""} className={inputClass} /></Field>
                   <Field label="Indicaciones previas"><textarea name="instructions" rows={2} defaultValue={x.instructions ?? ""} className={inputClass} /></Field>
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_first_visit" defaultChecked={x.is_first_visit} /> Es primera consulta</label>
-                  <div className="sm:col-span-2"><button className={buttonClass}>Guardar prestación</button></div>
-                </form>
-              </details>
+              </EditDetails>
             </li>
           ))}
         </ul>
