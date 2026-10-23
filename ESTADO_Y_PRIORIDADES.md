@@ -2,6 +2,13 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Corrección de enlaces de perfil para compartir — 23/10/2026
+
+- El usuario reportó rechazo al abrir un enlace recién generado después de editar su clínica. Diagnóstico de solo lectura en Neon, exclusivamente Turnia/main/neondb: el enlace creado a las 17:18:58 seguía vigente a las 17:24, pero estaba reclamado. La vinculación a la primera cuenta impedía probarlo con otra; guardar la ficha no lo había invalidado.
+- Los nuevos enlaces de perfil duran **7 días** y admiten distintos probadores, cada uno con su sesión y contexto por teléfono/usuario. El botón «Probar este perfil» genera un enlace nuevo y desactiva los anteriores de esa clínica. «Desactivar enlaces de esta clínica» impide nuevos inicios, sin interrumpir conversaciones ya iniciadas. Los enlaces de la landing para leer una web conservan sus 15 minutos y vinculación individual.
+- La limpieza elimina enlaces vencidos, no enlaces vigentes creados hace más de un día. No requiere migración ni cambios de credenciales, WAHA, Telegram, ElevenLabs o n8n.
+- Validación local: **163 pruebas** con Postgres descartable, TypeScript y lint correctos. Incluye dos usuarios con el mismo perfil y sesiones separadas, siete días de vigencia, reemplazo/desactivación por clínica y supervivencia de enlaces vigentes a la limpieza.
+
 ## Perfiles de clínicas editables — 23/10/2026
 
 - Implementado `/panel/clinicas`: listado, búsqueda, creación manual y selector de clínica. Configuración, agenda, pacientes, conversaciones y tareas consultan la clínica seleccionada; los webhooks siguen resolviendo su clínica sin usar la selección del administrador.
@@ -9,7 +16,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - Guardar, conservar, leer la web o preparar una prueba protege el perfil de la limpieza de demos de siete días (`retained_at`). Conserva `is_demo`: su agenda sigue siendo simulada y no envía avisos ni campañas a pacientes.
 - Las nuevas extracciones guardan en Neon `clinic_imports`: URL, fecha, texto por página y ficha estructurada. Las demos anteriores conservan su ficha pero no tienen archivado el texto original. Se puede leer su web ahora para guardar una nueva referencia; no presentarla como la lectura histórica.
 - «Leer web y revisar propuesta» guarda una propuesta sin sobrescribir contexto. Cada campo se aplica por selección explícita; el reemplazo opcional de catálogo desactiva el anterior y conserva turnos e historial. Una revisión desactualizada o de otra clínica se rechaza. Límite de tres lecturas por clínica/hora.
-- «Probar este perfil» genera un enlace de 15 minutos al canal habilitado para usar la misma clínica y sus correcciones, sin re-scrapear ni crear otra ficha. Telegram requiere tocar Start. La llamada privada de `/demo` también usa el perfil seleccionado y el agente compartido, sin crear agentes en ElevenLabs. Empezar una conversación nueva para usar contexto editado.
+- «Probar este perfil» genera un enlace al canal habilitado para usar la misma clínica y sus correcciones, sin re-scrapear ni crear otra ficha. La vigencia y las reglas para compartir se actualizaron en el bloque superior. Telegram requiere tocar Start. La llamada privada de `/demo` también usa el perfil seleccionado y el agente compartido, sin crear agentes en ElevenLabs. Empezar una conversación nueva para usar contexto editado.
 - Validación local: **161 pruebas**, TypeScript, lint y build correctos con Node 24 y Postgres descartable; APIs externas simuladas. Revisión con Chrome: guardar y recargar, cambiar entre clínicas, aplicar solo dirección y conservar pagos/instrucciones manuales. Migración aditiva en el build de producción; sin `seed.sql`.
 - WAHA, su sesión y servicio, credenciales, webhook y despliegue no se modificaron. Telegram sigue seleccionado. n8n continúa despublicado; Gmail y campañas siguen pospuestos. No se regeneraron audios ni se modificó ElevenLabs ni planes.
 - Publicado por [PR #14](https://github.com/axellaban/turniasalud/pull/14), merge `a8d64bd`. CI y Vercel aprobados; producción [7AGU3CRKJpf4jdT8g9Xd6H3JMuM1](https://vercel.com/labans-projects-c5c64fdc/turniasalud/7AGU3CRKJpf4jdT8g9Xd6H3JMuM1). Comprobación real: panel autenticado con Clínicas y selector, `/api/health` 200 con `database: "ok"`, cuatro fichas y canal Telegram; webhooks WAHA/ElevenLabs sin firma 401.

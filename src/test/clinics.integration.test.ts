@@ -136,7 +136,10 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await session.handleDemoMessage({ ...input, messageId: "ask", text: "¿Dónde atienden?" });
     expect(JSON.stringify(mocks.agent.mock.calls)).toContain("FAQ corregida guardada");
     expect(JSON.stringify(mocks.agent.mock.calls)).toContain("Instrucción guardada");
-    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:999")).toBeNull();
+    const second = { ...input, chatId: "telegram:999", phone: "telegram:999", messageId: "second-start" };
+    expect(await session.handleDemoMessage(second)).toMatchObject({ status: "eligiendo" });
+    expect(await sql`select phone from demo_sessions where clinic_id = ${a}`).toHaveLength(2);
+    expect((await sql`select status from demo_sessions where phone = 'telegram:123'`)[0].status).toBe("chat");
   });
   it("los enlaces de perfil aceptan tokens que terminan en guion y verifican vencimiento", async () => {
     const token = `p_${"a".repeat(23)}-`;
@@ -144,7 +147,29 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const input = { messageId: "ends-hyphen", chatId: "telegram:123", phone: "telegram:123", text: `Probar perfil: ${token}` };
     expect(await session.handleDemoMessage(input)).toMatchObject({ status: "eligiendo" });
     await sql`update demo_handoffs set expires_at = now() - interval '1 minute' where token = ${token}`;
-    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:123")).toBeNull();
+    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token)).toBeNull();
+  });
+  it("los enlaces compartibles duran siete días, se renuevan y se desactivan sin afectar otra clínica", async () => {
+    const handoffs = await import("@/lib/demo/handoff");
+    const first = await handoffs.createProfileHandoff(a, null);
+    const [{ days }] = await sql`select extract(epoch from (expires_at - created_at)) / 86400 as days from demo_handoffs where token = ${first}`;
+    expect(Number(days)).toBeCloseTo(7, 2);
+    await sql`update demo_handoffs set claimed_by = 'telegram:old-user' where token = ${first}`;
+    expect(await handoffs.claimProfileHandoff(first)).toBe(a);
+    const other = await handoffs.createProfileHandoff(b, null);
+    const renewed = await handoffs.createProfileHandoff(a, null);
+    expect(await handoffs.claimProfileHandoff(first)).toBeNull();
+    expect(await handoffs.claimProfileHandoff(renewed)).toBe(a);
+    await clinics.revokeProfileLink({}, form({ clinic_id: a }));
+    expect(await handoffs.claimProfileHandoff(renewed)).toBeNull();
+    expect(await handoffs.claimProfileHandoff(other)).toBe(b);
+  });
+  it("la limpieza de enlaces públicos no borra perfiles compartibles aún vigentes", async () => {
+    const handoffs = await import("@/lib/demo/handoff");
+    const token = await handoffs.createProfileHandoff(a, null);
+    await sql`update demo_handoffs set created_at = now() - interval '2 days' where token = ${token}`;
+    await handoffs.createDemoHandoff("https://example.com", "local-test");
+    expect(await handoffs.claimProfileHandoff(token)).toBe(a);
   });
   it("la agenda y los pacientes del panel corresponden a la clínica elegida", async () => {
     await sql`insert into patients (clinic_id, phone, full_name) values (${a}, 'test-alpha', 'Paciente Alfa visible'), (${b}, 'test-beta', 'Paciente Beta privado')`;

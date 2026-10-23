@@ -71,9 +71,9 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
   const said = input.text.replace(/^\(audio\)\s*/, "");
   const savedToken = /\bp_[A-Za-z0-9_-]{24}(?![A-Za-z0-9_-])/.exec(said)?.[0];
   if (savedToken && /perfil/i.test(said)) {
-    const clinicId = await claimProfileHandoff(savedToken, input.phone);
+    const clinicId = await claimProfileHandoff(savedToken);
     if (!clinicId) {
-      await sendChatText(input.chatId, "Este enlace de perfil venció o ya lo usó otra persona. Generá otro desde el panel.");
+      await sendChatText(input.chatId, "Este enlace de demo venció o fue desactivado. Pedile a quien te lo compartió que genere otro desde el panel.");
       return { handled: true, status: "terminada" };
     }
     return startSavedProfile(input, clinicId);

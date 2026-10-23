@@ -1,7 +1,7 @@
 "use client";
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClinic, launchProfile, refreshClinic, applyImport } from "../../clinics-actions";
+import { createClinic, launchProfile, revokeProfileLink, refreshClinic, applyImport } from "../../clinics-actions";
 import { buttonClass, inputClass, Field, secondaryButtonClass } from "@/components/ui";
 
 export function NewClinicForm() {
@@ -17,14 +17,18 @@ export function NewClinicForm() {
 }
 
 export function ProfileTest({ clinicId }: { clinicId: string }) {
-  const [state, action, pending] = useActionState(launchProfile, {});
+  const [state, action, pending] = useActionState(async (previous: typeof initialProfileState, form: FormData) => form.get("intent") === "revoke" ? revokeProfileLink(previous, form) : launchProfile(previous, form), initialProfileState);
   return <form action={action} className="space-y-2">
     <input type="hidden" name="clinic_id" value={clinicId} />
     <button disabled={pending} className={buttonClass}>{pending ? "Preparando…" : "Probar este perfil"}</button>
+    <p className="text-xs text-brand-900/60">Genera un enlace compartible por 7 días y desactiva los anteriores. Podés probarlo vos y después enviarlo al cliente. Guardá los cambios antes de iniciar otra conversación.</p>
+    <button name="intent" value="revoke" disabled={pending} className={secondaryButtonClass}>Desactivar enlaces de esta clínica</button>
     {state.message && <p role="status" className={`text-sm ${state.ok ? "text-brand-800" : "text-red-700"}`}>{state.message}</p>}
     {state.url && <a href={state.url} target="_blank" rel="noreferrer" className={`${secondaryButtonClass} inline-flex`}>Abrir la prueba en el canal habilitado ↗</a>}
   </form>;
 }
+
+const initialProfileState: import("../../clinics-actions").ProfileTestState = {};
 
 export function ReadWebsite({ clinicId, reading, hasWebsite }: { clinicId: string; reading: boolean; hasWebsite: boolean }) {
   const [state, action, pending] = useActionState(refreshClinic, {});

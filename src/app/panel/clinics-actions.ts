@@ -10,7 +10,7 @@ import { CLINIC_COOKIE, getPanelClinic, requirePanelSession, touchClinic } from 
 import { sessionCookieOptions } from "@/lib/session";
 import { normalizeWebsite } from "@/lib/demo/website";
 import { applyClinicImport, readClinicImport, requestClinicImport } from "@/lib/clinic-imports";
-import { createProfileHandoff } from "@/lib/demo/handoff";
+import { createProfileHandoff, revokeProfileHandoffs } from "@/lib/demo/handoff";
 import { messagingSettings } from "@/lib/messaging-settings";
 import { TELEGRAM_BOT_USERNAME } from "@/lib/telegram";
 import { demoWhatsappNumber } from "@/lib/demo/config";
@@ -61,7 +61,13 @@ export async function launchProfile(_previous: ProfileTestState, form: FormData)
     ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${token}`
     : `https://wa.me/${wa}?text=${encodeURIComponent(`¡Hola! Quiero probar este perfil de Turnia: ${token}`)}`;
   revalidatePath("/panel/configuracion");
-  return { ok: true, url, message: "Enlace listo por 15 minutos. Usa esta ficha guardada, sin volver a leer la web." };
+  return { ok: true, url, message: "Enlace listo por 7 días: podés compartirlo con varios probadores. Usa la ficha guardada. Los enlaces anteriores de esta clínica quedaron desactivados." };
+}
+
+export async function revokeProfileLink(_previous: ProfileTestState, form: FormData): Promise<ProfileTestState> {
+  const clinic = await getPanelClinic(form);
+  await revokeProfileHandoffs(clinic.id);
+  return { ok: true, message: "Enlaces desactivados. Las conversaciones ya iniciadas conservan su sesión; nadie puede iniciar otra con esos enlaces." };
 }
 
 export async function refreshClinic(_previous: FormState, form: FormData): Promise<FormState> {
