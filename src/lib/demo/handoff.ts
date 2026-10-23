@@ -11,7 +11,8 @@ export async function createDemoHandoff(website: string, ip: string): Promise<st
     const [quota] = await tx<{ own: number; total: number }[]>`
       select count(*) filter (where requester_hash = ${requester})::int as own, count(*)::int as total
       from demo_handoffs where created_at > now() - interval '1 hour'`;
-    if (quota.own >= 10 || quota.total >= 1000) return null;
+    // Freno contra abusos del formulario público: 30 enlaces por origen y 1000 en total por hora.
+    if (quota.own >= 30 || quota.total >= 1000) return null;
     const token = `d_${randomBytes(18).toString("base64url")}`;
     await tx`insert into demo_handoffs (token, website, requester_hash) values (${token}, ${website}, ${requester})`;
     return token;

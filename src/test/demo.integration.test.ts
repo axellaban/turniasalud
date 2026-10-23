@@ -316,11 +316,14 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect(fake.calls.some((c) => c.url.includes("sitio-interno"))).toBe(false);
 
     fake.reset();
+    // Con un límite de 3 por día configurado en Sistema.
+    await sql`update messaging_settings set demo_daily_limit = 3 where id`;
     expect(await send("odontosur.com.ar")).toEqual({ ok: true, demo: "analizando" });
     // Tercera demo del día: después de esta, se corta.
     await runAfter();
     expect(await send("quiero probar la demo con odontosur.com.ar")).toEqual({ ok: true, demo: "terminada" });
     expect(fake.texts().at(-1)).toContain("Ya probaste varias demos hoy");
+    await sql`update messaging_settings set demo_daily_limit = null where id`;
   });
   it("la landing y /api/health toman el número del chip de WAHA y dicen qué falta", async () => {
     const Landing = (await import("@/app/(marketing)/probar-demo/page")).default;
@@ -366,6 +369,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
   });
   it("mensajes simultáneos no superan la cuota ni duplican el interesado", async () => {
     const phone = "5491166668801";
+    await sql`update messaging_settings set demo_daily_limit = 3 where id`;
     const responses = await Promise.all(Array.from({ length: 12 }, (_, i) => inbound(whatsapp("demo odontosur.com.ar", phone, `quota-${i}`))));
     for (const response of responses) expect(response.status).toBe(200);
     const sessions = await sql`select status from demo_sessions where phone = ${phone}`;
@@ -373,6 +377,10 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect(sessions.filter((s) => s.status === "analizando")).toHaveLength(1);
     expect(await sql`select id from leads where phone = ${phone}`).toHaveLength(1);
     expect(mocks.notifyN8n).toHaveBeenCalledOnce();
+    // Sin límite (el valor por defecto), la misma persona puede seguir probando.
+    await sql`update messaging_settings set demo_daily_limit = null where id`;
+    expect((await inbound(whatsapp("demo odontosur.com.ar", phone, "quota-unlimited"))).status).toBe(200);
+    expect(await sql`select id from demo_sessions where phone = ${phone}`).toHaveLength(4);
     // No ejecutar los after pendientes de este caso: los proveedores son falsos.
     mocks.after.splice(0);
   });

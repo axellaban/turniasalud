@@ -2,6 +2,11 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales.
 
+## Límite de demos por persona — 23/10/2026
+
+- El mensaje «Ya probaste varias demos hoy» salía al llegar a 3 demos por persona por día; ese tope estaba fijo en el código. Ahora se ajusta en **Panel → Sistema → Demo con tu web → «Demos por persona por día»**. Por defecto no hay límite (0), así que se desbloqueó apenas se publicó. Cada demo lee una web y usa créditos de Claude: si la landing recibe abusos, poner un tope (por ejemplo, 5).
+- El freno del formulario público subió de 10 a 30 enlaces por origen por hora y sigue el tope global de 1000 por hora. Los enlaces de «Probar este perfil» no cuentan.
+
 ## Direcciones mal escritas y verificación del guardado — 23/10/2026
 
 - `/panel/clinica` (en singular) daba el 404 negro de Next. Ahora las variantes habituales redirigen a la sección correcta: `clinica`, `demo`, `paciente`, `conversacion`, `chats`, `tarea`, `campana`, `config`, `inicio`, con o sin tilde. Las direcciones inexistentes muestran una página propia con «Ir al panel». Después del login, `next` solo acepta secciones reales; si no, va a Inicio.
