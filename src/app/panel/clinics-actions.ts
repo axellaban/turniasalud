@@ -40,6 +40,27 @@ export async function createClinic(_previous: FormState, form: FormData): Promis
   redirect("/panel/configuracion");
 }
 
+/** Borra una ficha de demo con su agenda, pacientes e historial. La clínica principal nunca se borra. */
+export async function deleteClinic(form: FormData): Promise<void> {
+  await requirePanelSession();
+  const id = String(form.get("clinic_id") ?? "");
+  if (!isUuid(id)) throw new Error("Clínica inválida.");
+  const [deleted] = await sql`delete from clinics where id = ${id} and is_demo returning id`;
+  if (!deleted) throw new Error("Solo se pueden borrar fichas de demo.");
+  const store = await cookies();
+  if (store.get(CLINIC_COOKIE)?.value === id) store.delete(CLINIC_COOKIE);
+  revalidatePath("/panel", "layout");
+}
+
+/** Borra todas las demos temporales; las conservadas y la principal quedan. */
+export async function deleteTemporaryDemos(): Promise<void> {
+  await requirePanelSession();
+  const deleted = await sql<{ id: string }[]>`delete from clinics where is_demo and retained_at is null returning id`;
+  const store = await cookies();
+  if (deleted.some((c) => c.id === store.get(CLINIC_COOKIE)?.value)) store.delete(CLINIC_COOKIE);
+  revalidatePath("/panel", "layout");
+}
+
 export async function retainClinic(form: FormData): Promise<void> {
   const clinic = await getPanelClinic(form);
   await touchClinic(clinic.id);
@@ -61,7 +82,7 @@ export async function launchProfile(_previous: ProfileTestState, form: FormData)
     ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${token}`
     : `https://wa.me/${wa}?text=${encodeURIComponent(`¡Hola! Quiero probar este perfil de Turnia: ${token}`)}`;
   revalidatePath("/panel/configuracion");
-  return { ok: true, url, message: "Enlace listo por 15 minutos. Usa esta ficha guardada, sin volver a leer la web." };
+  return { ok: true, url, message: "Enlace listo por 7 días; podés usarlo varias veces. Usa esta ficha guardada, sin volver a leer la web." };
 }
 
 export async function refreshClinic(_previous: FormState, form: FormData): Promise<FormState> {

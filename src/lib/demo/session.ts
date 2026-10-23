@@ -73,7 +73,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
   if (savedToken && /perfil/i.test(said)) {
     const clinicId = await claimProfileHandoff(savedToken, input.phone);
     if (!clinicId) {
-      await sendChatText(input.chatId, "Este enlace de perfil venció o ya lo usó otra persona. Generá otro desde el panel.");
+      await sendChatText(input.chatId, "Este enlace de perfil venció (dura 7 días) o la ficha ya no existe. Generá otro desde el panel.");
       return { handled: true, status: "terminada" };
     }
     return startSavedProfile(input, clinicId);
