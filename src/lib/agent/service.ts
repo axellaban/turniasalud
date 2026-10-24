@@ -7,6 +7,7 @@ import { addDaysKey, humanSlot, localDateKey, parseDateKey } from "../time";
 import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
+import { googleBusy } from "../calendar/sync";
 import type { Appointment, AppointmentSource, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
 export type ToolContext = {
@@ -122,18 +123,20 @@ export async function checkAvailability(
   const proIds = professionals.map((p) => p.id);
   const rangeStart = `${addDaysKey(fromKey, -1)}T00:00:00Z`;
   const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
-  const [busy, blocks] = await Promise.all([
+  const [busy, blocks, calendar] = await Promise.all([
     sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
       select professional_id, starts_at, ends_at from appointments
       where professional_id = any(${proIds}::uuid[])
         and status = any(${ACTIVE}::text[])
         and ends_at >= ${rangeStart} and starts_at <= ${rangeEnd}`,
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
+    // Lo ocupado en el Google Calendar de cada profesional (si la clínica lo conectó).
+    googleBusy(clinic.id, proIds, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
   ]);
 
   const slots = computeSlots({
     schedules: catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
-    busy,
+    busy: [...busy, ...calendar],
     blocked: expandBlocks(blocks, proIds),
     durationMin: type.duration_min,
     fromKey,
@@ -191,9 +194,12 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
         ${ignoreAppointmentId ? sql`and id <> ${ignoreAppointmentId}` : sql``}`,
     getScheduleBlocks(clinic.id, startsAt, endsAt),
   ]);
+  // Al reservar se consulta Google en el momento, para ese horario exacto: lo que se
+  // anotó recién en el calendario del profesional también cuenta.
+  const calendar = await googleBusy(clinic.id, [pro.id], startsAt, endsAt, { fresh: true, timeZone: clinic.timezone });
   const check = isSlotFree(
     catalog.schedules.filter((s) => s.professional_id === pro.id),
-    busy,
+    [...busy, ...calendar],
     startsAt,
     type.duration_min,
     clinic.timezone,

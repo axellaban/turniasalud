@@ -20,6 +20,18 @@ Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - El flujo de callback ya existente en `src/lib/demo/session.ts` llama por Twilio solo para sesiones de WhatsApp cuando se elige llamada y hay número configurado. Telegram conserva la llamada web. Esta configuración no agrega una campaña comercial, un control humano por chat ni llamadas nativas de WhatsApp.
 - Próxima implementación acordada: agente comercial separado con la voz masculina **Agustín**, conservando la voz de Sofi; control por conversación **Tomar / Devolver al agente** para atención humana desde WhatsApp Business, y luego piloto comercial revisado. Estas funciones **todavía no están implementadas**. Para la llamada saliente comercial, el saludo debe explicar por qué llama; el saludo de recepcionista del agente actual no sirve como guion de ventas.
 
+## Google Calendar — 24/10/2026
+
+- **Código hecho** con un calendario por profesional, a pedido del usuario. Detalle y pasos en `GOOGLE_CALENDAR.md`.
+- **Conexión:** Configuración → Calendario conecta la cuenta de Google de la clínica (OAuth con estado firmado y tokens cifrados). Ahí se elige el calendario de cada profesional.
+- **Lectura:** lo ocupado en Google deja de ofrecerse. Al reservar se consulta Google en el momento.
+- **Escritura:** cada turno se escribe como evento («Turno: prestación · Nombre I.»), se mueve al reprogramar y se borra al cancelar. Si Google falla, el turno se da igual y el evento se reintenta (`/api/automations/calendario`).
+- **Pruebas:** 193 de integración en verde (8 nuevas del calendario con Google simulado) y 4 unitarias.
+- **Falta:**
+  - Que el usuario cree las credenciales en Google Cloud y las cargue en Vercel.
+  - La automatización de reintentos en n8n.
+  - Para clínicas reales, la verificación de la app en Google.
+
 ## Prospección a consultorios odontológicos — 24/10/2026
 
 - **Base:** 96 consultorios odontológicos de Argentina con web propia (30 A, 41 B, 25 C; 83 con WhatsApp tomado de los botones `wa.me` de su web). Se leyó cada web para puntuar cuánto se va a lucir la demo (texto legible, profesionales, tratamientos), si atiende sábados y si trabaja con obras sociales. Quedaron afuera las webs sin texto legible, franquicias y redes grandes.

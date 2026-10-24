@@ -9,6 +9,7 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 3. Ramas: se trabaja en una rama, se abre un PR contra `main`, CI (`verificar`) y Vercel tienen que dar verde, y se hace merge squash. Producción se publica sola desde `main` y cada deploy aplica `supabase/schema.sql` (idempotente) con `scripts/migrate-db.mjs`.
 4. Diseño: hay skills en `.claude/skills` (`frontend-design`, `web-design-guidelines`, `react-best-practices`, `impeccable`); ver su `README.md`. Para auditar accesibilidad, axe-core está en `node_modules`.
 5. Pruebas locales: `npx tsc --noEmit`, `npx eslint src`, `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx vitest run` (177 tests al 23/10) y `npx next build`. Para mirar la web, `next start` con un Postgres local; Chromium está en `/opt/pw-browsers`.
+6. Google Calendar: cómo está armado y qué falta configurar en `GOOGLE_CALENDAR.md`.
 
 ## Reglas que no se rompen
 
@@ -47,7 +48,8 @@ Cuando el usuario elija reactivar WhatsApp desde Panel → Sistema (sin cambiar 
 Está en producción y probado con un recorrido de 31 comprobaciones: roles administrador/consultorio, códigos por clínica, guardado con avisos, borradores locales, historial de cambios y redirecciones de direcciones mal escritas. Lo que falta:
 
 - [ ] El consultorio Guerra–Mininni (demo conservada) tiene que entrar con su código y cargar sus reglas reales. El código lo crea el administrador en Panel → Configuración → «Acceso del consultorio» y se manda por WhatsApp desde ahí.
-- [ ] Mejoras posibles: agendas externas (Google Calendar), roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.
+- [ ] **Google Calendar** (código hecho, 24/10): faltan las credenciales de Google y la automatización de reintentos en n8n. Pasos en [`GOOGLE_CALENDAR.md`](GOOGLE_CALENDAR.md). Para clínicas reales, publicar la app y pasar la verificación de Google.
+- [ ] Mejoras posibles: roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.
 
 ## 4. Web pública (estado: home terminada)
 
@@ -84,4 +86,5 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 | WhatsApp (WAHA + Custom Channel) | `PLAN_WHATSAPP.md` |
 | Web pública copycat de Assort | `PLAN_WEB_ASSORT.md` |
 | Demo «Probá con tu web» | `PLAN_LEAD_MAGNET.md` |
+| Google Calendar | `GOOGLE_CALENDAR.md` |
 | Qué es Turnia, decisiones y arquitectura | `CONTEXTO_PROYECTO.md` |
