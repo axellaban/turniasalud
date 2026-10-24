@@ -1,6 +1,20 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Telefonía saliente con Twilio — 24/10/2026
+
+- Se revisó la cuenta Twilio existente: **Pay-as-you-go**, dos números activos con sus rutas de voz y mensajes hacia Chatwoot. El usuario indicó que HolaVeggie está operativo: **no modificar esos números, agentes, webhooks ni credenciales existentes**. Se comprobó al terminar que las dos líneas y sus URLs originales seguían presentes.
+- El usuario verificó por SMS su línea de WhatsApp Business de Turnia como **Verified Caller ID**. No se compró ni portó un número; WhatsApp Business y WAHA no se modificaron. Este identificador sirve para llamadas telefónicas salientes; las llamadas entrantes a la línea siguen en su operador habitual.
+- En ElevenLabs se importó **«Turnia · llamadas salientes»**. La pantalla ofrece **Outbound call**; asignar agente entrante está deshabilitado, coherente con un número propio verificado.
+- Se creó con autorización una clave **Restricted** «Turnia · ElevenLabs · salientes» con lectura/listado de números e identificadores y lectura/creación de llamadas (seis permisos, sin modificar ni comprar líneas). La importación con esa clave falló con Twilio **8011 / no requested permission**. **La conexión final no usa esa clave restringida**; quedó creada y sin usar para esta conexión.
+- El formulario de ElevenLabs exige además el Auth Token de cuenta para importar por API key. Se propuso una subcuenta; el usuario prefirió expresamente continuar con la cuenta existente. La importación final usa **Account SID + Auth Token de esa cuenta**, cargados únicamente en los campos privados de ElevenLabs. **Su alcance es general, no limitado a Turnia.** No se creó subcuenta ni se rotaron credenciales de otros servicios. No copiar valores al repo, chat o logs.
+- Vercel / **turniasalud / Production**: agregada `ELEVENLABS_PHONE_NUMBER_ID` y redesplegada la versión actual `c29d1fb` (#32), sin cambios de código. [Despliegue Ready](https://vercel.com/labans-projects-c5c64fdc/turniasalud/98HS96po4c6Fg5PcYvuDhp1NTHQ6).
+- Verificación pública después del despliegue: `/api/health` → **`database: "ok"`, `demo.llamada_telefonica: true`, `demo.canal: "telegram"`, `demo.telegram: true`, `demo.whatsapp: false`**. El indicador telefónico confirma configuración, **no una llamada real**. No se cambió el selector de canal.
+- Voice Geographic Permissions de Twilio: **Argentina ya estaba habilitada**; consulta de solo lectura, sin cambios.
+- No se iniciaron llamadas, recargó saldo ni cambiaron planes. El saldo de Twilio sigue compartido con los otros negocios. Primera prueba pendiente de un teléfono del usuario distinto de la línea de Turnia y de autorización para consumir saldo. El formulario de prueba está preparado con el agente actual; no ejecutar campañas ni contactar prospectos por rutina.
+- El flujo de callback ya existente en `src/lib/demo/session.ts` llama por Twilio solo para sesiones de WhatsApp cuando se elige llamada y hay número configurado. Telegram conserva la llamada web. Esta configuración no agrega una campaña comercial, un control humano por chat ni llamadas nativas de WhatsApp.
+- Próxima implementación acordada: agente comercial separado con la voz masculina **Agustín**, conservando la voz de Sofi; control por conversación **Tomar / Devolver al agente** para atención humana desde WhatsApp Business, y luego piloto comercial revisado. Estas funciones **todavía no están implementadas**.
 
 ## Crítica de diseño de la home y /probar-demo, y demo en el navegador — 24/10/2026
 
