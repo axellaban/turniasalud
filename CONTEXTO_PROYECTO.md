@@ -111,7 +111,7 @@ src/lib/session.ts         Cookie de sesión del panel (HMAC)
 src/proxy.ts               Protección de /panel
 src/app/page.tsx           Landing
 src/app/privacidad/        Política de privacidad pública con los datos de la clínica (borrador para revisar con un abogado)
-src/app/demo/              Demo chat/voz con @elevenlabs/react
+src/app/(marketing)/demo/  Probar el agente de la clínica del panel (voz con esfera o chat, igual que /probar-demo)
 src/app/panel/actions.ts   Todas las server actions (todas llaman requireSession())
 src/app/panel/(app)/       Inicio, agenda, conversaciones, tareas, pacientes, campañas, configuración
 src/app/api/               agent/tools/[name], elevenlabs/{initiation,post-call,token}, automations/[job], health (consulta la base)

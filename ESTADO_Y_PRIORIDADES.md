@@ -40,6 +40,17 @@ Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - El flujo de callback ya existente en `src/lib/demo/session.ts` llama por Twilio solo para sesiones de WhatsApp cuando se elige llamada y hay número configurado. Telegram conserva la llamada web. Esta configuración no agrega una campaña comercial, un control humano por chat ni llamadas nativas de WhatsApp.
 - Agente comercial separado **Agustín** ya preparado (ver cierre arriba), conservando la voz de Sofi. Queda pendiente **Tomar / Devolver al agente** para atención humana y la prueba del piloto con gasto/destinatarios autorizados. La voz comercial finalmente elegida es **Mauricio**, porque la primera voz intentada no admite agentes en vivo. El saludo comercial explica identidad de IA y motivo de la llamada.
 
+## /demo con el diseño de /probar-demo — 24/10/2026
+
+- **Pedido del usuario:** que /demo (Panel → Configuración → «Probar por voz o texto en el navegador») se vea igual que la demo de /probar-demo.
+- **La conversación ahora es un componente compartido:** `src/components/demo/conversacion-demo.tsx`, con la esfera en `orbe-voz.tsx`. Lo usan las dos páginas.
+- **/demo pasó a la web pública** (`src/app/(marketing)/demo/`, misma dirección). Tiene el mismo header y la misma pantalla completa:
+  - Arranca en voz con la esfera; el chat queda a un toque.
+  - Muestra la ficha de la clínica elegida en el panel.
+  - Tiene un campo opcional para probar como un paciente que ya existe, por su celular.
+  - Enlaza a la Agenda para ver los turnos que se reservaron.
+- Sigue pidiendo la sesión del panel: sin sesión manda al login.
+
 ## Agenda como calendario — 24/10/2026
 
 - **Pedido del usuario:** ver la agenda como Google Calendar, con lo completo que está cada día.
