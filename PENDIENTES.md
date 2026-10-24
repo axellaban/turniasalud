@@ -31,7 +31,7 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 - [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.
 - [x] La demo en el navegador entra en una pantalla, en la computadora y en el celular (24/10; detalle en `ESTADO_Y_PRIORIDADES.md`).
-- [ ] Que el usuario la pruebe con su propia voz y mire el interesado en Panel → Pedidos de demo (el de prueba es `prueba-claude@turnia.test`, se puede borrar). En el celular, probar la opción Telegram.
+- [ ] Que el usuario la pruebe con su propia voz y mire el interesado en Panel → Pedidos de demo (el de prueba es `prueba-claude@turnia.test`, se puede borrar). La demo arranca en voz; Telegram ya no se ofrece en `/probar-demo`.
 
 Apenas WAHA esté `WORKING`:
 
