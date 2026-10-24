@@ -2,7 +2,7 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { budgetToday, salesSettings, type Prospect, type SalesCall } from "@/lib/sales/service";
-import { FIRST_MESSAGE, SALES_VOICE_NAME } from "@/lib/sales/agent";
+import { FIRST_MESSAGE, listSalesVoices, type SalesVoice } from "@/lib/sales/agent";
 import { Badge, Card, Field, inputClass, PageHeader, Stat, Empty } from "@/components/ui";
 import { SalesForm } from "./form";
 import { ReviewFields } from "./fields";
@@ -11,10 +11,11 @@ export const maxDuration = 300;
 
 export default async function CommercialPage() {
   await requireAdmin();
-  const [s, budget, prospects, active] = await Promise.all([
+  const [s, budget, prospects, active, voices] = await Promise.all([
     salesSettings(), budgetToday(),
     sql<Prospect[]>`select p.*, exists(select 1 from sales_suppressions b where b.phone = p.phone) as suppressed from sales_prospects p order by created_at desc limit 200`,
     sql<SalesCall[]>`select * from sales_calls where status in ('iniciando','en_curso','incierta') order by created_at desc`,
+    listSalesVoices().catch(() => [] as SalesVoice[]),
   ]);
   const enabled = s.enabled && s.budget_date === budget.today;
   return <>
@@ -27,10 +28,18 @@ export default async function CommercialPage() {
     {active.length > 0 && <Card className="mb-6"><h2 className="font-semibold">Llamada pendiente</h2>{active.map((c) => <p key={c.id} className="mt-2"><Link className="underline" href={`/panel/comercial/${c.prospect_id}`}>{c.business_name}: {c.status.replaceAll("_"," ")}</Link></p>)}<p className="text-sm mt-2">No se habilita otro intento hasta revisar el resultado. Un inicio incierto requiere reconciliar con el proveedor.</p></Card>}
     <div className="grid gap-6 xl:grid-cols-2 mb-6">
       <Card><h2 className="font-display text-xl mb-3">1. Preparar al agente</h2>
-        <p className="text-sm mb-3">Voz: {SALES_VOICE_NAME}. {s.agent_id ? "Agente comercial creado." : "Todavía no está creado."} Prepararlo no inicia llamadas.</p>
+        <p className="text-sm mb-3">{s.agent_id ? `Agente comercial creado. Voz: ${voices.find((v) => v.voice_id === s.voice_id)?.name || "guardada en ElevenLabs"}.` : "Todavía no está creado. Elegí una voz compatible para configurarlo."} Prepararlo no inicia llamadas.</p>
         <blockquote className="border-l-2 border-brand-300 pl-3 text-sm mb-4">{FIRST_MESSAGE.replace("{{business_name}}", "[nombre del consultorio]")}</blockquote>
         <p className="text-sm mb-4">Si hay interés, registra el pedido de demo para que vos hagas el seguimiento. Si piden no recibir llamadas, guarda la baja y termina. No ofrece precios.</p>
-        <SalesForm intent="prepare" label={s.agent_id ? "Actualizar Agustín y pausar" : "Crear Agustín"} />
+        <SalesForm intent="prepare" label={s.agent_id ? "Actualizar Agustín y pausar" : "Crear Agustín"} disabled={voices.length === 0}>
+          <Field label="Voz de Agustín" hint="Voces guardadas en tu cuenta. ElevenLabs no admite en agentes las que tienen moderación en vivo; aparecen deshabilitadas.">
+            <select name="voice_id" required className={inputClass} defaultValue={s.voice_id || ""}>
+              <option value="" disabled>Elegí una voz compatible</option>
+              {voices.map((v) => <option key={v.voice_id} value={v.voice_id} disabled={v.live_moderated}>{v.name}{v.label ? ` · ${v.label}` : ""}{v.live_moderated ? " — No apta para agentes (moderación)" : ""}</option>)}
+            </select>
+          </Field>
+          {voices.length === 0 && <p className="text-sm">No se pudo leer la lista de voces. Revisá ElevenLabs y recargá la página.</p>}
+        </SalesForm>
       </Card>
       <Card><h2 className="font-display text-xl mb-3">2. Autorizar el cupo de hoy</h2>
         <p className="text-sm mb-4">El panel reserva US$1 por intento y limita cada llamada a 60 segundos. Es una estimación preventiva, no un saldo ni una factura: Twilio y ElevenLabs cobran por separado y el saldo de Twilio se comparte con tus otros negocios. No habilites un cupo mayor al saldo disponible. Nunca se recarga desde acá.</p>

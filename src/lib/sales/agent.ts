@@ -5,6 +5,22 @@ import { elevenlabs } from "@/lib/elevenlabs";
 
 export const SALES_NAME = "Turnia · Agustín · ventas odontología";
 export const SALES_VOICE_NAME = "Agustin De Angelis - Confident and Happy";
+export class SalesSetupError extends Error {}
+export type SalesVoice = { voice_id: string; name: string; live_moderated: boolean; label: string };
+
+/** Solo voces ya guardadas: nunca agrega clones ni voces con tarifas especiales. */
+export async function listSalesVoices(): Promise<SalesVoice[]> {
+  const voices: SalesVoice[] = [];
+  let next: string | undefined;
+  for (let pageNo = 0; pageNo < 20; pageNo++) {
+    const page = await elevenlabs<{ voices: Array<{ voice_id: string; name: string; labels?: Record<string,string>; sharing?: { live_moderation_enabled?: boolean } | null }>; has_more?: boolean; next_page_token?: string }>(`/v2/voices?page_size=100${next ? `&next_page_token=${encodeURIComponent(next)}` : ""}`, { signal: AbortSignal.timeout(15000) });
+    voices.push(...page.voices.map((v) => ({ voice_id: v.voice_id, name: v.name, live_moderated: v.sharing?.live_moderation_enabled === true,
+      label: [v.labels?.gender,v.labels?.language,v.labels?.accent].filter(Boolean).join(" · ") })));
+    next = page.has_more ? page.next_page_token : undefined;
+    if (!next) return voices;
+  }
+  throw new SalesSetupError("No se pudo completar la lista de voces. No se cambió el agente.");
+}
 export const MAX_SECONDS = 60;
 export const FIRST_MESSAGE = "Hola, ¿hablo con {{business_name}}? Soy Agustín, un asistente de inteligencia artificial de Turnia. Te llamo para mostrarte cómo puede atender consultas y turnos de un consultorio odontológico. ¿Te puedo contar en treinta segundos?";
 export const SALES_PROMPT = `Sos Agustín, asistente de inteligencia artificial comercial de Turnia Salud. Hablás español rioplatense, con calma, claridad y respuestas breves. Tu interlocutor es un consultorio odontológico, no un paciente.
@@ -48,7 +64,9 @@ export function salesAgentBody(voiceId: string, toolIds: string[]) {
       turn: { silence_end_call_timeout: 15 },
     },
     platform_settings: {
-      auth: { enable_auth: true }, summary_language: "es", analysis_llm: "gpt-4.1-mini",
+      // El esquema enumera modelos que el análisis todavía rechaza (422).
+      // Heredar su modelo predeterminado, como los agentes clínicos existentes.
+      auth: { enable_auth: true }, summary_language: "es",
       overrides: { enable_conversation_initiation_client_data_from_webhook: false },
       call_limits: { agent_concurrency_limit: 1, daily_limit: 20, bursting_enabled: false },
       queueing_config: { enabled: false },
@@ -76,21 +94,18 @@ function toolConfig(name: string, description: string, properties: Record<string
 }
 
 /** Solo crea/actualiza el agente comercial. No usa el setup clínico ni asigna la línea entrante. */
-export async function setupSalesAgent(): Promise<void> {
+export async function setupSalesAgent(selectedVoiceId?: string): Promise<void> {
   // La pausa persiste también si el proveedor rechaza una actualización parcial.
   await sql`update sales_settings set enabled = false where id = 1`;
   await sql.begin(async (tx) => {
     const [settings] = await tx`select * from sales_settings where id = 1 for update`;
     if ((await tx`select id from sales_calls where status in ('iniciando','en_curso','incierta') limit 1`).length) throw new Error("Revisá la llamada pendiente antes de configurar el agente.");
     await tx`update sales_settings set enabled = false where id = 1`;
-    let voiceId: string | undefined;
-    let next: string | undefined;
-    do {
-      const page = await elevenlabs<{ voices: Array<{ voice_id: string; name: string }>; has_more?: boolean; next_page_token?: string }>(`/v2/voices?page_size=100${next ? `&next_page_token=${encodeURIComponent(next)}` : ""}`);
-      voiceId = page.voices.find((v) => v.name === SALES_VOICE_NAME)?.voice_id;
-      next = page.has_more ? page.next_page_token : undefined;
-    } while (!voiceId && next);
-    if (!voiceId) throw new Error(`No se encontró la voz guardada «${SALES_VOICE_NAME}». No se cambió ninguna otra voz.`);
+    const voices = await listSalesVoices();
+    const voice = voices.find((v) => selectedVoiceId ? v.voice_id === selectedVoiceId : settings.voice_id ? v.voice_id === settings.voice_id : v.name === SALES_VOICE_NAME);
+    if (!voice) throw new SalesSetupError("Elegí una voz guardada en ElevenLabs.");
+    if (voice.live_moderated) throw new SalesSetupError(`ElevenLabs no permite «${voice.name}» en agentes en vivo por su moderación. Elegí otra voz compatible; no se cambió ninguna voz existente.`);
+    const voiceId = voice.voice_id;
     const remote: Tool[] = [];
     let cursor: string | undefined;
     do {
@@ -118,6 +133,18 @@ export async function setupSalesAgent(): Promise<void> {
     }
     const body = salesAgentBody(voiceId, ids);
     let agentId = settings.agent_id as string | null;
+    if (!agentId) {
+      // Si el POST anterior creó el agente pero se perdió la confirmación/commit,
+      // recuperarlo por identidad antes de intentar crear otro.
+      let cursor: string | undefined;
+      do {
+        const page = await elevenlabs<{ agents: Array<{ agent_id: string; name: string }>; has_more?: boolean; next_cursor?: string }>(`/v1/convai/agents?page_size=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+        const candidates = page.agents.filter((a) => a.name === SALES_NAME);
+        if (candidates.length > 1) throw new Error("Hay más de un Agustín comercial. Revisá los agentes antes de continuar.");
+        agentId = candidates[0]?.agent_id ?? null;
+        cursor = page.has_more ? page.next_cursor : undefined;
+      } while (!agentId && cursor);
+    }
     if (agentId) {
       const old = await elevenlabs<RemoteAgent>(`/v1/convai/agents/${encodeURIComponent(agentId)}`);
       if (old.name !== SALES_NAME || (await tx`select id from clinics where elevenlabs_agent_id = ${agentId} limit 1`).length) throw new Error("El agente guardado no es el comercial de Turnia. Se frenó la actualización.");

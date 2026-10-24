@@ -18,6 +18,8 @@ const base = testDatabaseUrl();
 let outbound = 0;
 let lost = false;
 let noAnswer = false;
+let moderatedVoice = false;
+let recoverAgent = false;
 let remote = salesAgentBody("voz-agustin",["sales-tool-1","sales-tool-2"]);
 let sent: { conversation_initiation_client_data: { dynamic_variables: Record<string,string> }; agent_id: string; to_number: string };
 const providerRequests: string[] = [];
@@ -35,10 +37,11 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
     return response({ success:true,conversation_id:"conv_sales" });
   }
   if (path === "/v1/convai/conversations/conv_sales") return response(eventData());
-  if (path === "/v2/voices") return response({ voices:[{voice_id:"voz-agustin",name:"Agustin De Angelis - Confident and Happy"}] });
+  if (path === "/v2/voices") return response({ voices:[{voice_id:"voz-agustin",name:"Agustin De Angelis - Confident and Happy",sharing:{live_moderation_enabled:moderatedVoice}}] });
   if (path === "/v1/convai/tools" && !init.method) return response({tools:[]});
   if (path === "/v1/convai/tools" && init.method === "POST") return response({id:providerRequests.filter((s)=>s === "POST /v1/convai/tools").length === 1 ? "sales-tool-1" : "sales-tool-2"});
   if (path === "/v1/convai/agents/create") { remote = JSON.parse(String(init.body)); return response({ agent_id:"agent-sales" }); }
+  if (path === "/v1/convai/agents") return response({agents:recoverAgent ? [{agent_id:"agent-sales",name:remote.name}] : []});
   if (path === "/v1/convai/agents/agent-sales") return response(remote);
   throw new Error(`fetch inesperado ${path}`);
 }
@@ -55,7 +58,7 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
   beforeEach(async () => {
     await sql`truncate sales_suppressions,sales_calls,sales_prospects`;
     await sql`update sales_settings set agent_id='agent-sales',voice_id='voz-agustin',tool_ids=array['sales-tool-1','sales-tool-2'],enabled=false,budget_cents=0,budget_date=null where id=1`;
-    outbound=0; lost=false; noAnswer=false; mocks.admin=true; providerRequests.length=0;
+    outbound=0; lost=false; noAnswer=false; moderatedVoice=false; recoverAgent=false; mocks.admin=true; providerRequests.length=0;
     remote=salesAgentBody("voz-agustin",["sales-tool-1","sales-tool-2"]);
     vi.stubGlobal("fetch",fakeFetch);
   });
@@ -144,11 +147,26 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     expect(remote.conversation_config.conversation.max_duration_seconds).toBe(60);
     expect(remote.platform_settings.call_limits.agent_concurrency_limit).toBe(1);
     expect(remote.platform_settings.privacy.record_voice).toBe(false);
+    expect(remote.platform_settings).not.toHaveProperty("analysis_llm");
     expect((await sql`select enabled,budget_cents from sales_settings where id=1`)[0]).toMatchObject({enabled:false,budget_cents:0});
     expect(outbound).toBe(0);
   });
   it("normaliza sin adivinar números y rechaza formatos ambiguos",()=>{
     expect(salesPhone("00549 11 1234-5678")).toBe("+5491112345678");
     expect(()=>salesPhone("01112345678")).toThrow();
+  });
+  it("rechaza la voz con moderación antes de crear herramientas/agente y sin cambiarla por otra",async()=>{
+    moderatedVoice=true;
+    await expect(setupSalesAgent("voz-agustin")).rejects.toThrow("moderación");
+    expect(providerRequests.filter(s=>s.startsWith("POST"))).toHaveLength(0);
+    expect(outbound).toBe(0);
+  });
+  it("recupera un agente ya creado antes de repetir un POST de creación",async()=>{
+    await sql`update sales_settings set agent_id=null where id=1`;
+    recoverAgent=true;
+    await setupSalesAgent("voz-agustin");
+    expect(providerRequests).not.toContain("POST /v1/convai/agents/create");
+    expect(providerRequests).toContain("PATCH /v1/convai/agents/agent-sales");
+    expect((await sql`select agent_id from sales_settings where id=1`)[0].agent_id).toBe("agent-sales");
   });
 });
