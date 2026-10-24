@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fallbackProfile, sanitizeProfile, type DemoProfile } from "./profile";
+import { fallbackProfile, manualProfile, sanitizeProfile, type DemoProfile } from "./profile";
+import { normalizeManualClinic } from "./website";
 
 const site = {
   url: "https://www.odontosur.com.ar/",
@@ -52,5 +53,25 @@ describe("perfil de la demo", () => {
     expect(p.profesionales).toEqual([{ nombre: "Dra. Ana", especialidad: "Odontología", dias: [1], bio: null }]);
     expect(p.prestaciones[0]).toMatchObject({ duracion_min: 10, precio: null });
     expect(p.politicas).toBeNull();
+  });
+
+  it("sin web arma la ficha con el nombre, la dirección y turnos de la especialidad", () => {
+    const p = manualProfile({ nombre: "Consultorio Arroyo", direccion: "Córdoba 3380, Mar del Plata", especialidad: "Odontología" });
+    expect(p).toMatchObject({ nombre: "Consultorio Arroyo", especialidad: "Odontología", direccion: "Córdoba 3380, Mar del Plata", profesionales: [], coberturas: [] });
+    expect(p.prestaciones.map((t) => t.nombre)).toEqual(["Consulta de primera vez", "Limpieza dental", "Control", "Urgencia odontológica"]);
+    // La especialidad también se deduce del nombre; si no se reconoce, queda la que escribió la persona.
+    expect(manualProfile({ nombre: "Odontología Sur", direccion: null, especialidad: null }).especialidad).toBe("Odontología");
+    expect(manualProfile({ nombre: "Centro Norte", direccion: null, especialidad: "Fonoaudiología" }).especialidad).toBe("Fonoaudiología");
+  });
+
+  it("valida el consultorio sin web que llega del formulario o del link", () => {
+    expect(normalizeManualClinic({ nombre: "  Consultorio   Arroyo ", direccion: "Córdoba 3380", especialidad: 5 })).toEqual({
+      nombre: "Consultorio Arroyo",
+      direccion: "Córdoba 3380",
+      especialidad: null,
+    });
+    expect(normalizeManualClinic({ nombre: "ab" })).toBeNull();
+    expect(normalizeManualClinic({ nombre: "https://miclinica.com.ar" })).toBeNull();
+    expect(normalizeManualClinic({ nombre: "x".repeat(121) })).toBeNull();
   });
 });

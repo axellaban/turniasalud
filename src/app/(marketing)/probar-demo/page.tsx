@@ -1,28 +1,30 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { demoStatus } from "@/lib/demo/config";
-import { normalizeWebsite } from "@/lib/demo/website";
+import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
 import { isConfigured } from "@/lib/env";
 import { ProbarDemoForm } from "./probar-demo-form";
 
 export const metadata: Metadata = {
   title: "Probá la demo con tu web",
-  description: "Dejá la web de tu consultorio y probá a Turnia en el navegador: te atiende como la recepcionista de tu clínica, por chat o por voz.",
+  description: "Dejá la web de tu consultorio (o su nombre, si no tiene) y probá a Turnia en el navegador: te atiende como la recepcionista de tu clínica, por chat o por voz.",
 };
 
 // Se lee en cada visita: el canal de chat activo se elige en el panel.
 export const dynamic = "force-dynamic";
 
 const PASOS = [
-  { n: "1", t: "Dejás tu web y tu email", d: "La de tu consultorio, tal como la ven tus pacientes." },
+  { n: "1", t: "Dejás tu web", d: "La de tu consultorio, tal como la ven tus pacientes. Si no tiene, su nombre." },
   { n: "2", t: "Leemos tu web", d: "Profesionales, prestaciones, dirección y horarios. Tarda alrededor de un minuto." },
   { n: "3", t: "Sofi te atiende", d: "Como si fueras un paciente: pedile un turno por chat o hablale por voz." },
 ];
 
 export default async function ProbarDemoPage({ searchParams }: PageProps<"/probar-demo">) {
-  // Link personalizado (/probar-demo?web=miclinica.com.ar): llega con la web escrita y solo falta el email.
-  const { web } = await searchParams;
+  // Link personalizado: /probar-demo?web=miclinica.com.ar llega con la web escrita;
+  // /probar-demo?nombre=Consultorio+Arroyo&dir=…&esp=Odontología, con el consultorio sin web.
+  const { web, nombre, dir, esp } = await searchParams;
   const initialWeb = normalizeWebsite(typeof web === "string" ? web : null)?.replace(/^https?:\/\//, "").replace(/\/$/, "") ?? "";
+  const initialManual = initialWeb ? null : normalizeManualClinic({ nombre, direccion: dir, especialidad: esp });
   const status = await demoStatus();
   const channel = status.canal;
   const chatReady = status.base && (channel === "telegram" ? status.telegram : channel === "whatsapp" && status.whatsapp);
@@ -38,7 +40,7 @@ export default async function ProbarDemoPage({ searchParams }: PageProps<"/proba
           prestaciones y tus horarios.
         </p>
 
-        <ProbarDemoForm channel={channel} webReady={webReady} chatReady={chatReady} initialWeb={initialWeb} />
+        <ProbarDemoForm channel={channel} webReady={webReady} chatReady={chatReady} initialWeb={initialWeb} initialManual={initialManual} />
 
         <ol className="mx-auto mt-14 grid max-w-[820px] gap-4 text-left sm:grid-cols-3">
           {PASOS.map((p) => (

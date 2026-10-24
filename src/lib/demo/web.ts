@@ -7,6 +7,7 @@ import { messagingSettings } from "../messaging-settings";
 import { notifyN8n } from "../n8n";
 import type { Clinic } from "../types";
 import { hostOf } from "./flow";
+import type { ManualClinic } from "./website";
 import { createDemoHandoff } from "./handoff";
 import { demoDynamicVariables, type DemoSession } from "./session";
 
@@ -22,13 +23,15 @@ const TOKEN = /^w_[A-Za-z0-9_-]{24}$/;
 
 export type WebDemoMode = "chat" | "voz";
 
+/** website: la web leída ("" sin web). nombre: el consultorio de una demo sin web. */
 export type WebDemoState =
-  | { status: "analizando"; website: string }
-  | { status: "error"; website: string }
-  | { status: "terminada"; website: string }
+  | { status: "analizando"; website: string; nombre?: string }
+  | { status: "error"; website: string; nombre?: string }
+  | { status: "terminada"; website: string; nombre?: string }
   | {
       status: "lista";
       website: string;
+      nombre?: string;
       clinic: { name: string; agentName: string; specialty: string; address: string | null; professionals: string[]; types: string[] };
       remaining: number;
     };
@@ -36,35 +39,53 @@ export type WebDemoState =
 /**
  * Crea la demo y su interesado. Devuelve el token de la página y el id de la
  * sesión, que hay que analizar después de responder. null: superó el límite.
+ * Con web se lee la web; sin web (manual) la ficha sale del nombre del consultorio.
  */
-export async function startWebDemo(input: { website: string; email: string; ip: string }): Promise<{ token: string; sessionId: string } | null> {
+export async function startWebDemo(input: { website: string | null; manual: ManualClinic | null; email: string | null; ip: string }): Promise<{ token: string; sessionId: string } | null> {
+  const manual = input.website ? null : input.manual;
+  if (!input.website && !manual) return null;
+  const label = input.website ? hostOf(input.website) : manual!.nombre;
   // El mismo freno contra abusos que el paso a Telegram (por origen y total por hora).
-  const handoff = await createDemoHandoff(input.website, input.ip, input.email);
+  const handoff = await createDemoHandoff(input.website ?? `sin web: ${label}`, input.ip, input.email);
   if (!handoff) return null;
   const settings = await messagingSettings();
   const id = `web:${randomBytes(9).toString("base64url")}`;
   const token = `w_${randomBytes(18).toString("base64url")}`;
-  const note = `Probó la demo en el navegador con su web: ${input.website}`;
+  const note = input.website
+    ? `Probó la demo en el navegador con su web: ${input.website}`
+    : `Probó la demo en el navegador sin web: ${label}${manual!.direccion ? ` (${manual!.direccion})` : ""}`;
   const result = await sql.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(hashtextextended(${`turnia-demo:${input.email}`}, 0))`;
-    if (settings.demo_daily_limit) {
+    // Sin email, el interesado es su web o el nombre de su consultorio.
+    const key = input.email ?? label.toLowerCase();
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`turnia-demo:${key}`}, 0))`;
+    // Un interesado es un solo pedido en el panel, aunque pruebe varias veces.
+    const [previous] = await tx<{ id: string }[]>`
+      select l.id from leads l
+      where l.source = 'demo-web' and ${input.email
+        ? tx`l.email = ${input.email}`
+        : tx`exists (select 1 from demo_sessions ds where ds.lead_id = l.id and ds.chat_id like 'web:%' and ${
+            input.website ? tx`ds.website = ${input.website}` : tx`lower(ds.manual_name) = ${label.toLowerCase()}`
+          })`}
+      order by l.created_at desc limit 1`;
+    if (settings.demo_daily_limit && previous) {
       const [{ count }] = await tx<{ count: number }[]>`
-        select count(*)::int as count from demo_sessions ds join leads l on l.id = ds.lead_id
-        where l.email = ${input.email} and ds.chat_id like 'web:%' and ds.created_at > now() - interval '1 day'`;
+        select count(*)::int as count from demo_sessions
+        where lead_id = ${previous.id} and chat_id like 'web:%' and created_at > now() - interval '1 day'`;
       if (count >= settings.demo_daily_limit) return null;
     }
-    // Un interesado es un solo pedido en el panel, aunque pruebe varias webs.
-    const [existing] = await tx<{ id: string }[]>`
-      update leads set message = concat_ws(' · ', message, ${note}::text), updated_at = now()
-      where id = (select id from leads where email = ${input.email} and source = 'demo-web' order by created_at desc limit 1)
-      returning id`;
+    const [existing] = previous
+      ? await tx<{ id: string }[]>`
+          update leads set message = concat_ws(' · ', message, ${note}::text), email = coalesce(email, ${input.email}), updated_at = now()
+          where id = ${previous.id} returning id`
+      : [];
     const lead = existing ?? (await tx<{ id: string }[]>`
       insert into leads (name, email, organization, message, source)
-      values (${input.email}, ${input.email}, ${hostOf(input.website)}, ${note}, 'demo-web')
+      values (${label}, ${input.email}, ${label}, ${note}, 'demo-web')
       returning id`)[0];
     const [session] = await tx<{ id: string }[]>`
-      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision)
-      values (${id}, ${id}, ${input.website}, ${lead.id}, ${handoff}, ${token}, ${settings.revision})
+      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty)
+      values (${id}, ${id}, ${input.website ?? ""}, ${lead.id}, ${handoff}, ${token}, ${settings.revision},
+              ${manual?.nombre ?? null}, ${manual?.direccion ?? null}, ${manual?.especialidad ?? null})
       returning id`;
     return { sessionId: session.id, leadId: lead.id, createdLead: !existing };
   });
@@ -72,7 +93,7 @@ export async function startWebDemo(input: { website: string; email: string; ip: 
   if (result.createdLead) {
     await notifyN8n("lead.nuevo", {
       // Misma forma que el formulario de /pedi-una-demo, para que el aviso de n8n lo muestre igual.
-      lead: { id: result.leadId, nombre: input.email, email: input.email, telefono: null, organizacion: hostOf(input.website), mensaje: note, origen: "demo-web", web: input.website },
+      lead: { id: result.leadId, nombre: label, email: input.email, telefono: null, organizacion: label, mensaje: note, origen: "demo-web", web: input.website },
     });
   }
   return { token, sessionId: result.sessionId };
@@ -97,11 +118,12 @@ export async function webDemoState(token: string): Promise<WebDemoState | null> 
   const session = await sessionForToken(token);
   if (!session) return null;
   const website = session.website;
-  if (session.status === "analizando") return { status: "analizando", website };
-  if (session.status === "error") return { status: "error", website };
-  if (session.status === "terminada") return { status: "terminada", website };
+  const sinWeb = session.manual_name ? { nombre: session.manual_name } : {};
+  if (session.status === "analizando") return { status: "analizando", website, ...sinWeb };
+  if (session.status === "error") return { status: "error", website, ...sinWeb };
+  if (session.status === "terminada") return { status: "terminada", website, ...sinWeb };
   const clinic = await demoClinic(session.clinic_id);
-  if (!clinic) return { status: "error", website };
+  if (!clinic) return { status: "error", website, ...sinWeb };
   const [professionals, types, [quota]] = await Promise.all([
     sql<{ full_name: string }[]>`select full_name from professionals where clinic_id = ${clinic.id} and active order by full_name limit 8`,
     sql<{ name: string }[]>`select name from appointment_types where clinic_id = ${clinic.id} and active order by name limit 8`,
@@ -110,6 +132,7 @@ export async function webDemoState(token: string): Promise<WebDemoState | null> 
   return {
     status: "lista",
     website,
+    ...sinWeb,
     clinic: {
       name: clinic.name,
       agentName: clinic.agent_name,

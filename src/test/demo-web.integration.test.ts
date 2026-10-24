@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
-// Demo «Probá con tu web» en el navegador: web + email en /probar-demo, lectura
+// Demo «Probá con tu web» en el navegador: la web (o, si no tiene, el nombre del
+// consultorio) en /probar-demo, lectura
 // de la web en segundo plano y chat o voz con el agente desde la misma página,
 // sin Telegram ni WhatsApp. ElevenLabs, Claude, el DNS y la web se simulan.
 
@@ -112,25 +113,27 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
     mocks.notifyN8n.mockClear();
   });
 
-  it("pide un email válido y una web antes de arrancar", async () => {
-    expect((await pedir({ website: "odontonorte.com.ar", email: "sin-arroba", via: "navegador" })).status).toBe(400);
-    expect((await pedir({ website: "no es una web", email: "dra@odontonorte.com.ar", via: "navegador" })).status).toBe(400);
+  it("pide la web o el nombre del consultorio antes de arrancar (el email no hace falta)", async () => {
+    const vacio = await pedir({ via: "navegador" });
+    expect(vacio.status).toBe(400);
+    expect(((await vacio.json()) as { error: string }).error).toContain("su nombre");
+    expect((await pedir({ website: "no es una web", via: "navegador" })).status).toBe(400);
     // Con el chat pausado, pedir Telegram o WhatsApp avisa que se pruebe en el navegador.
-    const chat = await pedir({ website: "odontonorte.com.ar", email: "dra@odontonorte.com.ar", via: "chat" });
+    const chat = await pedir({ website: "odontonorte.com.ar", via: "chat" });
     expect(chat.status).toBe(409);
     expect(((await chat.json()) as { error: string }).error).toContain("navegador");
   });
 
   it("crea la demo con su interesado y lee la web después de responder", async () => {
-    const res = await pedir({ website: "odontonorte.com.ar", email: "Dra@OdontoNorte.com.ar", via: "navegador" });
+    const res = await pedir({ website: "odontonorte.com.ar", via: "navegador" });
     expect(res.status).toBe(200);
     const { url } = (await res.json()) as { url: string };
     expect(url).toMatch(/^\/probar-demo\/sesion\/w_[A-Za-z0-9_-]{24}$/);
     token = url.split("/").pop()!;
 
     const [lead] = await sql`select name, email, phone, organization, source from leads where source = 'demo-web'`;
-    expect(lead).toEqual({ name: "dra@odontonorte.com.ar", email: "dra@odontonorte.com.ar", phone: null, organization: "odontonorte.com.ar", source: "demo-web" });
-    expect(mocks.notifyN8n).toHaveBeenCalledWith("lead.nuevo", expect.objectContaining({ lead: expect.objectContaining({ email: "dra@odontonorte.com.ar", origen: "demo-web" }) }));
+    expect(lead).toEqual({ name: "odontonorte.com.ar", email: null, phone: null, organization: "odontonorte.com.ar", source: "demo-web" });
+    expect(mocks.notifyN8n).toHaveBeenCalledWith("lead.nuevo", expect.objectContaining({ lead: expect.objectContaining({ email: null, origen: "demo-web", web: "https://odontonorte.com.ar/" }) }));
     expect(await leer()).toEqual({ status: 200, body: { status: "analizando", website: "https://odontonorte.com.ar/" } });
 
     await runAfter();
@@ -178,7 +181,7 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
   });
 
   it("si la web no se puede leer, la página lo dice", async () => {
-    const res = await pedir({ website: "noexiste.com.ar", email: "otro@consultorio.com", via: "navegador" });
+    const res = await pedir({ website: "noexiste.com.ar", via: "navegador" });
     const t = ((await res.json()) as { url: string }).url.split("/").pop()!;
     await runAfter();
     expect((await leer(t)).body).toEqual({ status: "error", website: "https://noexiste.com.ar/" });
@@ -187,7 +190,7 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
 
   it("el administrador borra un pedido de prueba con sus demos, sin tocar fichas conservadas", async () => {
     const { deleteLead } = await import("@/app/panel/(app)/demos/actions");
-    const [lead] = await sql`select id from leads where email = 'dra@odontonorte.com.ar'`;
+    const [lead] = await sql`select id from leads where name = 'odontonorte.com.ar'`;
     const [s] = await sql`select clinic_id from demo_sessions where lead_id = ${lead.id} and clinic_id is not null`;
     // Una segunda demo del mismo interesado sobre una ficha conservada.
     const [kept] = await sql`insert into clinics (name, is_demo, retained_at) values ('Ficha conservada', true, now()) returning id`;
@@ -202,6 +205,28 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
     expect(await sql`select 1 from clinics where id = ${s.clinic_id}`).toHaveLength(0);
     expect(await sql`select 1 from clinics where id = ${kept.id}`).toHaveLength(1);
     expect((await leer()).status).toBe(404);
+  });
+
+  it("sin web arma la demo con el nombre del consultorio, sin leer ninguna web", async () => {
+    const manual = { nombre: "Consultorio Arroyo", direccion: "Córdoba 3380, Mar del Plata", especialidad: "Odontología" };
+    const res = await pedir({ ...manual, via: "navegador" }, "190.3.3.3");
+    expect(res.status).toBe(200);
+    const t = ((await res.json()) as { url: string }).url.split("/").pop()!;
+    expect((await leer(t)).body).toEqual({ status: "analizando", website: "", nombre: "Consultorio Arroyo" });
+    await runAfter();
+    expect(calls).toEqual([]);
+    const { body } = await leer(t);
+    expect(body).toMatchObject({
+      status: "lista",
+      nombre: "Consultorio Arroyo",
+      clinic: { name: "Consultorio Arroyo", specialty: "Odontología", address: "Córdoba 3380, Mar del Plata", professionals: ["Equipo de Odontología"] },
+    });
+    expect((body.clinic as { types: string[] }).types).toContain("Limpieza dental");
+    expect((await hablar("chat", t)).status).toBe(200);
+    // Probarla de nuevo (aunque pida el chat) no duplica el pedido de demo.
+    expect((await pedir({ ...manual, via: "chat" }, "190.3.3.3")).status).toBe(200);
+    const leads = await sql`select name, email, organization from leads where source = 'demo-web' and name = 'Consultorio Arroyo'`;
+    expect(leads).toEqual([{ name: "Consultorio Arroyo", email: null, organization: "Consultorio Arroyo" }]);
   });
 
   it("el email llega al pedido de demo aunque siga por Telegram", async () => {
