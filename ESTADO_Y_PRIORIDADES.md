@@ -2,6 +2,15 @@
 
 Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Editor de Sofi comercial y bloqueos claros — 24/10/2026
+
+- Pedido: incorporar el editor propuesto y resolver la confusión del botón de llamada desactivado. Nuevo `/panel/comercial/configuracion`: saludo, system prompt y voz editables, guardado/aplicación con comprobación real en ElevenLabs, historial y restauración de versión anterior. No se necesita editar el repo para cambiar el pitch.
+- Persistencia en `sales_settings` + `sales_config_versions`. Migración aditiva/idempotente en el despliegue, sin seed de producción. El texto editado se conserva al sincronizar voces y se valida antes de llamar; cada intento registra versión. Formularios obsoletos no pisan cambios nuevos. Si hay fallo parcial del proveedor se marca `needs_sync` y se bloquean llamadas hasta una nueva aplicación correcta.
+- La ficha de contacto explica cada bloqueo y enlaza a su solución; incluye revisión vencida y llamadas pendientes de cualquier ficha. Guardar configuración pausa y conserva el cupo; habilitar llamadas sigue siendo un paso separado con confirmación individual.
+- Se mantienen agente comercial separado, herramientas de resultado/baja/cierre y límite remoto de 60 s más despedida. Recepcionista clínica, WAHA, Telegram y conexiones de HolaVeggie no se modifican. No se inician llamadas ni recargas en esta implementación.
+- **Twilio, lectura solicitada por el usuario:** consola muestra cuenta suspendida por falta de fondos y saldo **−US$0,49524** (reemplaza el saldo positivo del registro anterior). Se abrieron llamadas y grabaciones; última llamada visible de Turnia **19:03:19 Argentina, completada, 63 s**, iniciada fuera de esta tarea. No habilitar ni recargar automáticamente la cuenta compartida.
+- Validación: **232 pruebas** (21 comerciales + 4 bloqueos), TypeScript, ESLint y build. En navegador local: validación con borrador conservado, guardado y restauración del saludo/voz con proveedor simulado. Detalle y uso en [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md).
+
 ## Sofi comercial · voz y pitch revisados — 24/10/2026
 
 - Pedido posterior: **misma voz de Sofi**, pitch de venta mejorado y cómo disparar pruebas desde el panel. Prevalece sobre el nombre/voz Agustín–Mauricio del registro histórico de abajo.

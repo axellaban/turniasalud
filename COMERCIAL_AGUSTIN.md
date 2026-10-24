@@ -2,6 +2,21 @@
 
 24/10/2026. Oferta elegida por Axel: **demo personalizada y después charla con él**, sin cotizar precios. Después de la preparación, autorizó **US$5 por día** y **una única primera prueba a su teléfono**. Esa prueba ya terminó. No habilita llamadas a prospectos ni reintentos sin destinatarios autorizados.
 
+## Editor del agente comercial — 24/10/2026
+
+- **Panel → Comercial → «Editar saludo, instrucciones y voz»** (`/panel/comercial/configuracion`). El saludo y el system prompt se editan completos desde el panel y se guardan en `sales_settings`, junto con la voz y la versión aplicada. El código solo aporta el texto inicial cuando todavía no hay una versión guardada.
+- **«Guardar y aplicar en ElevenLabs»** actualiza el mismo agente comercial y consulta de nuevo su configuración real antes de confirmar. Siempre pausa el piloto y conserva el cupo. No llama, recarga saldo ni modifica la recepcionista clínica.
+- Cada aplicación conserva una versión en `sales_config_versions`; **«Restaurar la versión anterior»** recupera saludo, prompt y voz, los comprueba y agrega otra versión sin borrar historia. Cambiar de voz/sincronizar conserva el texto editado. La ficha de cada llamada registra `config_version`; las llamadas anteriores al editor quedan con versión 0.
+- Los formularios viejos se rechazan por número de versión, y el borrador permanece visible si hay error. Si una aplicación parcial no se puede comprobar, queda `needs_sync` y el piloto pausado hasta guardar/aplicar de nuevo. No se reserva ni inicia un intento con esa marca.
+- Las variables internas, las herramientas comerciales, el límite de duración y las reglas operativas se mantienen fuera del editor. El saludo admite `{{business_name}}`; las instrucciones también `{{sales_context}}`. No pegar claves en el prompt.
+- La validación previa a llamar compara el **texto guardado** con el remoto, en vez de exigir el texto fijo del código. Antes de enviar, vuelve a comprobar que no cambió la versión. Ediciones directas en ElevenLabs siguen requiriendo reconciliar desde el panel.
+- Las fichas muestran **el motivo concreto** del bloqueo (pausa, autorización vencida, cupo agotado, contacto sin revisar/vencido, baja, llamada pendiente, línea ausente o aplicación sin comprobar), con enlace al paso que lo resuelve. El panel no consulta el saldo de Twilio ni los créditos de ElevenLabs: hay que comprobarlos por separado.
+- Validación: **232 pruebas** (21 comerciales de integración y 4 de bloqueos), TypeScript, ESLint y build. Navegador local con base y proveedor simulados: error conserva borrador, edición y restauración funcionan y muestran versión/confirmación. Sin llamadas reales para esta implementación.
+
+## Twilio observado durante este cambio
+
+El usuario pidió abrir el registro. Se dejaron **Call Logs**, filtrado por la línea de Turnia, y **Recording Logs**. Aparece una llamada posterior iniciada fuera de este trabajo: **24/10/2026 19:03:19 Argentina, Completed, 63 s**. No se inició ninguna desde esta tarea. Twilio muestra **cuenta suspendida por falta de fondos**, saldo **−US$0,49524**. No se recargó ni se tocó la configuración de HolaVeggie. La cuenta comparte saldo por decisión expresa del usuario; esto requiere atención del titular. Sofi comercial sigue sin grabación de audio; no se activó grabación ni escucha en vivo.
+
 ## Cambio vigente — misma voz de Sofi y pitch breve
 
 El usuario pidió usar la misma voz de la recepcionista y mejorar la venta. El agente comercial pasa a presentarse como **Sofi**, conservando su ID `agent_4501m5qvpjwrfcxrafq64zmx0y0q`. El botón **«Usar la voz de Sofi y aplicar pitch»** lee la voz real del agente de la clínica principal (`ijxn8I4NzJccD2Sa7lcj`), independientemente de la clínica seleccionada en el navegador, y la aplica solo al comercial. No modifica la recepcionista. Prepararlo siempre pausa el piloto; no llama.

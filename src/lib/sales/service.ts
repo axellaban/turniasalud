@@ -6,13 +6,14 @@ import { env } from "@/lib/env";
 import { elevenlabs } from "@/lib/elevenlabs";
 import type { PostCallPayload } from "@/lib/conversations";
 import { verifySalesAgent } from "./agent";
+import { salesConfiguration, type SalesConfigurationFields } from "./config";
 
 export class SalesError extends Error {}
 export const RESERVE_CENTS = 100;
 export const OUTCOMES = ["interesado", "seguimiento", "no_interesado", "numero_equivocado"] as const;
-export type SalesSettings = { agent_id: string | null; voice_id: string | null; tool_ids: string[]; enabled: boolean; budget_date: string | null; budget_cents: number };
+export type SalesSettings = SalesConfigurationFields & { config_version: number; needs_sync: boolean; applied_at: string | null; agent_id: string | null; voice_id: string | null; tool_ids: string[]; enabled: boolean; budget_date: string | null; budget_cents: number };
 export type Prospect = { id: string; business_name: string; phone: string; website: string; context: string; eligibility: string; evidence: string; reviewed_at: string | null; outcome: string | null; notes: string; suppressed?: boolean };
-export type SalesCall = { id: string; prospect_id: string; request_key: string; phone: string; business_name: string; agent_id: string; status: string; conversation_id: string | null; duration_secs: number | null; credits: number | null; summary: string | null; outcome: string | null; error: string | null; transcript: PostCallPayload["transcript"]; created_at: string };
+export type SalesCall = { id: string; prospect_id: string; request_key: string; phone: string; business_name: string; agent_id: string; status: string; conversation_id: string | null; duration_secs: number | null; credits: number | null; summary: string | null; outcome: string | null; error: string | null; transcript: PostCallPayload["transcript"]; created_at: string; config_version: number };
 
 /** No adivina prefijos ni móviles. Se carga el internacional argentino explícito. */
 export function salesPhone(value: string): string {
@@ -72,7 +73,10 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
       if (existing.prospect_id !== prospectId) throw new SalesError("La confirmación pertenece a otro consultorio.");
       return { existing: existing.id };
     }
-    if (!s.enabled || !s.agent_id || !s.voice_id || !process.env.ELEVENLABS_PHONE_NUMBER_ID) throw new SalesError("El piloto está pausado o falta preparar la agente comercial y la línea saliente.");
+    if (!s.enabled) throw new SalesError("El piloto está pausado. En Comercial → Cupo de hoy, habilitá las llamadas manuales y guardá.");
+    if (s.needs_sync) throw new SalesError("La última configuración no se pudo comprobar. Guardá y aplicá de nuevo antes de habilitar llamadas.");
+    if (!s.agent_id || !s.voice_id) throw new SalesError("Falta preparar Sofi comercial. Guardá y aplicá su configuración.");
+    if (!process.env.ELEVENLABS_PHONE_NUMBER_ID) throw new SalesError("Falta configurar la línea saliente de Turnia en el servidor.");
     const [{ today }] = await tx<{ today: string }[]>`select (now() at time zone 'America/Argentina/Buenos_Aires')::date::text as today`;
     if (s.budget_date !== today) throw new SalesError("La autorización venció. Definí el presupuesto de hoy.");
     const [p] = await tx<Prospect[]>`select * from sales_prospects where id = ${prospectId} for update`;
@@ -83,8 +87,8 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
     const [{ spent }] = await tx<{ spent: number }[]>`select coalesce(sum(reserved_cents),0)::int as spent from sales_calls where budget_date = ${today}`;
     if (spent + RESERVE_CENTS > s.budget_cents) throw new SalesError("El cupo de hoy no alcanza para otro intento.");
     const context = JSON.stringify({ consultorio: p.business_name, web: p.website, datos_revisados: p.context || "Sin información adicional", motivo_contacto: p.eligibility === "solicito_llamada" ? "Solicitó una llamada" : "Presentación comercial", oferta: "Demo personalizada y después charla con Axel" });
-    const [call] = await tx<SalesCall[]>`insert into sales_calls (request_key, prospect_id, agent_id, phone, business_name, context, budget_date)
-      values (${requestKey},${p.id},${s.agent_id},${p.phone},${p.business_name},${context},${today}) returning *`;
+    const [call] = await tx<SalesCall[]>`insert into sales_calls (request_key, prospect_id, agent_id, phone, business_name, context, budget_date, config_version)
+      values (${requestKey},${p.id},${s.agent_id},${p.phone},${p.business_name},${context},${today},${s.config_version}) returning *`;
     return { call, settings: s, context };
   });
   if ("existing" in reservation && reservation.existing) return reservation.existing;
@@ -92,7 +96,7 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
   const { call, settings, context } = reservation;
   // Fallar antes del POST no marca un inicio incierto. Conservamos la reserva del intento.
   try {
-    await verifySalesAgent(settings.agent_id!, settings.voice_id!, settings.tool_ids);
+    await verifySalesAgent(settings.agent_id!, settings.voice_id!, settings.tool_ids, salesConfiguration(settings));
   } catch {
     await sql`update sales_calls set status = 'fallida', error = 'No se inició: revisá la configuración de la agente comercial, la pausa y las bajas.', completed_at = now() where id = ${call.id} and status = 'iniciando'`;
     return call.id;
@@ -106,8 +110,9 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
       // entre la última comprobación y el POST al proveedor.
       await tx`select id from sales_settings where id = 1 for update`;
       const [ready] = await tx`select s.id from sales_settings s where s.id = 1 and s.enabled and s.budget_date = (now() at time zone 'America/Argentina/Buenos_Aires')::date
+        and s.config_version = ${settings.config_version}
         and not exists(select 1 from sales_suppressions where phone = ${call.phone})`;
-      if (!ready) throw new SalesError("El piloto se pausó o el número fue dado de baja.");
+      if (!ready) throw new SalesError("Cambió la configuración, se pausó el piloto o el número fue dado de baja.");
       dispatched = true;
       const result = await elevenlabs<{ success?: boolean; conversation_id?: string | null }>("/v1/convai/twilio/outbound-call", {
       method: "POST", signal: AbortSignal.timeout(20000),
@@ -123,7 +128,7 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
     });
   } catch {
     // Un timeout/5xx puede ocurrir DESPUÉS de crear la llamada. No liberar ni reintentar.
-    await sql`update sales_calls set status = ${dispatched ? "incierta" : "fallida"}, error = ${dispatched ? "Inicio sin confirmación. Revisá ElevenLabs/Twilio; no reintentes hasta reconciliar." : "No se inició: el piloto se pausó o el número fue dado de baja."} where id = ${call.id} and status = 'iniciando'`;
+    await sql`update sales_calls set status = ${dispatched ? "incierta" : "fallida"}, error = ${dispatched ? "Inicio sin confirmación. Revisá ElevenLabs/Twilio; no reintentes hasta reconciliar." : "No se inició: cambió la configuración, se pausó el piloto o el número fue dado de baja."} where id = ${call.id} and status = 'iniciando'`;
   }
   return call.id;
 }
