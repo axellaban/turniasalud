@@ -20,6 +20,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
   Los números de la captura de Assort son de sus clientes, no de la industria: no se usaron.
 - **`/probar-demo` en el navegador** (pedido del usuario): web + email; en computadora directo al navegador, en celular elige navegador o Telegram. Detalle en `PLAN_LEAD_MAGNET.md`. La página tiene los tres pasos y un ejemplo de conversación.
 - Pruebas: 184 en verde (7 nuevas de la demo en el navegador). axe en las páginas nuevas: solo los bordes decorativos de la rueda.
+- **Verificado en producción:** demo en el navegador de punta a punta (lectura con Claude en 15 s, chat con Sofi y voz). El primer mensaje del chat no se mandaba; se arregló en el PR #30 y se volvió a probar. Interesado de prueba: `prueba-claude@turnia.test`.
 
 ## Skills de diseño y auditoría de accesibilidad — 24/10/2026
 

@@ -29,7 +29,8 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 ## 2. Prueba en vivo
 
-- [ ] **Ya se puede, sin WAHA:** `/probar-demo` en la computadora → demo en el navegador. Probar chat y voz con ElevenLabs real y una web de prueba, y que el interesado aparezca en Panel → Pedidos de demo con su email. En el celular, elegir navegador y Telegram.
+- [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.
+- [ ] Que el usuario la pruebe con su propia voz y mire el interesado en Panel → Pedidos de demo (el de prueba es `prueba-claude@turnia.test`, se puede borrar). En el celular, probar la opción Telegram.
 
 Apenas WAHA esté `WORKING`:
 
