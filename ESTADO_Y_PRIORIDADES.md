@@ -2,6 +2,18 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Google Calendar — 24/10/2026
+
+- **Código hecho** con un calendario por profesional, a pedido del usuario. Detalle y pasos en `GOOGLE_CALENDAR.md`.
+- **Conexión:** Configuración → Calendario conecta la cuenta de Google de la clínica (OAuth con estado firmado y tokens cifrados). Ahí se elige el calendario de cada profesional.
+- **Lectura:** lo ocupado en Google deja de ofrecerse. Al reservar se consulta Google en el momento.
+- **Escritura:** cada turno se escribe como evento («Turno: prestación · Nombre I.»), se mueve al reprogramar y se borra al cancelar. Si Google falla, el turno se da igual y el evento se reintenta (`/api/automations/calendario`).
+- **Pruebas:** 193 de integración en verde (8 nuevas del calendario con Google simulado) y 4 unitarias.
+- **Falta:**
+  - Que el usuario cree las credenciales en Google Cloud y las cargue en Vercel.
+  - La automatización de reintentos en n8n.
+  - Para clínicas reales, la verificación de la app en Google.
+
 ## Crítica de diseño de la home y /probar-demo, y demo en el navegador — 24/10/2026
 
 - **Crítica** con `impeccable critique` (sin subagentes ni detector, aclarado en el informe): 21/32. Copia en `.impeccable/critique/2026-10-24-home-y-probar-demo.md`.

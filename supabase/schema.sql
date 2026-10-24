@@ -495,3 +495,64 @@ alter table clinic_changes enable row level security;
 
 -- Demos por persona por día desde la landing o el chat. Null = sin límite (se ajusta en Sistema).
 alter table messaging_settings add column if not exists demo_daily_limit integer;
+
+-- ---------------------------------------------------------------------------
+-- Google Calendar: una cuenta conectada por clínica y un calendario por profesional.
+-- Turnia sigue siendo la dueña de sus turnos (no se pisan dos reservas); de Google
+-- toma lo ocupado y le escribe cada turno al calendario del profesional.
+-- ---------------------------------------------------------------------------
+create table if not exists calendar_connections (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null unique references clinics(id) on delete cascade,
+  provider text not null default 'google' check (provider in ('google')),
+  account_email text,
+  -- Cifrados con AES-256-GCM (src/lib/calendar/crypto.ts): nunca en texto plano.
+  refresh_token text not null,
+  access_token text,
+  access_expires_at timestamptz,
+  status text not null default 'conectado' check (status in ('conectado', 'error')),
+  last_error text,
+  last_sync_at timestamptz,
+  connected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table calendar_connections enable row level security;
+
+alter table professionals add column if not exists google_calendar_id text;
+alter table professionals add column if not exists google_calendar_name text;
+-- Lo ocupado del calendario del profesional, leído hace poco (evita esperar a Google en cada consulta).
+alter table professionals add column if not exists google_busy jsonb;
+alter table professionals add column if not exists google_busy_from timestamptz;
+alter table professionals add column if not exists google_busy_to timestamptz;
+alter table professionals add column if not exists google_busy_at timestamptz;
+
+-- Estado del evento de cada turno en el calendario del profesional.
+alter table appointments add column if not exists calendar_event_id text;
+alter table appointments add column if not exists calendar_event_calendar text;
+alter table appointments add column if not exists calendar_sync text;
+alter table appointments add column if not exists calendar_error text;
+alter table appointments add column if not exists calendar_attempts integer not null default 0;
+alter table appointments drop constraint if exists appointments_calendar_sync_check;
+alter table appointments add constraint appointments_calendar_sync_check check (calendar_sync is null or calendar_sync in ('pendiente', 'ok', 'error'));
+create index if not exists appointments_calendar_pending_idx on appointments (clinic_id) where calendar_sync in ('pendiente', 'error');
+
+-- Cualquier alta o cambio de un turno (agente, panel, campañas) deja su evento pendiente
+-- de sincronizar, sin depender de que cada camino del código se acuerde de avisar.
+create or replace function turnia_calendar_mark() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'INSERT' or new.status is distinct from old.status or new.starts_at is distinct from old.starts_at
+     or new.ends_at is distinct from old.ends_at or new.professional_id is distinct from old.professional_id then
+    if new.calendar_event_id is not null or exists (
+      select 1 from professionals p join calendar_connections c on c.clinic_id = p.clinic_id
+      where p.id = new.professional_id and p.google_calendar_id is not null
+    ) then
+      new.calendar_sync := 'pendiente';
+      new.calendar_attempts := 0;
+      new.calendar_error := null;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists appointments_calendar_mark on appointments;
+create trigger appointments_calendar_mark before insert or update on appointments
+  for each row execute function turnia_calendar_mark();
