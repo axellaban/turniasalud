@@ -55,11 +55,29 @@ export function AgenteEnVivo({ videoId }: { videoId: string }) {
     // Con «reducir movimiento», el video queda quieto en su primer cuadro y los mensajes rotan solos.
     const quieto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (quieto) video?.pause();
+    // Con ahorro de batería (iPhone) o de datos, el navegador no arranca solo el video, pero sí
+    // lo deja reproducir después de un toque: el primero lo pone en marcha.
+    const arrancar = () => {
+      if (video?.paused) video.play().catch(() => {});
+    };
+    // Si arranca tarde, los mensajes dejan el reloj y vuelven a seguir el video.
+    const alReproducir = () => {
+      window.removeEventListener("touchend", arrancar);
+      window.removeEventListener("click", arrancar);
+      if (!reloj) return;
+      clearInterval(reloj);
+      reloj = 0;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(seguirVideo);
+    };
     if (tieneVideo && !quieto) {
       raf = requestAnimationFrame(seguirVideo);
       // Si en 2 segundos el video no arrancó (sin archivo, ahorro de datos), rotan solos.
       timers.current.push(window.setTimeout(() => { if (!video || video.paused || video.readyState < 2) { cancelAnimationFrame(raf); usarReloj(); } }, 2000));
       video?.addEventListener("error", usarReloj, true);
+      video?.addEventListener("playing", alReproducir);
+      window.addEventListener("touchend", arrancar, { passive: true });
+      window.addEventListener("click", arrancar);
     } else {
       usarReloj();
     }
@@ -69,6 +87,9 @@ export function AgenteEnVivo({ videoId }: { videoId: string }) {
       clearInterval(reloj);
       pendientes.forEach(clearTimeout);
       video?.removeEventListener("error", usarReloj, true);
+      video?.removeEventListener("playing", alReproducir);
+      window.removeEventListener("touchend", arrancar);
+      window.removeEventListener("click", arrancar);
     };
   }, [videoId]);
 
