@@ -15,6 +15,7 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 - **No contratar planes ni cargar saldo** (Vercel está en Hobby, así que Skew Protection no se activa).
 - **WAHA queda exactamente como está**. El otro servicio WAHA del VPS es de otro flujo: no tocarlo.
+- **HolaVeggie y las líneas existentes de Twilio están operativas:** no modificar sus números, agentes, webhooks ni credenciales. Turnia usa la misma cuenta por decisión expresa del usuario; el saldo es compartido.
 - No pegar credenciales en chat, repo ni documentos.
 - No regenerar los audios de la web ni cambiar permisos de ElevenLabs sin que el usuario lo pida.
 - Gmail de n8n está vencido y el usuario pidió **no** reconectarlo ni reintentar envíos hasta que lo retome.
@@ -24,7 +25,7 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 ## 1. Pendiente del usuario (no se puede hacer desde el código)
 
 - [ ] **Rotar las credenciales** que quedaron expuestas durante el diagnóstico de WAHA (ver la sección «Diagnóstico histórico de vinculación WAHA» en `ESTADO_Y_PRIORIDADES.md`).
-- [ ] **Vincular el chip de WhatsApp a WAHA** con el QR del servicio `n8n/turnia-waha`, sesión `default`, hasta llegar a `WORKING`. Pasos en [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md#puesta-en-marcha-lo-que-queda-para-la-próxima-ia) (4b) y [`PLAN_WHATSAPP.md`](PLAN_WHATSAPP.md).
+- [x] **WAHA vinculado por el usuario**, quien confirmó que funciona. No repetir el diagnóstico ni modificar su conexión. WhatsApp está pausado en el selector de Turnia; Telegram sigue activo.
 - [ ] Decidir si los avisos al equipo salen por email (requiere reconectar Gmail en n8n) y a quién van los avisos asistenciales.
 - [ ] Opcional: un video propio para el hero, si no quiere los clips de stock (ver 4).
 
@@ -33,7 +34,7 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 - [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.
 - [ ] Que el usuario la pruebe con su propia voz y mire el interesado en Panel → Pedidos de demo (el de prueba es `prueba-claude@turnia.test`, se puede borrar). En el celular, probar la opción Telegram.
 
-Apenas WAHA esté `WORKING`:
+Cuando el usuario elija reactivar WhatsApp desde Panel → Sistema (sin cambiar WAHA):
 
 
 - [ ] `https://turniasalud.vercel.app/api/health` → `demo.whatsapp: true`, `whatsapp_source: "waha"`.
@@ -64,7 +65,12 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] Cargar datos y protocolos reales de la primera clínica (no reemplazar por suposición).
 - [ ] Revisar consentimiento, conservación de datos y textos de privacidad. No activar Zero Retention de ElevenLabs a ciegas: es incompatible con el Custom Channel (ver `PLAN_WHATSAPP.md`).
 - [ ] Activar campañas (workflow n8n `g0H8xbQvRNv5FxQj`, hoy desactivado) solo después de validar canal, destinatarios y baja.
-- [ ] Opcional: número de Twilio (`ELEVENLABS_PHONE_NUMBER_ID`) para que la opción «Llamada» llame al celular. Medir el costo a celulares argentinos.
+- [x] **Twilio saliente configurado** (24/10): línea propia verificada, importada en ElevenLabs y `ELEVENLABS_PHONE_NUMBER_ID` guardada en Production; despliegue Ready, salud con `llamada_telefonica: true`. La conexión final usa credenciales de la cuenta existente por elección del usuario; no una subcuenta. Detalle y alcance en `ESTADO_Y_PRIORIDADES.md`.
+- [x] **Conversación telefónica real validada por el usuario** (24/10): Sofi habló y escuchó por Twilio, registro de 21 mensajes y cierre por el destinatario. ElevenLabs: 2:11 y 1.464 créditos totales; Twilio: 2:12 y US$1,0584. Cinco intentos autorizados en total; los errores manuales de variables quedaron corregidos y documentados. No reintentar lotes ni llamar de nuevo sin pedido explícito. Telegram sigue usando enlace web.
+- [x] **Identificación de llamada confirmada por el usuario:** en el celular receptor apareció la línea de Turnia.
+- [ ] **Agente comercial de Turnia**, separado de la recepcionista, con voz masculina Agustín; definir oferta y herramientas comerciales antes de prospectar. Todavía no creado.
+- [ ] **Atención humana por chat**: implementar Tomar / Devolver al agente con pausa persistida y descarte de respuestas pendientes; conservar la app WhatsApp Business y WAHA, sin incorporar Chatwoot por rutina.
+- [ ] **Piloto de prospección telefónica**: destinatarios revisados, reglas de contacto/No Llame, baja persistente y probada, autorización manual, límite efectivo de duración/consumo y resultados. Validar que el agente pueda colgar y no afirme registrar una baja sin haberlo hecho. No reutilizar el destino de la prueba que pidió no recibir más llamadas. No activar llamadas en frío ni campañas automáticamente.
 
 ## 6. Técnico menor
 
