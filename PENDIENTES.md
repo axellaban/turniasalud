@@ -1,13 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 23/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
 1. Leé [`AGENTS.md`](AGENTS.md): esta versión de Next.js (16.4) cambia APIs. Consultá `node_modules/next/dist/docs/` antes de escribir código.
 2. Leé [`ESTADO_Y_PRIORIDADES.md`](ESTADO_Y_PRIORIDADES.md), que tiene el registro de lo hecho y prevalece sobre los documentos más viejos.
 3. Ramas: se trabaja en una rama, se abre un PR contra `main`, CI (`verificar`) y Vercel tienen que dar verde, y se hace merge squash. Producción se publica sola desde `main` y cada deploy aplica `supabase/schema.sql` (idempotente) con `scripts/migrate-db.mjs`.
-4. Pruebas locales: `npx tsc --noEmit`, `npx eslint src`, `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx vitest run` (177 tests al 23/10) y `npx next build`. Para mirar la web, `next start` con un Postgres local; Chromium está en `/opt/pw-browsers`.
+4. Diseño: hay skills en `.claude/skills` (`frontend-design`, `web-design-guidelines`, `react-best-practices`, `impeccable`); ver su `README.md`. Para auditar accesibilidad, axe-core está en `node_modules`.
+5. Pruebas locales: `npx tsc --noEmit`, `npx eslint src`, `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx vitest run` (177 tests al 23/10) y `npx next build`. Para mirar la web, `next start` con un Postgres local; Chromium está en `/opt/pw-browsers`.
 
 ## Reglas que no se rompen
 
@@ -47,7 +48,8 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [x] «Escuchá a Sofi en acción» en una pantalla: recepcionista a la izquierda, paciente a la derecha, texto al ritmo del audio real.
 - [ ] Si el usuario trae un video propio: reemplazar `public/videos/hero.mp4`, `hero.webm`, `hero-mobile.mp4` y `hero-poster.jpg`, y ajustar los tiempos de `ESCENAS` en `src/components/site/agente-en-vivo.tsx`. Cómo se armó el actual (ffmpeg, clips de 8 s, fundido de 0,6 s): [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md).
 - [ ] Contenido real: casos, precios y (cuando haya) testimonios. Hoy no se inventa nada.
-- [ ] **Skills de diseño, UX y UI**: se le propuso al usuario instalar skills de GitHub en `.claude/skills` y hacer una auditoría de diseño de web, demos y panel. **Está esperando su respuesta**; no instalarlas sin su OK.
+- [x] **Skills de diseño** instaladas en `.claude/skills` y auditoría de accesibilidad hecha (24/10): de 512 problemas a 6 decorativos. Detalle en `ESTADO_Y_PRIORIDADES.md`.
+- [ ] Posible siguiente paso de diseño: una crítica visual con `impeccable critique` de la home y `/probar-demo` (jerarquía, ritmo, copy). Es mejora, no arreglo.
 
 ## 5. Producto y legal (antes de usar pacientes reales)
 
@@ -59,7 +61,7 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 ## 6. Técnico menor
 
 - [ ] `npm audit` marca cinco altas en la cadena de desarrollo de ESLint (`braces`). No afecta al servidor publicado; no aplicar `--force`, que baja `eslint-config-next`. Revisar cuando salga una corrección compatible.
-- [ ] El reproductor de demos pide primero `/audios/<slug>.json` (404 en producción, porque los audios viven en la base) y después `/api/audios/<slug>.json`. Funciona igual; si molesta el 404 en la consola, invertir el orden en `buscarSincronizacion` (`src/components/site/reproductor-demo.tsx`).
+- [x] El reproductor de demos ya no genera el 404 de `/audios/<slug>.json` en la consola (24/10).
 
 ## Dónde está cada cosa
 

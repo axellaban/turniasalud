@@ -73,7 +73,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
             <Card key={t.id} className={t.priority === "urgente" ? "border-red-300" : ""}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs text-brand-900/55">{TYPE_LABEL[t.type] ?? t.type}</p>
+                  <p className="text-xs text-brand-900/65">{TYPE_LABEL[t.type] ?? t.type}</p>
                   <h2 className="mt-1 font-semibold text-brand-950">{t.title}</h2>
                 </div>
                 <div className="flex shrink-0 gap-1">
@@ -88,7 +88,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
                 </p>
               )}
               {t.status !== "resuelta" && t.patients && <ResolveTaskForm id={t.id} canNotify={canNotify} />}
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-brand-900/55">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-brand-900/65">
                 <span>
                   {t.patients ? (
                     <Link href={`/panel/pacientes/${t.patients.id}`} className="font-medium text-brand-800 hover:underline">

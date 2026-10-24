@@ -32,12 +32,12 @@ export default async function ServicesPage() {
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-brand-950">{x.name} {x.is_first_visit && <Badge tone="blue">primera vez</Badge>} {!x.active && <Badge>Inactiva</Badge>}</p>
-                  <p className="text-sm text-brand-900/55">
+                  <p className="text-sm text-brand-900/65">
                     {x.specialty} · {x.duration_min} min{x.recall_months ? ` · control cada ${x.recall_months} meses` : ""}
-                    {x.active && !staffed.has(x.specialty.toLowerCase()) && <span className="text-sun-600"> · sin profesional de esta especialidad</span>}
+                    {x.active && !staffed.has(x.specialty.toLowerCase()) && <span className="text-sun-700"> · sin profesional de esta especialidad</span>}
                   </p>
                 </div>
-                <p className="w-28 text-right text-sm font-medium text-brand-950">{x.price ? money.format(Number(x.price)) : <span className="font-normal text-brand-900/40">Sin precio</span>}</p>
+                <p className="w-28 text-right text-sm font-medium text-brand-950">{x.price ? money.format(Number(x.price)) : <span className="font-normal text-brand-900/65">Sin precio</span>}</p>
                 <form action={toggleAppointmentType}><input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={x.id} />
                   <input type="hidden" name="active" value={String(!x.active)} />

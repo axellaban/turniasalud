@@ -32,7 +32,7 @@ export default function PanelError({ error, reset }: { error: Error & { digest?:
             ? error.message
             : "No pudimos cargar esta página. Revisá que la base de datos esté configurada (README → Puesta en marcha) y probá de nuevo."}
         </p>
-        {error.digest && <p className="mt-2 text-xs text-brand-900/40">Código: {error.digest}</p>}
+        {error.digest && <p className="mt-2 text-xs text-brand-900/65">Código: {error.digest}</p>}
         <button onClick={reset} className={`${buttonClass} mt-4`}>
           Reintentar
         </button>

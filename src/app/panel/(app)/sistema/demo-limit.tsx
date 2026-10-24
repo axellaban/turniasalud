@@ -15,7 +15,7 @@ export function DemoLimitForm({ limit }: { limit: number | null }) {
         <input id="demo-limit" name="demo_daily_limit" type="number" min={0} max={1000} defaultValue={limit ?? 0} className={`${inputClass} max-w-32`} />
         <button disabled={pending} className={buttonClass}>{pending ? "Guardando…" : "Guardar"}</button>
       </div>
-      <p className="text-xs text-brand-900/55">0 = sin límite. Cada demo lee una web y usa créditos de Claude; si la landing recibe abusos, poné un tope (por ejemplo, 5).</p>
+      <p className="text-xs text-brand-900/65">0 = sin límite. Cada demo lee una web y usa créditos de Claude; si la landing recibe abusos, poné un tope (por ejemplo, 5).</p>
       {state.message && <p role="status" className={`text-sm ${state.ok ? "text-brand-700" : "text-red-700"}`}>{state.message}</p>}
     </form>
   );

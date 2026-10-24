@@ -49,7 +49,7 @@ export function CoverageInput({ name, defaultValue }: { name: string; defaultVal
       {items.length > 0 && <ul className="mb-2 flex flex-wrap gap-1.5">
         {items.map((item) => <li key={item} className="inline-flex items-center gap-1 rounded-full bg-brand-50 py-1 pl-3 pr-1 text-sm text-brand-800">
           {item}
-          <button type="button" onClick={() => update(items.filter((i) => i !== item))} aria-label={`Quitar ${item}`} className="rounded-full px-1.5 text-brand-900/40 hover:bg-white hover:text-red-600">×</button>
+          <button type="button" onClick={() => update(items.filter((i) => i !== item))} aria-label={`Quitar ${item}`} className="rounded-full px-1.5 text-brand-900/65 hover:bg-white hover:text-red-600">×</button>
         </li>)}
       </ul>}
       <div className="flex gap-2">

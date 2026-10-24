@@ -40,7 +40,7 @@ export default async function CampaignsPage() {
                   <Card className="hover:border-brand-300">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="text-xs text-brand-900/50">{CAMPAIGN_LABELS[c.type].label}</p>
+                        <p className="text-xs text-brand-900/65">{CAMPAIGN_LABELS[c.type].label}</p>
                         <h2 className="font-semibold text-brand-950">{c.name}</h2>
                       </div>
                       <StatusBadge value={c.status} />
@@ -49,7 +49,7 @@ export default async function CampaignsPage() {
                       <span>{s.sent} enviados</span>
                       <span>{s.replied} respondieron</span>
                       <span>{s.booked} agendaron</span>
-                      <span className="text-brand-900/45">{formatDateTime(c.sent_at ?? c.created_at, clinic.timezone)}</span>
+                      <span className="text-brand-900/65">{formatDateTime(c.sent_at ?? c.created_at, clinic.timezone)}</span>
                     </div>
                   </Card>
                 </Link>

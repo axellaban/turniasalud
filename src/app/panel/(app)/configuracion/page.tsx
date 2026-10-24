@@ -83,7 +83,7 @@ export default async function SettingsPage() {
               {!clinic.retained_at && <form action={retainClinic}><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
             </div>}
             <Link href="/demo" className={`${clinic.is_demo ? "mt-3" : "mt-4"} inline-flex text-sm font-medium text-brand-700 hover:underline`}>Probar por voz o texto en el navegador →</Link>
-            <p className="mt-3 text-xs text-brand-900/50">{!clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la guardás o conservás."}</p>
+            <p className="mt-3 text-xs text-brand-900/65">{!clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la guardás o conservás."}</p>
           </Card>
         </div>
         <div className="min-w-0 xl:col-start-1 xl:row-span-2 xl:row-start-1">
@@ -100,7 +100,7 @@ export default async function SettingsPage() {
 
           <Section id="atencion" title="Atención y pagos" description="Lo que el agente dice cuando preguntan cuándo atienden, con qué cobertura y cómo se paga.">
             <div className={wide}><Field label="Horario de atención" hint="Texto que se le dice al paciente. Los turnos salen de «Equipo y horarios»."><input name="hours_text" defaultValue={clinic.hours_text ?? ""} className={inputClass} /></Field></div>
-            <div className={wide}><p className="mb-1 text-sm font-medium text-brand-900">Coberturas aceptadas</p><CoverageInput name="accepted_coverages" defaultValue={clinic.accepted_coverages} /><p className="mt-1 text-xs text-brand-900/50">Agregá «Particular» si atienden sin cobertura.</p></div>
+            <div className={wide}><p className="mb-1 text-sm font-medium text-brand-900">Coberturas aceptadas</p><CoverageInput name="accepted_coverages" defaultValue={clinic.accepted_coverages} /><p className="mt-1 text-xs text-brand-900/65">Agregá «Particular» si atienden sin cobertura.</p></div>
             <div className={wide}><Field label="Formas de pago"><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} className={inputClass} /></Field></div>
           </Section>
 
@@ -127,8 +127,8 @@ export default async function SettingsPage() {
             {accesses.length > 0 && <ul className="mt-4 divide-y divide-brand-900/5 text-sm">
               {accesses.map((a) => <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="min-w-0">
-                  <span className="font-medium text-brand-950">{a.label || "Sin nombre"}</span> <span className="font-mono text-xs text-brand-900/50">····{a.code_hint}</span>
-                  <span className="block text-xs text-brand-900/50">{a.revoked_at ? `Revocado ${formatDateTime(a.revoked_at, clinic.timezone)}` : a.last_used_at ? `Último ingreso ${formatDateTime(a.last_used_at, clinic.timezone)}` : `Creado ${formatDateTime(a.created_at, clinic.timezone)} · sin ingresos`}</span>
+                  <span className="font-medium text-brand-950">{a.label || "Sin nombre"}</span> <span className="font-mono text-xs text-brand-900/65">····{a.code_hint}</span>
+                  <span className="block text-xs text-brand-900/65">{a.revoked_at ? `Revocado ${formatDateTime(a.revoked_at, clinic.timezone)}` : a.last_used_at ? `Último ingreso ${formatDateTime(a.last_used_at, clinic.timezone)}` : `Creado ${formatDateTime(a.created_at, clinic.timezone)} · sin ingresos`}</span>
                 </span>
                 {a.revoked_at ? <Badge>Revocado</Badge> : <form action={revokeAccess}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="access_id" value={a.id} /><button className={smallButtonClass}>Revocar</button></form>}
               </li>)}
@@ -140,7 +140,7 @@ export default async function SettingsPage() {
             {changes.length ? <ul className="mt-3 space-y-2 text-sm">
               {changes.map((c) => <li key={c.id} className="flex flex-wrap justify-between gap-x-2">
                 <span><span className="font-medium text-brand-950">{c.actor}</span> <span className="text-brand-900/60">· {c.area}</span></span>
-                <span className="text-xs text-brand-900/50">{formatDateTime(c.created_at, clinic.timezone)}</span>
+                <span className="text-xs text-brand-900/65">{formatDateTime(c.created_at, clinic.timezone)}</span>
               </li>)}
             </ul> : <p className="mt-2 text-sm text-brand-900/60">Todavía no hay cambios registrados.</p>}
           </Card>
@@ -148,7 +148,7 @@ export default async function SettingsPage() {
           <Card>
             <details>
               <summary className="cursor-pointer font-semibold text-brand-950">Vista previa del contexto</summary>
-              <p className="mt-2 text-xs text-brand-900/50">Así le llega la ficha guardada al agente.</p>
+              <p className="mt-2 text-xs text-brand-900/65">Así le llega la ficha guardada al agente.</p>
               <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm text-brand-900/70">{clinicInfoText(clinic)}</pre>
             </details>
           </Card>

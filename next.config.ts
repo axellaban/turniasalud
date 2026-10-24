@@ -1,4 +1,15 @@
+import { readdirSync } from "node:fs";
 import type { NextConfig } from "next";
+
+// Audios de las demos que vienen en el repo (public/audios/<slug>.json). El reproductor
+// los pide directo y para el resto va a /api/audios, sin probar primero un archivo que no está.
+const audiosDelRepo = (() => {
+  try {
+    return readdirSync("public/audios").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+  } catch {
+    return [];
+  }
+})();
 
 const nextConfig: NextConfig = {
   // Turnia es casi todo datos en vivo (agenda, conversaciones), así que usamos
@@ -8,6 +19,7 @@ const nextConfig: NextConfig = {
   // se recarga entera al navegar, en lugar de llamar a acciones que ya no existen.
   // Localmente y en CI no hay id y no cambia nada.
   deploymentId: process.env.VERCEL_DEPLOYMENT_ID || undefined,
+  env: { TURNIA_AUDIOS_REPO: audiosDelRepo.join(",") },
   // Direcciones parecidas a las del panel (singular, sin tilde, abreviadas) llevan a la
   // página correcta en lugar de un 404. Son temporales (307): no quedan cacheadas.
   async redirects() {

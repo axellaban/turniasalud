@@ -91,13 +91,14 @@ export function PaginaProducto({ p }: { p: Producto }) {
 
       {/* Presentación con tres pilares */}
       <section className="mx-auto max-w-[1100px] px-4 pb-20 sm:px-6">
-        <Eyebrow className="text-center text-sun-600">{p.presentacion.eyebrow}</Eyebrow>
+        <Eyebrow className="text-center text-sun-700">{p.presentacion.eyebrow}</Eyebrow>
         <Titulo className="mt-3" linea1={p.presentacion.titulo[0]} linea2={p.presentacion.titulo[1]} bajada={p.presentacion.bajada} />
         <div className="mt-12 grid gap-4 md:grid-cols-3">
           {p.presentacion.pilares.map((x, i) => (
-            <article key={x.t} className={`rounded-2xl p-7 text-white ${["bg-emerald", "bg-brand-600", "bg-sun-500"][i % 3]}`}>
+            // Texto oscuro sobre verde y naranja: el blanco no llega a 4,5:1.
+            <article key={x.t} className={`rounded-2xl p-7 ${["bg-emerald text-brand-950", "bg-brand-600 text-white", "bg-sun-500 text-brand-950"][i % 3]}`}>
               <h3 className="text-2xl font-medium tracking-tight">{x.t}</h3>
-              <p className="mt-10 text-[15px] leading-relaxed text-white/90">{x.d}</p>
+              <p className="mt-10 text-[15px] leading-relaxed opacity-90">{x.d}</p>
             </article>
           ))}
         </div>

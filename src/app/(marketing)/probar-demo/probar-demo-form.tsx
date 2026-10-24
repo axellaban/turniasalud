@@ -44,7 +44,7 @@ export function ProbarDemoForm({ channel, ready }: { channel: MessagingChannel; 
       <label htmlFor="web" className="sr-only">
         La web de tu clínica o consultorio
       </label>
-      <div className="flex flex-col gap-3 rounded-2xl bg-white p-2 shadow-lg ring-1 ring-brand-950/10 sm:flex-row">
+      <div className="flex flex-col gap-3 rounded-2xl bg-white p-2 shadow-lg ring-1 ring-brand-950/10 focus-within:ring-2 focus-within:ring-brand-600 sm:flex-row">
         <input
           id="web"
           name="web"
@@ -59,7 +59,7 @@ export function ProbarDemoForm({ channel, ready }: { channel: MessagingChannel; 
           placeholder="La web de tu consultorio: miclinica.com.ar"
           aria-invalid={Boolean(error)}
           aria-describedby={error ? "web-error" : undefined}
-          className="min-w-0 flex-1 rounded-xl px-4 py-3.5 text-[16px] text-brand-950 outline-none placeholder:text-tinta/60"
+          className="min-w-0 flex-1 rounded-xl px-4 py-3.5 text-[16px] text-brand-950 outline-none placeholder:text-tinta/85"
         />
         <button
           type="submit"
@@ -74,7 +74,7 @@ export function ProbarDemoForm({ channel, ready }: { channel: MessagingChannel; 
           {error}
         </p>
       ) : (
-        <p className="mt-3 text-xs text-tinta/80">{channel === "telegram" ? "Se abre Telegram. Tocá Iniciar para que Turnia reciba tu web y prepare la demo." : "Se abre WhatsApp con el mensaje listo. Solo tenés que enviarlo."}</p>
+        <p className="mt-3 text-xs text-tinta">{channel === "telegram" ? "Se abre Telegram. Tocá Iniciar para que Turnia reciba tu web y prepare la demo." : "Se abre WhatsApp con el mensaje listo. Solo tenés que enviarlo."}</p>
       )}
     </form>
   );

@@ -29,10 +29,10 @@ const CSS = `
 `;
 
 const COLORES: Record<Conversacion["color"], { cuadro: string; boton: string; acento: string }> = {
-  brand: { cuadro: "bg-[#4eb49e]", boton: "border-[#4eb49e] text-[#3f9c88]", acento: "accent-[#3f9c88]" },
+  brand: { cuadro: "bg-[#4eb49e]", boton: "border-[#4eb49e] text-emerald-700", acento: "accent-[#3f9c88]" },
   lila: { cuadro: "bg-[#b3b1ff]", boton: "border-[#b3b1ff] text-[#8b88f2]", acento: "accent-[#8b88f2]" },
   cielo: { cuadro: "bg-[#4a86f0]", boton: "border-[#4a86f0] text-[#3a72dc]", acento: "accent-[#3a72dc]" },
-  sun: { cuadro: "bg-sun-500", boton: "border-sun-500 text-sun-600", acento: "accent-sun-600" },
+  sun: { cuadro: "bg-sun-500", boton: "border-sun-500 text-sun-700", acento: "accent-sun-600" },
 };
 
 // Alturas relativas de las barras del ecualizador (como el orbe de la home de Assort).
@@ -51,15 +51,16 @@ function sincronizacionEstimada(conversacion: Conversacion): Sincronizacion {
   return { duracion: t, segmentos };
 }
 
+/** Slugs con audio en public/audios, anotados al compilar (next.config.ts). */
+const AUDIOS_REPO = new Set((process.env.TURNIA_AUDIOS_REPO ?? "").split(",").filter(Boolean));
+
 async function buscarSincronizacion(slug: string, totalLineas: number, signal: AbortSignal) {
-  // Primero los archivos del repo (public/audios), después los generados desde el panel.
-  for (const base of ["/audios", "/api/audios"]) {
-    const res = await fetch(`${base}/${slug}.json`, { signal }).catch(() => null);
-    if (!res?.ok) continue;
-    const sync = leerSincronizacion(await res.json().catch(() => null), totalLineas);
-    if (sync) return { sync, src: `${base}/${slug}.mp3` };
-  }
-  return null;
+  // Los archivos del repo (public/audios) tienen prioridad; si no hay, los generados desde el panel.
+  const base = AUDIOS_REPO.has(slug) ? "/audios" : "/api/audios";
+  const res = await fetch(`${base}/${slug}.json`, { signal }).catch(() => null);
+  if (!res?.ok) return null;
+  const sync = leerSincronizacion(await res.json().catch(() => null), totalLineas);
+  return sync ? { sync, src: `${base}/${slug}.mp3` } : null;
 }
 
 function useReproductor(conversacion: Conversacion) {
@@ -283,7 +284,7 @@ function VarianteOrbe({ conversacion, r }: { conversacion: Conversacion; r: Repr
           >
             <IconoPlay sonando={r.sonando} className="h-3.5 w-3.5" />
             {r.sonando ? "Pausar" : r.tiempo > 0 ? "Seguir" : conAudio ? "Escuchar la llamada" : "Ver la conversación"}
-            <span className="tabular-nums text-brand-950/55">· {disponible ? formatearTiempo(r.duracion) : "…"}</span>
+            <span className="tabular-nums text-brand-950/65">· {disponible ? formatearTiempo(r.duracion) : "…"}</span>
           </button>
         </div>
 
@@ -407,7 +408,7 @@ function VarianteEscena({ conversacion, r, pasos }: { conversacion: Conversacion
           </button>
           <p className="mt-3 text-sm font-medium text-brand-950/70">
             {r.sonando ? "Escuchando…" : r.tiempo > 0 ? "En pausa" : conAudio ? "Escuchar la llamada" : "Ver la conversación"}
-            <span className="tabular-nums text-brand-950/50"> · {disponible ? `${formatearTiempo(r.tiempo)} / ${formatearTiempo(r.duracion)}` : "…"}</span>
+            <span className="tabular-nums text-brand-950/65"> · {disponible ? `${formatearTiempo(r.tiempo)} / ${formatearTiempo(r.duracion)}` : "…"}</span>
           </p>
         </div>
 
@@ -459,9 +460,9 @@ function VarianteTarjeta({ conversacion, r }: { conversacion: Conversacion; r: R
           >
             <Icono nombre={conversacion.icono} className="h-7 w-7 sm:h-11 sm:w-11" />
           </span>
-          <h3 className="min-w-0 self-center text-xl font-semibold tracking-tight text-brand-900 sm:self-end sm:text-[28px] sm:leading-tight">
+          <h2 className="min-w-0 self-center text-xl font-semibold tracking-tight text-brand-900 sm:self-end sm:text-[28px] sm:leading-tight">
             {conversacion.titulo}
-          </h3>
+          </h2>
           <p className="col-span-2 text-[15px] leading-relaxed text-brand-900/70 sm:col-span-1 sm:col-start-2 sm:self-start">
             {conversacion.descripcion}
           </p>
@@ -563,7 +564,7 @@ function Transcripcion({ conversacion, r, className = "" }: { conversacion: Conv
         } ${actual ? "shadow-md ring-2 ring-brand-400/50" : "shadow-sm"} ${atenuada ? "opacity-55" : ""}`;
         const contenido = (
           <>
-            <span className={`mb-0.5 block text-[11px] font-semibold uppercase tracking-wide ${esAgente ? "text-brand-600" : "text-white/75"}`}>
+            <span className={`mb-0.5 block text-[11px] font-semibold uppercase tracking-wide ${esAgente ? "text-brand-600" : "text-white/90"}`}>
               {esAgente ? "Sofi · Turnia" : "Paciente"}
             </span>
             {linea.texto}

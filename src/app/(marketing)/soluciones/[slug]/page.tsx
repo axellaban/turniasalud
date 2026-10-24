@@ -34,7 +34,7 @@ export default async function CasoPage({ params }: PageProps<"/soluciones/[slug]
             <Eyebrow className="mt-6">{caso.eyebrow}</Eyebrow>
             <h1 className="mt-3 text-[40px] font-medium leading-[1.06] tracking-tight text-brand-950 sm:text-[54px]">{caso.titulo}</h1>
             <p className="mt-5 max-w-lg text-[17px] leading-relaxed text-tinta">{caso.bajada}</p>
-            <p className="mt-8 text-xs font-semibold uppercase tracking-[0.14em] text-tinta/70">
+            <p className="mt-8 text-xs font-semibold uppercase tracking-[0.14em] text-tinta">
               Pensado para clínicas de más de 18 especialidades
             </p>
           </div>

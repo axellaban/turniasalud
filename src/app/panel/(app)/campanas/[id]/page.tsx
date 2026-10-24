@@ -50,12 +50,12 @@ export default async function CampaignDetail({ params }: PageProps<"/panel/campa
             {audience.map((a) => (
               <li key={a.patient_id} className="rounded-xl bg-brand-50/60 p-2">
                 <p className="font-medium text-brand-950">
-                  {a.name ?? "Sin nombre"} <span className="font-normal text-brand-900/50">· {displayPhone(a.phone)}</span>
+                  {a.name ?? "Sin nombre"} <span className="font-normal text-brand-900/65">· {displayPhone(a.phone)}</span>
                 </p>
                 <p className="text-xs text-brand-900/60">{a.detail}</p>
               </li>
             ))}
-            {!audience.length && <li className="text-brand-900/50">Nadie cumple las condiciones en este momento.</li>}
+            {!audience.length && <li className="text-brand-900/65">Nadie cumple las condiciones en este momento.</li>}
           </ul>
           <div className="mt-4">
             {missingSetup ? (
@@ -67,12 +67,12 @@ export default async function CampaignDetail({ params }: PageProps<"/panel/campa
             )}
           </div>
           {waha ? (
-            <p className="mt-3 text-xs text-brand-900/50">
+            <p className="mt-3 text-xs text-brand-900/65">
               Por WAHA se manda este texto, con una pausa entre mensajes (hasta 50 por vez):{" "}
               <q>{renderTemplate(templateKeyFor(campaign.type), ["María", "…"], { optOutFooter: true })}</q>
             </p>
           ) : (
-            <p className="mt-3 text-xs text-brand-900/50">
+            <p className="mt-3 text-xs text-brand-900/65">
               El template tiene que estar aprobado por Meta y usar dos variables: {"{{1}}"} = nombre y {"{{2}}"} = detalle (fecha del turno, control,
               etc.). Se envían hasta 50 por vez.
             </p>
@@ -84,12 +84,12 @@ export default async function CampaignDetail({ params }: PageProps<"/panel/campa
             {sentRows.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-2 py-2">
                 <span className="flex-1">{r.full_name ?? displayPhone(r.phone)}</span>
-                <span className="text-xs text-brand-900/50">{r.sent_at ? formatDateTime(r.sent_at, clinic.timezone) : ""}</span>
+                <span className="text-xs text-brand-900/65">{r.sent_at ? formatDateTime(r.sent_at, clinic.timezone) : ""}</span>
                 <StatusBadge value={r.status} />
                 {r.error && <p className="w-full text-xs text-red-600">{r.error}</p>}
               </li>
             ))}
-            {!sentRows.length && <li className="py-2 text-brand-900/50">Todavía no se envió.</li>}
+            {!sentRows.length && <li className="py-2 text-brand-900/65">Todavía no se envió.</li>}
           </ul>
         </Card>
       </div>

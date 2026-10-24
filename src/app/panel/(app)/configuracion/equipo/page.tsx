@@ -49,23 +49,23 @@ export default async function TeamPage() {
                     const list = ranges.filter((s) => s.weekday === day).sort((a, b) => a.start_time.localeCompare(b.start_time));
                     return (
                       <div key={day} className="flex items-start gap-2 rounded-xl bg-neutral-50 px-3 py-2 sm:block sm:min-h-20 sm:px-2">
-                        <p className="w-10 shrink-0 pt-1 text-xs font-semibold uppercase text-brand-900/50 sm:w-auto sm:pt-0">{WEEKDAYS[day]}</p>
+                        <p className="w-10 shrink-0 pt-1 text-xs font-semibold uppercase text-brand-900/65 sm:w-auto sm:pt-0">{WEEKDAYS[day]}</p>
                         <div className="flex flex-1 flex-wrap gap-1 sm:mt-1.5 sm:flex-col">
                           {list.map((s) => (
                             <form key={s.id} action={deleteSchedule} className="inline-flex items-center justify-between gap-1 rounded-lg bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800">
                               <input type="hidden" name="clinic_id" value={clinic.id} />
                               <input type="hidden" name="id" value={s.id} />
                               {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
-                              <button title="Quitar este horario" aria-label={`Quitar ${WEEKDAYS[day]} ${s.start_time.slice(0, 5)}`} className="px-0.5 text-brand-900/40 hover:text-red-600">×</button>
+                              <button title="Quitar este horario" aria-label={`Quitar ${WEEKDAYS[day]} ${s.start_time.slice(0, 5)}`} className="px-0.5 text-brand-900/65 hover:text-red-600">×</button>
                             </form>
                           ))}
-                          {!list.length && <span className="pt-1 text-xs text-brand-900/30 sm:pt-0">—</span>}
+                          {!list.length && <span className="pt-1 text-xs text-brand-900/65 sm:pt-0">—</span>}
                         </div>
                       </div>
                     );
                   })}
                 </div>
-                {!ranges.length && <p className="mt-2 text-sm text-sun-600">Sin horarios: el agente no va a ofrecer turnos con este profesional.</p>}
+                {!ranges.length && <p className="mt-2 text-sm text-sun-700">Sin horarios: el agente no va a ofrecer turnos con este profesional.</p>}
 
                 <form action={addSchedule} className="mt-3 flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-brand-900/15 p-3">
                   <input type="hidden" name="clinic_id" value={clinic.id} />

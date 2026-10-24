@@ -46,7 +46,7 @@ export function PanelSidebarNav({ admin }: { admin: boolean }) {
   const pathname = usePathname();
   const section = (title: string, items: Item[]) => (
     <div>
-      <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-brand-200/50">{title}</p>
+      <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-brand-200/75">{title}</p>
       {items.map((item) => {
         const active = isActive(pathname, item.href);
         return (
@@ -123,13 +123,13 @@ export function PanelMobileNav({ admin }: { admin: boolean }) {
         {primary.map((item) => {
           const active = isActive(pathname, item.href);
           return (
-            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`${tab} ${active ? "text-brand-600" : "text-brand-900/55"}`}>
+            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`${tab} ${active ? "text-brand-600" : "text-brand-900/65"}`}>
               <PanelIcon name={item.icon} className="h-6 w-6" />
               {item.short ?? item.label}
             </Link>
           );
         })}
-        <button onClick={() => setOpen(true)} aria-expanded={open} className={`${tab} ${restActive ? "text-brand-600" : "text-brand-900/55"}`}>
+        <button onClick={() => setOpen(true)} aria-expanded={open} className={`${tab} ${restActive ? "text-brand-600" : "text-brand-900/65"}`}>
           <PanelIcon name="mas" className="h-6 w-6" />
           Más
         </button>

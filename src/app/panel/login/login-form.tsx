@@ -41,7 +41,7 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
       <button type="submit" disabled={pending} className={`${buttonClass} w-full py-2.5`}>
         {pending ? "Ingresando…" : "Ingresar"}
       </button>
-      <p className="text-center text-xs text-brand-900/55">¿Sos de un consultorio? Ingresá el código que te pasó Turnia (con o sin guiones). Si lo perdiste, pedí uno nuevo.</p>
+      <p className="text-center text-xs text-brand-900/65">¿Sos de un consultorio? Ingresá el código que te pasó Turnia (con o sin guiones). Si lo perdiste, pedí uno nuevo.</p>
     </form>
   );
 }

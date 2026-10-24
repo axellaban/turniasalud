@@ -175,7 +175,7 @@ export default async function PanelHome() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-brand-900/50">Nada urgente.</p>
+              <p className="text-sm text-brand-900/65">Nada urgente.</p>
             )}
             <Link href="/panel/tareas" className="mt-3 inline-block text-sm text-brand-700 hover:underline">
               Ver tareas
@@ -196,7 +196,7 @@ export default async function PanelHome() {
                     <Link href={`/panel/conversaciones/${c.id}`} className="block rounded-xl p-2 hover:bg-brand-50">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium text-brand-950">{c.patient ?? "Paciente sin identificar"}</span>
-                        <span className="text-xs text-brand-900/50">{formatDateTime(c.started_at, tz)}</span>
+                        <span className="text-xs text-brand-900/65">{formatDateTime(c.started_at, tz)}</span>
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-brand-900/60">
                         {CHANNEL_LABEL[c.channel]} · {c.title || c.summary || "Sin resumen"}
@@ -211,7 +211,7 @@ export default async function PanelHome() {
           </Card>
         </div>
       </div>
-      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 7 días</h2>
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/65">Últimos 7 días</h2>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Conversaciones" value={stats.conversations} hint="WhatsApp, teléfono y web" />
         <Stat label="Resueltas por IA" value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin intervención humana" />
@@ -219,7 +219,7 @@ export default async function PanelHome() {
         <Stat label="Turnos recuperados" value={stats.recovered} hint="por campañas (histórico)" />
       </div>
 
-      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/50">Últimos 30 días</h2>
+      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/65">Últimos 30 días</h2>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat
           label="Satisfacción"

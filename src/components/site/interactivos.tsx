@@ -28,7 +28,13 @@ export function CarruselDestacados({ items }: { items: Destacado[] }) {
   const [i, setI] = useRotacion(items.length, 7000, pausado);
   const d = items[i];
   return (
-    <section className="bg-[#f2f5ff] py-20 sm:py-24" onMouseEnter={() => setPausado(true)} onMouseLeave={() => setPausado(false)}>
+    <section
+      className="bg-[#f2f5ff] py-20 sm:py-24"
+      onMouseEnter={() => setPausado(true)}
+      onMouseLeave={() => setPausado(false)}
+      onFocus={() => setPausado(true)}
+      onBlur={() => setPausado(false)}
+    >
       <div className="mx-auto max-w-[1100px] px-4 sm:px-6">
         <div key={i} className="animar-aparecer grid items-center gap-10 md:grid-cols-[1.4fr_1fr]">
           <div className="flex gap-5">
@@ -67,9 +73,9 @@ export function CarruselDestacados({ items }: { items: Destacado[] }) {
               className="group text-left"
             >
               <span className="block h-0.5 w-full overflow-hidden rounded bg-brand-950/10">
-                <span className={`block h-full bg-brand-950 transition-all duration-500 ${i === j ? "w-full" : "w-0"}`} />
+                <span className={`block h-full bg-brand-950 transition-[width] duration-500 ${i === j ? "w-full" : "w-0"}`} />
               </span>
-              <span className={`mt-3 block text-sm font-medium ${i === j ? "text-brand-950" : "text-brand-950/40 group-hover:text-brand-950/70"}`}>
+              <span className={`mt-3 block text-sm font-medium ${i === j ? "text-brand-950" : "text-brand-950/65 group-hover:text-brand-950"}`}>
                 {x.pestana}
               </span>
             </button>
@@ -90,7 +96,13 @@ export function RuedaCapacidades() {
   const actual = CAPACIDADES[activo];
 
   return (
-    <section className="mx-auto max-w-[1100px] px-4 py-20 sm:px-6 sm:py-28" onMouseEnter={() => setPausado(true)} onMouseLeave={() => setPausado(false)}>
+    <section
+      className="mx-auto max-w-[1100px] px-4 py-20 sm:px-6 sm:py-28"
+      onMouseEnter={() => setPausado(true)}
+      onMouseLeave={() => setPausado(false)}
+      onFocus={() => setPausado(true)}
+      onBlur={() => setPausado(false)}
+    >
       <div className="grid items-center gap-8 md:grid-cols-[220px_1fr_200px]">
         <h2 className="text-2xl font-medium leading-tight tracking-tight text-brand-950">Simplificá cada paso del recorrido del paciente</h2>
         <ul className="relative flex flex-col items-center gap-1 py-2 text-center" aria-label="Capacidades de Turnia">
@@ -98,13 +110,16 @@ export function RuedaCapacidades() {
             const dist = Math.abs(off);
             return (
               <li key={`${off}-${item.nombre}`} className={dist > 2 ? "hidden sm:block" : ""}>
+                {/* Las de los bordes son el desvanecido de la rueda: se pueden tocar, pero no se leen ni se enfocan. */}
                 <button
                   type="button"
                   onClick={() => setActivo(idx)}
-                  className="font-medium tracking-tight transition-all duration-500"
+                  aria-hidden={dist > 1 ? true : undefined}
+                  tabIndex={dist > 1 ? -1 : undefined}
+                  className="font-medium tracking-tight transition-[color,font-size] duration-500 hover:!text-brand-950"
                   style={{
                     fontSize: dist === 0 ? "clamp(1.9rem, 4vw, 2.6rem)" : dist === 1 ? "clamp(1.4rem, 3vw, 2rem)" : "clamp(1.2rem, 2.5vw, 1.7rem)",
-                    color: dist === 0 ? "#171729" : `rgb(23 23 41 / ${dist === 1 ? 0.45 : dist === 2 ? 0.25 : 0.1})`,
+                    color: dist === 0 ? "#171729" : `rgb(23 23 41 / ${dist === 1 ? 0.65 : dist === 2 ? 0.4 : 0.2})`,
                   }}
                   aria-current={dist === 0 ? "true" : undefined}
                 >
@@ -127,18 +142,25 @@ export function RuedaCapacidades() {
 // ── Banda "veredicto" con frases rotativas ─────────────────────────────────────────────
 
 export function BandaVeredicto({ frases }: { frases: string[] }) {
-  const [i, setI] = useRotacion(frases.length, 4000);
+  const [pausado, setPausado] = useState(false);
+  const [i, setI] = useRotacion(frases.length, 4000, pausado);
   return (
-    <div className="flex flex-col items-center justify-center rounded-3xl bg-emerald px-6 py-14 text-center text-white">
-      <span className="grid h-16 w-16 place-items-center rounded-2xl bg-white/20" aria-hidden="true">
+    <div
+      className="flex flex-col items-center justify-center rounded-3xl bg-emerald px-6 py-14 text-center text-brand-950"
+      onMouseEnter={() => setPausado(true)}
+      onMouseLeave={() => setPausado(false)}
+      onFocus={() => setPausado(true)}
+      onBlur={() => setPausado(false)}
+    >
+      <span className="grid h-16 w-16 place-items-center rounded-2xl bg-white/30" aria-hidden="true">
         <Icono nombre="chat" className="h-9 w-9" />
       </span>
       <p className="mt-4 text-6xl font-medium tracking-tight sm:text-7xl">24/7</p>
       <p className="mt-2 text-2xl font-medium sm:text-3xl">Atención que nunca cierra</p>
-      <p key={i} className="animar-aparecer mt-4 min-h-12 max-w-md text-white/90">
+      <p key={i} className="animar-aparecer mt-4 min-h-12 max-w-md text-brand-950/85">
         {frases[i]}
       </p>
-      <div className="mt-4 flex gap-2" role="tablist" aria-label="Frases">
+      <div className="mt-2 flex" role="tablist" aria-label="Frases">
         {frases.map((f, j) => (
           <button
             key={f}
@@ -147,8 +169,10 @@ export function BandaVeredicto({ frases }: { frases: string[] }) {
             aria-selected={i === j}
             aria-label={`Frase ${j + 1}`}
             onClick={() => setI(j)}
-            className={`h-2 rounded-full transition-all ${i === j ? "w-5 bg-white" : "w-2 bg-white/50"}`}
-          />
+            className="grid h-8 min-w-8 place-items-center rounded-full"
+          >
+            <span className={`h-2 rounded-full transition-[width,background-color] ${i === j ? "w-5 bg-brand-950" : "w-2 bg-brand-950/35"}`} />
+          </button>
         ))}
       </div>
     </div>
@@ -207,7 +231,7 @@ export function CarruselCasos({ casos }: { casos: Caso[] }) {
           {casos.map((x, j) => (
             <button key={x.pestana} type="button" role="tab" aria-selected={i === j} onClick={() => setI(j)} className="text-left">
               <span className={`block h-0.5 rounded ${i === j ? "bg-brand-950" : "bg-brand-950/10"}`} />
-              <span className={`mt-3 flex items-center gap-2 text-sm ${i === j ? "text-brand-950" : "text-brand-950/40"}`}>
+              <span className={`mt-3 flex items-center gap-2 text-sm ${i === j ? "text-brand-950" : "text-brand-950/65"}`}>
                 <Icono nombre={x.icono} className="h-4 w-4" /> {x.pestana}
               </span>
             </button>

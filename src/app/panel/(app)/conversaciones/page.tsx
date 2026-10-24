@@ -63,7 +63,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
             {rows.map((c) => (
               <li key={c.id}>
                 <Link href={`/panel/conversaciones/${c.id}`} className="flex flex-col gap-1 px-5 py-4 hover:bg-brand-50/60 sm:flex-row sm:items-center sm:gap-4">
-                  <div className="w-36 shrink-0 text-xs text-brand-900/55">
+                  <div className="w-36 shrink-0 text-xs text-brand-900/65">
                     <p>{formatDateTime(c.started_at, clinic.timezone)}</p>
                     <p>
                       {CHANNEL_LABEL[c.channel]} {c.direction === "saliente" && "· saliente"}

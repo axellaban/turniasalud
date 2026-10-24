@@ -31,6 +31,8 @@
   --color-tinta: #4b5671;
   --color-aqua: #32d5d8;
   --color-emerald: #4eb49e;
+  /* Versión oscura para texto: 4,5:1 sobre blanco y sobre emerald/15. */
+  --color-emerald-700: #2a7867;
   --color-lila: #b3b1ff;
   --color-cielo: #cce6ff;
 
@@ -38,6 +40,8 @@
   --color-sun-300: #ffc97a;
   --color-sun-500: #ff9a1f;
   --color-sun-600: #e67e00;
+  /* Texto naranja: sun-600 no llega a 4,5:1 sobre blanco ni sobre sun-100. */
+  --color-sun-700: #9a5200;
 }
 
 body {

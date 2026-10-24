@@ -93,7 +93,7 @@ export function AgenteEnVivo({ videoId }: { videoId: string }) {
   return (
     <div
       aria-hidden="true"
-      className={`w-full max-w-[520px] rounded-2xl border border-white/25 bg-white/10 p-5 text-white shadow-2xl backdrop-blur-md transition-all duration-500 ${
+      className={`w-full max-w-[520px] rounded-2xl border border-white/25 bg-white/10 p-5 text-white shadow-2xl backdrop-blur-md transition-[opacity,translate] duration-500 ${
         escena === null || saliendo ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100"
       }`}
     >
