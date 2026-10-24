@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { MessagingChannel } from "@/lib/messaging-settings";
 import { normalizeManualClinic, normalizeWebsite, type ManualClinic } from "@/lib/demo/website";
 import { Icono } from "@/components/site/iconos";
 
 type Via = "navegador" | "chat";
 type Modo = "web" | "nombre";
 
-/** Celular o tablet: en la computadora casi nadie tiene Telegram o WhatsApp a mano. */
+/** Celular o tablet: en la computadora casi nadie tiene WhatsApp a mano. */
 function esCelular(): boolean {
   if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
   // El iPad se presenta como una Mac: se lo reconoce por la pantalla táctil.
@@ -18,16 +17,14 @@ function esCelular(): boolean {
 /**
  * La web del consultorio o, si no tiene, su nombre. En la computadora la demo
  * sigue en el navegador; en el celular, con web, se elige entre el navegador y
- * el chat (Telegram o WhatsApp), si está activo. Sin web va siempre al navegador.
+ * WhatsApp, si está activo. Telegram no se ofrece. Sin web va siempre al navegador.
  */
 export function ProbarDemoForm({
-  channel,
   webReady,
   chatReady,
   initialWeb = "",
   initialManual = null,
 }: {
-  channel: MessagingChannel;
   webReady: boolean;
   chatReady: boolean;
   /** Web que trae el link personalizado. */
@@ -42,7 +39,6 @@ export function ProbarDemoForm({
   const [error, setError] = useState<{ campo: "web" | "nombre" | null; texto: string } | null>(null);
   const [eligiendo, setEligiendo] = useState(false);
   const [pending, setPending] = useState<Via | null>(null);
-  const chatName = channel === "telegram" ? "Telegram" : "WhatsApp";
 
   async function abrir(via: Via, body: Record<string, unknown>) {
     setError(null);
@@ -95,8 +91,8 @@ export function ProbarDemoForm({
   if (eligiendo) {
     const website = normalizeWebsite(web);
     const opciones: { via: Via; titulo: string; texto: string; icono: "web" | "chat" }[] = [
-      { via: "navegador", titulo: "En el navegador", texto: "Seguís acá: chateás o hablás con Sofi sin instalar nada.", icono: "web" },
-      { via: "chat", titulo: `Por ${chatName}`, texto: `Te atiende por ${chatName}, como a un paciente. También probás audios.`, icono: "chat" },
+      { via: "navegador", titulo: "En el navegador", texto: "Seguís acá: hablás o chateás con Sofi sin instalar nada.", icono: "web" },
+      { via: "chat", titulo: "Por WhatsApp", texto: "Te atiende por WhatsApp, como a un paciente. También probás audios.", icono: "chat" },
     ];
     return (
       <div className="mx-auto mt-10 max-w-[620px] text-left">
