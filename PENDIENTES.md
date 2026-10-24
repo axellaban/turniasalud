@@ -64,10 +64,11 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] Revisar consentimiento, conservación de datos y textos de privacidad. No activar Zero Retention de ElevenLabs a ciegas: es incompatible con el Custom Channel (ver `PLAN_WHATSAPP.md`).
 - [ ] Activar campañas (workflow n8n `g0H8xbQvRNv5FxQj`, hoy desactivado) solo después de validar canal, destinatarios y baja.
 - [x] **Twilio saliente configurado** (24/10): línea propia verificada, importada en ElevenLabs y `ELEVENLABS_PHONE_NUMBER_ID` guardada en Production; despliegue Ready, salud con `llamada_telefonica: true`. La conexión final usa credenciales de la cuenta existente por elección del usuario; no una subcuenta. Detalle y alcance en `ESTADO_Y_PRIORIDADES.md`.
-- [ ] **Primera llamada telefónica real:** pedir destino del usuario y autorización de consumo; comprobar audio, presentación del número, cierre, registro y costo. No hubo llamadas en la configuración. Argentina ya estaba habilitada. Telegram sigue usando enlace web.
+- [x] **Conversación telefónica real validada por el usuario** (24/10): Sofi habló y escuchó por Twilio, registro de 21 mensajes y cierre por el destinatario. ElevenLabs: 2:11 y 1.464 créditos totales; Twilio: 2:12 y US$1,0584. Cinco intentos autorizados en total; los errores manuales de variables quedaron corregidos y documentados. No reintentar lotes ni llamar de nuevo sin pedido explícito. Telegram sigue usando enlace web.
+- [ ] Confirmar qué número se mostró en el celular receptor. El registro usa la línea verificada de Turnia como origen, pero la presentación en el teléfono no fue confirmada por el usuario.
 - [ ] **Agente comercial de Turnia**, separado de la recepcionista, con voz masculina Agustín; definir oferta y herramientas comerciales antes de prospectar. Todavía no creado.
 - [ ] **Atención humana por chat**: implementar Tomar / Devolver al agente con pausa persistida y descarte de respuestas pendientes; conservar la app WhatsApp Business y WAHA, sin incorporar Chatwoot por rutina.
-- [ ] **Piloto de prospección telefónica**: destinatarios revisados, reglas de contacto/No Llame, baja, autorización manual, límites de consumo y resultados. No activar llamadas en frío ni campañas automáticamente.
+- [ ] **Piloto de prospección telefónica**: destinatarios revisados, reglas de contacto/No Llame, baja persistente y probada, autorización manual, límite efectivo de duración/consumo y resultados. Validar que el agente pueda colgar y no afirme registrar una baja sin haberlo hecho. No reutilizar el destino de la prueba que pidió no recibir más llamadas. No activar llamadas en frío ni campañas automáticamente.
 
 ## 6. Técnico menor
 
