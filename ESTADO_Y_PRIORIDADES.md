@@ -2,6 +2,15 @@
 
 Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Sofi comercial · voz y pitch revisados — 24/10/2026
+
+- Pedido posterior: **misma voz de Sofi**, pitch de venta mejorado y cómo disparar pruebas desde el panel. Prevalece sobre el nombre/voz Agustín–Mauricio del registro histórico de abajo.
+- Comercial se presenta como **Sofi**; conserva el agente separado `agent_4501m5qvpjwrfcxrafq64zmx0y0q`. «Usar la voz de Sofi y aplicar pitch» lee la voz real de la recepcionista **principal**, no la de la clínica seleccionada en el navegador, y actualiza únicamente el comercial. Voz principal leída por API: `ijxn8I4NzJccD2Sa7lcj` (Turnia · Sol - Warm Publicity). El agente clínico se protege de modificaciones.
+- Saludo más corto y sin repetición ante el «sí»; una pregunta de atención de mensajes, beneficio concreto, demo personalizada + charla con Axel. Respeta rechazo/baja, no inventa precios ni datos de la web, no vocaliza acotaciones y busca cerrar antes de 45 s. Sigue límite remoto 60 s más despedida (puede facturar dos minutos Twilio).
+- Panel explica mismo número vs número nuevo, ofrece «Abrir ficha y llamar» y accesos directos a contactos, alta y cupo. La ficha propia ya existe; no hay que duplicarla. Reabrir/confirmar para otra prueba; actualizar primero cualquier intento pendiente.
+- **Sin llamadas nuevas**, sin recargas. Piloto pausado, cupo US$5 y reserva US$1 conservados; último saldo Twilio US$0,21916. Falta saldo disponible y autorización/destinatarios para otra prueba; el pitch nuevo todavía no se validó por teléfono. No tocar WAHA, HolaVeggie ni herramientas clínicas.
+- Validación: **217 pruebas** (15 comerciales), TypeScript, ESLint y build. Migración de nombre/voz en el mismo agente, solo lectura de clínica, pausa y conservación del presupuesto probadas. Uso y antecedentes en [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md), que conserva su nombre de archivo histórico.
+
 ## Agustín · preparación del piloto comercial — 24/10/2026
 
 - **Actualización posterior:** el usuario autorizó **US$5/día** y una única prueba propia al teléfono terminado en 4245. Se ejecutó **una llamada**, atendida, con Agustín/Mauricio; confirmó que la voz se escuchó bien. **65 s reales**, cierre automático por duración (configurado 60 s + ~5 s de despedida), Twilio **US$0,7056**, ElevenLabs **452 créditos**. Resultado/transcripción en Comercial. Conversación `conv_1901m5qwas11fwbs64wsk8kemn5e`. No hubo uso de herramientas de interés/baja/end_call: validar esas partes en otra prueba autorizada.
