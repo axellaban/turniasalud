@@ -388,6 +388,10 @@ create table if not exists demo_sessions (
 alter table demo_sessions add column if not exists request_message_id text;
 alter table demo_sessions add column if not exists analysis_started_at timestamptz;
 alter table demo_sessions add column if not exists call_attempts integer not null default 0;
+-- Demo sin web (/probar-demo?nombre=…): se arma con el nombre, la dirección y la especialidad del consultorio.
+alter table demo_sessions add column if not exists manual_name text;
+alter table demo_sessions add column if not exists manual_address text;
+alter table demo_sessions add column if not exists manual_specialty text;
 create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
 alter table demo_sessions enable row level security;

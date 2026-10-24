@@ -7,7 +7,7 @@ import { demoRequestText } from "@/lib/demo/flow";
 import { createDemoHandoff } from "@/lib/demo/handoff";
 import { analyzeDemo } from "@/lib/demo/session";
 import { startWebDemo } from "@/lib/demo/web";
-import { normalizeWebsite } from "@/lib/demo/website";
+import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
 
 export const dynamic = "force-dynamic";
 // En el navegador, la lectura de la web corre después de responder (≈1 minuto).
@@ -18,22 +18,30 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
 export async function POST(request: Request) {
   const raw = await request.text();
   if (raw.length > 4096) return NextResponse.json({ error: "La dirección es demasiado larga." }, { status: 400 });
-  let body: { website?: unknown; email?: unknown; via?: unknown };
+  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown };
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 }); }
   const website = typeof body?.website === "string" && body.website.length <= 2000 ? normalizeWebsite(body.website) : null;
-  if (!website) return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 });
-  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!EMAIL.test(email)) return NextResponse.json({ error: "Revisá tu email. Por ejemplo: nombre@miclinica.com.ar" }, { status: 400 });
+  // Sin web, alcanza con el nombre del consultorio (la demo se arma con eso).
+  const manual = website ? null : normalizeManualClinic(body ?? {});
+  if (!website && !manual) {
+    const sent = typeof body?.website === "string" && body.website.trim();
+    return NextResponse.json({ error: sent ? "Revisá la dirección web." : "Escribí la web de tu consultorio o, si no tiene, su nombre." }, { status: 400 });
+  }
+  // El email es opcional: si llega uno válido, queda en el pedido de demo.
+  const typed = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const email = EMAIL.test(typed) ? typed : null;
   const ip = request.headers.get("x-real-ip") ?? "sin-ip";
 
-  if (body.via === "navegador") {
+  // Sin web no hay lectura que mandar por chat: va siempre al navegador.
+  if (body.via === "navegador" || manual) {
     const ready = isConfigured();
     if (!ready.database || !ready.elevenlabs) return NextResponse.json({ error: "La demo en el navegador no está disponible por el momento." }, { status: 409 });
-    const started = await startWebDemo({ website, email, ip });
+    const started = await startWebDemo({ website, manual, email, ip });
     if (!started) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
     after(() => analyzeDemo(started.sessionId));
     return NextResponse.json({ url: `/probar-demo/sesion/${started.token}` }, { headers: { "Cache-Control": "no-store" } });
   }
+  if (!website) return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 });
 
   const settings = await messagingSettings();
   if (settings.active_channel === "pausado") return NextResponse.json({ error: "La demo por chat está pausada. Probala en el navegador." }, { status: 409 });
