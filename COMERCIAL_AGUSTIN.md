@@ -4,7 +4,7 @@
 
 ## Uso
 
-1. Administrador → **Comercial** (`/panel/comercial`). «Crear Agustín» busca la voz guardada **Agustin De Angelis - Confident and Happy**, crea dos herramientas comerciales y un agente separado de Sofi. Actualizarlo pausa el piloto. No inicia llamadas, compra números ni cambia agentes clínicos.
+1. Administrador → **Comercial** (`/panel/comercial`). Elegir una voz guardada compatible y «Crear Agustín»: crea dos herramientas comerciales y un agente separado de Sofi. La voz originalmente elegida **Agustin De Angelis - Confident and Happy** está bloqueada por ElevenLabs para agentes en vivo (moderación activa); aparece deshabilitada. No clonar esa voz ni intentar quitar restricciones del propietario. Actualizarlo pausa el piloto. No inicia llamadas, compra números ni cambia agentes clínicos.
 2. Cargar el consultorio con web, teléfono internacional argentino y contexto revisado. Agregar una ficha no scrapea la web ni contacta a nadie. El contexto comercial se edita en la ficha. El enlace «Abrir demo con su web» usa `/probar-demo?web=…`: al probarla, la demo existente lee esa web y ofrece la experiencia clínica.
 3. Antes de ofrecer servicios por teléfono, revisar la posibilidad de contacto y **Registro No Llame**; o documentar el pedido de devolución de llamada. Guardar fuente y fecha. La publicación de un teléfono comercial no demuestra por sí sola permiso. La aplicación registra la revisión humana, **no consulta el padrón automáticamente**. La revisión vence a las 24 h.
 4. Revisar saldo **compartido** en Twilio y disponibilidad/créditos de ElevenLabs. Definir cupo en US$, confirmar autorización de gasto y habilitar manualmente. La autorización vence al terminar el día en Buenos Aires. Valor inicial: **US$0 / pausado**. No hay recargas.
@@ -30,6 +30,9 @@
 - No reutilizar el teléfono de la prueba anterior que pidió no recibir llamadas. No guardar números de prospectos ni credenciales en este documento.
 
 ## Validación y próximos pasos
+
+- Configuración real: el primer intento creó las dos herramientas comerciales, pero ElevenLabs devolvió `422` en `platform_settings.analysis_llm`: `Value error, LLM 'gpt-4.1-mini' is not supported for analysis.` No creó agente ni llamada. Se quitó esa sobreescritura para heredar el análisis predeterminado, como el setup clínico. El modelo conversacional sigue siendo `gpt-4.1-mini`. La preparación reutiliza herramientas existentes y busca un agente comercial ya creado antes de crear otro.
+- Tras corregir el análisis, la API devolvió `400 / voice_live_moderated_not_allowed` para la voz elegida. [La documentación confirma la incompatibilidad](https://elevenlabs.io/docs/eleven-agents/customization/voice). Se agregó selector y validación previa de moderación. Alternativas de biblioteca consultadas (todavía sin agregar ni aplicar): Mauricio y Franco, masculinas argentinas, `live_moderation_enabled: false`, `rate: 1`. Esperar elección del usuario.
 
 - Tests de integración con Postgres descartable y proveedor simulado: presupuesto cero/vencido, revisión de contacto, doble envío, concurrencia, timeout incierto, herramientas clínicas rechazadas, baja por token e idempotencia, webhook firmado sin pacientes, permisos y creación separada del agente.
 - Verificado en navegador local: agregar ficha, llamada bloqueada con cupo cero y baja persistida con botón deshabilitado.

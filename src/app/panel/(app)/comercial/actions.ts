@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/panel-clinic";
-import { setupSalesAgent } from "@/lib/sales/agent";
+import { ElevenLabsError } from "@/lib/elevenlabs";
+import { setupSalesAgent, SalesSetupError } from "@/lib/sales/agent";
 import { authorizeBudget, blockProspect, dialProspect, refreshSalesCall, saveProspect, SalesError } from "@/lib/sales/service";
 
 export type SalesActionState = { message?: string; error?: string; prospectId?: string };
@@ -14,7 +15,7 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
   let result: SalesActionState = {};
   try {
     if (intent === "prepare") {
-      await setupSalesAgent();
+      await setupSalesAgent(String(form.get("voice_id") || ""));
       result = { message: "Agustín preparado con su voz, herramientas comerciales y máximo de 60 segundos. El piloto queda pausado. No se inició ninguna llamada." };
     } else if (intent === "budget") {
       const dollars = z.string().regex(/^\d{1,3}(?:[.,]\d{1,2})?$/, "Ingresá un importe en dólares, sin signo.").parse(form.get("budget"));
@@ -42,7 +43,7 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
     } else throw new SalesError("Acción inválida.");
   } catch (e) {
     // Los errores del proveedor pueden incluir variables privadas. Nunca devolver su cuerpo al cliente.
-    return { error: e instanceof SalesError ? e.message : e instanceof z.ZodError ? e.issues.map((i) => i.message).join(". ") : "No se completó la operación. Revisá la configuración del proveedor y volvé a consultar el estado antes de repetirla." };
+    return { error: e instanceof SalesError || e instanceof SalesSetupError ? e.message : e instanceof z.ZodError ? e.issues.map((i) => i.message).join(". ") : e instanceof ElevenLabsError ? `ElevenLabs rechazó la operación (HTTP ${e.status}). No se inició una llamada. Revisá la configuración antes de repetirla.` : "No se completó la operación. Revisá la configuración del proveedor y volvé a consultar el estado antes de repetirla." };
   }
   revalidatePath("/panel/comercial", "layout");
   return result;
