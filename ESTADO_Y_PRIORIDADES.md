@@ -6,7 +6,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
 
 - **Crítica** con `impeccable critique` (sin subagentes ni detector, aclarado en el informe): 21/32. Copia en `.impeccable/critique/2026-10-24-home-y-probar-demo.md`.
 - **Arreglado:**
-  - Sin las ★★★★★ del hero (no hay reseñas).
+  - Las ★★★★★ del hero se sacaron y, a pedido del usuario, volvieron como estaban.
   - «Probalo ahora» y «Probá el agente» llevaban a `/demo`, que pide sesión del panel: un visitante veía «Ingresá al panel». Ahora todos van a `/probar-demo`. La banda final queda con «Probalo con tu web» y «Pedí una demo guiada», en azul, y no aparece en `/probar-demo`.
   - «Ver todas las especialidades» abre el índice nuevo `/especialidades` (antes, Clínica médica).
   - La tarjeta oscura del motor ya no repite las especialidades: muestra lo que el agente recuerda de cada paciente. «9 acciones sobre la agenda» pasó a «3 canales».
