@@ -544,7 +544,7 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
               {/* Antes de hablar, la esfera se ajusta al alto que haya (container query); después, queda chica arriba. */}
               <div
                 className={`flex flex-col items-center justify-center px-4 text-center ${
-                  enCharla ? "shrink-0 pb-1 pt-5 [@media(max-height:500px)]:pt-3" : "min-h-0 flex-1 py-4 [container-type:size]"
+                  enCharla ? "shrink-0 pb-1 pt-7 [@media(max-height:500px)]:pt-4" : "min-h-0 flex-1 py-4 [container-type:size]"
                 }`}
               >
                 <div className="relative">
@@ -554,7 +554,7 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
                     className={`transition-[width,height] duration-500 ${
                       enCharla
                         ? "h-20 w-20 sm:h-28 sm:w-28 [@media(max-height:500px)]:h-14 [@media(max-height:500px)]:w-14"
-                        : "h-[min(12rem,50cqh)] w-[min(12rem,50cqh)]"
+                        : "h-[min(12rem,46cqh)] w-[min(12rem,46cqh)]"
                     }`}
                   />
                   {/* Tocar la esfera también llama; el botón accesible es el de abajo. */}
@@ -562,7 +562,7 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
                     <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => start()} disabled={connecting} className="absolute inset-0 rounded-full" />
                   )}
                 </div>
-                <p className="mt-5 h-5 shrink-0 text-sm font-medium text-brand-800 [@media(max-height:500px)]:mt-3" aria-live="polite">
+                <p className={`h-5 shrink-0 text-sm font-medium text-brand-800 [@media(max-height:500px)]:mt-3 ${enCharla ? "mt-5" : "mt-8"}`} aria-live="polite">
                   {connected
                     ? conversation.isMuted
                       ? "Micrófono silenciado"
