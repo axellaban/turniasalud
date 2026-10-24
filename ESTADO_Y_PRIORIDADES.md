@@ -2,6 +2,13 @@
 
 Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Agustín · preparación del piloto comercial — 24/10/2026
+
+- Pedido: vender Turnia a consultorios odontológicos con Agustín. Oferta confirmada: **demo personalizada y después charla con Axel**. Gasto: **preparar todo; definir después**. No autoriza llamadas nuevas.
+- Código de **Panel → Comercial**: agente separado, contexto editable por consultorio, revisión de contacto, cupo diario inicialmente cero/pausado, confirmación individual, límite remoto de 60 s, reserva preventiva de US$1 por intento, historial/transcripción y bajas persistidas por teléfono. Sin campañas automáticas. Detalle de uso, costos y límites en [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md).
+- Herramientas comerciales separadas de las clínicas. Webhook firmado se enruta sin crear pacientes. No se modifican WAHA, el selector Telegram, Sofi ni conexiones/números de otros negocios.
+- Pruebas: 211 en verde sobre Postgres local, typecheck, ESLint y build. Navegador local: guardado de ficha, bloqueo con cupo cero y baja persistida. Falta confirmar configuración en producción y probar una llamada con autorización de gasto/destinatario.
+
 ## Telefonía saliente con Twilio — 24/10/2026
 
 - Se revisó la cuenta Twilio existente: **Pay-as-you-go**, dos números activos con sus rutas de voz y mensajes hacia Chatwoot. El usuario indicó que HolaVeggie está operativo: **no modificar esos números, agentes, webhooks ni credenciales existentes**. Se comprobó al terminar que las dos líneas y sus URLs originales seguían presentes.

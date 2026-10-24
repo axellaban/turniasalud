@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { verifyWebhookSignature } from "@/lib/elevenlabs";
 import { recordConversation, type PostCallPayload } from "@/lib/conversations";
+import { recordSalesConversation } from "@/lib/sales/service";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
 
   const event = JSON.parse(raw) as { type: string; data: PostCallPayload };
   if (event.type === "post_call_transcription") {
-    await recordConversation(event.data);
+    if (!await recordSalesConversation(event.data)) await recordConversation(event.data);
   }
   // post_call_audio y call_initiation_failure se aceptan pero no se guardan en el MVP.
   return NextResponse.json({ received: true });
