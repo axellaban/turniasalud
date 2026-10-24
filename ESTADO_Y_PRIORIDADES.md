@@ -20,6 +20,18 @@ Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - El flujo de callback ya existente en `src/lib/demo/session.ts` llama por Twilio solo para sesiones de WhatsApp cuando se elige llamada y hay número configurado. Telegram conserva la llamada web. Esta configuración no agrega una campaña comercial, un control humano por chat ni llamadas nativas de WhatsApp.
 - Próxima implementación acordada: agente comercial separado con la voz masculina **Agustín**, conservando la voz de Sofi; control por conversación **Tomar / Devolver al agente** para atención humana desde WhatsApp Business, y luego piloto comercial revisado. Estas funciones **todavía no están implementadas**. Para la llamada saliente comercial, el saludo debe explicar por qué llama; el saludo de recepcionista del agente actual no sirve como guion de ventas.
 
+## Turno a mano en la Agenda — 24/10/2026
+
+- **Pedido del usuario:** el campo de hora rechazaba casi todo («Ingresá un valor válido»: el selector nativo exigía múltiplos de 5 minutos).
+- **Ahora** se elige prestación, profesional y día, y aparecen los **horarios libres** de ese día como botones (mañana y tarde), con el horario de atención del profesional.
+  - Ya descuentan turnos, feriados, bloqueos y lo ocupado en Google Calendar.
+  - Sin anticipación mínima, a diferencia del agente.
+- Flechas para pasar de día. Si ese día no atiende o está completo, lo dice y ofrece el día siguiente.
+- «Otro horario» permite escribir la hora: entiende 9:15, 915, 19 hs o 7:30 pm. Si no la entiende, lo dice.
+- El botón muestra el turno elegido («Reservar lun 26/10 · 08:40»). Los errores se muestran en palabras del panel, no del agente.
+- Código: `freeSlotsOnDay` en `src/lib/agent/service.ts`, `loadDaySlots` en `src/app/panel/actions.ts`, `parseClockTime` en `src/lib/time.ts`, `src/app/panel/(app)/agenda/manual-form.tsx`.
+- Pruebas: 202 en verde, con casos nuevos del turno a mano y de la lectura de horas.
+
 ## Google Calendar — 24/10/2026
 
 - **Código hecho** con un calendario por profesional, a pedido del usuario. Detalle y pasos en `GOOGLE_CALENDAR.md`.

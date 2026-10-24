@@ -11,9 +11,9 @@ import { createCampaign, sendCampaign, CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
-import { bookAppointment, registerPatient, ToolError } from "@/lib/agent/service";
+import { bookAppointment, freeSlotsOnDay, registerPatient, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
-import { addDaysKey, parseDateKey, zonedTimeToUtc } from "@/lib/time";
+import { addDaysKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
 import { selectMessagingChannel, messagingSettings, setDemoDailyLimit } from "@/lib/messaging-settings";
@@ -110,15 +110,31 @@ export async function saveDemoLimit(_previous: FormState, form: FormData): Promi
   return { ok: true, message: limit ? `Límite guardado: ${limit} demos por persona por día.` : "Sin límite de demos por persona." };
 }
 
+/** Horarios libres del día elegido en el turno a mano (incluye lo ocupado en Google Calendar). */
+export async function loadDaySlots(form: FormData) {
+  await requireSession();
+  const clinic = await getPanelClinic(form);
+  return freeSlotsOnDay(clinic.id, {
+    tipo_turno_id: uuid(form, "appointment_type_id") ?? "",
+    profesional_id: uuid(form, "professional_id") ?? "",
+    fecha: text(form, "date") ?? "",
+  });
+}
+
 export async function createManualAppointment(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();
   const clinic = await getPanelClinic(form);
   const phone = normalizePhone(text(form, "phone"));
-  const date = text(form, "date");
-  const time = text(form, "time");
-  const typeId = text(form, "appointment_type_id");
-  const professionalId = text(form, "professional_id");
-  if (!phone || !date || !time || !typeId || !professionalId) return { ok: false, message: "Completá todos los campos." };
+  const date = parseDateKey(text(form, "date"));
+  const typeId = uuid(form, "appointment_type_id");
+  const professionalId = uuid(form, "professional_id");
+  if (!typeId || !professionalId) return { ok: false, message: "Elegí la prestación y quién la atiende." };
+  if (!date) return { ok: false, message: "Elegí la fecha." };
+  const rawTime = text(form, "time");
+  if (!rawTime) return { ok: false, message: "Elegí un horario." };
+  const time = parseClockTime(rawTime);
+  if (!time) return { ok: false, message: `No entendí la hora «${rawTime}». Escribila como 9:15 o 19:30.` };
+  if (!phone) return { ok: false, message: "Escribí el celular del paciente." };
   const [y, m, d] = date.split("-").map(Number);
   const [hh, mm] = time.split(":").map(Number);
   const startsAt = zonedTimeToUtc(y, m, d, hh, mm, clinic.timezone);
@@ -135,7 +151,9 @@ export async function createManualAppointment(_prev: FormState | undefined, form
     revalidatePath("/panel/agenda");
     return { ok: true, message: r.mensaje };
   } catch (e) {
-    return { ok: false, message: e instanceof ToolError || e instanceof Error ? e.message : String(e) };
+    const message = e instanceof Error ? e.message : String(e);
+    // Los errores del servicio le hablan al agente; en el panel alcanza con el motivo.
+    return { ok: false, message: e instanceof ToolError ? message.replace(/ Consultá la disponibilidad.*$/, "") : message };
   }
 }
 

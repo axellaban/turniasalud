@@ -112,3 +112,22 @@ export function timeToMinutes(value: string): number {
   const [h, m] = value.split(":").map(Number);
   return h * 60 + (m || 0);
 }
+
+/**
+ * Hora escrita a mano en el panel → "HH:MM" (24 h). Acepta "9:15", "915", "9.15",
+ * "19 hs", "7:15 pm". null si no es una hora válida.
+ */
+export function parseClockTime(value: string | null | undefined): string | null {
+  const s = (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const m = /^(\d{1,2})(?:[:.h ]?(\d{2}))?\s*(?:hs?|horas?)?\.?\s*(am|pm|a\.? ?m\.?|p\.? ?m\.?)?$/.exec(s);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = Number(m[2] ?? 0);
+  const half = m[3]?.replace(/[. ]/g, "");
+  if (half) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (half === "pm" ? 12 : 0);
+  }
+  if (hour > 23 || minute > 59) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
