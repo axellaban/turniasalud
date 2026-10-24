@@ -161,6 +161,7 @@ function Texto({ eyebrow, titulo, bajada, tamanoTitulo }: { eyebrow: string; tit
 async function FotoConChat({ paciente, agente, aviso }: { paciente: string; agente: string; aviso: string }) {
   return (
     <div style={{ display: "flex", position: "absolute", top: 0, right: 0, width: 560, height: 630 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- next/og solo acepta <img> */}
       <img
         src={await retrato()}
         width={507}
