@@ -2,6 +2,17 @@
 
 24/10/2026. Oferta elegida por Axel: **demo personalizada y después charla con él**, sin cotizar precios. El usuario pidió preparar todo y definir el gasto después: **no hay autorización para llamar todavía**.
 
+## Estado real en producción
+
+- Panel publicado: https://turniasalud.vercel.app/panel/comercial (PR #41 y corrección #44, ambos con CI y Vercel en verde).
+- **Agente creado:** `agent_4501m5qvpjwrfcxrafq64zmx0y0q`, «Turnia · Agustín · ventas odontología».
+- **Voz elegida expresamente por el usuario y aplicada:** «Turnia · Mauricio · comercial» (`jIgvw3W75cbd6IP0JYwL`), agregada desde la biblioteca con moderación en vivo desactivada y multiplicador estándar 1. No se cambió el nombre Agustín ni la voz clínica.
+- Verificado por API real y por el panel después de recargar: 60 s, concurrencia 1, máximo 20 conversaciones/día, sin bursting, cola deshabilitada, LLM conversacional `gpt-4.1-mini`, análisis heredado `gemini-2.5-flash`, sin grabación de audio y retención ElevenLabs de 30 días. La comprobación que corre antes de llamar (`verifySalesAgent`) pasó contra el agente real.
+- **Piloto pausado, cupo US$0, reserva US$0, ninguna llamada comercial.** No se cargaron destinatarios ni se autorizaron campañas.
+- Base `ok`, 6 clínicas; demo sigue en Telegram, WhatsApp pausado. Configuración de Sofi comparada por hash antes/después: idéntica. WAHA, n8n y Twilio de otros negocios no se modificaron.
+- 213 pruebas en verde (13 comerciales), TypeScript, ESLint y build. Endpoint comercial sin secreto devuelve 401. En navegador: agente y voz persisten al recargar y cupo cero sigue visible.
+- **Próximo paso:** definir gasto con el usuario, revisar destinatarios y probar una llamada con Agustín. No usar «Send Test Call» sin variables: el panel envía las cuatro variables comerciales obligatorias. No volver al número de la prueba clínica que pidió baja.
+
 ## Uso
 
 1. Administrador → **Comercial** (`/panel/comercial`). Elegir una voz guardada compatible y «Crear Agustín»: crea dos herramientas comerciales y un agente separado de Sofi. La voz originalmente elegida **Agustin De Angelis - Confident and Happy** está bloqueada por ElevenLabs para agentes en vivo (moderación activa); aparece deshabilitada. No clonar esa voz ni intentar quitar restricciones del propietario. Actualizarlo pausa el piloto. No inicia llamadas, compra números ni cambia agentes clínicos.
@@ -32,7 +43,7 @@
 ## Validación y próximos pasos
 
 - Configuración real: el primer intento creó las dos herramientas comerciales, pero ElevenLabs devolvió `422` en `platform_settings.analysis_llm`: `Value error, LLM 'gpt-4.1-mini' is not supported for analysis.` No creó agente ni llamada. Se quitó esa sobreescritura para heredar el análisis predeterminado, como el setup clínico. El modelo conversacional sigue siendo `gpt-4.1-mini`. La preparación reutiliza herramientas existentes y busca un agente comercial ya creado antes de crear otro.
-- Tras corregir el análisis, la API devolvió `400 / voice_live_moderated_not_allowed` para la voz elegida. [La documentación confirma la incompatibilidad](https://elevenlabs.io/docs/eleven-agents/customization/voice). Se agregó selector y validación previa de moderación. Alternativas de biblioteca consultadas (todavía sin agregar ni aplicar): Mauricio y Franco, masculinas argentinas, `live_moderation_enabled: false`, `rate: 1`. Esperar elección del usuario.
+- Tras corregir el análisis, la API devolvió `400 / voice_live_moderated_not_allowed` para la primera voz intentada. [La documentación confirma la incompatibilidad](https://elevenlabs.io/docs/eleven-agents/customization/voice). Se agregó selector y validación previa de moderación. El usuario eligió **Mauricio** entre las alternativas compatibles: se agregó esa voz y se creó/configuró Agustín desde el panel con éxito. No se quitó ninguna restricción ni se clonó la voz bloqueada.
 
 - Tests de integración con Postgres descartable y proveedor simulado: presupuesto cero/vencido, revisión de contacto, doble envío, concurrencia, timeout incierto, herramientas clínicas rechazadas, baja por token e idempotencia, webhook firmado sin pacientes, permisos y creación separada del agente.
 - Verificado en navegador local: agregar ficha, llamada bloqueada con cupo cero y baja persistida con botón deshabilitado.
