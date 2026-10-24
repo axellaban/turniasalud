@@ -54,12 +54,16 @@ export function DemoNavegador({ token }: { token: string }) {
   }
   if (timedOut || state?.status === "error") {
     return (
-      <Aviso titulo={`No pudimos leer ${state ? hostOf(state.website) : "tu web"}`}>
-        Puede que la página no responda o que no muestre texto que podamos leer. Revisá la dirección o probá con otra.
-      </Aviso>
+      state?.nombre ? (
+        <Aviso titulo="No pudimos preparar la demo">Probá de nuevo en un rato o armala con la web del consultorio.</Aviso>
+      ) : (
+        <Aviso titulo={`No pudimos leer ${state ? hostOf(state.website) : "tu web"}`}>
+          Puede que la página no responda o que no muestre texto que podamos leer. Revisá la dirección o probá con otra.
+        </Aviso>
+      )
     );
   }
-  if (!state || state.status === "analizando") return <Leyendo website={state?.website ?? null} />;
+  if (!state || state.status === "analizando") return <Leyendo website={state?.website || null} nombre={state?.nombre ?? null} />;
   return (
     <ConversationProvider>
       <Lista token={token} state={state} />
@@ -113,7 +117,7 @@ const CSS_LEYENDO = `
 .turnia-gira { animation: turnia-gira .9s linear infinite }
 `;
 
-function Leyendo({ website }: { website: string | null }) {
+function Leyendo({ website, nombre }: { website: string | null; nombre: string | null }) {
   const [segundos, setSegundos] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setSegundos((s) => s + 0.5), 500);
@@ -122,7 +126,8 @@ function Leyendo({ website }: { website: string | null }) {
   const paso = PASO_EN.filter((desde) => segundos >= desde).length - 1;
   // Se acerca al 95 % sin llegar: el 100 % es la página lista.
   const avance = Math.round(95 * (1 - Math.exp(-segundos / 12)));
-  const host = website ? hostOf(website) : "tu web";
+  // Sin web, la página muestra el nombre del consultorio en lugar de la dirección.
+  const host = nombre ?? (website ? hostOf(website) : "tu web");
   const dato = DATOS[Math.floor(segundos / 7) % DATOS.length];
   const buscando = Math.floor(segundos / 1.5) % BUSCA.length;
 
@@ -141,8 +146,9 @@ function Leyendo({ website }: { website: string | null }) {
           Tu recepcionista 24/7 <span className="text-brand-600">está casi lista</span>
         </h1>
         <p className="mt-4 max-w-md text-[17px] leading-relaxed text-tinta">
-          Estamos leyendo <span className="font-medium text-brand-950">{host}</span> para que Sofi atienda como tu consultorio. Tarda alrededor de
-          un minuto: no cierres esta página.
+          {nombre ? "Estamos preparando la recepción de " : "Estamos leyendo "}
+          <span className="font-medium text-brand-950">{host}</span> para que Sofi atienda como tu consultorio. Tarda alrededor de un minuto: no
+          cierres esta página.
         </p>
 
         <div className="mt-8 max-w-md" role="progressbar" aria-label="Preparando la demo" aria-valuemin={0} aria-valuemax={100} aria-valuenow={avance}>

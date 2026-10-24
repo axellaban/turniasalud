@@ -13,7 +13,7 @@ import { sendChatText } from "../messaging";
 import { channelForChat, chatIsActive, requireActiveChannel } from "../messaging-settings";
 import type { Clinic } from "../types";
 import { DEMO_TEXTS, demoAgentContext, hostOf, parseCommand, parseDemoRequest, parseModeChoice, type DemoMode, type DemoStatus } from "./flow";
-import { buildProfile, type DemoProfile } from "./profile";
+import { buildProfile, manualProfile, type DemoProfile } from "./profile";
 import { ScrapeError, scrapeSite } from "./scraper";
 
 // Lead magnet por WhatsApp: el interesado manda su web, Turnia la lee, arma
@@ -40,6 +40,10 @@ export type DemoSession = {
   call_token: string | null;
   pages_read: number | null;
   error: string | null;
+  /** Demo sin web: el consultorio se arma con estos datos en vez de leer una web. */
+  manual_name: string | null;
+  manual_address: string | null;
+  manual_specialty: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -248,12 +252,16 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
   const stillActive = () => web || chatIsActive(session.chat_id, session.channel_revision);
   if (!(await stillActive())) return;
   try {
-    const site = await scrapeSite(session.website);
+    // Sin web no hay nada que leer: la ficha sale del nombre del consultorio.
+    const manual = session.manual_name
+      ? manualProfile({ nombre: session.manual_name, direccion: session.manual_address, especialidad: session.manual_specialty })
+      : null;
+    const site = manual ? null : await scrapeSite(session.website);
     const [active] = await sql`select id from demo_sessions where id = ${session.id} and status = 'analizando'`;
     if (!active) return;
     if (!(await stillActive())) return;
-    const profile = await buildProfile(site);
-    const clinic = await createDemoClinic(profile, site.url, { id: session.id, pages: site.pages.length, site });
+    const profile = manual ?? (await buildProfile(site!));
+    const clinic = await createDemoClinic(profile, site?.url ?? "", { id: session.id, pages: site?.pages.length ?? 0, site: site ?? undefined });
     if (!clinic) return; // la persona salió o pidió otra demo mientras leíamos
     if (session.lead_id) {
       await sql`

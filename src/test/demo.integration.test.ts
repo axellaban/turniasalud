@@ -327,13 +327,18 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
   });
   it("la landing y /api/health toman el número del chip de WAHA y dicen qué falta", async () => {
     const page = (await import("@/app/(marketing)/probar-demo/page")).default;
-    const Landing = (web?: string) => page({ searchParams: Promise.resolve(web ? { web } : {}) } as never);
+    const Landing = (web?: string, params: Record<string, string> = {}) => page({ searchParams: Promise.resolve(web ? { web, ...params } : params) } as never);
     const html = renderToStaticMarkup((await Landing()) as React.ReactElement);
     expect(html).toContain("Probar la demo");
     expect(html).not.toContain("se habilita en breve");
     // El link personalizado llega con la web escrita; una dirección inválida se ignora.
     expect(renderToStaticMarkup((await Landing("https://odontosur.com.ar/")) as React.ReactElement)).toContain('value="odontosur.com.ar"');
     expect(renderToStaticMarkup((await Landing("localhost")) as React.ReactElement)).not.toContain('value="localhost"');
+    // Sin web: el link trae el nombre del consultorio y la especialidad.
+    const sinWeb = renderToStaticMarkup((await Landing(undefined, { nombre: "Consultorio Arroyo", esp: "Odontología" })) as React.ReactElement);
+    expect(sinWeb).toContain('value="Consultorio Arroyo"');
+    expect(sinWeb).toContain('value="Odontología"');
+    expect(sinWeb).not.toContain('name="email"');
 
     const health = await (await import("@/app/api/health/route")).GET();
     expect(health.status).toBe(200);
