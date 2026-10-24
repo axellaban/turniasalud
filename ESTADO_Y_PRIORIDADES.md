@@ -9,7 +9,7 @@ Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - **Contraste:** los grises de texto (`brand-900/50`, `/55`, `/45`…, `brand-950/40`…) pasaron a `/65`; `tinta/70-80` a `tinta`; títulos del menú del panel a `brand-200/75`. Tokens nuevos `emerald-700` y `sun-700` para texto verde y naranja (`sun-600` y `emerald` no llegan a 4,5:1). Las tarjetas verdes y naranjas de la home y de producto usan texto oscuro.
 - **Otros:** puntos de la banda 24/7 con área táctil de 32 px; la banda, el carrusel de destacados y la rueda se pausan con foco de teclado (antes solo con el mouse); `transition-all` reemplazado por propiedades explícitas; selector de clínica del panel con rótulo en celular; orden de títulos corregido en el formulario de demo y en «Escuchá a nuestros agentes»; foco visible en el campo de `/probar-demo`.
 - **Arreglo chico:** el reproductor ya no pide `/audios/<slug>.json` (404) antes de `/api/audios`. `next.config.ts` anota al compilar qué audios hay en `public/audios`, que siguen teniendo prioridad.
-- No se probó en producción todavía; se verifica después del deploy.
+- **Verificado en producción** (PR #27, 24/10): home, `/probar-demo`, «Escuchá a nuestros agentes», odontología, «Pedí una demo» y login del panel, en 1366 y 390. Sin errores 4xx (el 404 de audios desapareció) y axe solo marca los bordes decorativos de la rueda en la home.
 
 ## Guardar prestación y profesional — 23/10/2026
 
