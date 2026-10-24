@@ -30,7 +30,7 @@ const DEMO_STATUS: Record<string, string> = {
   chat: "Probando chat", terminada: "Terminada", error: "No se pudo leer la web",
 };
 
-/** Lo que hizo cada interesado en la demo por WhatsApp: web, estado y conversaciones con el agente. */
+/** Lo que hizo cada interesado en la demo (WhatsApp, Telegram o navegador): web, estado y conversaciones con el agente. */
 async function demoActivity(leadIds: string[]) {
   if (!leadIds.length) return { sessions: [] as DemoActivity[], conversations: [] as DemoConversation[] };
   try {
@@ -70,7 +70,7 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
       count(*) filter (where status = 'demo_agendada')::int as agendadas from leads`,
     sql<{ count: number }[]>`select count(*)::int as count from leads ${where}`,
   ]);
-  const activity = await demoActivity(rows.filter((r) => (r.source === "demo-whatsapp" || r.source === "demo-telegram")).map((r) => r.id));
+  const activity = await demoActivity(rows.filter((r) => (r.source === "demo-whatsapp" || r.source === "demo-telegram" || r.source === "demo-web")).map((r) => r.id));
   const pageUrl = (n: number) => `/panel/demos?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { estado: status } : {}), pagina: String(n) })}`;
 
   return (
@@ -110,7 +110,7 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
               {lead.email && <div><dt className="font-medium text-brand-900">Email</dt><dd><a href={`mailto:${lead.email}`} className="break-all text-brand-600 underline">{lead.email}</a></dd></div>}
               {lead.phone && <div><dt className="font-medium text-brand-900">{lead.source === "demo-telegram" ? "Usuario de Telegram" : "Teléfono / WhatsApp"}</dt><dd className="break-words">{/^\d{8,15}$/.test(lead.phone) ? <a href={`https://wa.me/${lead.phone}`} className="text-brand-600 underline">+{lead.phone}</a> : lead.phone}</dd></div>}
               <div><dt className="font-medium text-brand-900">Especialidad y equipo</dt><dd>{[lead.specialty, lead.size, lead.role].filter(Boolean).join(" · ") || "Sin indicar"}</dd></div>
-              {lead.message && <div><dt className="font-medium text-brand-900">{lead.source === "demo-telegram" ? "Demo por Telegram" : lead.source === "demo-whatsapp" ? "Demo por WhatsApp" : "Qué busca resolver"}</dt><dd className="whitespace-pre-wrap break-words text-brand-900/75">{lead.message}</dd></div>}
+              {lead.message && <div><dt className="font-medium text-brand-900">{lead.source === "demo-telegram" ? "Demo por Telegram" : lead.source === "demo-whatsapp" ? "Demo por WhatsApp" : lead.source === "demo-web" ? "Demo en el navegador" : "Qué busca resolver"}</dt><dd className="whitespace-pre-wrap break-words text-brand-900/75">{lead.message}</dd></div>}
               {lead.source && <div><dt className="font-medium text-brand-900">Origen</dt><dd className="break-all text-brand-900/60">{lead.source}</dd></div>}
             </dl>
             <DemoDetails sessions={activity.sessions.filter((x) => x.lead_id === lead.id)} conversations={activity.conversations} />

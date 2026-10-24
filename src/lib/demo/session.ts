@@ -44,6 +44,9 @@ export type DemoSession = {
   updated_at: string;
 };
 
+/** Demo en el navegador (desde /probar-demo): no pasa por Telegram ni WhatsApp. */
+export const isWebChat = (chatId: string) => chatId.startsWith("web:");
+
 export type DemoInput = { messageId: string; chatId: string; phone: string; text: string };
 /** handled: el mensaje era de la demo. analyze: id de la demo cuya web hay que leer después de responder. */
 export type DemoOutcome = { handled: true; status: DemoStatus; analyze?: string };
@@ -239,12 +242,16 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
     update demo_sessions set analysis_started_at = now()
     where id = ${sessionId} and status = 'analizando' and analysis_started_at is null
     returning *`;
-  if (!session || !(await chatIsActive(session.chat_id, session.channel_revision))) return;
+  if (!session) return;
+  const web = isWebChat(session.chat_id);
+  // En el navegador no hay chat que se pueda pausar: la página consulta el estado.
+  const stillActive = () => web || chatIsActive(session.chat_id, session.channel_revision);
+  if (!(await stillActive())) return;
   try {
     const site = await scrapeSite(session.website);
     const [active] = await sql`select id from demo_sessions where id = ${session.id} and status = 'analizando'`;
     if (!active) return;
-    if (!(await chatIsActive(session.chat_id, session.channel_revision))) return;
+    if (!(await stillActive())) return;
     const profile = await buildProfile(site);
     const clinic = await createDemoClinic(profile, site.url, { id: session.id, pages: site.pages.length, site });
     if (!clinic) return; // la persona salió o pidió otra demo mientras leíamos
@@ -253,14 +260,14 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
         update leads set organization = ${clinic.name}, specialty = ${clinic.specialty}, updated_at = now()
         where id = ${session.lead_id}`;
     }
-    await sendChatText(session.chat_id, await optionsText(clinic));
+    if (!web) await sendChatText(session.chat_id, await optionsText(clinic));
   } catch (e) {
     const scrapeFailed = e instanceof ScrapeError;
     console.error("Demo: no se pudo preparar", session.website, e instanceof Error ? e.message : e);
     const [failed] = await sql`
       update demo_sessions set status = 'error', error = ${e instanceof Error ? e.message.slice(0, 300) : "error"}, updated_at = now()
       where id = ${session.id} and status in ('analizando', 'eligiendo') returning id`;
-    if (failed) await sendChatText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
+    if (failed && !web) await sendChatText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
   }
 }
 

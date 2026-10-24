@@ -59,7 +59,7 @@ const DESTACADOS: Destacado[] = [
 ];
 
 const CASOS: Caso[] = [
-  { titulo: "Pediatría: una mamá saca turno para su hijo a la noche, por WhatsApp", imagen: "/img/familia.jpg", href: "/escucha-a-nuestros-agentes#pediatria", pestana: "Pediatría", icono: "bebe" },
+  { titulo: "Pediatría: piden turno para un chico a la noche, por WhatsApp", imagen: "/img/familia.jpg", href: "/escucha-a-nuestros-agentes#pediatria", pestana: "Pediatría", icono: "bebe" },
   { titulo: "Clínica médica: control, derivación al especialista y receta en una sola conversación", imagen: "/img/consulta.jpg", href: "/escucha-a-nuestros-agentes#clinica-medica", pestana: "Clínica médica", icono: "estetoscopio" },
   { titulo: "Cardiología: turno con estudios previos y derivación inmediata ante un síntoma de alarma", imagen: "/img/medico-celular.jpg", href: "/escucha-a-nuestros-agentes#cardiologia", pestana: "Cardiología", icono: "corazon" },
   { titulo: "Gastroenterología: videocolonoscopía con la preparación enviada por WhatsApp", imagen: "/img/recepcion.jpg", href: "/escucha-a-nuestros-agentes#gastroenterologia", pestana: "Gastroenterología", icono: "estomago" },

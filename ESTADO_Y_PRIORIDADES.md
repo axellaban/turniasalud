@@ -2,6 +2,25 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Crítica de diseño de la home y /probar-demo, y demo en el navegador — 24/10/2026
+
+- **Crítica** con `impeccable critique` (sin subagentes ni detector, aclarado en el informe): 21/32. Copia en `.impeccable/critique/2026-10-24-home-y-probar-demo.md`.
+- **Arreglado:**
+  - Sin las ★★★★★ del hero (no hay reseñas).
+  - «Probalo ahora» y «Probá el agente» llevaban a `/demo`, que pide sesión del panel: un visitante veía «Ingresá al panel». Ahora todos van a `/probar-demo`. La banda final queda con «Probalo con tu web» y «Pedí una demo guiada», en azul, y no aparece en `/probar-demo`.
+  - «Ver todas las especialidades» abre el índice nuevo `/especialidades` (antes, Clínica médica).
+  - La tarjeta oscura del motor ya no repite las especialidades: muestra lo que el agente recuerda de cada paciente. «9 acciones sobre la agenda» pasó a «3 canales».
+  - «Conectado a los canales» sin jerga (Postgres, SIP, n8n, webhooks, ElevenLabs); Google Calendar figura como «Próximamente» porque todavía no está.
+  - El texto de pediatría ya no dice «una mamá» sobre la foto de un papá.
+- **«Lo que dicen los números»** (como «Real Results» de Assort): 24/7 propio y tres números de estudios publicados, cada uno con su enlace:
+  - 23 % de ausentismo promedio (Dantas y otros, Health Policy, 2018).
+  - 29,5 % de los turnos autogestionados se piden fuera de horario (North y otros, JMIR Medical Informatics, 2021).
+  - −29 % de ausencias con recordatorios automáticos (Hasvold y Wootton, J Telemed Telecare, 2011).
+
+  Los números de la captura de Assort son de sus clientes, no de la industria: no se usaron.
+- **`/probar-demo` en el navegador** (pedido del usuario): web + email; en computadora directo al navegador, en celular elige navegador o Telegram. Detalle en `PLAN_LEAD_MAGNET.md`. La página tiene los tres pasos y un ejemplo de conversación.
+- Pruebas: 184 en verde (7 nuevas de la demo en el navegador). axe en las páginas nuevas: solo los bordes decorativos de la rueda.
+
 ## Skills de diseño y auditoría de accesibilidad — 24/10/2026
 
 - **Skills instaladas en `.claude/skills`** (con el OK del usuario): `frontend-design` (Anthropic), `web-design-guidelines` y `react-best-practices` (Vercel) e `impeccable` (pbakaus). Origen, commit, licencia y cambios en `.claude/skills/README.md`. `impeccable` va sin `scripts/` (su lanzador baja y ejecuta un binario); `web-design-guidelines` lee una copia local de las reglas.
