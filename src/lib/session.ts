@@ -92,7 +92,7 @@ export const sessionCookieOptions = {
   maxAge: MAX_AGE_SECS,
 };
 
-const PANEL_SECTIONS = ["agenda", "conversaciones", "tareas", "pacientes", "campanas", "configuracion", "clinicas", "demos", "sistema"];
+const PANEL_SECTIONS = ["agenda", "conversaciones", "tareas", "pacientes", "campanas", "configuracion", "clinicas", "demos", "sistema", "comercial"];
 
 /** Destino después de ingresar: una sección real del panel o la demo; si no, el inicio. */
 export function safeNext(value: unknown): string {

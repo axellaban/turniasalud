@@ -560,3 +560,66 @@ end $$;
 drop trigger if exists appointments_calendar_mark on appointments;
 create trigger appointments_calendar_mark before insert or update on appointments
   for each row execute function turnia_calendar_mark();
+
+-- Ventas de Turnia: separado de pacientes, turnos y campañas clínicas.
+create table if not exists sales_settings (
+  id smallint primary key check (id = 1),
+  agent_id text,
+  voice_id text,
+  tool_ids text[] not null default '{}',
+  enabled boolean not null default false,
+  budget_date date,
+  budget_cents integer not null default 0 check (budget_cents between 0 and 10000),
+  updated_at timestamptz not null default now()
+);
+insert into sales_settings (id) values (1) on conflict do nothing;
+alter table sales_settings enable row level security;
+
+create table if not exists sales_prospects (
+  id uuid primary key default gen_random_uuid(),
+  business_name text not null,
+  phone text not null check (phone ~ '^\+54[0-9]{10,11}$'),
+  website text not null,
+  context text not null default '',
+  eligibility text not null default 'sin_revisar' check (eligibility in ('sin_revisar', 'solicito_llamada', 'no_llame_revisado')),
+  evidence text not null default '',
+  reviewed_at timestamptz,
+  outcome text,
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists sales_prospects_phone_idx on sales_prospects (phone);
+alter table sales_prospects enable row level security;
+
+create table if not exists sales_calls (
+  id uuid primary key default gen_random_uuid(),
+  request_key uuid not null unique,
+  prospect_id uuid not null references sales_prospects(id),
+  agent_id text not null,
+  phone text not null,
+  business_name text not null,
+  context text not null,
+  budget_date date not null,
+  reserved_cents integer not null default 100 check (reserved_cents = 100),
+  status text not null default 'iniciando' check (status in ('iniciando','en_curso','completada','fallida','incierta')),
+  conversation_id text unique,
+  duration_secs integer,
+  credits integer,
+  transcript jsonb,
+  summary text,
+  outcome text,
+  error text,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+create index if not exists sales_calls_budget_idx on sales_calls (budget_date);
+create index if not exists sales_calls_prospect_idx on sales_calls (prospect_id, created_at desc);
+alter table sales_calls enable row level security;
+
+create table if not exists sales_suppressions (
+  phone text primary key,
+  reason text not null,
+  source_call_id uuid references sales_calls(id),
+  created_at timestamptz not null default now()
+);
+alter table sales_suppressions enable row level security;
