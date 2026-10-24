@@ -8,7 +8,15 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 const mocks = vi.hoisted(() => ({
   notifyN8n: vi.fn(async () => {}),
   after: [] as Array<() => unknown>,
+  session: undefined as string | undefined,
 }));
+
+// Borrar pedidos es del administrador: se simula su sesión.
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: (name: string) => (name === "turnia_session" && mocks.session ? { value: mocks.session } : undefined), set: () => {}, delete: () => {} }),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); } }));
 
 vi.mock("@/lib/n8n", () => ({ notifyN8n: mocks.notifyN8n }));
 vi.mock("next/server", async (importOriginal) => ({
@@ -175,6 +183,25 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
     await runAfter();
     expect((await leer(t)).body).toEqual({ status: "error", website: "https://noexiste.com.ar/" });
     expect((await hablar("chat", t)).status).toBe(404);
+  });
+
+  it("el administrador borra un pedido de prueba con sus demos, sin tocar fichas conservadas", async () => {
+    const { deleteLead } = await import("@/app/panel/(app)/demos/actions");
+    const [lead] = await sql`select id from leads where email = 'dra@odontonorte.com.ar'`;
+    const [s] = await sql`select clinic_id from demo_sessions where lead_id = ${lead.id} and clinic_id is not null`;
+    // Una segunda demo del mismo interesado sobre una ficha conservada.
+    const [kept] = await sql`insert into clinics (name, is_demo, retained_at) values ('Ficha conservada', true, now()) returning id`;
+    await sql`insert into demo_sessions (phone, chat_id, website, lead_id, clinic_id) values ('web:k', 'web:k', 'https://x.test/', ${lead.id}, ${kept.id})`;
+    const form = new FormData();
+    form.set("id", lead.id);
+    await expect(deleteLead(form)).rejects.toThrow("redirect:/panel/login");
+    mocks.session = (await import("@/lib/session")).createSessionToken();
+    await deleteLead(form);
+    expect(await sql`select 1 from leads where id = ${lead.id}`).toHaveLength(0);
+    expect(await sql`select 1 from demo_sessions where lead_id = ${lead.id}`).toHaveLength(0);
+    expect(await sql`select 1 from clinics where id = ${s.clinic_id}`).toHaveLength(0);
+    expect(await sql`select 1 from clinics where id = ${kept.id}`).toHaveLength(1);
+    expect((await leer()).status).toBe(404);
   });
 
   it("el email llega al pedido de demo aunque siga por Telegram", async () => {
