@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { syncCalendarLater } from "@/lib/calendar/sync";
 import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
@@ -65,6 +66,7 @@ export async function setAppointmentStatus(form: FormData) {
     update appointments set status = ${status},
       cancelled_at = case when ${status} = 'cancelado' then now() else cancelled_at end
     where id = ${id} and clinic_id = ${clinic.id}`;
+  syncCalendarLater(clinic.id);
   revalidatePath("/panel/agenda");
 }
 
@@ -129,6 +131,7 @@ export async function createManualAppointment(_prev: FormState | undefined, form
       inicio: startsAt.toISOString(),
       notas: text(form, "notes") ?? undefined,
     });
+    syncCalendarLater(clinic.id);
     revalidatePath("/panel/agenda");
     return { ok: true, message: r.mensaje };
   } catch (e) {

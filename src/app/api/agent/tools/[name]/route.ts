@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { syncCalendarLater } from "@/lib/calendar/sync";
 import { hasValidSecret } from "@/lib/agent/auth";
 import { contextSchema, getToolDefinition } from "@/lib/agent/tools";
 import {
@@ -29,6 +30,8 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   crear_tarea: createTask,
   anotar_lista_espera: joinWaitlist,
 };
+
+const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 
 export async function POST(request: Request, { params }: { params: Promise<{ name: string }> }) {
   if (!hasValidSecret(request)) {
@@ -75,6 +78,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
       input.data,
     );
     log("ok");
+    // Los turnos nuevos o cambiados se escriben en Google Calendar sin demorar la respuesta.
+    if (CHANGES_AGENDA.has(name)) syncCalendarLater(ctx.data.clinic_id);
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof ToolError) {

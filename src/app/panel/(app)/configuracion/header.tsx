@@ -6,6 +6,7 @@ const TABS = [
   { href: "/panel/configuracion/equipo", label: "Equipo y horarios" },
   { href: "/panel/configuracion/prestaciones", label: "Prestaciones" },
   { href: "/panel/configuracion/bloqueos", label: "Feriados y bloqueos" },
+  { href: "/panel/configuracion/calendario", label: "Calendario" },
   { href: "/panel/configuracion/web", label: "Lectura de la web" },
 ];
 
