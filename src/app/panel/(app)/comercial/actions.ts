@@ -5,7 +5,7 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { ElevenLabsError } from "@/lib/elevenlabs";
-import { setupSalesAgent, SalesSetupError } from "@/lib/sales/agent";
+import { setupSalesAgent, sofiSalesVoiceId, SalesSetupError } from "@/lib/sales/agent";
 import { authorizeBudget, blockProspect, dialProspect, refreshSalesCall, saveProspect, SalesError } from "@/lib/sales/service";
 
 export type SalesActionState = { message?: string; error?: string; prospectId?: string };
@@ -14,15 +14,15 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
   const intent = form.get("intent");
   let result: SalesActionState = {};
   try {
-    if (intent === "prepare") {
-      await setupSalesAgent(String(form.get("voice_id") || ""));
-      result = { message: "Agustín preparado con su voz, herramientas comerciales y máximo de 60 segundos. El piloto queda pausado. No se inició ninguna llamada." };
+    if (intent === "prepare" || intent === "prepare_sofi") {
+      await setupSalesAgent(intent === "prepare_sofi" ? await sofiSalesVoiceId() : String(form.get("voice_id") || ""));
+      result = { message: "Sofi comercial preparada con su voz y el pitch actualizado. Límite de 60 segundos de conversación, más despedida. El piloto queda pausado. No se inició ninguna llamada." };
     } else if (intent === "budget") {
       const dollars = z.string().regex(/^\d{1,3}(?:[.,]\d{1,2})?$/, "Ingresá un importe en dólares, sin signo.").parse(form.get("budget"));
       const enabled = form.get("enabled") === "on";
       if (enabled && form.get("authorize") !== "on") throw new SalesError("Confirmá el gasto antes de habilitar el piloto.");
       await authorizeBudget(Math.round(Number(dollars.replace(",",".")) * 100), enabled);
-      result = { message: enabled ? "Cupo autorizado solo para hoy. Cada llamada requiere tu confirmación individual." : "Piloto pausado. No se inician llamadas nuevas; una llamada que ya empezó termina por su límite de 60 segundos." };
+      result = { message: enabled ? "Cupo autorizado solo para hoy. Cada llamada requiere tu confirmación individual." : "Piloto pausado. No se inician llamadas nuevas; una llamada en curso conserva el límite de 60 segundos de conversación, más despedida." };
     } else if (intent === "prospect") {
       result = { prospectId: await saveProspect(Object.fromEntries(form)), message: "Consultorio guardado. Todavía no se llamó." };
     } else if (intent === "review") {

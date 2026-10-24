@@ -37,12 +37,13 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
     return response({ success:true,conversation_id:"conv_sales" });
   }
   if (path === "/v1/convai/conversations/conv_sales") return response(eventData());
-  if (path === "/v2/voices") return response({ voices:[{voice_id:"voz-agustin",name:"Agustin De Angelis - Confident and Happy",sharing:{live_moderation_enabled:moderatedVoice}}] });
+  if (path === "/v2/voices") return response({ voices:[{voice_id:"voz-agustin",name:"Voz comercial de prueba",sharing:{live_moderation_enabled:moderatedVoice}},{voice_id:"voz-sofi",name:"Voz de Sofi",sharing:{live_moderation_enabled:false}}] });
   if (path === "/v1/convai/tools" && !init.method) return response({tools:[]});
   if (path === "/v1/convai/tools" && init.method === "POST") return response({id:providerRequests.filter((s)=>s === "POST /v1/convai/tools").length === 1 ? "sales-tool-1" : "sales-tool-2"});
   if (path === "/v1/convai/agents/create") { remote = JSON.parse(String(init.body)); return response({ agent_id:"agent-sales" }); }
   if (path === "/v1/convai/agents") return response({agents:recoverAgent ? [{agent_id:"agent-sales",name:remote.name}] : []});
-  if (path === "/v1/convai/agents/agent-sales") return response(remote);
+  if (path === "/v1/convai/agents/agent-clinical") return response({ name:"Recepcionista clínica", conversation_config:{tts:{voice_id:"voz-sofi"}} });
+  if (path === "/v1/convai/agents/agent-sales") { if (init.method === "PATCH") remote = JSON.parse(String(init.body)); return response(remote); }
   throw new Error(`fetch inesperado ${path}`);
 }
 
@@ -58,6 +59,7 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
   beforeEach(async () => {
     await sql`truncate sales_suppressions,sales_calls,sales_prospects`;
     await sql`update sales_settings set agent_id='agent-sales',voice_id='voz-agustin',tool_ids=array['sales-tool-1','sales-tool-2'],enabled=false,budget_cents=0,budget_date=null where id=1`;
+    await sql`update clinics set elevenlabs_agent_id=null where id='00000000-0000-4000-8000-000000000001'`;
     outbound=0; lost=false; noAnswer=false; moderatedVoice=false; recoverAgent=false; mocks.admin=true; providerRequests.length=0;
     remote=salesAgentBody("voz-agustin",["sales-tool-1","sales-tool-2"]);
     vi.stubGlobal("fetch",fakeFetch);
@@ -140,15 +142,35 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     expect(await salesAction({},form)).toMatchObject({error:expect.stringContaining("Confirmá")});
     mocks.admin=false; await expect(salesAction({},form)).rejects.toThrow("admin requerido"); expect(outbound).toBe(0);
   });
-  it("preparar crea solo Agustín, no compra números ni llama ni modifica Sofi",async()=>{
+  it("preparar crea solo el agente comercial, no compra números ni llama ni modifica la clínica",async()=>{
     await sql`update sales_settings set agent_id=null,voice_id=null,tool_ids='{}' where id=1`;
-    await setupSalesAgent();
+    await setupSalesAgent("voz-agustin");
     expect(providerRequests.filter(s=>s.startsWith("POST"))).toEqual(["POST /v1/convai/tools","POST /v1/convai/tools","POST /v1/convai/agents/create"]);
     expect(remote.conversation_config.conversation.max_duration_seconds).toBe(60);
     expect(remote.platform_settings.call_limits.agent_concurrency_limit).toBe(1);
     expect(remote.platform_settings.privacy.record_voice).toBe(false);
     expect(remote.platform_settings).not.toHaveProperty("analysis_llm");
     expect((await sql`select enabled,budget_cents from sales_settings where id=1`)[0]).toMatchObject({enabled:false,budget_cents:0});
+    expect(outbound).toBe(0);
+  });
+  it("usa la voz real de Sofi y migra el mismo agente comercial sin modificar la clínica ni llamar",async()=>{
+    await sql`update clinics set elevenlabs_agent_id='agent-clinical' where id='00000000-0000-4000-8000-000000000001'`;
+    await authorizeBudget(500,true);
+    remote.name="Turnia · Agustín · ventas odontología";
+    const form=new FormData(); form.set("intent","prepare_sofi");
+    expect(await salesAction({},form)).toHaveProperty("message");
+    expect(remote.name).toBe("Turnia · Sofi · ventas odontología");
+    expect(remote.conversation_config.tts.voice_id).toBe("voz-sofi");
+    expect((await sql`select agent_id,voice_id,enabled,budget_cents from sales_settings where id=1`)[0]).toMatchObject({agent_id:"agent-sales",voice_id:"voz-sofi",enabled:false,budget_cents:500});
+    expect(providerRequests).toContain("GET /v1/convai/agents/agent-clinical");
+    expect(providerRequests).not.toContain("PATCH /v1/convai/agents/agent-clinical");
+    expect(providerRequests).not.toContain("POST /v1/convai/agents/create");
+    expect(outbound).toBe(0);
+  });
+  it("no aplica la voz comercial sobre un agente que pertenece a una clínica",async()=>{
+    await sql`update clinics set elevenlabs_agent_id='agent-sales' where id='00000000-0000-4000-8000-000000000001'`;
+    await expect(setupSalesAgent("voz-sofi")).rejects.toThrow("no es el comercial");
+    expect(providerRequests).not.toContain("PATCH /v1/convai/agents/agent-sales");
     expect(outbound).toBe(0);
   });
   it("normaliza sin adivinar números y rechaza formatos ambiguos",()=>{

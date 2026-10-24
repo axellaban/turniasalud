@@ -28,8 +28,9 @@ export default async function SalesProspectPage({ params }: { params: Promise<{ 
         <SalesForm intent="review" label="Guardar contexto y revisión"><input type="hidden" name="id" value={id} /><ReviewFields eligibility={p.eligibility} evidence={p.evidence} context={p.context} /></SalesForm>
       </Card>
       <div className="space-y-6">
-        <Card><h2 className="font-display text-xl mb-3">Llamada manual</h2><p className="text-sm mb-4">Destino: <strong>{p.phone}</strong>. Agustín ofrece una demo personalizada y charla con Axel. Máximo 60 segundos; reserva de US$1. No se envían mensajes ni se reintenta automáticamente.</p>
-          {!enabled && <p className="text-sm mb-3">Llamadas bloqueadas: revisá la preparación, el cupo de hoy y las bajas en Comercial.</p>}
+        <Card><h2 className="font-display text-xl mb-3">Llamada manual</h2><p className="text-sm mb-4">Destino: <strong>{p.phone}</strong>. Sofi ofrece una demo personalizada y charla con Axel. Límite de 60 segundos de conversación, más despedida; reserva de US$1. No se envían mensajes ni se reintenta automáticamente.</p>
+          {!enabled && <p className="text-sm mb-3">Llamadas bloqueadas: revisá la preparación, el cupo de hoy y las bajas en <Link className="underline" href="/panel/comercial#presupuesto">Comercial → Habilitar llamadas manuales hoy</Link>. El cupo y el saldo de Twilio se revisan por separado.</p>}
+          <p className="text-sm mb-4">Para una nueva prueba a este mismo número, revisá el contexto y confirmá abajo. Cada intento necesita una nueva confirmación. Si el anterior sigue pendiente o incierto, primero actualizá su resultado.</p>
           <SalesForm intent="dial" label="Iniciar una llamada" disabled={!enabled}>
             <input type="hidden" name="id" value={id} /><input type="hidden" name="request_key" value={randomUUID()} />
             <label className="flex gap-2 text-sm"><input type="checkbox" name="confirm" required /> Revisé el contacto y autorizo una llamada ahora a {p.business_name}, {p.phone}.</label>
@@ -46,7 +47,7 @@ export default async function SalesProspectPage({ params }: { params: Promise<{ 
       <p className="mt-3 text-sm">{c.outcome?.replaceAll("_"," ") || "Sin resultado comercial"}{c.duration_secs !== null ? ` · ${c.duration_secs} s` : ""}{c.credits !== null ? ` · ${c.credits} créditos ElevenLabs` : ""}</p>
       {c.summary && <p className="mt-2 text-sm">{c.summary}</p>}{c.error && <p role="alert" className="mt-2 text-sm text-red-700">{c.error}</p>}
       {(c.conversation_id || c.status === "incierta") && <div className="my-3"><SalesForm intent="refresh" label="Actualizar resultado"><input type="hidden" name="call_id" value={c.id} />{!c.conversation_id && <Field label="ID de conversación de ElevenLabs" hint="Solo el ID conv_… del intento revisado. Se valida que pertenezca a esta llamada; no pegues claves."><input className={inputClass} name="conversation_id" pattern="conv_[a-zA-Z0-9]+" required /></Field>}</SalesForm></div>}
-      {c.transcript && <details className="mt-4"><summary className="cursor-pointer font-semibold text-sm">Ver transcripción</summary><ol className="mt-3 space-y-2">{c.transcript.map((t,i) => <li key={i} className="text-sm"><strong>{t.role === "agent" ? "Agustín" : t.role === "user" ? "Consultorio" : "Sistema"}:</strong> {t.message || "[herramienta]"}</li>)}</ol></details>}
+      {c.transcript && <details className="mt-4"><summary className="cursor-pointer font-semibold text-sm">Ver transcripción</summary><ol className="mt-3 space-y-2">{c.transcript.map((t,i) => <li key={i} className="text-sm"><strong>{t.role === "agent" ? "Agente" : t.role === "user" ? "Consultorio" : "Sistema"}:</strong> {t.message || "[herramienta]"}</li>)}</ol></details>}
     </Card>)}</div>
   </>;
 }

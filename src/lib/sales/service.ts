@@ -72,7 +72,7 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
       if (existing.prospect_id !== prospectId) throw new SalesError("La confirmación pertenece a otro consultorio.");
       return { existing: existing.id };
     }
-    if (!s.enabled || !s.agent_id || !s.voice_id || !process.env.ELEVENLABS_PHONE_NUMBER_ID) throw new SalesError("El piloto está pausado o falta preparar Agustín y la línea saliente.");
+    if (!s.enabled || !s.agent_id || !s.voice_id || !process.env.ELEVENLABS_PHONE_NUMBER_ID) throw new SalesError("El piloto está pausado o falta preparar la agente comercial y la línea saliente.");
     const [{ today }] = await tx<{ today: string }[]>`select (now() at time zone 'America/Argentina/Buenos_Aires')::date::text as today`;
     if (s.budget_date !== today) throw new SalesError("La autorización venció. Definí el presupuesto de hoy.");
     const [p] = await tx<Prospect[]>`select * from sales_prospects where id = ${prospectId} for update`;
@@ -94,7 +94,7 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
   try {
     await verifySalesAgent(settings.agent_id!, settings.voice_id!, settings.tool_ids);
   } catch {
-    await sql`update sales_calls set status = 'fallida', error = 'No se inició: revisá la configuración de Agustín, la pausa y las bajas.', completed_at = now() where id = ${call.id} and status = 'iniciando'`;
+    await sql`update sales_calls set status = 'fallida', error = 'No se inició: revisá la configuración de la agente comercial, la pausa y las bajas.', completed_at = now() where id = ${call.id} and status = 'iniciando'`;
     return call.id;
   }
   let dispatched = false;
