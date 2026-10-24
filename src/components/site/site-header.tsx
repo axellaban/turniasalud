@@ -150,7 +150,7 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 px-3 pt-3 sm:px-6">
       <nav
-        className={`relative mx-auto flex max-w-[1240px] items-center justify-between gap-4 rounded-xl bg-white/95 px-4 py-2.5 shadow-[0_8px_30px_rgb(8_24_63/0.08)] ring-1 ring-brand-950/5 backdrop-blur transition-[background-color,box-shadow] duration-300 ${
+        className={`relative mx-auto flex max-w-[1240px] items-center justify-between gap-2 rounded-xl bg-white/95 px-3 py-2.5 shadow-[0_8px_30px_rgb(8_24_63/0.08)] ring-1 ring-brand-950/5 backdrop-blur transition-[background-color,box-shadow] duration-300 sm:gap-4 sm:px-4 ${
           sobreVideo ? "max-lg:bg-transparent max-lg:shadow-none max-lg:ring-0 max-lg:backdrop-blur-none" : ""
         }`}
         aria-label="Principal"
@@ -184,19 +184,19 @@ export function SiteHeader() {
           </li>
         </ul>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <Link href="/probar-demo" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:text-brand-900 md:inline-block">
             Probá con tu web
           </Link>
           <Link href="/panel" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-950/80 hover:text-brand-700 sm:inline-block">
             Ingresar
           </Link>
-          <Link href="/pedi-una-demo" className={`rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 ${sobreVideo ? "max-lg:hidden" : ""}`}>
+          <Link href="/pedi-una-demo" className={`whitespace-nowrap rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 sm:px-4 ${sobreVideo ? "max-lg:hidden" : ""}`}>
             Pedí una demo
           </Link>
           <button
             type="button"
-            className={`grid h-10 w-10 place-items-center rounded-lg lg:hidden ${sobreVideo ? "text-white hover:bg-white/10" : "text-brand-950 hover:bg-brand-50"}`}
+            className={`grid h-10 w-9 place-items-center rounded-lg sm:w-10 lg:hidden ${sobreVideo ? "text-white hover:bg-white/10" : "text-brand-950 hover:bg-brand-50"}`}
             aria-label={movil ? "Cerrar menú" : "Abrir menú"}
             aria-expanded={movil}
             onClick={() => setMovil(!movil)}

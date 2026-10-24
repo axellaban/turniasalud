@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
-import { Icono } from "@/components/site/iconos";
+import { Chevron, Icono } from "@/components/site/iconos";
 import { requestMicrophone } from "@/lib/microphone";
 import type { WebDemoMode, WebDemoState } from "@/lib/demo/web";
 
@@ -14,6 +14,8 @@ import type { WebDemoMode, WebDemoState } from "@/lib/demo/web";
 const POLL_MS = 3000;
 /** La lectura tarda ~1 minuto; pasado este plazo se da por fallida. */
 const GIVE_UP_MS = 5 * 60_000;
+// Cada estado ocupa la pantalla entera debajo del header fijo (4.5rem: 12 px de margen + barra de 60 px),
+// así la demo se ve completa sin scroll en la computadora y en el celular.
 
 type Line = { id: number; role: "user" | "agent" | "system"; text: string };
 type Credential = { token?: string; signedUrl?: string; dynamicVariables: Record<string, string>; userId: string; error?: string };
@@ -81,7 +83,7 @@ function hostOf(website: string): string {
 
 function Aviso({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-[560px] py-10 text-center">
+    <div className="mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-[560px] flex-col items-center justify-center py-10 text-center">
       <h1 className="text-[32px] font-medium leading-tight tracking-tight text-brand-950 sm:text-[40px]">{titulo}</h1>
       <p className="mt-4 text-[17px] leading-relaxed text-tinta">{children}</p>
       <Link href="/probar-demo" className="mt-8 inline-flex rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
@@ -132,7 +134,7 @@ function Leyendo({ website, nombre }: { website: string | null; nombre: string |
   const buscando = Math.floor(segundos / 1.5) % BUSCA.length;
 
   return (
-    <div className="grid items-center gap-10 py-6 md:grid-cols-[1fr_1.05fr] md:py-10">
+    <div className="grid min-h-[calc(100dvh-4.5rem)] content-center items-center gap-x-12 gap-y-5 py-4 sm:py-6 md:grid-cols-[1fr_1.05fr] md:gap-y-10">
       <style>{CSS_LEYENDO}</style>
       <div>
         <p className="inline-flex max-w-full items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-brand-800 shadow-sm ring-1 ring-brand-950/5">
@@ -142,16 +144,16 @@ function Leyendo({ website, nombre }: { website: string | null; nombre: string |
           </span>
           <span className="truncate">Demo en vivo · {host}</span>
         </p>
-        <h1 className="mt-5 text-[34px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:text-[46px]">
+        <h1 className="mt-4 text-[30px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:mt-5 sm:text-[40px] lg:text-[46px]">
           Tu recepcionista 24/7 <span className="text-brand-600">está casi lista</span>
         </h1>
-        <p className="mt-4 max-w-md text-[17px] leading-relaxed text-tinta">
+        <p className="mt-3 max-w-md text-[15px] leading-relaxed text-tinta sm:mt-4 sm:text-[17px]">
           {nombre ? "Estamos preparando la recepción de " : "Estamos leyendo "}
           <span className="font-medium text-brand-950">{host}</span> para que Sofi atienda como tu consultorio. Tarda alrededor de un minuto: no
           cierres esta página.
         </p>
 
-        <div className="mt-8 max-w-md" role="progressbar" aria-label="Preparando la demo" aria-valuemin={0} aria-valuemax={100} aria-valuenow={avance}>
+        <div className="mt-6 max-w-md sm:mt-8" role="progressbar" aria-label="Preparando la demo" aria-valuemin={0} aria-valuemax={100} aria-valuenow={avance}>
           <div className="flex items-baseline justify-between text-sm">
             <span className="font-medium text-brand-950">{PASOS[paso].t}…</span>
             <span className="tabular-nums text-tinta">{avance}%</span>
@@ -161,14 +163,14 @@ function Leyendo({ website, nombre }: { website: string | null; nombre: string |
           </div>
         </div>
 
-        <ol className="mt-8 max-w-md space-y-5" aria-live="polite">
+        <ol className="mt-6 max-w-md space-y-2.5 sm:mt-8 sm:space-y-5" aria-live="polite">
           {PASOS.map((p, i) => {
             const hecho = i < paso;
             const actual = i === paso;
             return (
-              <li key={p.t} className="flex items-start gap-3">
+              <li key={p.t} className="flex items-center gap-3 sm:items-start">
                 <span
-                  className={`relative mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold ${
+                  className={`relative grid h-8 w-8 shrink-0 sm:mt-0.5 place-items-center rounded-full text-xs font-semibold ${
                     hecho ? "bg-brand-600 text-white" : actual ? "bg-white text-brand-700" : "bg-white text-brand-900/65 ring-1 ring-brand-950/10"
                   }`}
                 >
@@ -183,7 +185,8 @@ function Leyendo({ website, nombre }: { website: string | null; nombre: string |
                 </span>
                 <span>
                   <span className={`block text-[15px] ${hecho || actual ? "font-semibold text-brand-950" : "font-medium text-tinta"}`}>{p.t}</span>
-                  <span className="mt-0.5 block text-sm text-tinta">{hecho ? "Listo" : p.d}</span>
+                  {/* En el celular, el detalle se omite para que la espera entre en una pantalla. */}
+                  <span className="mt-0.5 block text-sm text-tinta max-sm:hidden">{hecho ? "Listo" : p.d}</span>
                 </span>
               </li>
             );
@@ -191,76 +194,79 @@ function Leyendo({ website, nombre }: { website: string | null; nombre: string |
         </ol>
       </div>
 
-      <div aria-hidden="true" className="relative mx-auto w-full max-w-[520px]">
-        {/* La web del consultorio, leída por Turnia. */}
-        <div className="overflow-hidden rounded-2xl bg-white shadow-[0_24px_70px_rgb(8_24_63/0.14)] ring-1 ring-brand-950/5">
-          <div className="flex items-center gap-3 border-b border-brand-950/5 bg-[#f7f8fc] px-4 py-3">
-            <span className="flex gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ff6159]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-            </span>
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs text-tinta ring-1 ring-brand-950/5">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-3 w-3 shrink-0">
-                <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
-                <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-              </svg>
-              <span className="truncate">{host}</span>
-            </span>
-          </div>
-          <div className="relative overflow-hidden p-5 pb-20">
-            <div className="turnia-escaneo pointer-events-none absolute inset-x-0 top-0 h-1/5 bg-gradient-to-b from-transparent via-brand-500/15 to-transparent" />
-            <div className="h-28 rounded-xl bg-gradient-to-br from-brand-50 to-[#eef6ff]" />
-            <div className="mt-4 h-3 w-2/3 rounded-full bg-brand-950/10" />
-            <div className="mt-2 h-3 w-1/2 rounded-full bg-brand-950/[0.06]" />
-            <div className="mt-5 grid grid-cols-3 gap-3">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="rounded-lg bg-brand-950/[0.04] p-3">
-                  <div className="h-6 w-6 rounded-full bg-brand-950/10" />
-                  <div className="mt-2 h-2 w-full rounded-full bg-brand-950/[0.08]" />
-                  <div className="mt-1.5 h-2 w-2/3 rounded-full bg-brand-950/[0.06]" />
-                </div>
-              ))}
+      <div className="mx-auto w-full max-w-[520px]">
+        {/* La web del consultorio, leída por Turnia. Es decorativa: en el celular no entra y se omite. */}
+        <div aria-hidden="true" className="relative max-md:hidden">
+          <div className="overflow-hidden rounded-2xl bg-white shadow-[0_24px_70px_rgb(8_24_63/0.14)] ring-1 ring-brand-950/5">
+            <div className="flex items-center gap-3 border-b border-brand-950/5 bg-[#f7f8fc] px-4 py-3">
+              <span className="flex gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#ff6159]" />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+              </span>
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-xs text-tinta ring-1 ring-brand-950/5">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-3 w-3 shrink-0">
+                  <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+                  <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+                </svg>
+                <span className="truncate">{host}</span>
+              </span>
             </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {BUSCA.map((b, i) => (
-                <span
-                  key={b}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors duration-300 ${
-                    i === buscando ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-700"
-                  }`}
-                >
-                  {b}
-                </span>
-              ))}
+            <div className="relative overflow-hidden p-5 pb-14">
+              <div className="turnia-escaneo pointer-events-none absolute inset-x-0 top-0 h-1/5 bg-gradient-to-b from-transparent via-brand-500/15 to-transparent" />
+              <div className="h-20 rounded-xl bg-gradient-to-br from-brand-50 to-[#eef6ff]" />
+              <div className="mt-4 h-3 w-2/3 rounded-full bg-brand-950/10" />
+              <div className="mt-2 h-3 w-1/2 rounded-full bg-brand-950/[0.06]" />
+              <div className="mt-5 grid grid-cols-3 gap-3">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="rounded-lg bg-brand-950/[0.04] p-3">
+                    <div className="h-6 w-6 rounded-full bg-brand-950/10" />
+                    <div className="mt-2 h-2 w-full rounded-full bg-brand-950/[0.08]" />
+                    <div className="mt-1.5 h-2 w-2/3 rounded-full bg-brand-950/[0.06]" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {BUSCA.map((b, i) => (
+                  <span
+                    key={b}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors duration-300 ${
+                      i === buscando ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-700"
+                    }`}
+                  >
+                    {b}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Sofi, del otro lado, aprendiendo. */}
-        <div className="absolute -bottom-6 -left-3 flex max-w-[290px] items-center gap-3 rounded-2xl bg-white p-3 pr-4 shadow-[0_16px_40px_rgb(8_24_63/0.16)] ring-1 ring-brand-950/5 sm:-left-8">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-semibold text-white">S</span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-brand-950">Sofi</span>
-            <span className="flex items-center gap-1.5 text-xs text-tinta">
-              Aprendiendo sobre tu consultorio
-              <span className="turnia-escribe inline-flex gap-0.5">
-                <span className="h-1 w-1 rounded-full bg-tinta" />
-                <span className="h-1 w-1 rounded-full bg-tinta" />
-                <span className="h-1 w-1 rounded-full bg-tinta" />
+          {/* Sofi, del otro lado, aprendiendo. */}
+          <div className="absolute -bottom-6 -left-3 flex max-w-[290px] items-center gap-3 rounded-2xl bg-white p-3 pr-4 shadow-[0_16px_40px_rgb(8_24_63/0.16)] ring-1 ring-brand-950/5 sm:-left-8">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-600 text-sm font-semibold text-white">S</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-brand-950">Sofi</span>
+              <span className="flex items-center gap-1.5 text-xs text-tinta">
+                Aprendiendo sobre tu consultorio
+                <span className="turnia-escribe inline-flex gap-0.5">
+                  <span className="h-1 w-1 rounded-full bg-tinta" />
+                  <span className="h-1 w-1 rounded-full bg-tinta" />
+                  <span className="h-1 w-1 rounded-full bg-tinta" />
+                </span>
               </span>
             </span>
-          </span>
+          </div>
         </div>
-      </div>
 
-      <figure className="mt-6 rounded-2xl bg-white/70 p-5 ring-1 ring-brand-950/5 md:col-span-2 md:mt-8">
-        <figcaption className="text-xs font-medium text-tinta">Mientras tanto, un dato</figcaption>
-        <p key={dato.v} className="animar-aparecer mt-2 text-[15px] leading-relaxed text-brand-950">
-          <span className="mr-1.5 text-xl font-semibold tracking-tight text-brand-600 tabular-nums">{dato.v}</span>
-          {dato.t} <span className="whitespace-nowrap text-xs text-tinta">· {dato.f}</span>
-        </p>
-      </figure>
+        {/* En pantallas muy bajas el dato se omite: la espera tiene que entrar sin scroll. */}
+        <figure className="rounded-2xl bg-white/70 p-4 ring-1 ring-brand-950/5 md:mt-10 [@media(max-height:660px)]:hidden">
+          <figcaption className="text-xs font-medium text-tinta">Mientras tanto, un dato</figcaption>
+          <p key={dato.v} className="animar-aparecer mt-2 text-[15px] leading-relaxed text-brand-950">
+            <span className="mr-1.5 text-xl font-semibold tracking-tight text-brand-600 tabular-nums">{dato.v}</span>
+            {dato.t} <span className="whitespace-nowrap text-xs text-tinta">· {dato.f}</span>
+          </p>
+        </figure>
+      </div>
     </div>
   );
 }
@@ -272,8 +278,60 @@ const IDEAS = [
   "Necesito cancelar mi turno",
 ];
 
+type Clinic = Extract<WebDemoState, { status: "lista" }>["clinic"];
+
+function Dato({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs text-brand-900/65">{titulo}</dt>
+      <dd className="mt-0.5 font-medium text-brand-950">{children}</dd>
+    </div>
+  );
+}
+
+/** La ficha del consultorio: al costado en la computadora; en el celular, en una hoja que sube desde abajo. */
+function Ficha({ clinic, conWeb }: { clinic: Clinic; conWeb: boolean }) {
+  return (
+    <>
+      <dl className="space-y-2.5 text-sm">
+        <Dato titulo="Especialidad">{clinic.specialty}</Dato>
+        {clinic.address && <Dato titulo="Dirección">{clinic.address}</Dato>}
+        {clinic.professionals.length > 0 && <Dato titulo="Profesionales">{clinic.professionals.join(", ")}</Dato>}
+        {clinic.types.length > 0 && (
+          <div>
+            <dt className="text-xs text-brand-900/65">Turnos que puede dar</dt>
+            <dd className="mt-1.5 flex flex-wrap gap-1.5">
+              {clinic.types.map((t) => (
+                <span key={t} className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800">
+                  {t}
+                </span>
+              ))}
+            </dd>
+          </div>
+        )}
+      </dl>
+      <p className="mt-3 text-xs leading-relaxed text-tinta">
+        {conWeb
+          ? "Lo que tu web no dice (horarios, coberturas) es de prueba: en tu cuenta lo cargás vos."
+          : "Los horarios y las coberturas son de prueba: en tu cuenta los cargás vos."}
+      </p>
+    </>
+  );
+}
+
+function Onda() {
+  return (
+    <span className="flex h-4 items-center gap-0.5" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <span key={i} className="h-full w-[3px] rounded-full bg-current" style={{ animation: `turnia-onda 0.9s ease-in-out ${i * 0.12}s infinite` }} />
+      ))}
+    </span>
+  );
+}
+
 function Lista({ token, state }: { token: string; state: Extract<WebDemoState, { status: "lista" }> }) {
   const { clinic } = state;
+  const conWeb = Boolean(state.website);
   const [mode, setMode] = useState<WebDemoMode>("chat");
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
@@ -281,7 +339,8 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
   const [loading, setLoading] = useState(false);
   const [remaining, setRemaining] = useState(state.remaining);
   const counter = useRef(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const fichaRef = useRef<HTMLDialogElement>(null);
 
   const push = useCallback((role: Line["role"], text: string) => {
     counter.current += 1;
@@ -315,8 +374,10 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
     push("user", text);
   }, [connected, conversation, push]);
 
+  // Baja hasta el último mensaje dentro de la conversación, sin mover la página.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const list = listRef.current;
+    if (list && lines.length > 0) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
   }, [lines]);
 
   async function start(first?: string) {
@@ -350,90 +411,97 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
     }
   }
 
-  function send(e: React.FormEvent) {
-    e.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    setDraft("");
+  function decir(text: string) {
     if (!connected) return void start(text);
     conversation.sendUserMessage(text);
     push("user", text);
   }
 
-  const agent = clinic.agentName;
-  return (
-    <div>
-      <h1 className="text-[30px] font-medium leading-tight tracking-tight text-brand-950 sm:text-[40px]">
-        {agent} ya atiende como la recepción de <span className="text-brand-600">{clinic.name}</span>
-      </h1>
-      <p className="mt-3 max-w-2xl text-[16px] leading-relaxed text-tinta">
-        Escribile o hablale como si fueras un paciente. Los turnos que reserves son de prueba y no llegan a tu agenda real.
-      </p>
+  function send(e: React.FormEvent) {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    decir(text);
+  }
 
-      <div className="mt-8 grid gap-5 lg:grid-cols-[320px_1fr]">
-        <aside className="space-y-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-950/5">
-          <div>
-            <p className="text-sm font-semibold text-brand-950">Lo que leímos de tu web</p>
-            <dl className="mt-3 space-y-3 text-sm">
-              <div>
-                <dt className="text-brand-900/65">Especialidad</dt>
-                <dd className="font-medium text-brand-950">{clinic.specialty}</dd>
-              </div>
-              {clinic.address && (
-                <div>
-                  <dt className="text-brand-900/65">Dirección</dt>
-                  <dd className="font-medium text-brand-950">{clinic.address}</dd>
-                </div>
-              )}
-              {clinic.professionals.length > 0 && (
-                <div>
-                  <dt className="text-brand-900/65">Profesionales</dt>
-                  <dd className="font-medium text-brand-950">{clinic.professionals.join(", ")}</dd>
-                </div>
-              )}
-              {clinic.types.length > 0 && (
-                <div>
-                  <dt className="text-brand-900/65">Turnos que puede dar</dt>
-                  <dd className="font-medium text-brand-950">{clinic.types.join(", ")}</dd>
-                </div>
-              )}
-            </dl>
-            <p className="mt-3 text-xs leading-relaxed text-tinta">
-              Lo que tu web no dice (horarios, coberturas) se completa con datos de prueba. En tu cuenta lo cargás vos.
-            </p>
-          </div>
-          <div className="border-t border-brand-950/5 pt-4">
-            <p className="text-sm font-semibold text-brand-950">Probá con</p>
+  const agent = clinic.agentName;
+  const voz = mode === "voz";
+  const tituloFicha = conWeb ? "Lo que leímos de tu web" : "La ficha de tu consultorio";
+  // En el celular, apenas empieza la charla, el título se guarda (queda para lectores de pantalla) y la conversación gana lugar.
+  // Lo mismo en pantallas muy bajas (celular apaisado o con el teclado abierto).
+  const enCharla = lines.length > 0;
+  return (
+    // Alto fijo de pantalla: el título y la conversación entran enteros y los mensajes se desplazan adentro.
+    <div className="flex h-[calc(100dvh-4.5rem)] min-h-[280px] flex-col py-3 sm:py-5 [@media(max-height:500px)]:py-2">
+      <div className="shrink-0 lg:flex lg:items-end lg:justify-between lg:gap-8">
+        <div className="min-w-0">
+          <h1 className={`text-[22px] font-medium leading-tight tracking-tight text-brand-950 sm:text-[28px] lg:text-[32px] [@media(max-height:500px)]:sr-only ${enCharla ? "max-sm:sr-only" : ""}`}>
+            {agent} ya atiende como la recepción de <span className="text-brand-600">{clinic.name}</span>
+          </h1>
+          <p className="mt-1.5 text-[15px] leading-relaxed text-tinta max-sm:hidden [@media(max-height:500px)]:hidden">
+            Escribile o hablale como si fueras un paciente. Los turnos que reserves son de prueba y no llegan a tu agenda real.
+          </p>
+        </div>
+        <p className="shrink-0 pb-1 text-sm text-tinta max-lg:hidden">
+          ¿Lo querés con tu agenda real?{" "}
+          <Link href="/pedi-una-demo" className="font-medium text-brand-600 hover:underline">
+            Pedí una demo guiada
+          </Link>
+        </p>
+        <button
+          type="button"
+          onClick={() => fichaRef.current?.showModal()}
+          aria-haspopup="dialog"
+          className={`inline-flex max-w-full items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-brand-800 shadow-sm ring-1 ring-brand-950/5 hover:bg-brand-50 lg:hidden [@media(max-height:500px)]:mt-0 ${enCharla ? "sm:mt-2.5" : "mt-2.5"}`}
+        >
+          <Icono nombre="web" className="h-4 w-4 shrink-0 text-brand-600" />
+          <span className="truncate">{tituloFicha}</span>
+          <Chevron className="h-3.5 w-3.5 shrink-0 -rotate-90" />
+        </button>
+      </div>
+
+      <div className="mt-3 grid min-h-0 flex-1 gap-5 sm:mt-4 lg:grid-cols-[340px_1fr]">
+        <aside className="flex min-h-0 flex-col overflow-y-auto overscroll-contain rounded-2xl bg-white p-5 shadow-sm ring-1 ring-brand-950/5 max-lg:hidden">
+          <h2 className="mb-3 text-sm font-semibold text-brand-950">{tituloFicha}</h2>
+          <Ficha clinic={clinic} conWeb={conWeb} />
+          <div className="mt-4 border-t border-brand-950/5 pt-4">
+            <h2 className="text-sm font-semibold text-brand-950">{voz ? "Decile, por ejemplo" : "Probá con"}</h2>
+            {/* En el chat se tocan para mandarlas; en la voz son ideas de qué decir. */}
             <ul className="mt-2 space-y-1.5">
               {IDEAS.map((idea) => (
                 <li key={idea}>
-                  <button
-                    type="button"
-                    disabled={mode !== "chat" || connecting}
-                    onClick={() => (connected ? (conversation.sendUserMessage(idea), push("user", idea)) : start(idea))}
-                    className="w-full rounded-lg bg-brand-50 px-3 py-2 text-left text-sm text-brand-800 hover:bg-brand-100 disabled:opacity-60"
-                  >
-                    «{idea}»
-                  </button>
+                  {voz ? (
+                    <p className="rounded-lg bg-brand-50/60 px-3 py-1.5 text-sm text-brand-800">«{idea}»</p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={connecting}
+                      onClick={() => decir(idea)}
+                      className="w-full rounded-lg bg-brand-50 px-3 py-1.5 text-left text-sm text-brand-800 hover:bg-brand-100 disabled:opacity-60"
+                    >
+                      «{idea}»
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           </div>
         </aside>
 
-        {/* En el celular la conversación va primero; la ficha y los ejemplos, debajo. */}
-        <section className="flex min-h-[440px] flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-brand-950/5 max-lg:order-first lg:min-h-[520px]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-brand-950/5 px-4 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
-                <Icono nombre={mode === "chat" ? "chat" : "telefono"} className="h-4 w-4" />
+        <section aria-label={`Conversación con ${agent}`} className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-brand-950/5">
+          <div className="flex items-center justify-between gap-3 border-b border-brand-950/5 px-3 py-2.5 sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+              <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-600 text-white">
+                <Icono nombre={voz ? "telefono" : "chat"} className="h-4 w-4" />
+                {connected && <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald ring-2 ring-white" />}
               </span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-brand-950">{clinic.name}</p>
-                <p className="text-xs text-tinta">{connected ? `${agent} · en línea` : `${agent} · recepcionista virtual`}</p>
+                <p className="truncate text-xs text-tinta">{connected ? `${agent} · en línea` : `${agent} · recepcionista virtual`}</p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-1 rounded-lg bg-brand-50 p-1 text-sm" role="group" aria-label="Cómo querés probarlo">
+            <div className="grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-brand-50 p-1 text-sm" role="group" aria-label="Cómo querés probarlo">
               {(["chat", "voz"] as const).map((m) => (
                 <button
                   key={m}
@@ -449,46 +517,86 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
             </div>
           </div>
 
-          <div className="flex-1 space-y-2 overflow-y-auto bg-[#f5f7fc] p-4 text-[15px]" aria-live="polite">
-            {lines.length === 0 && (
-              <div className="mx-auto mt-14 max-w-sm text-center text-tinta">
-                {mode === "chat" ? (
-                  <p>Escribí abajo o tocá una de las frases de ejemplo para empezar.</p>
-                ) : (
-                  <p>Tocá «Llamar» y hablale con el micrófono. Por ejemplo: «Hola, quiero un turno para la semana que viene».</p>
-                )}
-              </div>
-            )}
-            {lines.map((line) =>
-              line.role === "system" ? (
-                <p key={line.id} className="text-center text-xs text-tinta">
-                  {line.text}
-                </p>
+          <div ref={listRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-[#f5f7fc] p-3 text-[15px] sm:p-4">
+            {lines.length === 0 &&
+              (!voz ? (
+                <div className="my-auto py-2 text-center">
+                  <p className="mx-auto max-w-sm text-tinta max-lg:hidden">Escribí abajo o tocá una de las frases de ejemplo para empezar.</p>
+                  {/* En pantallas muy bajas quedan solo las frases, para que entren todas. */}
+                  <p className="mx-auto max-w-sm text-sm text-tinta lg:hidden [@media(max-height:600px)]:hidden">
+                    Tocá una frase para empezar o escribí abajo. Los turnos que reserves son de prueba.
+                  </p>
+                  {/* En el celular, las frases de ejemplo van acá: no hay columna al costado. */}
+                  <ul className="mt-3 flex flex-wrap justify-center gap-1.5 sm:gap-2 lg:hidden [@media(max-height:600px)]:mt-0">
+                    {IDEAS.map((idea) => (
+                      <li key={idea}>
+                        <button
+                          type="button"
+                          disabled={connecting}
+                          onClick={() => decir(idea)}
+                          className="rounded-full bg-white px-3 py-1.5 text-left text-[13px] text-brand-800 shadow-sm ring-1 ring-brand-950/10 hover:bg-brand-50 disabled:opacity-60 sm:px-3.5 sm:py-2 sm:text-sm"
+                        >
+                          {idea}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : connected ? (
+                <p className="my-auto text-center text-tinta">Ya estás en la llamada: hablá cuando quieras.</p>
               ) : (
-                <p
-                  key={line.id}
-                  className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 ${
-                    line.role === "user" ? "ml-auto rounded-br-md bg-brand-600 text-white" : "rounded-bl-md bg-white text-brand-950 ring-1 ring-brand-950/5"
-                  }`}
-                >
-                  {line.text}
-                </p>
-              ),
-            )}
-            {mode === "voz" && connected && (
-              <p className="text-center text-sm font-medium text-brand-700">{conversation.isSpeaking ? `${agent} está hablando…` : "Te escucho…"}</p>
-            )}
-            <div ref={bottomRef} />
+                <div className="my-auto flex flex-col items-center py-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => start()}
+                    disabled={connecting}
+                    className="group flex flex-col items-center gap-3 rounded-2xl p-2 outline-offset-4 disabled:opacity-70"
+                  >
+                    <span
+                      className="grid h-20 w-20 place-items-center rounded-full bg-brand-600 text-white shadow-[0_12px_30px_rgb(33_87_225/0.35)] transition-colors group-hover:bg-brand-700"
+                      style={connecting ? undefined : { animation: "turnia-pulso 1.8s ease-out infinite" }}
+                    >
+                      {connecting ? (
+                        <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
+                      ) : (
+                        <Icono nombre="telefono" className="h-8 w-8" />
+                      )}
+                    </span>
+                    <span className="text-[15px] font-semibold text-brand-950">{connecting ? "Conectando…" : `Llamar a ${agent}`}</span>
+                  </button>
+                  <p className="mt-1 max-w-xs text-sm leading-relaxed text-tinta">
+                    Hablale con el micrófono como si fueras un paciente. Por ejemplo: «Hola, quiero un turno para la semana que viene».
+                  </p>
+                </div>
+              ))}
+            <div className={lines.length > 0 ? "mt-auto space-y-2" : undefined} aria-live="polite">
+              {lines.map((line) =>
+                line.role === "system" ? (
+                  <p key={line.id} className="text-center text-xs text-tinta">
+                    {line.text}
+                  </p>
+                ) : (
+                  <p
+                    key={line.id}
+                    className={`w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 ${
+                      line.role === "user" ? "ml-auto rounded-br-md bg-brand-600 text-white" : "rounded-bl-md bg-white text-brand-950 ring-1 ring-brand-950/5"
+                    }`}
+                  >
+                    {line.text}
+                  </p>
+                ),
+              )}
+            </div>
           </div>
 
           {error && (
-            <p role="alert" className="mx-4 mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            <p role="alert" className="mx-3 mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 sm:mx-4">
               {error}
             </p>
           )}
 
-          {mode === "chat" ? (
-            <form onSubmit={send} className="flex gap-2 border-t border-brand-950/5 p-3">
+          {!voz ? (
+            <form onSubmit={send} className="flex gap-2 p-3 pb-2">
               <label htmlFor="mensaje" className="sr-only">
                 Mensaje para {agent}
               </label>
@@ -496,12 +604,13 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
                 id="mensaje"
                 value={draft}
                 autoComplete="off"
+                enterKeyHint="send"
                 onChange={(e) => {
                   setDraft(e.target.value);
                   if (connected) conversation.sendUserActivity();
                 }}
                 disabled={connecting}
-                placeholder="Escribí como si fueras un paciente…"
+                placeholder={`Escribile a ${agent}…`}
                 className="min-w-0 flex-1 rounded-full bg-[#f5f7fc] px-4 py-2.5 text-[16px] text-brand-950 outline-none ring-1 ring-brand-950/10 placeholder:text-tinta/85 focus:ring-2 focus:ring-brand-600"
               />
               <button type="submit" disabled={connecting || !draft.trim()} className="rounded-full bg-brand-600 px-5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
@@ -509,45 +618,86 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
               </button>
             </form>
           ) : (
-            <div className="border-t border-brand-950/5 p-3 text-center">
-              {connected ? (
-                <button type="button" onClick={() => conversation.endSession()} className="rounded-full bg-red-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
-                  Cortar
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => start()}
-                  disabled={connecting}
-                  className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-                >
-                  <Icono nombre="telefono" className="h-4 w-4" /> {connecting ? "Conectando…" : "Llamar"}
-                </button>
-              )}
-            </div>
+            (connected || lines.length > 0) && (
+              <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-3 sm:px-4">
+                {connected ? (
+                  <>
+                    <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-brand-700">
+                      <Onda />
+                      <span className="truncate">{conversation.isSpeaking ? `${agent} está hablando…` : "Te escucho…"}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => conversation.endSession()}
+                      className="inline-flex shrink-0 items-center gap-2 rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+                    >
+                      <Icono nombre="telefono" className="h-4 w-4 rotate-[135deg]" /> Cortar
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => start()}
+                    disabled={connecting}
+                    className="mx-auto inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+                  >
+                    <Icono nombre="telefono" className="h-4 w-4" /> {connecting ? "Conectando…" : "Llamar de nuevo"}
+                  </button>
+                )}
+              </div>
+            )
           )}
+
+          <div className="flex items-center justify-between gap-3 px-4 pb-2.5 pt-1 text-xs text-tinta">
+            {/* En el celular, sin «en esta demo» ni «la conversación»: así entra en una línea. */}
+            <p>
+              {remaining === 1 ? "Te queda 1 conversación" : remaining > 0 ? `Te quedan ${remaining} conversaciones` : "Usaste todas las conversaciones"}
+              <span className="max-sm:hidden"> de esta demo</span>.
+            </p>
+            {connected && !voz && (
+              <button type="button" onClick={() => conversation.endSession()} className="shrink-0 font-medium text-brand-600 hover:underline">
+                Terminar<span className="max-sm:hidden"> la conversación</span>
+              </button>
+            )}
+          </div>
         </section>
       </div>
 
-      <div className="mt-6 flex flex-col gap-3 text-sm text-tinta sm:flex-row sm:items-center sm:justify-between">
-        <p>
-          {remaining > 0 ? `Te quedan ${remaining} conversaciones en esta demo.` : "Usaste todas las conversaciones de esta demo."}
-          {connected && (
-            <>
-              {" "}
-              <button type="button" onClick={() => conversation.endSession()} className="font-medium text-brand-600 hover:underline">
-                Terminar la conversación
-              </button>
-            </>
-          )}
-        </p>
-        <p>
-          ¿Querés usarlo con tu agenda real?{" "}
-          <Link href="/pedi-una-demo" className="font-medium text-brand-600 hover:underline">
-            Pedí una demo guiada
-          </Link>
-        </p>
-      </div>
+      {/* Celular: la ficha en una hoja que sube desde abajo. Se cierra con Esc, con la X o tocando afuera. */}
+      <dialog
+        ref={fichaRef}
+        aria-labelledby="ficha-titulo"
+        onClick={(e) => e.target === e.currentTarget && e.currentTarget.close()}
+        className="mx-0 mb-0 mt-auto max-h-[85dvh] w-full max-w-none overflow-y-auto rounded-t-3xl bg-white shadow-2xl backdrop:bg-brand-950/40 lg:hidden"
+      >
+        <div className="animar-aparecer px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3" style={{ animationDuration: "0.25s" }}>
+          <span aria-hidden="true" className="mx-auto block h-1 w-10 rounded-full bg-brand-950/15" />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <h2 id="ficha-titulo" className="text-base font-semibold text-brand-950">
+              {tituloFicha}
+            </h2>
+            <button
+              type="button"
+              onClick={() => fichaRef.current?.close()}
+              aria-label="Cerrar"
+              className="-mr-2 grid h-10 w-10 place-items-center rounded-full text-brand-950 hover:bg-brand-50"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+          <div className="mt-2">
+            <Ficha clinic={clinic} conWeb={conWeb} />
+          </div>
+          <p className="mt-5 border-t border-brand-950/5 pt-4 text-sm text-tinta">
+            ¿Lo querés con tu agenda real?{" "}
+            <Link href="/pedi-una-demo" className="font-medium text-brand-600 hover:underline">
+              Pedí una demo guiada
+            </Link>
+          </p>
+        </div>
+      </dialog>
     </div>
   );
 }
