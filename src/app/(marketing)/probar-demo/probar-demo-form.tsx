@@ -20,8 +20,19 @@ function esCelular(): boolean {
  * Web + email. En la computadora la demo sigue en el navegador; en el celular
  * se elige entre el navegador y el chat (Telegram o WhatsApp), si está activo.
  */
-export function ProbarDemoForm({ channel, webReady, chatReady }: { channel: MessagingChannel; webReady: boolean; chatReady: boolean }) {
-  const [web, setWeb] = useState("");
+export function ProbarDemoForm({
+  channel,
+  webReady,
+  chatReady,
+  initialWeb = "",
+}: {
+  channel: MessagingChannel;
+  webReady: boolean;
+  chatReady: boolean;
+  /** Web que trae el link personalizado; con ella el foco va directo al email. */
+  initialWeb?: string;
+}) {
+  const [web, setWeb] = useState(initialWeb);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<{ campo: "web" | "email" | null; texto: string } | null>(null);
   const [eligiendo, setEligiendo] = useState(false);
@@ -143,6 +154,7 @@ export function ProbarDemoForm({ channel, webReady, chatReady }: { channel: Mess
             type="email"
             autoComplete="email"
             autoCapitalize="none"
+            autoFocus={Boolean(initialWeb)}
             spellCheck={false}
             required
             value={email}

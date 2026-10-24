@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { demoStatus } from "@/lib/demo/config";
+import { normalizeWebsite } from "@/lib/demo/website";
 import { isConfigured } from "@/lib/env";
 import { ProbarDemoForm } from "./probar-demo-form";
 
@@ -18,7 +19,10 @@ const PASOS = [
   { n: "3", t: "Sofi te atiende", d: "Como si fueras un paciente: pedile un turno por chat o hablale por voz." },
 ];
 
-export default async function ProbarDemoPage() {
+export default async function ProbarDemoPage({ searchParams }: PageProps<"/probar-demo">) {
+  // Link personalizado (/probar-demo?web=miclinica.com.ar): llega con la web escrita y solo falta el email.
+  const { web } = await searchParams;
+  const initialWeb = normalizeWebsite(typeof web === "string" ? web : null)?.replace(/^https?:\/\//, "").replace(/\/$/, "") ?? "";
   const status = await demoStatus();
   const channel = status.canal;
   const chatReady = status.base && (channel === "telegram" ? status.telegram : channel === "whatsapp" && status.whatsapp);
@@ -34,7 +38,7 @@ export default async function ProbarDemoPage() {
           prestaciones y tus horarios.
         </p>
 
-        <ProbarDemoForm channel={channel} webReady={webReady} chatReady={chatReady} />
+        <ProbarDemoForm channel={channel} webReady={webReady} chatReady={chatReady} initialWeb={initialWeb} />
 
         <ol className="mx-auto mt-14 grid max-w-[820px] gap-4 text-left sm:grid-cols-3">
           {PASOS.map((p) => (
