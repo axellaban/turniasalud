@@ -159,6 +159,17 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
   const connected = conversation.status === "connected";
   const connecting = conversation.status === "connecting" || loading;
 
+  // El primer mensaje se manda recién cuando el SDK ya tiene la conversación activa:
+  // justo después de startSession todavía rechaza sendUserMessage.
+  const pendiente = useRef<string | null>(null);
+  useEffect(() => {
+    if (!connected || !pendiente.current) return;
+    const text = pendiente.current;
+    pendiente.current = null;
+    conversation.sendUserMessage(text);
+    push("user", text);
+  }, [connected, conversation, push]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [lines]);
@@ -177,16 +188,14 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
       const info = (await res.json()) as Credential;
       if (!res.ok) throw new Error(info.error || "No se pudo iniciar la conversación.");
       setRemaining((r) => Math.max(0, r - 1));
+      pendiente.current = first && mode === "chat" ? first : null;
       await conversation.startSession({
         ...(mode === "chat" ? { signedUrl: info.signedUrl!, textOnly: true } : { conversationToken: info.token! }),
         dynamicVariables: info.dynamicVariables,
         userId: info.userId,
       });
-      if (first && mode === "chat") {
-        conversation.sendUserMessage(first);
-        push("user", first);
-      }
     } catch (e) {
+      pendiente.current = null;
       const permiso = e instanceof DOMException && e.name === "NotAllowedError";
       setError(permiso ? "Necesitamos permiso para usar el micrófono." : e instanceof Error ? e.message : "No se pudo iniciar la conversación.");
       // Lo que escribió no se pierde: queda en el campo para reintentar.
@@ -301,17 +310,7 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
                 {mode === "chat" ? (
                   <p>Escribí abajo o tocá una de las frases de ejemplo para empezar.</p>
                 ) : (
-                  <>
-                    <p>Tocá «Llamar» y hablale con el micrófono. Por ejemplo: «Hola, quiero un turno para la semana que viene».</p>
-                    <button
-                      type="button"
-                      onClick={() => start()}
-                      disabled={connecting}
-                      className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
-                    >
-                      <Icono nombre="telefono" className="h-4 w-4" /> {connecting ? "Conectando…" : "Llamar"}
-                    </button>
-                  </>
+                  <p>Tocá «Llamar» y hablale con el micrófono. Por ejemplo: «Hola, quiero un turno para la semana que viene».</p>
                 )}
               </div>
             )}
@@ -365,13 +364,22 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
               </button>
             </form>
           ) : (
-            connected && (
-              <div className="border-t border-brand-950/5 p-3 text-center">
+            <div className="border-t border-brand-950/5 p-3 text-center">
+              {connected ? (
                 <button type="button" onClick={() => conversation.endSession()} className="rounded-full bg-red-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
                   Cortar
                 </button>
-              </div>
-            )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => start()}
+                  disabled={connecting}
+                  className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+                >
+                  <Icono nombre="telefono" className="h-4 w-4" /> {connecting ? "Conectando…" : "Llamar"}
+                </button>
+              )}
+            </div>
           )}
         </section>
       </div>
