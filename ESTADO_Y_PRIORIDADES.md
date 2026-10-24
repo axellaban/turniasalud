@@ -32,6 +32,21 @@ Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendie
   - La automatización de reintentos en n8n.
   - Para clínicas reales, la verificación de la app en Google.
 
+## Demo en el navegador a pantalla completa — 24/10/2026
+
+Pedido del usuario: que toda la demo (`/probar-demo/sesion/<token>`) entre en una pantalla, en la computadora y en el celular.
+
+- **Lista para probar:** ocupa exactamente el alto de la pantalla debajo del header (`100dvh - 4.5rem`). Los mensajes se desplazan dentro de la conversación (sin mover la página) y quedan pegados abajo, como en WhatsApp.
+  - **Computadora:** ficha y frases de ejemplo a la izquierda (columna de 340 px, con scroll propio si no entra), conversación a la derecha y «Pedí una demo guiada» al lado del título. Alineada con los bordes del header.
+  - **Celular:** la ficha pasa a una hoja que sube desde abajo («Lo que leímos de tu web», `<dialog>` nativo: se cierra con Esc, con la X o tocando afuera). Las frases de ejemplo aparecen como botones en la conversación vacía. Apenas empieza la charla, el título se guarda (queda para lectores de pantalla) y la conversación gana lugar. `interactive-widget=resizes-content` solo en esta página: en Android el teclado achica la pantalla y el chat queda entero arriba.
+  - **Voz:** botón grande «Llamar a Sofi» en el centro; durante la llamada, abajo, el estado («Te escucho…» / «Sofi está hablando…») y «Cortar». En la columna, las frases pasan a «Decile, por ejemplo» (antes eran botones desactivados).
+  - Detalles: «Te queda 1 conversación» en singular; en demos sin web la ficha dice «La ficha de tu consultorio».
+- **Mientras se lee la web y avisos:** también entran en una pantalla. En el celular se omite la ilustración del navegador (decorativa) y el detalle de cada paso; en pantallas muy bajas, el dato del estudio.
+- **Arranca en voz** (pedido del usuario): «Voz» es la primera opción y la que viene elegida. La llamada tiene una esfera animada al estilo del modo de voz de ChatGPT (`orbe-voz.tsx`): nubes celestes y blancas que giran adentro, respira en reposo, gira un anillo al conectar y, en la llamada, crece y se acelera con el volumen real (el de Sofi cuando habla y el del micrófono cuando escucha, con `getOutputVolume`/`getInputVolume` del SDK). Se anima con `requestAnimationFrame` sin re-renderizar React y queda quieta con «reducir movimiento». Su tamaño se ajusta al alto disponible (container query). En la llamada: botón para silenciar el micrófono y «Cortar». Los errores de micrófono salen en castellano y sugieren el chat.
+- **Telegram fuera de `/probar-demo`** (pedido del usuario): en el celular solo se ofrece navegador o WhatsApp. El bot de Telegram y el selector de canales del panel no se tocaron.
+- **Header:** a 360 px «Pedí una demo» se partía en dos líneas y el header medía 92 px; ahora queda en una línea y mide 72 px en todos los anchos.
+- **Verificado** con el build de producción y la API y el WebSocket de ElevenLabs simulados en Playwright: 1920×1000, 1440×800, 1280×680, tablet 820×1180, celular 412×780, 390×664, 360×640, 360×560, apaisado 740×360 y con teclado (390×380). En todos, la demo termina justo en el borde inferior y sin scroll horizontal. axe sin violaciones (chat, voz y la hoja de la ficha). 188 tests en verde. Falta que el usuario la pruebe en su celular con una conversación real.
+
 ## Prospección a consultorios odontológicos — 24/10/2026
 
 - **Base:** 96 consultorios odontológicos de Argentina con web propia (30 A, 41 B, 25 C; 83 con WhatsApp tomado de los botones `wa.me` de su web). Se leyó cada web para puntuar cuánto se va a lucir la demo (texto legible, profesionales, tratamientos), si atiende sábados y si trabaja con obras sociales. Quedaron afuera las webs sin texto legible, franquicias y redes grandes.
