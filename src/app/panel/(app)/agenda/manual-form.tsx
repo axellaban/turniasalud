@@ -38,23 +38,29 @@ export function ManualAppointmentForm({
   today,
   professionals,
   types,
+  initialProId,
+  initialTime,
 }: {
   clinicId: string;
   defaultDate: string;
   today: string;
   professionals: Option[];
   types: Option[];
+  /** Al tocar un hueco de la grilla: con quién y a qué hora. */
+  initialProId?: string;
+  initialTime?: string;
 }) {
   const [state, action, pending] = useActionState(createManualAppointment, undefined);
   const form = useRef<HTMLFormElement>(null);
-  const [typeId, setTypeId] = useState(types[0]?.id ?? "");
+  const initialPro = professionals.find((p) => p.id === initialProId);
+  const [typeId, setTypeId] = useState((initialPro && types.find((t) => t.specialty === initialPro.specialty)?.id) ?? types[0]?.id ?? "");
   const specialty = types.find((t) => t.id === typeId)?.specialty;
   const pros = professionals.filter((p) => p.specialty === specialty);
-  const [chosenPro, setProId] = useState(pros[0]?.id ?? "");
+  const [chosenPro, setProId] = useState(initialPro?.id ?? pros[0]?.id ?? "");
   // Al cambiar de prestación, si el profesional elegido no la hace, va el primero que sí.
   const proId = pros.some((p) => p.id === chosenPro) ? chosenPro : (pros[0]?.id ?? "");
   const [date, setDate] = useState(defaultDate < today ? today : defaultDate);
-  const [time, setTime] = useState("");
+  const [time, setTime] = useState(initialTime ?? "");
   const [custom, setCustom] = useState(false);
   const [reload, setReload] = useState(0);
   // Los horarios libres son de una combinación prestación + profesional + día: mientras

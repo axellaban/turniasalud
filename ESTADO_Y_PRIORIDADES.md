@@ -40,6 +40,31 @@ Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - El flujo de callback ya existente en `src/lib/demo/session.ts` llama por Twilio solo para sesiones de WhatsApp cuando se elige llamada y hay número configurado. Telegram conserva la llamada web. Esta configuración no agrega una campaña comercial, un control humano por chat ni llamadas nativas de WhatsApp.
 - Agente comercial separado **Agustín** ya preparado (ver cierre arriba), conservando la voz de Sofi. Queda pendiente **Tomar / Devolver al agente** para atención humana y la prueba del piloto con gasto/destinatarios autorizados. La voz comercial finalmente elegida es **Mauricio**, porque la primera voz intentada no admite agentes en vivo. El saludo comercial explica identidad de IA y motivo de la llamada.
 
+## Agenda como calendario — 24/10/2026
+
+- **Pedido del usuario:** ver la agenda como Google Calendar, con lo completo que está cada día.
+- **Vista Semana** (por defecto en la compu): una columna por día y las horas hacia abajo, con cada turno en su horario.
+  - Los turnos llevan el color del profesional.
+  - El estado se ve en el bloque: confirmado relleno, pendiente punteado, atendido atenuado con ✓, ausente en rojo y tachado.
+  - Los turnos superpuestos van lado a lado.
+- **Vista Día:** una columna por profesional (hasta 5). En el celular siempre se ve un día, con la semana arriba para elegirlo.
+- **Encabezado de cada día:** turnos y **porcentaje de ocupación**, en una barra azul, ámbar desde 50% y roja desde 85%. Sale de los minutos con turno sobre los minutos de atención, sin contar lo bloqueado. También dice «No atiende» o «Bloqueado».
+- **En la grilla:**
+  - Fuera de horario en gris.
+  - Feriados y bloqueos rayados en ámbar, con su motivo.
+  - Lo ocupado en Google Calendar rayado en gris, al filtrar por un profesional.
+  - Línea roja de la hora actual.
+- **Filtro por profesional** con su color.
+- **Tocar un turno** abre su ficha a la derecha:
+  - Datos, estado y si ya está en Google Calendar.
+  - Escribirle por WhatsApp.
+  - Atendido, Ausente y Cancelar.
+- **Tocar un hueco libre** abre «Agregar turno a mano» con ese día, hora y profesional ya elegidos.
+- Código:
+  - `src/app/panel/(app)/agenda/page.tsx`
+  - `src/app/panel/(app)/agenda/calendar-grid.tsx`
+  - `src/lib/agenda-layout.ts` (carriles, ocupación, horas visibles; con pruebas).
+
 ## Turno a mano en la Agenda — 24/10/2026
 
 - **Pedido del usuario:** el campo de hora rechazaba casi todo («Ingresá un valor válido»: el selector nativo exigía múltiplos de 5 minutos).
