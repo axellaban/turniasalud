@@ -3,7 +3,7 @@ import { sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid } from "../clinic";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree } from "../slots";
 import { env } from "../env";
-import { addDaysKey, humanSlot, localDateKey, parseDateKey } from "../time";
+import { addDaysKey, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
@@ -169,6 +169,75 @@ export async function checkAvailability(
     })),
     mensaje: "Ofrecé 2 o 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual.",
   };
+}
+
+/** Un horario libre del día, para elegirlo en el panel. */
+export type DaySlot = { hora: string; inicio: string };
+
+/**
+ * Panel → Agenda → turno a mano: todos los horarios libres de un día para un
+ * profesional y una prestación. A diferencia del agente, no pide anticipación
+ * mínima (la secretaria puede dar un turno para dentro de un rato).
+ */
+export async function freeSlotsOnDay(
+  clinicId: string,
+  input: { tipo_turno_id: string; profesional_id: string; fecha: string },
+): Promise<{ turnos: DaySlot[]; horario: string | null; motivo: string | null }> {
+  const clinic = await getClinic(clinicId);
+  const catalog = await getCatalog(clinic.id);
+  const type = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
+  const pro = catalog.professionals.find((p) => p.id === input.profesional_id);
+  if (!type || !pro || pro.specialty !== type.specialty) return { turnos: [], horario: null, motivo: "Elegí la prestación y quién la atiende." };
+  const dayKey = parseDateKey(input.fecha);
+  if (!dayKey) return { turnos: [], horario: null, motivo: "Elegí una fecha." };
+  if (dayKey < localDateKey(new Date(), clinic.timezone)) return { turnos: [], horario: null, motivo: "Ese día ya pasó." };
+
+  const schedules = catalog.schedules.filter((s) => s.professional_id === pro.id && s.weekday === weekdayOfKey(dayKey));
+  const horario = schedules.length
+    ? [...schedules]
+        .sort((a, b) => a.start_time.localeCompare(b.start_time))
+        .map((s) => `${s.start_time.slice(0, 5)} a ${s.end_time.slice(0, 5)}`)
+        .join(" y ")
+    : null;
+  if (!horario) return { turnos: [], horario, motivo: `${pro.full_name} no atiende ese día.` };
+
+  const rangeStart = `${addDaysKey(dayKey, -1)}T00:00:00Z`;
+  const rangeEnd = `${addDaysKey(dayKey, 1)}T23:59:59Z`;
+  const [busy, blocks, calendar] = await Promise.all([
+    sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
+      select professional_id, starts_at, ends_at from appointments
+      where professional_id = ${pro.id}
+        and status = any(${ACTIVE}::text[])
+        and ends_at >= ${rangeStart} and starts_at <= ${rangeEnd}`,
+    getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
+    googleBusy(clinic.id, [pro.id], new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+  ]);
+  const blocked = expandBlocks(blocks, [pro.id]);
+  const query = {
+    schedules,
+    busy: [...busy, ...calendar],
+    durationMin: type.duration_min,
+    fromKey: dayKey,
+    toKey: dayKey,
+    timeZone: clinic.timezone,
+    now: new Date(),
+    minLeadMinutes: 0,
+    limit: 500,
+    perDayPerProfessional: 500,
+  };
+  const slots = computeSlots({ ...query, blocked });
+  const turnos = slots.map((s) => {
+    const p = zonedParts(new Date(s.starts_at), clinic.timezone);
+    return { hora: `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`, inicio: s.starts_at };
+  });
+  if (turnos.length) return { turnos, horario, motivo: null };
+  // Sin lugar: ¿es un feriado o bloqueo, o el día está completo?
+  // Sin turnos ni Google, ¿quedaría algo? Si no, lo que cierra el día es un bloqueo.
+  const onlyBlocks = blocked.length ? computeSlots({ ...query, busy: [], blocked }) : [null];
+  const motivo = !onlyBlocks.length
+    ? "Ese día está bloqueado (feriado, vacaciones o agenda cerrada)."
+    : "No quedan horarios libres ese día.";
+  return { turnos: [], horario, motivo };
 }
 
 // ---------------------------------------------------------------------------

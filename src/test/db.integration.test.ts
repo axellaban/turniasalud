@@ -519,11 +519,26 @@ describe.runIf(url)("integración con Postgres", () => {
     const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
     // Un horario nuevo para el Dr. Sosa ese día a la noche, así el turno manual siempre entra.
     await actions.addSchedule(form({ professional_id: "00000000-0000-4000-8000-0000000000a4", weekday: String(weekday), start_time: "20:00", end_time: "22:00" }));
+    const sosa = { appointment_type_id: "00000000-0000-4000-8000-0000000000b8", professional_id: "00000000-0000-4000-8000-0000000000a4" };
+    // El formulario ofrece los horarios libres del día, con el horario de atención.
+    const free = await actions.loadDaySlots(form({ ...sosa, date: day }));
+    expect(free.horario).toContain("20:00 a 22:00");
+    expect(free.turnos.map((t) => t.hora)).toEqual(expect.arrayContaining(["20:00", "20:20", "20:40"]));
+    expect((await actions.loadDaySlots(form({ ...sosa, date: "2020-01-01" }))).motivo).toBe("Ese día ya pasó.");
+    // Una hora escrita a mano se entiende en sus formas habituales; si no, se explica.
+    const bad = await actions.createManualAppointment(undefined, form({ ...sosa, phone: "11 6666-0011", full_name: "Hugo Manual", date: day, time: "cualquiera" }));
+    expect(bad).toEqual({ ok: false, message: "No entendí la hora «cualquiera». Escribila como 9:15 o 19:30." });
+    const outside = await actions.createManualAppointment(undefined, form({ ...sosa, phone: "11 6666-0011", full_name: "Hugo Manual", date: day, time: "23:30" }));
+    expect(outside).toEqual({ ok: false, message: "El profesional no atiende en ese horario." });
     const manual = await actions.createManualAppointment(undefined, form({
-      phone: "11 6666-0011", full_name: "Hugo Manual", coverage: "Particular", date: day, time: "20:30",
-      appointment_type_id: "00000000-0000-4000-8000-0000000000b8", professional_id: "00000000-0000-4000-8000-0000000000a4",
+      phone: "11 6666-0011", full_name: "Hugo Manual", coverage: "Particular", date: day, time: "8:30 pm", ...sosa,
     }));
     expect(manual).toMatchObject({ ok: true });
+    // El turno de 20:30 a 20:50 saca de la oferta los horarios que se le superponen.
+    const after = (await actions.loadDaySlots(form({ ...sosa, date: day }))).turnos.map((t) => t.hora);
+    expect(after).toContain("20:00");
+    expect(after).not.toContain("20:20");
+    expect(after).not.toContain("20:40");
     const [appt] = await sql<Array<{ id: string; source: string }>>`
       select a.id, a.source from appointments a join patients p on p.id = a.patient_id where p.phone = '5491166660011'`;
     expect(appt.source).toBe("panel");

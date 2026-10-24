@@ -182,7 +182,9 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
         <div className="h-fit xl:sticky xl:top-20">
           <ManualPanel>
           <ManualAppointmentForm
+            clinicId={clinic.id}
             defaultDate={dayKey}
+            today={todayKey}
             professionals={catalog.professionals.map((p) => ({ id: p.id, name: p.full_name, specialty: p.specialty }))}
             types={catalog.appointmentTypes.map((t) => ({ id: t.id, name: t.name, specialty: t.specialty }))}
           />
