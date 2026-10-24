@@ -5,7 +5,7 @@ import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
 import { isLeadStatus, LEAD_STATUSES, type LeadStatus } from "@/lib/leads";
 import { Badge, Card, Empty, PageHeader, Stat, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
-import { FollowupForm } from "./followup-form";
+import { DeleteLeadButton, FollowupForm } from "./followup-form";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Pedidos de demo · Panel" };
@@ -115,6 +115,9 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
             </dl>
             <DemoDetails sessions={activity.sessions.filter((x) => x.lead_id === lead.id)} conversations={activity.conversations} />
             <FollowupForm id={lead.id} status={lead.status} notes={lead.notes} />
+            <div className="mt-4 flex justify-end border-t border-brand-900/10 pt-4">
+              <DeleteLeadButton id={lead.id} name={lead.name} />
+            </div>
           </Card>
         ))}
       </div> : <Empty>{q || status ? "No hay pedidos con estos filtros." : "Todavía no hay pedidos de demo. Aparecen acá cuando alguien completa el formulario de la web o prueba la demo por chat."}</Empty>}

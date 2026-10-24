@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import type { ScrapeResult } from "./scraper";
+import type { ManualClinic } from "./website";
 
 // Convierte el texto de la web en los datos de una clínica (nombre, sede,
 // profesionales, prácticas, horarios, coberturas, preguntas frecuentes) para
@@ -169,6 +170,41 @@ export function fallbackProfile(site: ScrapeResult): DemoProfile {
       { nombre: "Control", especialidad: specialty, duracion_min: 20, precio: null, indicaciones: null, primera_vez: false },
     ],
     preguntas_frecuentes: `Información de la web (${host}):\n${site.text.slice(0, 3500)}`,
+    politicas: null,
+  };
+}
+
+/** Turnos habituales de un consultorio odontológico, para la demo sin web. */
+const DENTAL_TYPES: DemoProfile["prestaciones"] = [
+  { nombre: "Consulta de primera vez", especialidad: "Odontología", duracion_min: 30, precio: null, indicaciones: null, primera_vez: true },
+  { nombre: "Limpieza dental", especialidad: "Odontología", duracion_min: 40, precio: null, indicaciones: null, primera_vez: false },
+  { nombre: "Control", especialidad: "Odontología", duracion_min: 20, precio: null, indicaciones: null, primera_vez: false },
+  { nombre: "Urgencia odontológica", especialidad: "Odontología", duracion_min: 30, precio: null, indicaciones: null, primera_vez: false },
+];
+
+/** Ficha de la demo sin web: solo nombre, dirección y especialidad; el resto es de ejemplo y el agente no lo inventa. Pura. */
+export function manualProfile(input: ManualClinic): DemoProfile {
+  const said = input.especialidad ?? input.nombre;
+  const specialty = SPECIALTIES.find(([re]) => re.test(said))?.[1] ?? clean(input.especialidad, 80) ?? "Consulta médica";
+  const prestaciones = specialty === "Odontología"
+    ? DENTAL_TYPES
+    : [
+        { nombre: "Consulta de primera vez", especialidad: specialty, duracion_min: 30, precio: null, indicaciones: null, primera_vez: true },
+        { nombre: "Control", especialidad: specialty, duracion_min: 20, precio: null, indicaciones: null, primera_vez: false },
+      ];
+  return {
+    nombre: clean(input.nombre, 120) ?? "Tu consultorio",
+    especialidad: specialty,
+    descripcion: "",
+    direccion: clean(input.direccion, 200),
+    telefono: null,
+    horario_texto: "Lunes a viernes de 9 a 18 h (horario de ejemplo de la demo)",
+    horarios: [],
+    coberturas: [],
+    profesionales: [],
+    prestaciones,
+    preguntas_frecuentes:
+      "- Demo armada sin web: del consultorio solo se conocen el nombre y la dirección.\n- Precios, profesionales y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.",
     politicas: null,
   };
 }

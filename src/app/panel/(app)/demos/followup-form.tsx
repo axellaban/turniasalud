@@ -2,9 +2,9 @@
 
 import { useActionState } from "react";
 import { submitKeepingValues } from "@/components/keep-form";
-import { Field, buttonClass, inputClass } from "@/components/ui";
+import { Field, buttonClass, dangerButtonClass, inputClass } from "@/components/ui";
 import { LEAD_STATUSES, type LeadStatus } from "@/lib/leads";
-import { updateLead } from "./actions";
+import { deleteLead, updateLead } from "./actions";
 
 export function FollowupForm({ id, status, notes }: { id: string; status: LeadStatus; notes: string | null }) {
   const [state, action, pending] = useActionState(updateLead, undefined);
@@ -23,6 +23,21 @@ export function FollowupForm({ id, status, notes }: { id: string; status: LeadSt
         <button disabled={pending} className={buttonClass}>{pending ? "Guardando…" : "Guardar seguimiento"}</button>
         {state?.message && <p role="status" className={`text-sm ${state.ok ? "text-brand-700" : "text-red-700"}`}>{state.message}</p>}
       </div>
+    </form>
+  );
+}
+
+/** Borrar un pedido de prueba: pide confirmación porque no se puede deshacer. */
+export function DeleteLeadButton({ id, name }: { id: string; name: string }) {
+  return (
+    <form
+      action={deleteLead}
+      onSubmit={(e) => {
+        if (!confirm(`¿Borrar el pedido de «${name}»? Se borran también sus demos y las fichas temporales que se armaron. No se puede deshacer.`)) e.preventDefault();
+      }}
+    >
+      <input type="hidden" name="id" value={id} />
+      <button className={dangerButtonClass}>Borrar pedido</button>
     </form>
   );
 }

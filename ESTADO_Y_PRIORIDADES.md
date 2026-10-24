@@ -20,6 +20,14 @@ Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - El flujo de callback ya existente en `src/lib/demo/session.ts` llama por Twilio solo para sesiones de WhatsApp cuando se elige llamada y hay número configurado. Telegram conserva la llamada web. Esta configuración no agrega una campaña comercial, un control humano por chat ni llamadas nativas de WhatsApp.
 - Próxima implementación acordada: agente comercial separado con la voz masculina **Agustín**, conservando la voz de Sofi; control por conversación **Tomar / Devolver al agente** para atención humana desde WhatsApp Business, y luego piloto comercial revisado. Estas funciones **todavía no están implementadas**. Para la llamada saliente comercial, el saludo debe explicar por qué llama; el saludo de recepcionista del agente actual no sirve como guion de ventas.
 
+## Prospección a consultorios odontológicos — 24/10/2026
+
+- **Base:** 96 consultorios odontológicos de Argentina con web propia (30 A, 41 B, 25 C; 83 con WhatsApp tomado de los botones `wa.me` de su web). Se leyó cada web para puntuar cuánto se va a lucir la demo (texto legible, profesionales, tratamientos), si atiende sábados y si trabaja con obras sociales. Quedaron afuera las webs sin texto legible, franquicias y redes grandes.
+- **Canal:** WhatsApp desde el número personal o Business del usuario, de a uno (no el chip de WAHA). Instagram y email para los que no tienen WhatsApp. Seguimiento el lunes de 9:30 a 11.
+- **Mensaje:** pregunta según el momento («si hoy sábado a la tarde un paciente les escribe para pedir turno, ¿quién le contesta?»), qué es Sofi y el link `/probar-demo?web=<su web>`. Sin precios ni datos inventados.
+- **Tablero:** artefacto privado del usuario con la lista, el botón de WhatsApp con el mensaje armado y el estado de cada consultorio: https://claude.ai/artifact/1NwvGAsbxdtkbGLpRBHyKf . Los datos de contacto no se guardan en el repo.
+- **Código:** `/probar-demo?web=` llega con la web escrita y el foco en el email (rama `claude/determined-turing-ota3pm`). Para medir: Panel → Pedidos de demo muestra la web y el email de cada uno que probó.
+
 ## Crítica de diseño de la home y /probar-demo, y demo en el navegador — 24/10/2026
 
 - **Crítica** con `impeccable critique` (sin subagentes ni detector, aclarado en el informe): 21/32. Copia en `.impeccable/critique/2026-10-24-home-y-probar-demo.md`.
