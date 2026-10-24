@@ -46,9 +46,9 @@ export default function PediUnaDemoPage() {
               <Link href="/escucha-a-nuestros-agentes" className="font-medium text-brand-600 hover:underline">
                 Escuchá conversaciones de ejemplo
               </Link>{" "}
-              o, si ya tenés acceso,{" "}
-              <Link href="/demo" className="font-medium text-brand-600 hover:underline">
-                hablá con el agente
+              o{" "}
+              <Link href="/probar-demo" className="font-medium text-brand-600 hover:underline">
+                probalo con la web de tu consultorio
               </Link>
               .
             </p>

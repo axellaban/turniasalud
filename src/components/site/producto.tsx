@@ -51,7 +51,7 @@ export function PaginaProducto({ p }: { p: Producto }) {
             <Link href="/pedi-una-demo" className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
               Pedí una demo <Flecha />
             </Link>
-            <Link href={demo ? "#escuchar" : "/demo"} className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-50">
+            <Link href={demo ? "#escuchar" : "/escucha-a-nuestros-agentes"} className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-50">
               Escuchalo en acción
             </Link>
           </div>

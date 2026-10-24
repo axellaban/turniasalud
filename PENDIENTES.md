@@ -27,7 +27,12 @@ Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 - [ ] Decidir si los avisos al equipo salen por email (requiere reconectar Gmail en n8n) y a quién van los avisos asistenciales.
 - [ ] Opcional: un video propio para el hero, si no quiere los clips de stock (ver 4).
 
-## 2. Prueba en vivo (apenas WAHA esté `WORKING`)
+## 2. Prueba en vivo
+
+- [ ] **Ya se puede, sin WAHA:** `/probar-demo` en la computadora → demo en el navegador. Probar chat y voz con ElevenLabs real y una web de prueba, y que el interesado aparezca en Panel → Pedidos de demo con su email. En el celular, elegir navegador y Telegram.
+
+Apenas WAHA esté `WORKING`:
+
 
 - [ ] `https://turniasalud.vercel.app/api/health` → `demo.whatsapp: true`, `whatsapp_source: "waha"`.
 - [ ] **Demo con tu web** (`/probar-demo`), con el WhatsApp del usuario y datos ficticios («Prueba Turnia», DNI 11111111, particular): opciones 1/2/3, chat hasta reservar, `MENU` → audio (¿llega nota de voz?), `MENU` → llamada, `SALIR`. Medir cuánto tarda la lectura de la web con Claude. Checklist completa en `PLAN_LEAD_MAGNET.md` (paso 5 y «A verificar en vivo»).
@@ -49,7 +54,7 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] Si el usuario trae un video propio: reemplazar `public/videos/hero.mp4`, `hero.webm`, `hero-mobile.mp4` y `hero-poster.jpg`, y ajustar los tiempos de `ESCENAS` en `src/components/site/agente-en-vivo.tsx`. Cómo se armó el actual (ffmpeg, clips de 8 s, fundido de 0,6 s): [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md).
 - [ ] Contenido real: casos, precios y (cuando haya) testimonios. Hoy no se inventa nada.
 - [x] **Skills de diseño** instaladas en `.claude/skills` y auditoría de accesibilidad hecha (24/10): de 512 problemas a 6 decorativos. Detalle en `ESTADO_Y_PRIORIDADES.md`.
-- [ ] Posible siguiente paso de diseño: una crítica visual con `impeccable critique` de la home y `/probar-demo` (jerarquía, ritmo, copy). Es mejora, no arreglo.
+- [x] Crítica de diseño de la home y `/probar-demo` hecha y aplicada (24/10). Queda a criterio: los titulares en dos colores se repiten en casi todas las secciones (es el estilo de Assort; no se tocó).
 
 ## 5. Producto y legal (antes de usar pacientes reales)
 

@@ -46,7 +46,7 @@ export function GrillaEspecialidades() {
         Pensado para clínicas y consultorios de <span className="text-brand-600">más de 18 especialidades y todo tipo de centros de salud</span>
       </h2>
       <div className="mt-8 text-center">
-        <Link href="/especialidades/clinica-medica" className="inline-flex items-center gap-2 rounded-lg bg-brand-50 px-5 py-3 text-sm font-medium text-brand-700 hover:bg-brand-100">
+        <Link href="/especialidades" className="inline-flex items-center gap-2 rounded-lg bg-brand-50 px-5 py-3 text-sm font-medium text-brand-700 hover:bg-brand-100">
           Ver todas las especialidades <Flecha />
         </Link>
       </div>
@@ -64,9 +64,9 @@ export function BandaProbalo() {
             <span key={i} className="w-[3px] rounded-full bg-brand-950/25" style={{ height: `${h}px` }} />
           ))}
         </div>
-        <h2 className="mt-4 text-2xl font-medium tracking-tight text-brand-950 sm:text-[28px]">Probá nuestra IA por voz o por chat</h2>
-        <Link href="/demo" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
-          Probalo ahora <Icono nombre="telefono" className="h-4 w-4" />
+        <h2 className="mt-4 text-2xl font-medium tracking-tight text-brand-950 sm:text-[28px]">Probá a Sofi con tu consultorio, por chat o por voz</h2>
+        <Link href="/probar-demo" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
+          Probalo con tu web <Flecha />
         </Link>
         <p className="mt-4 text-sm font-medium text-brand-950">
           O <Link href="/escucha-a-nuestros-agentes" className="underline underline-offset-4 hover:text-brand-600">escuchá conversaciones de ejemplo</Link>
@@ -83,11 +83,15 @@ export function MotorProtocolos() {
     { t: "Flujos por clínica y especialidad", d: "Cada centro configura sus reglas, indicaciones previas y derivaciones." },
     { t: "Mejora continua", d: "Cada conversación se evalúa (pedido resuelto, seguridad clínica) y alimenta los ajustes." },
   ];
-  const biblioteca: { n: string; i: IconoClave }[] = [
-    ...ESPECIALIDADES.map((e) => ({ n: e.nombre, i: e.icono })),
-    { n: "CAPS", i: "hospital" as const },
-    { n: "Sanatorios", i: "red" as const },
-  ].slice(0, 20);
+  // Lo que el agente recuerda de cada paciente (en lugar de repetir la grilla de especialidades de arriba).
+  const memoria: { n: string; i: IconoClave }[] = [
+    { n: "Su cobertura", i: "admision" },
+    { n: "Su profesional", i: "estetoscopio" },
+    { n: "Sus turnos", i: "calendario" },
+    { n: "Sus pedidos", i: "tareas" },
+    { n: "Sus horarios preferidos", i: "reloj" },
+    { n: "Sus conversaciones", i: "chat" },
+  ];
   return (
     <section className="mx-auto max-w-[1180px] px-4 py-24 sm:px-6">
       <Titulo
@@ -115,7 +119,7 @@ export function MotorProtocolos() {
           <dl className="mt-6 grid grid-cols-3 gap-3">
             {[
               ["24/7", "Atención continua"],
-              ["9", "Acciones sobre la agenda"],
+              ["3", "Canales: WhatsApp, teléfono y web"],
               ["18", "Especialidades"],
             ].map(([v, l]) => (
               <div key={l}>
@@ -125,9 +129,9 @@ export function MotorProtocolos() {
             ))}
           </dl>
           <p className="mt-6 rounded-lg bg-aqua py-2.5 text-center text-sm font-semibold text-navy">Memoria del paciente e inteligencia</p>
-          <p className="mt-5 text-center text-sm font-medium text-white/90">Biblioteca de especialidades</p>
-          <ul className="mt-3 grid grid-cols-4 gap-1.5 sm:grid-cols-5">
-            {biblioteca.map((b) => (
+          <p className="mt-5 text-center text-sm font-medium text-white/90">Lo que recuerda de cada paciente</p>
+          <ul className="mt-3 grid grid-cols-3 gap-1.5">
+            {memoria.map((b) => (
               <li key={b.n} className="flex flex-col items-center gap-1 rounded-md bg-white/5 px-1 py-2.5 text-center">
                 <Icono nombre={b.i} className="h-4 w-4 text-white/80" />
                 <span className="text-[10px] leading-tight text-white/70">{b.n}</span>
@@ -210,7 +214,7 @@ export function OrbitaIntegraciones() {
         <Titulo
           linea1="Conectado a los canales"
           linea2="que ya usan tus pacientes"
-          bajada="WhatsApp, teléfono y web con el mismo agente. Y con n8n, a cualquier herramienta de tu equipo sin programar."
+          bajada="WhatsApp, teléfono y web con el mismo agente, conectado a las herramientas de tu equipo sin programar."
         />
         <div className="relative mx-auto mt-10 hidden h-[420px] max-w-[980px] md:block">
           <div className="absolute left-1/2 top-1/2 grid h-40 w-40 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white shadow-[0_20px_60px_rgb(8_24_63/0.12)]">
@@ -247,27 +251,68 @@ export function OrbitaIntegraciones() {
   );
 }
 
-/** "Real Results Across Real Practices": cuatro tarjetas de colores con lo que mide el panel. */
+/**
+ * "Real Results Across Real Practices", con números de estudios publicados (no de
+ * clientes de Turnia) más uno propio del producto. Cada número cita su fuente.
+ */
 export function TarjetasResultados() {
-  const items: { v: string; d: string; c: string }[] = [
-    { v: "Contención", d: "Conversaciones resueltas sin intervención humana", c: "bg-emerald text-brand-950" },
-    { v: "Turnos IA", d: "Turnos dados, confirmados y reprogramados por el agente", c: "bg-[#5048c4] text-white" },
-    { v: "Recupero", d: "Pacientes que volvieron gracias a las campañas", c: "bg-cielo text-brand-950" },
-    { v: "0 a 10", d: "Satisfacción del paciente después de cada consulta", c: "bg-sun-500 text-brand-950" },
+  const items: { v: string; d: string; fuente: string; href?: string; c: string; nota: string }[] = [
+    {
+      v: "24/7",
+      d: "Turnia responde turnos y consultas a cualquier hora, también los fines de semana y feriados",
+      fuente: "Turnia",
+      c: "bg-emerald text-brand-950",
+      nota: "text-brand-950/80",
+    },
+    {
+      v: "23%",
+      d: "De los turnos se pierden en promedio porque el paciente no se presenta",
+      fuente: "Dantas y otros, Health Policy, 2018",
+      href: "https://pubmed.ncbi.nlm.nih.gov/29482948/",
+      c: "bg-[#5048c4] text-white",
+      nota: "text-white/85",
+    },
+    {
+      v: "29,5%",
+      d: "De los turnos que los pacientes sacan solos se piden con el consultorio cerrado",
+      fuente: "North y otros, JMIR Medical Informatics, 2021",
+      href: "https://pmc.ncbi.nlm.nih.gov/articles/PMC8077742/",
+      c: "bg-cielo text-brand-950",
+      nota: "text-brand-950/75",
+    },
+    {
+      v: "−29%",
+      d: "Menos ausencias cuando el paciente recibe recordatorios automáticos",
+      fuente: "Hasvold y Wootton, J Telemed Telecare, 2011",
+      href: "https://pmc.ncbi.nlm.nih.gov/articles/PMC3188816/",
+      c: "bg-sun-500 text-brand-950",
+      nota: "text-brand-950/80",
+    },
   ];
   return (
     <section className="mx-auto max-w-[1100px] px-4 py-24 sm:px-6">
-      <Titulo linea1="Resultados que podés medir" bajada="El panel de Turnia muestra, mes a mes, cuánto resuelve el agente y cuánto recupera tu agenda." />
+      <Titulo
+        linea1="Lo que dicen los números"
+        bajada="Turnos que se pierden, pacientes que piden fuera de horario y recordatorios que funcionan: datos de estudios publicados."
+      />
       <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((x) => (
-          <div key={x.v} className={`rounded-2xl p-6 ${x.c}`}>
-            <p className="flex items-start gap-1 text-[34px] font-medium leading-none tracking-tight">
-              {x.v} <span aria-hidden="true">↑</span>
+          <div key={x.v} className={`flex flex-col rounded-2xl p-6 ${x.c}`}>
+            <p className="text-[40px] font-medium leading-none tracking-tight tabular-nums">{x.v}</p>
+            <p className="mt-6 flex-1 text-[15px] leading-snug">{x.d}</p>
+            <p className={`mt-5 text-xs ${x.nota}`}>
+              {x.href ? (
+                <a href={x.href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:no-underline">
+                  {x.fuente}
+                </a>
+              ) : (
+                x.fuente
+              )}
             </p>
-            <p className="mt-8 text-[15px] leading-snug opacity-90">{x.d}</p>
           </div>
         ))}
       </div>
+      <p className="mt-5 text-center text-xs text-tinta">Los tres estudios son de la industria de la salud: no son resultados de clientes de Turnia.</p>
     </section>
   );
 }

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { EMPRESA, PLATAFORMA, RECURSOS, SOLUCIONES_CASOS, SOLUCIONES_ESPECIALIDADES, SOLUCIONES_ORGANIZACIONES, type EnlaceMenu } from "@/content/site";
-import { Flecha, Icono } from "./iconos";
+import { FooterCta } from "./footer-cta";
+import { Icono } from "./iconos";
 
 function Grupo({ titulo, items }: { titulo: string; items: EnlaceMenu[] }) {
   return (
@@ -23,19 +24,7 @@ function Grupo({ titulo, items }: { titulo: string; items: EnlaceMenu[] }) {
 export function SiteFooter({ cta = true }: { cta?: boolean }) {
   return (
     <footer className="bg-navy text-white">
-      {cta && (
-        <div className="mx-auto max-w-[1240px] px-4 pb-16 pt-24 text-center sm:px-6">
-          <h2 className="mx-auto max-w-2xl text-3xl font-medium tracking-tight sm:text-5xl">
-            ¿Listo para transformar la atención de tus pacientes con Turnia?
-          </h2>
-          <Link
-            href="/pedi-una-demo"
-            className="mt-8 inline-flex items-center gap-2 rounded-lg bg-aqua px-6 py-3 text-sm font-semibold text-navy hover:brightness-110"
-          >
-            Pedí una demo <Flecha />
-          </Link>
-        </div>
-      )}
+      {cta && <FooterCta />}
       <div className="mx-auto max-w-[1240px] border-t border-white/10 px-4 py-14 sm:px-6">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1.2fr_1.4fr_1fr]">
           <div>
@@ -43,8 +32,8 @@ export function SiteFooter({ cta = true }: { cta?: boolean }) {
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">
               Agentes de IA que atienden el WhatsApp y el teléfono de clínicas y consultorios. Hecho en Argentina.
             </p>
-            <Link href="/demo" className="mt-5 inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
-              <Icono nombre="chat" className="h-4 w-4" /> Probá el agente
+            <Link href="/probar-demo" className="mt-5 inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
+              <Icono nombre="chat" className="h-4 w-4" /> Probalo con tu web
             </Link>
           </div>
           <Grupo titulo="Plataforma" items={PLATAFORMA} />

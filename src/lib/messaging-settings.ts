@@ -40,7 +40,8 @@ export async function selectMessagingChannel(channel: MessagingChannel): Promise
     if (previous?.active_channel === channel) return;
     await tx`update messaging_settings set active_channel = ${channel}, revision = revision + 1, updated_at = now() where id`;
     await tx`update channel_conversations set closed_at = now() where closed_at is null`;
-    await tx`update demo_sessions set status = 'terminada', updated_at = now() where status not in ('terminada', 'error')`;
+    // Las demos del navegador no dependen del canal de mensajería.
+    await tx`update demo_sessions set status = 'terminada', updated_at = now() where status not in ('terminada', 'error') and chat_id not like 'web:%'`;
   });
 }
 

@@ -30,7 +30,7 @@ export const SOLUCIONES_ORGANIZACIONES: EnlaceMenu[] = ORGANIZACIONES.map((o) =>
 
 export const RECURSOS: EnlaceMenu[] = [
   { href: "/escucha-a-nuestros-agentes", nombre: "Escuchá a nuestros agentes", detalle: "Conversaciones reales por especialidad", icono: "telefono" },
-  { href: "/demo", nombre: "Probá el agente", detalle: "Chat o voz con una clínica de demo", icono: "chat" },
+  { href: "/probar-demo", nombre: "Probalo con tu web", detalle: "Sofi atiende como tu consultorio, por chat o voz", icono: "chat" },
   { href: "/privacidad", nombre: "Privacidad", detalle: "Cómo cuidamos los datos de salud", icono: "escudo" },
 ];
 
@@ -55,14 +55,14 @@ export const CAPACIDADES: { nombre: string; href: string }[] = [
   { nombre: "Pagos y aranceles", href: "/soluciones/cobranzas" },
 ];
 
-/** Reemplazo honesto de los logos de clientes: los canales y piezas con las que se conecta Turnia hoy. */
+/** Reemplazo honesto de los logos de clientes: los canales y piezas con las que se conecta Turnia hoy, dichos como los diría una clínica. */
 export const INTEGRACIONES: { nombre: string; detalle: string; icono: IconoClave }[] = [
-  { nombre: "WhatsApp Business", detalle: "Texto, audios, fotos y plantillas", icono: "whatsapp" },
-  { nombre: "Teléfono", detalle: "Twilio o troncal SIP", icono: "telefono" },
-  { nombre: "Chat web", detalle: "Widget en tu sitio", icono: "web" },
-  { nombre: "ElevenLabs", detalle: "Voz y agentes conversacionales", icono: "chat" },
-  { nombre: "n8n", detalle: "Automatizaciones sin código", icono: "rayo" },
-  { nombre: "Google Calendar", detalle: "Vía n8n", icono: "calendario" },
-  { nombre: "Postgres", detalle: "Tu base, tus datos", icono: "escudo" },
-  { nombre: "API de Turnia", detalle: "Eventos y webhooks", icono: "red" },
+  { nombre: "WhatsApp Business", detalle: "Texto, audios y fotos", icono: "whatsapp" },
+  { nombre: "Teléfono", detalle: "Tu número o uno nuevo", icono: "telefono" },
+  { nombre: "Chat web", detalle: "En la web de tu consultorio", icono: "web" },
+  { nombre: "Voz natural", detalle: "Habla como una persona", icono: "chat" },
+  { nombre: "Avisos al equipo", detalle: "Cuando un pedido necesita a alguien", icono: "rayo" },
+  { nombre: "Google Calendar", detalle: "Próximamente", icono: "calendario" },
+  { nombre: "Tus datos", detalle: "En tu cuenta, protegidos", icono: "escudo" },
+  { nombre: "Tu sistema", detalle: "Le avisa cada turno", icono: "red" },
 ];

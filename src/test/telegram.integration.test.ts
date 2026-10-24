@@ -99,7 +99,7 @@ describe.runIf(base)("Telegram y selector de canales", () => {
   });
   it("asocia la web larga mediante /start, prepara la clínica y conversa con sus datos", async () => {
     const website = `https://clinica.example/${"a".repeat(200)}`;
-    const response = await start(new Request("https://turnia.test/api/demo/iniciar", { method: "POST", body: JSON.stringify({ website }) }));
+    const response = await start(new Request("https://turnia.test/api/demo/iniciar", { method: "POST", body: JSON.stringify({ website, email: "dra@clinica.example", via: "chat" }) }));
     const link = new URL((await response.json()).url);
     expect(link.pathname).toBe("/TurnIA_salud_bot");
     const token = link.searchParams.get("start")!;
@@ -191,9 +191,9 @@ describe.runIf(base)("Telegram y selector de canales", () => {
     mocks.session = (await import("@/lib/session")).createSessionToken();
     expect(await saveMessagingChannel({}, form)).toMatchObject({ ok: true });
     expect((await settings.messagingSettings()).active_channel).toBe("pausado");
-    expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(409);
+    expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example", email: "dra@clinica.example", via: "chat" }) }))).status).toBe(409);
     await settings.selectMessagingChannel("telegram");
-    for (let i = 0; i < 30; i++) expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(200);
-    expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example" }) }))).status).toBe(429);
+    for (let i = 0; i < 30; i++) expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example", email: "dra@clinica.example", via: "chat" }) }))).status).toBe(200);
+    expect((await start(new Request("https://turnia.test", { method: "POST", body: JSON.stringify({ website: "clinica.example", email: "dra@clinica.example", via: "chat" }) }))).status).toBe(429);
   });
 });

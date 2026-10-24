@@ -3,7 +3,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { sql } from "../db";
 import { env } from "../env";
 
-export async function createDemoHandoff(website: string, ip: string): Promise<string | null> {
+export async function createDemoHandoff(website: string, ip: string, email: string | null = null): Promise<string | null> {
   const requester = createHmac("sha256", env.agentToolsSecret()).update(ip).digest("hex");
   return sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended('turnia-demo-handoffs', 0))`;
@@ -14,19 +14,26 @@ export async function createDemoHandoff(website: string, ip: string): Promise<st
     // Freno contra abusos del formulario público: 30 enlaces por origen y 1000 en total por hora.
     if (quota.own >= 30 || quota.total >= 1000) return null;
     const token = `d_${randomBytes(18).toString("base64url")}`;
-    await tx`insert into demo_handoffs (token, website, requester_hash) values (${token}, ${website}, ${requester})`;
+    await tx`insert into demo_handoffs (token, website, requester_hash, email) values (${token}, ${website}, ${requester}, ${email})`;
     return token;
   });
 }
 
 /** Reclamo atómico: otro usuario no puede reutilizar el enlace de una demo ya iniciada. */
-export async function claimDemoHandoff(token: string, userId: string): Promise<string | null> {
+export async function claimDemoHandoff(token: string, userId: string): Promise<{ website: string; email: string | null } | null> {
   if (!/^d_[a-zA-Z0-9_-]{24}$/.test(token)) return null;
-  const [row] = await sql<{ website: string }[]>`
+  const [row] = await sql<{ website: string; email: string | null }[]>`
     update demo_handoffs set claimed_by = ${userId}
     where token = ${token} and expires_at > now() and (claimed_by is null or claimed_by = ${userId})
-    returning website`;
-  return row?.website ?? null;
+    returning website, email`;
+  return row ?? null;
+}
+
+/** El email que dejó en la landing queda en el pedido de demo que se creó al iniciar el chat. */
+export async function attachLeadEmail(phone: string, email: string): Promise<void> {
+  await sql`
+    update leads set email = coalesce(email, ${email}), updated_at = now()
+    where id = (select lead_id from demo_sessions where phone = ${phone} and lead_id is not null order by created_at desc limit 1)`;
 }
 
 /** Los enlaces de perfil se comparten para probar una ficha guardada: valen varias veces durante este lapso. */

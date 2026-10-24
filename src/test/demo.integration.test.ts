@@ -328,17 +328,21 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
   it("la landing y /api/health toman el número del chip de WAHA y dicen qué falta", async () => {
     const Landing = (await import("@/app/(marketing)/probar-demo/page")).default;
     const html = renderToStaticMarkup((await Landing()) as React.ReactElement);
-    expect(html).toContain("Probar demo");
+    expect(html).toContain("Probar la demo");
     expect(html).not.toContain("se habilita en breve");
 
     const health = await (await import("@/app/api/health/route")).GET();
     expect(health.status).toBe(200);
     expect((await health.json()).demo).toEqual({ canal: "whatsapp", telegram: false, base: true, whatsapp: true, whatsapp_source: "waha", claude: true, llamada_telefonica: false });
 
-    // Sin WAHA, el botón no se ofrece (nadie contestaría).
+    // Sin WAHA nadie contestaría por WhatsApp, pero la demo sigue en el navegador.
     vi.stubEnv("WAHA_API_KEY", "");
+    expect(renderToStaticMarkup((await Landing()) as React.ReactElement)).toContain("Probar la demo");
+    // Sin ElevenLabs tampoco hay navegador: la demo queda pausada.
+    vi.stubEnv("ELEVENLABS_API_KEY", "");
     const off = renderToStaticMarkup((await Landing()) as React.ReactElement);
     expect(off).toContain("La demo está pausada");
+    vi.stubEnv("ELEVENLABS_API_KEY", "clave-falsa");
     vi.stubEnv("WAHA_API_KEY", "waha-key");
   });
 

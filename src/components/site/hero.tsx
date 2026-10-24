@@ -41,9 +41,7 @@ export function HeroVideo() {
       <div className="relative mx-auto flex min-h-[100svh] max-w-[1240px] flex-col justify-end gap-6 px-4 pb-6 pt-28 sm:min-h-[720px] sm:justify-center sm:gap-10 sm:px-6 sm:pb-12 sm:pt-32 lg:block lg:pb-16 lg:pt-44">
         <div className="max-w-xl text-white">
           <p className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-medium backdrop-blur min-[400px]:text-xs">
-            <span className="flex text-sun-300" aria-hidden="true">
-              ★★★★★
-            </span>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald" aria-hidden="true" />
             Atención 24/7 · WhatsApp, audios y llamadas
           </p>
           <h1 className="mt-5 text-5xl font-medium leading-[1.04] tracking-tight sm:text-[64px]">

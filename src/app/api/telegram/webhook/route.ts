@@ -5,7 +5,7 @@ import { telegramDownloadAudio, telegramSendText, verifyTelegramSecret } from "@
 import { AUDIO_FAILED_REPLY, claimEvent, releaseEvent } from "@/lib/channel";
 import { transcribeAudio } from "@/lib/elevenlabs";
 import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
-import { claimDemoHandoff } from "@/lib/demo/handoff";
+import { attachLeadEmail, claimDemoHandoff } from "@/lib/demo/handoff";
 import { demoRequestText } from "@/lib/demo/flow";
 import { env } from "@/lib/env";
 
@@ -43,17 +43,19 @@ export async function POST(request: Request) {
   const phone = `telegram:${msg.from.id}`;
   try {
     let text = (msg.text ?? msg.caption ?? "").trim();
+    let startEmail: string | null = null;
     const start = /^\/start(?:@\w+)?(?:\s+(\S+))?$/i.exec(text);
     if (start) {
       if (start[1]?.startsWith("p_")) {
         text = `Probar perfil de Turnia: ${start[1]}`;
       } else {
-      const website = await claimDemoHandoff(start[1] ?? "", phone);
-      if (!website) {
+      const handoff = await claimDemoHandoff(start[1] ?? "", phone);
+      if (!handoff) {
         await telegramSendText(chatId, `¡Hola! Para probarme como recepcionista de tu consultorio, dejá tu web acá y tocá Probar demo: ${env.appUrl()}/probar-demo`);
         return NextResponse.json({ ok: true });
       }
-      text = demoRequestText(website);
+      text = demoRequestText(handoff.website);
+      startEmail = handoff.email;
       }
     }
     const audio = msg.voice ?? msg.audio;
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
       await telegramSendText(chatId, `Para empezar, mandame «Quiero probar la demo» con la web de tu consultorio, o completala acá: ${env.appUrl()}/probar-demo`);
       return NextResponse.json({ ok: true });
     }
+    if (startEmail) await attachLeadEmail(phone, startEmail);
     if (demo.analyze) { const id = demo.analyze; after(() => analyzeDemo(id)); }
     return NextResponse.json({ ok: true, demo: demo.status });
   } catch (error) {
