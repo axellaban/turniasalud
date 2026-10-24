@@ -31,7 +31,7 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
       {rows.length ? (
         <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-brand-900/10 text-xs uppercase tracking-wider text-brand-900/50">
+            <thead className="border-b border-brand-900/10 text-xs uppercase tracking-wider text-brand-900/65">
               <tr>
                 <th className="px-5 py-3 font-medium">Paciente</th>
                 <th className="px-5 py-3 font-medium">Celular</th>
@@ -47,11 +47,11 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
                     <Link href={`/panel/pacientes/${p.id}`} className="font-medium text-brand-950 hover:underline">
                       {p.full_name ?? "Sin nombre"}
                     </Link>
-                    {p.dni && <p className="text-xs text-brand-900/50">DNI {p.dni}</p>}
+                    {p.dni && <p className="text-xs text-brand-900/65">DNI {p.dni}</p>}
                   </td>
                   <td className="px-5 py-3 text-brand-900/70">{displayPhone(p.phone)}</td>
                   <td className="px-5 py-3 text-brand-900/70">
-                    {p.coverage ?? "—"} {p.coverage_plan && <span className="text-brand-900/45">{p.coverage_plan}</span>}
+                    {p.coverage ?? "—"} {p.coverage_plan && <span className="text-brand-900/65">{p.coverage_plan}</span>}
                   </td>
                   <td className="max-w-xs px-5 py-3 text-xs text-brand-900/60">
                     <span className="line-clamp-2">{p.memory_summary ?? "—"}</span>

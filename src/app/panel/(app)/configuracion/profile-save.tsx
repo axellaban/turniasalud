@@ -83,7 +83,7 @@ export function ProfileSaveForm({ clinicId, revision, children }: { clinicId: st
 
   const failed = !pending && state.ok === false;
   const status = pending ? "Guardando…" : failed ? state.message : dirty ? "Tenés cambios sin guardar" : state.message ?? "Todo guardado";
-  const tone = failed ? "text-red-700" : dirty ? "text-sun-600" : state.ok ? "text-brand-700" : "text-brand-900/60";
+  const tone = failed ? "text-red-700" : dirty ? "text-sun-700" : state.ok ? "text-brand-700" : "text-brand-900/60";
   return <form ref={form} onSubmit={submitKeepingValues(action)} onInput={remember} className="space-y-6">
     {draft && !dirty && <Notice tone="warning" className="flex flex-wrap items-center justify-between gap-2">
       <span>Quedaron cambios sin guardar de {new Date(draft.savedAt).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}.</span>

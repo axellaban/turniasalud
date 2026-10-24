@@ -35,7 +35,7 @@ export function GrillaEspecialidades() {
       <ul className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
         {ESPECIALIDADES.map((e) => (
           <li key={e.slug}>
-            <Link href={`/especialidades/${e.slug}`} className="group flex items-center justify-center gap-2 text-brand-950/45 transition hover:text-brand-600">
+            <Link href={`/especialidades/${e.slug}`} className="group flex items-center justify-center gap-2 text-brand-950/65 transition hover:text-brand-600">
               <Icono nombre={e.icono} className="h-6 w-6 shrink-0" />
               <span className="text-[15px] font-semibold tracking-tight">{e.nombre}</span>
             </Link>
@@ -250,10 +250,10 @@ export function OrbitaIntegraciones() {
 /** "Real Results Across Real Practices": cuatro tarjetas de colores con lo que mide el panel. */
 export function TarjetasResultados() {
   const items: { v: string; d: string; c: string }[] = [
-    { v: "Contención", d: "Conversaciones resueltas sin intervención humana", c: "bg-emerald text-white" },
+    { v: "Contención", d: "Conversaciones resueltas sin intervención humana", c: "bg-emerald text-brand-950" },
     { v: "Turnos IA", d: "Turnos dados, confirmados y reprogramados por el agente", c: "bg-[#5048c4] text-white" },
     { v: "Recupero", d: "Pacientes que volvieron gracias a las campañas", c: "bg-cielo text-brand-950" },
-    { v: "0 a 10", d: "Satisfacción del paciente después de cada consulta", c: "bg-sun-500 text-white" },
+    { v: "0 a 10", d: "Satisfacción del paciente después de cada consulta", c: "bg-sun-500 text-brand-950" },
   ];
   return (
     <section className="mx-auto max-w-[1100px] px-4 py-24 sm:px-6">

@@ -77,8 +77,8 @@ export function ImportReview({ clinicId, importId, revision, rows, catalog }: {
     {rows.map((row) => <label key={row.key} className="block rounded-xl border border-brand-900/10 p-3 text-sm">
       <span className="flex items-center gap-2 font-medium"><input type="checkbox" name="fields" value={row.key} />{row.label}</span>
       <span className="mt-2 grid gap-3 sm:grid-cols-2">
-        <span><span className="block text-xs font-semibold text-brand-900/50">ACTUAL</span><span className="whitespace-pre-wrap break-words">{row.current || "Sin dato"}</span></span>
-        <span><span className="block text-xs font-semibold text-brand-900/50">LEÍDO DE LA WEB</span><span className="whitespace-pre-wrap break-words">{row.proposed || "Sin dato"}</span></span>
+        <span><span className="block text-xs font-semibold text-brand-900/65">ACTUAL</span><span className="whitespace-pre-wrap break-words">{row.current || "Sin dato"}</span></span>
+        <span><span className="block text-xs font-semibold text-brand-900/65">LEÍDO DE LA WEB</span><span className="whitespace-pre-wrap break-words">{row.proposed || "Sin dato"}</span></span>
       </span>
     </label>)}
     <label className="block rounded-xl border border-brand-900/10 p-3 text-sm">

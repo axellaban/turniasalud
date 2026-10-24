@@ -105,7 +105,7 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
               </div>
               <Badge tone={lead.status === "nuevo" ? "yellow" : lead.status === "ganado" ? "green" : "gray"}>{LEAD_STATUSES[lead.status]}</Badge>
             </div>
-            <p className="mt-2 text-xs text-brand-900/50">Recibido: {formatDateTime(lead.created_at, "America/Argentina/Buenos_Aires")}</p>
+            <p className="mt-2 text-xs text-brand-900/65">Recibido: {formatDateTime(lead.created_at, "America/Argentina/Buenos_Aires")}</p>
             <dl className="my-4 grid gap-2 text-sm">
               {lead.email && <div><dt className="font-medium text-brand-900">Email</dt><dd><a href={`mailto:${lead.email}`} className="break-all text-brand-600 underline">{lead.email}</a></dd></div>}
               {lead.phone && <div><dt className="font-medium text-brand-900">{lead.source === "demo-telegram" ? "Usuario de Telegram" : "Teléfono / WhatsApp"}</dt><dd className="break-words">{/^\d{8,15}$/.test(lead.phone) ? <a href={`https://wa.me/${lead.phone}`} className="text-brand-600 underline">+{lead.phone}</a> : lead.phone}</dd></div>}

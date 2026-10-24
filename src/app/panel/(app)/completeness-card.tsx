@@ -20,7 +20,7 @@ export function CompletenessCard({ percent, items, compact = false }: { percent:
         <ul className={`mt-2 grid gap-1 text-sm ${compact ? "" : "sm:grid-cols-2"}`}>
           {missing.map((item) => <li key={item.label}>
             <Link href={item.href} className="flex items-center gap-2 rounded-lg px-2 py-1 text-brand-800 hover:bg-brand-50">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sun-500" aria-hidden />{item.label}<PanelIcon name="derecha" className="ml-auto h-4 w-4 text-brand-900/30" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sun-500" aria-hidden />{item.label}<PanelIcon name="derecha" className="ml-auto h-4 w-4 text-brand-900/65" />
             </Link>
           </li>)}
         </ul>

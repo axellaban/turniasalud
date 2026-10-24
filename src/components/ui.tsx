@@ -22,9 +22,9 @@ export function Card({ children, className = "", id }: { children: ReactNode; cl
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
     <Card>
-      <p className="text-xs font-medium uppercase tracking-wider text-brand-900/50">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-brand-900/65">{label}</p>
       <p className="mt-2 font-display text-3xl text-brand-900">{value}</p>
-      {hint && <p className="mt-1 text-xs text-brand-900/50">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-brand-900/65">{hint}</p>}
     </Card>
   );
 }
@@ -32,7 +32,7 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
 const TONES = {
   gray: "bg-neutral-100 text-neutral-700",
   green: "bg-brand-50 text-brand-700 ring-1 ring-brand-200",
-  yellow: "bg-sun-100 text-sun-600",
+  yellow: "bg-sun-100 text-sun-700",
   red: "bg-red-50 text-red-700",
   blue: "bg-sky-50 text-sky-700",
 } as const;
@@ -42,7 +42,7 @@ export function Badge({ children, tone = "gray" }: { children: ReactNode; tone?:
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="rounded-2xl border border-dashed border-brand-900/15 p-8 text-center text-sm text-brand-900/50">{children}</p>;
+  return <p className="rounded-2xl border border-dashed border-brand-900/15 p-8 text-center text-sm text-brand-900/65">{children}</p>;
 }
 
 export const buttonClass =
@@ -63,7 +63,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
     <label className="block text-sm">
       <span className="font-medium text-brand-900">{label}</span>
       <div className="mt-1">{children}</div>
-      {hint && <span className="mt-1 block text-xs text-brand-900/50">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-brand-900/65">{hint}</span>}
     </label>
   );
 }
@@ -152,7 +152,7 @@ export function StatusBadge({ value }: { value: string | null | undefined }) {
 /** Listo / falta / opcional, con ícono y texto para lectores de pantalla. */
 export function CheckMark({ ok, optional = false, warn = false }: { ok: boolean; optional?: boolean; warn?: boolean }) {
   const state = ok ? "Listo" : optional ? "Opcional" : warn ? "Revisar" : "Falta";
-  const tone = ok ? "bg-emerald/15 text-emerald" : optional ? "bg-neutral-100 text-neutral-500" : warn ? "bg-sun-100 text-sun-600" : "bg-red-50 text-red-600";
+  const tone = ok ? "bg-emerald/15 text-emerald-700" : optional ? "bg-neutral-100 text-neutral-600" : warn ? "bg-sun-100 text-sun-700" : "bg-red-50 text-red-700";
   return (
     <span className={`mr-1.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-[-2px] ${tone}`} title={state}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5" aria-hidden>

@@ -2,6 +2,15 @@
 
 Actualización: 23/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Skills de diseño y auditoría de accesibilidad — 24/10/2026
+
+- **Skills instaladas en `.claude/skills`** (con el OK del usuario): `frontend-design` (Anthropic), `web-design-guidelines` y `react-best-practices` (Vercel) e `impeccable` (pbakaus). Origen, commit, licencia y cambios en `.claude/skills/README.md`. `impeccable` va sin `scripts/` (su lanzador baja y ejecuta un binario); `web-design-guidelines` lee una copia local de las reglas.
+- **Auditoría con axe-core** (WCAG 2.2 AA + buenas prácticas) en 27 páginas, escritorio 1366 y celular 390, con la web y el panel corriendo sobre el build de producción: **512 problemas antes, 6 después**. Los 6 que quedan son el desvanecido de los bordes de la rueda «Simplificá cada paso» (decorativo: `aria-hidden` y fuera del orden de tabulación).
+- **Contraste:** los grises de texto (`brand-900/50`, `/55`, `/45`…, `brand-950/40`…) pasaron a `/65`; `tinta/70-80` a `tinta`; títulos del menú del panel a `brand-200/75`. Tokens nuevos `emerald-700` y `sun-700` para texto verde y naranja (`sun-600` y `emerald` no llegan a 4,5:1). Las tarjetas verdes y naranjas de la home y de producto usan texto oscuro.
+- **Otros:** puntos de la banda 24/7 con área táctil de 32 px; la banda, el carrusel de destacados y la rueda se pausan con foco de teclado (antes solo con el mouse); `transition-all` reemplazado por propiedades explícitas; selector de clínica del panel con rótulo en celular; orden de títulos corregido en el formulario de demo y en «Escuchá a nuestros agentes»; foco visible en el campo de `/probar-demo`.
+- **Arreglo chico:** el reproductor ya no pide `/audios/<slug>.json` (404) antes de `/api/audios`. `next.config.ts` anota al compilar qué audios hay en `public/audios`, que siguen teniendo prioridad.
+- No se probó en producción todavía; se verifica después del deploy.
+
 ## Guardar prestación y profesional — 23/10/2026
 
 - «Guardar prestación» y «Guardar profesional» no avisaban nada: si un dato era inválido (precio con letras, duración fuera de 5–480, nombre vacío) se descartaba en silencio y parecía que no guardaba. Ahora cada edición responde «Prestación guardada ✓» / «Profesional guardado ✓» y se cierra, o muestra el error exacto sin perder lo escrito. Si la clínica elegida cambió en otra pestaña, también lo avisa ahí mismo.

@@ -54,7 +54,7 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
                   {t.message}
                 </p>
               ))}
-            {!(c.transcript ?? []).length && <p className="text-brand-900/50">Sin transcripción.</p>}
+            {!(c.transcript ?? []).length && <p className="text-brand-900/65">Sin transcripción.</p>}
           </div>
         </Card>
         <div className="space-y-4">
@@ -81,7 +81,7 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
                 </p>
               </Link>
             ) : (
-              <p className="mt-2 text-sm text-brand-900/50">No identificado.</p>
+              <p className="mt-2 text-sm text-brand-900/65">No identificado.</p>
             )}
           </Card>
           {tasks.length > 0 && (

@@ -121,7 +121,7 @@ function Demo() {
             placeholder="11 5555-0001"
             className="mt-2 w-full rounded-xl border border-brand-900/15 px-3 py-2 outline-none focus:border-brand-500"
           />
-          <span className="mt-1 block text-xs text-brand-900/55">
+          <span className="mt-1 block text-xs text-brand-900/65">
             Probá con <b>11 5555-0001</b> para ser “María”, una paciente que ya existe y tiene la limpieza vencida.
           </span>
         </label>
@@ -165,14 +165,14 @@ function Demo() {
         </div>
         <div className="flex-1 space-y-2 overflow-y-auto p-4 text-sm">
           {lines.length === 0 && (
-            <p className="mx-auto mt-16 max-w-sm text-center text-brand-900/50">
+            <p className="mx-auto mt-16 max-w-sm text-center text-brand-900/65">
               Tocá “Empezar conversación”. Sofi tiene acceso a la agenda real de la clínica demo: si reservás un turno, lo vas
               a ver en el panel.
             </p>
           )}
           {lines.map((line) =>
             line.role === "system" ? (
-              <p key={line.id} className="text-center text-xs text-brand-900/50">
+              <p key={line.id} className="text-center text-xs text-brand-900/65">
                 {line.text}
               </p>
             ) : (

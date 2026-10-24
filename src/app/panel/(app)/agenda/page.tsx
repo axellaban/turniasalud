@@ -94,7 +94,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
           return (
             <Link key={key} href={`/panel/agenda?fecha=${key}`} aria-current={selected ? "date" : undefined}
               className={`flex flex-col items-center rounded-2xl px-1 py-2 text-center transition ${selected ? "bg-brand-600 text-white shadow-sm" : "bg-white ring-1 ring-brand-900/10 hover:ring-brand-300"}`}>
-              <span className={`text-[11px] font-medium uppercase ${selected ? "text-white/80" : "text-brand-900/50"}`}>{dayName.format(date).replace(".", "")}</span>
+              <span className={`text-[11px] font-medium uppercase ${selected ? "text-white/90" : "text-brand-900/65"}`}>{dayName.format(date).replace(".", "")}</span>
               <span className={`text-lg font-semibold leading-tight ${!selected && key === todayKey ? "text-brand-600" : ""}`}>{dayNumber.format(date)}</span>
               <span className={`text-[11px] ${selected ? "text-white/85" : count ? "text-brand-700" : "text-brand-900/35"}`}>{count ? `${count} turno${count === 1 ? "" : "s"}` : "—"}</span>
             </Link>
@@ -112,9 +112,9 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
               <Card key={pro.id}>
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="font-semibold text-brand-950">
-                    {pro.full_name} <span className="font-normal text-brand-900/50">· {pro.specialty}</span>
+                    {pro.full_name} <span className="font-normal text-brand-900/65">· {pro.specialty}</span>
                   </h2>
-                  <span className="text-xs text-brand-900/50">{list.length} turnos</span>
+                  <span className="text-xs text-brand-900/65">{list.length} turnos</span>
                 </div>
                 {block && (
                   <p className="mb-3 rounded-lg bg-sun-100 px-3 py-2 text-xs text-brand-950">
@@ -134,16 +134,16 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                         </span>
                         <div className="min-w-40 flex-1">
                           <p className="font-medium text-brand-950">{a.patient ?? "Paciente"}</p>
-                          <p className="text-xs text-brand-900/55">
+                          <p className="text-xs text-brand-900/65">
                             {a.type_name} · {a.coverage ?? "sin cobertura"} · {displayPhone(a.phone)}
                           </p>
-                          {a.notes && <p className="mt-0.5 text-xs text-brand-900/55">Nota: {a.notes}</p>}
+                          {a.notes && <p className="mt-0.5 text-xs text-brand-900/65">Nota: {a.notes}</p>}
                         </div>
-                        <span className="text-xs text-brand-900/50">{CHANNEL_LABEL[a.source] ?? a.source}</span>
+                        <span className="text-xs text-brand-900/65">{CHANNEL_LABEL[a.source] ?? a.source}</span>
                         {a.confirmed_at ? (
                           <span className="text-xs font-medium text-brand-700" title="El paciente confirmó que viene">Confirmó asistencia</span>
                         ) : a.reminder_sent_at ? (
-                          <span className="text-xs text-brand-900/50">Recordatorio enviado</span>
+                          <span className="text-xs text-brand-900/65">Recordatorio enviado</span>
                         ) : null}
                         <StatusBadge value={a.status} />
                         {(a.status === "confirmado" || a.status === "pendiente") && (
@@ -164,7 +164,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-brand-900/45">Sin turnos este día.</p>
+                  <p className="text-sm text-brand-900/65">Sin turnos este día.</p>
                 )}
               </Card>
             );
@@ -174,7 +174,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
             if (!free.length) return null;
             return free.length === catalog.professionals.length
               ? <Empty>No hay turnos este día.</Empty>
-              : <p className="text-sm text-brand-900/50">Sin turnos: {free.map((p) => p.full_name).join(", ")}.</p>;
+              : <p className="text-sm text-brand-900/65">Sin turnos: {free.map((p) => p.full_name).join(", ")}.</p>;
           })()}
           {!catalog.professionals.length && <Empty>Cargá profesionales en Configuración → Equipo y horarios para empezar.</Empty>}
         </div>

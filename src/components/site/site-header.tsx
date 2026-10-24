@@ -43,7 +43,7 @@ function ItemDestacado({ e }: { e: EnlaceMenu }) {
 function Columna({ titulo, items, columnas = 1 }: { titulo: string; items: EnlaceMenu[]; columnas?: 1 | 2 }) {
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-tinta/70">{titulo}</p>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-tinta">{titulo}</p>
       <ul className={columnas === 2 ? "grid grid-cols-2 gap-x-6" : ""}>
         {items.map((e) => (
           <li key={e.href}>
@@ -238,7 +238,7 @@ export function SiteHeader() {
                   <div className="space-y-4 pb-4">
                     {listaMovil[m.id].map((g) => (
                       <div key={g.titulo}>
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-tinta/70">{g.titulo}</p>
+                        <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-tinta">{g.titulo}</p>
                         <ul className="grid grid-cols-2 gap-x-4">
                           {g.items.map((e) => (
                             <li key={e.href}>

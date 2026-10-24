@@ -12,7 +12,7 @@ export function ClinicSelect({ current, options }: { current: string; options: A
   return (
     <form action={selectClinic} className="flex min-w-0 flex-1 items-center gap-2">
       <input type="hidden" name="return_to" value={section} />
-      <label htmlFor="selected-clinic" className="hidden shrink-0 text-xs font-medium text-brand-900/60 sm:block">Clínica</label>
+      <label htmlFor="selected-clinic" className="sr-only shrink-0 text-xs font-medium text-brand-900/60 sm:not-sr-only">Clínica</label>
       <select
         key={current}
         id="selected-clinic"

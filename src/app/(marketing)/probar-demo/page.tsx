@@ -31,7 +31,7 @@ export default async function ProbarDemoPage() {
 
         <ProbarDemoForm channel={channel} ready={ready} />
 
-        <p className="mx-auto mt-10 max-w-[620px] text-xs leading-relaxed text-tinta/80">
+        <p className="mx-auto mt-10 max-w-[620px] text-xs leading-relaxed text-tinta">
           La demo usa solo la información pública de tu web. Los turnos que reserves son de prueba y no llegan a tu agenda real.
           ¿Preferís que te la mostremos nosotros?{" "}
           <Link href="/pedi-una-demo" className="font-medium text-brand-600 hover:underline">

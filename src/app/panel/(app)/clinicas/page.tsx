@@ -55,7 +55,7 @@ export default async function ClinicsPage({ searchParams }: PageProps<"/panel/cl
               {clinic.accesses > 0 && <Badge tone="blue">Con acceso propio</Badge>}
             </div>
             <p className="mt-0.5 text-sm text-brand-900/60">{clinic.specialty}{clinic.website && <> · <a className="break-all text-brand-600 underline" href={clinic.website} target="_blank" rel="noreferrer">{clinic.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a></>}</p>
-            <p className="mt-1 text-xs text-brand-900/50">Creada: {formatDateTime(clinic.created_at, clinic.timezone)} · Ref. {clinic.id.slice(0, 8)}</p>
+            <p className="mt-1 text-xs text-brand-900/65">Creada: {formatDateTime(clinic.created_at, clinic.timezone)} · Ref. {clinic.id.slice(0, 8)}</p>
             {clinic.last_change && <p className="mt-0.5 text-xs text-brand-900/60">Última edición: <span className={clinic.last_actor === "Turnia" ? "" : "font-semibold text-brand-700"}>{clinic.last_actor}</span> · {clinic.last_area} · {formatDateTime(clinic.last_change, clinic.timezone)}</p>}
           </div>
           <div className="flex flex-wrap gap-2">

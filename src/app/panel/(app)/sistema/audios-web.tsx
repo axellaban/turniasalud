@@ -41,7 +41,7 @@ export function AudiosWeb({ items }: { items: EstadoAudio[] }) {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-brand-950">{i.titulo}</p>
-                  <p className="text-xs text-brand-900/55">
+                  <p className="text-xs text-brand-900/65">
                     {i.caracteres.toLocaleString("es-AR")} caracteres ·{" "}
                     {i.generado ? `generado ${new Date(i.generado).toLocaleDateString("es-AR")}` : recienGenerado ? "generado en esta sesión" : "sin audio"}
                   </p>
@@ -63,7 +63,7 @@ export function AudiosWeb({ items }: { items: EstadoAudio[] }) {
       >
         {ocupado ? "Generando… no cierres esta página" : faltan.length ? `Generar los ${faltan.length} que faltan` : "Todos los audios están generados"}
       </button>
-      <p className="mt-2 text-xs text-brand-900/55">
+      <p className="mt-2 text-xs text-brand-900/65">
         Usa las voces configuradas en Vercel o tus 2 favoritas de ElevenLabs (Sofi = la femenina).
         Los guiones suman {total.toLocaleString("es-AR")} caracteres; los créditos consumidos dependen de la tarifa del modelo y del plan.
         La clave necesita «Text to Speech» y, para consultar favoritas, «Voices: Read». Regenerar vuelve a consumir créditos.

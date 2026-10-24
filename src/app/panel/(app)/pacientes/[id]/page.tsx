@@ -56,7 +56,7 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
             <dl className="space-y-2 text-sm">
               {facts.map(([label, value]) => (
                 <div key={label} className="flex justify-between gap-3">
-                  <dt className="text-brand-900/50">{label}</dt>
+                  <dt className="text-brand-900/65">{label}</dt>
                   <dd className="text-right text-brand-950">{value || "—"}</dd>
                 </div>
               ))}
@@ -85,11 +85,11 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
                   <span className="flex-1">
                     {a.type_name} · {a.professional}
                   </span>
-                  <span className="text-xs text-brand-900/50">{CHANNEL_LABEL[a.source]}</span>
+                  <span className="text-xs text-brand-900/65">{CHANNEL_LABEL[a.source]}</span>
                   <StatusBadge value={a.status} />
                 </li>
               ))}
-              {!appointments.length && <li className="py-2 text-brand-900/50">Sin turnos.</li>}
+              {!appointments.length && <li className="py-2 text-brand-900/65">Sin turnos.</li>}
             </ul>
           </Card>
           <Card>
@@ -98,7 +98,7 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
               {conversations.map((c) => (
                 <li key={c.id}>
                   <Link href={`/panel/conversaciones/${c.id}`} className="flex items-center gap-3 rounded-xl p-2 hover:bg-brand-50">
-                    <span className="w-36 shrink-0 text-xs text-brand-900/55">{formatDateTime(c.started_at, tz)}</span>
+                    <span className="w-36 shrink-0 text-xs text-brand-900/65">{formatDateTime(c.started_at, tz)}</span>
                     <span className="flex-1 truncate">
                       {CHANNEL_LABEL[c.channel]} · {c.title || c.summary || "Sin resumen"}
                     </span>
@@ -106,7 +106,7 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
                   </Link>
                 </li>
               ))}
-              {!conversations.length && <li className="text-brand-900/50">Sin conversaciones.</li>}
+              {!conversations.length && <li className="text-brand-900/65">Sin conversaciones.</li>}
             </ul>
           </Card>
           {tasks.length > 0 && (

@@ -66,12 +66,12 @@ export default async function SystemPage() {
               El interesado deja su web en <Link href="/probar-demo" className="underline">/probar-demo</Link> y la prueba por el canal habilitado.
             </p>
             <ul className="space-y-1 text-sm">
-              <li><Check ok={demo.base} />Base actualizada <span className="text-xs text-brand-900/50">(se actualiza sola en cada deploy de producción)</span></li>
+              <li><Check ok={demo.base} />Base actualizada <span className="text-xs text-brand-900/65">(se actualiza sola en cada deploy de producción)</span></li>
               <li><Check ok={demo.whatsapp} />WhatsApp de la demo{" "}
-                <span className="text-xs text-brand-900/50">{demo.whatsapp_source === "variable" ? "(DEMO_WHATSAPP_NUMBER)" : demo.whatsapp_source === "waha" ? "(número del chip de WAHA)" : "(necesita WAHA conectado)"}</span>
+                <span className="text-xs text-brand-900/65">{demo.whatsapp_source === "variable" ? "(DEMO_WHATSAPP_NUMBER)" : demo.whatsapp_source === "waha" ? "(número del chip de WAHA)" : "(necesita WAHA conectado)"}</span>
               </li>
-              <li><Check ok={demo.claude} warn /><code className="text-xs">ANTHROPIC_API_KEY</code> <span className="text-xs text-brand-900/50">{demo.claude ? "" : "(sin clave arma una ficha básica)"}</span></li>
-              <li><Check ok={demo.llamada_telefonica} optional /><code className="text-xs">ELEVENLABS_PHONE_NUMBER_ID</code> <span className="text-xs text-brand-900/50">{demo.llamada_telefonica ? "(llama al celular)" : "(opcional: sin número, la llamada es desde el navegador)"}</span></li>
+              <li><Check ok={demo.claude} warn /><code className="text-xs">ANTHROPIC_API_KEY</code> <span className="text-xs text-brand-900/65">{demo.claude ? "" : "(sin clave arma una ficha básica)"}</span></li>
+              <li><Check ok={demo.llamada_telefonica} optional /><code className="text-xs">ELEVENLABS_PHONE_NUMBER_ID</code> <span className="text-xs text-brand-900/65">{demo.llamada_telefonica ? "(llama al celular)" : "(opcional: sin número, la llamada es desde el navegador)"}</span></li>
             </ul>
             <div className="mt-4 border-t border-brand-900/10 pt-4"><DemoLimitForm limit={messaging.demo_daily_limit} /></div>
           </Card>
@@ -84,7 +84,7 @@ export default async function SystemPage() {
               <li><Check ok={configured.tools} />AGENT_TOOLS_SECRET</li>
               <li><Check ok={configured.webhook} />ELEVENLABS_WEBHOOK_SECRET</li>
               <li><Check ok={configured.n8n} optional />N8N_WEBHOOK_URL (opcional)</li>
-              <li className="pt-2 text-xs text-brand-900/50">LLM del agente: {env.agentLlm()}</li>
+              <li className="pt-2 text-xs text-brand-900/65">LLM del agente: {env.agentLlm()}</li>
             </ul>
           </Card>
         </div>
@@ -105,12 +105,12 @@ export default async function SystemPage() {
                   <Check ok={!missingWaha.has(name)} /><code className="text-xs">{name}</code>
                 </li>
               ))}
-              <li><Check ok={false} optional /><code className="text-xs">WAHA_SESSION</code> <span className="text-xs text-brand-900/50">(opcional: {env.wahaSession()})</span></li>
+              <li><Check ok={false} optional /><code className="text-xs">WAHA_SESSION</code> <span className="text-xs text-brand-900/65">(opcional: {env.wahaSession()})</span></li>
             </ul>
             <div className="mt-4 space-y-3">
               <CopyRow label="Webhook de la sesión en WAHA (evento “message”, con clave HMAC)" value={`${base}/api/waha/webhook`} />
               <CopyRow label="Reply Webhook URL del Custom Channel (ElevenLabs → agente → Channels)" value={`${base}/api/elevenlabs/canal`} />
-              <p className="text-xs text-brand-900/50">Los valores se cargan en Vercel → Settings → Environment Variables. Acá nunca se muestran.</p>
+              <p className="text-xs text-brand-900/65">Los valores se cargan en Vercel → Settings → Environment Variables. Acá nunca se muestran.</p>
             </div>
           </Card>
 
@@ -122,7 +122,7 @@ export default async function SystemPage() {
               <CopyRow label="Automatización: recordatorios (n8n)" value={`${base}/api/automations/recordatorios`} />
               <CopyRow label="Automatización: recall (n8n)" value={`${base}/api/automations/recall`} />
               <CopyRow label="Automatización: encuestas post-consulta (n8n)" value={`${base}/api/automations/encuestas`} />
-              <p className="text-xs text-brand-900/50">Los llamados de n8n llevan el header <code>x-turnia-secret</code> con el valor de AGENT_TOOLS_SECRET.</p>
+              <p className="text-xs text-brand-900/65">Los llamados de n8n llevan el header <code>x-turnia-secret</code> con el valor de AGENT_TOOLS_SECRET.</p>
             </div>
           </Card>
 
