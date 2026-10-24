@@ -1,6 +1,20 @@
-# Agustín · piloto comercial odontológico
+# Sofi · piloto comercial odontológico (antes Agustín)
 
 24/10/2026. Oferta elegida por Axel: **demo personalizada y después charla con él**, sin cotizar precios. Después de la preparación, autorizó **US$5 por día** y **una única primera prueba a su teléfono**. Esa prueba ya terminó. No habilita llamadas a prospectos ni reintentos sin destinatarios autorizados.
+
+## Cambio vigente — misma voz de Sofi y pitch breve
+
+El usuario pidió usar la misma voz de la recepcionista y mejorar la venta. El agente comercial pasa a presentarse como **Sofi**, conservando su ID `agent_4501m5qvpjwrfcxrafq64zmx0y0q`. El botón **«Usar la voz de Sofi y aplicar pitch»** lee la voz real del agente de la clínica principal (`ijxn8I4NzJccD2Sa7lcj`), independientemente de la clínica seleccionada en el navegador, y la aplica solo al comercial. No modifica la recepcionista. Prepararlo siempre pausa el piloto; no llama.
+
+El saludo pide veinte segundos. Ante un «sí», avanza sin repetir identidad ni permiso. Hace una sola pregunta sobre quién responde los mensajes, conecta con esa necesidad y ofrece la demo con la web + charla con Axel. No lee etiquetas emocionales, inventa métricas/precios ni insiste ante un rechazo. Busca cerrar antes de 45 s; conserva el límite remoto de 60 s de conversación más despedida. **El pitch nuevo no tiene una prueba telefónica real todavía**; la prueba histórica de abajo fue con Agustín/Mauricio.
+
+**Mismo número:** Comercial → «Consultorios y pruebas» → «Abrir ficha y llamar» en «Consultorio de prueba de Axel». Revisar contacto/contexto, marcar la confirmación y «Iniciar una llamada». Para otro intento, reabrir la ficha y confirmar otra vez; si hay un intento pendiente, actualizar el resultado primero.
+
+**Número nuevo:** Comercial → «Agregar consultorio o número de prueba» → nombre, teléfono internacional, web, contexto y fuente/fecha de revisión → guardar → abrir la ficha → confirmar la llamada. Guardar una URL no scrapea ni contacta al consultorio.
+
+Antes: comprobar saldo de Twilio y créditos ElevenLabs, autorizar hasta **US$5 de cupo diario** y habilitar llamadas manuales hoy. El cupo no carga saldo. **Sigue pausado** por el último saldo observado insuficiente (US$0,21916); no se recargó ni se inició otra llamada en este cambio. El historial anterior se conserva, con etiqueta genérica «Agente» para no atribuir a Sofi las palabras de Agustín.
+
+Validación del cambio: **217 pruebas**, incluidas 15 comerciales; TypeScript, ESLint y build. Casos nuevos: migración del agente existente a la voz clínica sin llamadas, presupuesto conservado/pausa y bloqueo de cambios sobre un agente de clínica.
 
 ## Primera prueba real — 24/10/2026
 
@@ -13,7 +27,7 @@
 - Twilio tenía **US$0,93356** antes y mostró **US$0,21916** después; el saldo es compartido y no se atribuye toda su variación al registro de voz sin revisar los otros cargos. Auto-recharge sigue desactivado. El saldo restante no alcanza otro minuto a este móvil (~US$0,3528/min de voz).
 - **Estado final: piloto pausado por saldo insuficiente para otro intento, cupo conservado US$5, reserva US$1.** No recargar, cambiar planes ni tocar HolaVeggie. Para continuar, el usuario debe resolver saldo disponible por su cuenta y definir los próximos destinatarios. No repetir la prueba por rutina.
 
-## Estado real en producción
+## Estado de la primera prueba (histórico; prevalece el cambio vigente de arriba)
 
 - Panel publicado: https://turniasalud.vercel.app/panel/comercial (PR #41 y corrección #44, ambos con CI y Vercel en verde).
 - **Agente creado:** `agent_4501m5qvpjwrfcxrafq64zmx0y0q`, «Turnia · Agustín · ventas odontología».
@@ -26,7 +40,7 @@
 
 ## Uso
 
-1. Administrador → **Comercial** (`/panel/comercial`). Elegir una voz guardada compatible y «Crear Agustín»: crea dos herramientas comerciales y un agente separado de Sofi. La voz originalmente elegida **Agustin De Angelis - Confident and Happy** está bloqueada por ElevenLabs para agentes en vivo (moderación activa); aparece deshabilitada. No clonar esa voz ni intentar quitar restricciones del propietario. Actualizarlo pausa el piloto. No inicia llamadas, compra números ni cambia agentes clínicos.
+1. Administrador → **Comercial** (`/panel/comercial`) → «Usar la voz de Sofi y aplicar pitch». Actualiza el agente comercial existente y lo pausa, sin tocar la recepcionista ni iniciar llamadas. El selector de otras voces está dentro de «Elegir otra voz guardada».
 2. Cargar el consultorio con web, teléfono internacional argentino y contexto revisado. Agregar una ficha no scrapea la web ni contacta a nadie. El contexto comercial se edita en la ficha. El enlace «Abrir demo con su web» usa `/probar-demo?web=…`: al probarla, la demo existente lee esa web y ofrece la experiencia clínica.
 3. Antes de ofrecer servicios por teléfono, revisar la posibilidad de contacto y **Registro No Llame**; o documentar el pedido de devolución de llamada. Guardar fuente y fecha. La publicación de un teléfono comercial no demuestra por sí sola permiso. La aplicación registra la revisión humana, **no consulta el padrón automáticamente**. La revisión vence a las 24 h.
 4. Revisar saldo **compartido** en Twilio y disponibilidad/créditos de ElevenLabs. Definir cupo en US$, confirmar autorización de gasto y habilitar manualmente. La autorización vence al terminar el día en Buenos Aires. Valor inicial: **US$0 / pausado**. No hay recargas.
