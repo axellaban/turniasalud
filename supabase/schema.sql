@@ -640,3 +640,68 @@ create table if not exists sales_suppressions (
   created_at timestamptz not null default now()
 );
 alter table sales_suppressions enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Campañas para activar la base: historial que trae la clínica de su sistema anterior,
+-- controles indicados por paciente, reglas de contacto y audiencia que se revisa antes de enviar.
+-- ---------------------------------------------------------------------------
+-- Cada importación de pacientes (Excel o CSV que exporta la clínica).
+create table if not exists patient_imports (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  source text,
+  actor text not null,
+  rows_total integer not null default 0,
+  created_patients integer not null default 0,
+  updated_patients integer not null default 0,
+  visits integer not null default 0,
+  skipped integer not null default 0,
+  created_at timestamptz not null default now(),
+  undone_at timestamptz
+);
+create index if not exists patient_imports_clinic_idx on patient_imports (clinic_id, created_at desc);
+alter table patient_imports enable row level security;
+
+-- Visitas anteriores a Turnia: cuentan como turnos atendidos para el recall y la reactivación.
+create table if not exists patient_visits (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  patient_id uuid not null references patients(id) on delete cascade,
+  appointment_type_id uuid references appointment_types(id) on delete set null,
+  service text not null default '',
+  professional text,
+  visited_at date not null,
+  import_id uuid references patient_imports(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (patient_id, visited_at, service)
+);
+create index if not exists patient_visits_clinic_idx on patient_visits (clinic_id, patient_id, visited_at desc);
+alter table patient_visits enable row level security;
+
+-- Control indicado para un paciente puntual ("volvé en 3 meses"); la importación que lo creó.
+alter table patients add column if not exists next_control_at date;
+alter table patients add column if not exists next_control_reason text;
+alter table patients add column if not exists import_id uuid references patient_imports(id) on delete set null;
+
+-- Reglas de contacto: cuándo un paciente cuenta como inactivo y cada cuántos días, como mucho,
+-- se le escribe para que vuelva a sacar turno.
+alter table clinics add column if not exists reactivation_months integer not null default 12;
+alter table clinics add column if not exists contact_cooldown_days integer not null default 30;
+alter table clinics drop constraint if exists clinics_reactivation_months_check;
+alter table clinics add constraint clinics_reactivation_months_check check (reactivation_months between 3 and 60);
+alter table clinics drop constraint if exists clinics_contact_cooldown_days_check;
+alter table clinics add constraint clinics_contact_cooldown_days_check check (contact_cooldown_days between 0 and 365);
+
+-- La audiencia queda guardada al crear la campaña: se revisa, se quita a quien no corresponde y se envía.
+alter table campaign_recipients add column if not exists detail text;
+alter table campaign_recipients add column if not exists context text;
+alter table campaign_recipients add column if not exists value numeric(12, 2);
+alter table campaign_recipients add column if not exists created_at timestamptz not null default now();
+alter table campaign_recipients drop constraint if exists campaign_recipients_status_check;
+alter table campaign_recipients add constraint campaign_recipients_status_check
+  check (status in ('pendiente', 'enviado', 'error', 'respondio', 'agendo', 'excluido'));
+create index if not exists campaign_recipients_patient_idx on campaign_recipients (patient_id, sent_at desc);
+-- Mensaje propio de la campaña ({nombre} y {detalle}); por Meta se sigue usando el template aprobado.
+alter table campaigns add column if not exists message text;
+-- Enviado a mano desde el WhatsApp de la clínica (botón que abre el chat con el mensaje escrito).
+alter table campaign_recipients add column if not exists manual boolean not null default false;

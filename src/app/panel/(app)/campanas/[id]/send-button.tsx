@@ -1,21 +1,25 @@
 "use client";
 
 import { useActionState } from "react";
-import { sendCampaignAction } from "../../../actions";
-import { buttonClass } from "@/components/ui";
+import { sendCampaignAction } from "../../../campaign-actions";
+import { secondaryButtonClass } from "@/components/ui";
 
-export function SendCampaignButton({ id, count }: { id: string; count: number }) {
+const PER_RUN = 50;
+
+export function SendCampaignButton({ clinicId, id, count }: { clinicId: string; id: string; count: number }) {
   const [state, action, pending] = useActionState(sendCampaignAction, undefined);
+  const batch = Math.min(count, PER_RUN);
   return (
     <form
       action={action}
       onSubmit={(e) => {
-        if (!confirm(`¿Enviar el WhatsApp a ${count} pacientes?`)) e.preventDefault();
+        if (!confirm(`¿Sofi le manda el WhatsApp a ${batch} ${batch === 1 ? "paciente" : "pacientes"}?`)) e.preventDefault();
       }}
     >
+      <input type="hidden" name="clinic_id" value={clinicId} />
       <input type="hidden" name="id" value={id} />
-      <button disabled={pending || count === 0} className={`${buttonClass} w-full`}>
-        {pending ? "Enviando…" : `Enviar a ${count} pacientes`}
+      <button disabled={pending || count === 0} className={`${secondaryButtonClass} w-full disabled:opacity-50`}>
+        {pending ? "Enviando…" : count > PER_RUN ? `Que Sofi envíe a los próximos ${PER_RUN} (de ${count})` : `Que Sofi envíe a ${count} ${count === 1 ? "paciente" : "pacientes"}`}
       </button>
       {state?.message && <p className={`mt-2 text-sm ${state.ok ? "text-brand-700" : "text-red-600"}`}>{state.message}</p>}
     </form>

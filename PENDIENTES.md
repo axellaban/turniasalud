@@ -51,6 +51,8 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] El consultorio Guerra–Mininni (demo conservada) tiene que entrar con su código y cargar sus reglas reales. El código lo crea el administrador en Panel → Configuración → «Acceso del consultorio» y se manda por WhatsApp desde ahí.
 - [ ] **Google Calendar** (código hecho, 24/10): faltan las credenciales de Google y la automatización de reintentos en n8n. Pasos en [`GOOGLE_CALENDAR.md`](GOOGLE_CALENDAR.md). Para clínicas reales, publicar la app y pasar la verificación de Google.
 - [ ] Mejoras posibles: roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.
+- [x] **Campañas para activar la base** (25/10): oportunidades con valor, controles por prestación y por paciente, reglas de contacto, lista que se revisa, envío desde el WhatsApp de la clínica o con Sofi, e importación de pacientes desde Excel o CSV. Ver [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md).
+- [ ] Que el usuario pruebe Campañas con una planilla real de un consultorio (por ejemplo, Guerra–Mininni) y el envío desde su WhatsApp. Siguientes pasos de campañas (secuencias, respuestas marcadas a mano, automáticas por clínica, segmentos por edad) en `PLAN_CAMPANAS.md`.
 
 ## 4. Web pública (estado: home terminada)
 
@@ -92,5 +94,6 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 | WhatsApp (WAHA + Custom Channel) | `PLAN_WHATSAPP.md` |
 | Web pública copycat de Assort | `PLAN_WEB_ASSORT.md` |
 | Demo «Probá con tu web» | `PLAN_LEAD_MAGNET.md` |
+| Campañas, importación de pacientes y CRM | `PLAN_CAMPANAS.md` |
 | Google Calendar | `GOOGLE_CALENDAR.md` |
 | Qué es Turnia, decisiones y arquitectura | `CONTEXTO_PROYECTO.md` |

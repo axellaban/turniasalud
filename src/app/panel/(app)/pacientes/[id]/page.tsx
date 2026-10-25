@@ -7,7 +7,8 @@ import { formatDate, formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Card, CHANNEL_LABEL, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
 import { setContactOptOut } from "../../../actions";
-import type { Patient } from "@/lib/types";
+import { NextControl } from "./next-control";
+import type { Patient, PatientVisit } from "@/lib/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Paciente · Panel" };
@@ -17,7 +18,7 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
   const clinic = await getPanelClinic();
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
-  const [appointments, conversations, tasks] = await Promise.all([
+  const [appointments, conversations, tasks, visits] = await Promise.all([
     sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, t.name as type_name
       from appointments a
@@ -31,6 +32,10 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
       where patient_id = ${p.id} order by started_at desc limit 20`,
     sql<Array<{ id: string; title: string; status: string; created_at: string }>>`
       select id, title, status, created_at from tasks where patient_id = ${p.id} order by created_at desc limit 20`,
+    // Visitas anteriores a Turnia, de la importación.
+    sql<Array<PatientVisit & { type_name: string | null }>>`
+      select v.*, t.name as type_name from patient_visits v left join appointment_types t on t.id = v.appointment_type_id
+      where v.patient_id = ${p.id} order by v.visited_at desc limit 30`,
   ]);
   const tz = clinic.timezone;
 
@@ -69,6 +74,11 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
               </span>
               <button className={smallButtonClass}>{p.contact_opt_out ? "Volver a habilitar" : "Dar de baja"}</button>
             </form>
+          </Card>
+          <Card>
+            <h2 className="text-sm font-semibold text-brand-950">Próximo control</h2>
+            <p className="mb-3 mt-1 text-xs text-brand-900/65">Cuando llega la fecha, aparece en Campañas → «Controles vencidos» para escribirle.</p>
+            <NextControl clinicId={clinic.id} patientId={p.id} date={p.next_control_at} reason={p.next_control_reason} />
           </Card>
           <Card className="bg-brand-50/60">
             <h2 className="text-sm font-semibold text-brand-950">🧠 Memoria del paciente</h2>
@@ -109,6 +119,23 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
               {!conversations.length && <li className="text-brand-900/65">Sin conversaciones.</li>}
             </ul>
           </Card>
+          {visits.length > 0 && (
+            <Card>
+              <h2 className="font-semibold text-brand-950">Visitas anteriores</h2>
+              <p className="mb-2 text-xs text-brand-900/60">Traídas de la importación: cuentan para los controles y los inactivos.</p>
+              <ul className="divide-y divide-brand-900/5 text-sm">
+                {visits.map((v) => (
+                  <li key={v.id} className="flex flex-wrap items-center gap-3 py-2">
+                    <span className="w-40 text-brand-900/70">{formatDate(`${v.visited_at}T12:00:00Z`, "UTC")}</span>
+                    <span className="flex-1">
+                      {v.type_name ?? (v.service || "Visita")}
+                      {v.professional ? ` · ${v.professional}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {tasks.length > 0 && (
             <Card>
               <h2 className="mb-3 font-semibold text-brand-950">Tareas</h2>
