@@ -198,6 +198,8 @@ export async function startPhoneCall(call: {
       agent_id: call.agentId,
       agent_phone_number_id: call.phoneNumberId,
       to_number: call.toNumber,
+      // Grabación nativa en Twilio; record_voice de ElevenLabs es independiente.
+      call_recording_enabled: true,
       conversation_initiation_client_data: { dynamic_variables: call.dynamicVariables, user_id: call.toNumber.replace(/^\+/, "") },
     }),
   });

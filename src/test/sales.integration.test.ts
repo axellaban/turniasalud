@@ -27,7 +27,7 @@ let ignoreUpdate = false;
 let changeDuringVerify = false;
 let remoteTools: { id: string; tool_config: { name: string; description: string } }[] = [];
 let remote = salesAgentBody("voz-agustin",["sales-tool-1","sales-tool-2"]);
-let sent: { conversation_initiation_client_data: { dynamic_variables: Record<string,string> }; agent_id: string; to_number: string };
+let sent: { conversation_initiation_client_data: { dynamic_variables: Record<string,string> }; agent_id: string; to_number: string; call_recording_enabled: boolean };
 const providerRequests: string[] = [];
 function response(data: unknown) { return new Response(JSON.stringify(data), { headers: { "content-type":"application/json" } }); }
 function eventData() {
@@ -97,6 +97,7 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     const id=await prospect(); await authorizeBudget(100,true); const key=randomUUID();
     const ids=await Promise.all([dialProspect(id,key),dialProspect(id,key)]);
     expect(ids[0]).toBe(ids[1]); expect(outbound).toBe(1);
+    expect(sent.call_recording_enabled).toBe(true);
     expect(sent.agent_id).toBe("agent-sales"); expect(sent.to_number).toBe("+5491112345678");
     expect(Object.keys(sent.conversation_initiation_client_data.dynamic_variables).sort()).toEqual(["business_name","sales_call_id","sales_call_token","sales_context"]);
     expect(Object.values(sent.conversation_initiation_client_data.dynamic_variables).every(Boolean)).toBe(true);

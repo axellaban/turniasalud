@@ -83,6 +83,7 @@ export default async function SettingsPage() {
               {!clinic.retained_at && <form action={retainClinic}><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
             </div>}
             <Link href="/demo" className={`${clinic.is_demo ? "mt-3" : "mt-4"} inline-flex text-sm font-medium text-brand-700 hover:underline`}>Probar por voz o texto en el navegador →</Link>
+            {admin && <p className="mt-3 text-sm text-brand-900/70">Las llamadas telefónicas nuevas que Turnia inicia por Twilio se solicitan con grabación. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Abrir grabaciones en Twilio</a>. No incluye llamadas de navegador o Telegram. Grabación y almacenamiento tienen cargo por uso.</p>}
             <p className="mt-3 text-xs text-brand-900/65">{!clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la guardás o conservás."}</p>
           </Card>
         </div>

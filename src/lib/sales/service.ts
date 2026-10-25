@@ -117,7 +117,7 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
       const result = await elevenlabs<{ success?: boolean; conversation_id?: string | null }>("/v1/convai/twilio/outbound-call", {
       method: "POST", signal: AbortSignal.timeout(20000),
       body: JSON.stringify({ agent_id: settings.agent_id, agent_phone_number_id: process.env.ELEVENLABS_PHONE_NUMBER_ID,
-        to_number: call.phone, conversation_initiation_client_data: { dynamic_variables: variables, user_id: `sales-${call.id}` } }),
+        to_number: call.phone, call_recording_enabled: true, conversation_initiation_client_data: { dynamic_variables: variables, user_id: `sales-${call.id}` } }),
     });
     if (result.success === false) {
       await tx`update sales_calls set status = 'fallida', error = 'ElevenLabs rechazó el inicio. Revisá el registro del proveedor.', completed_at = now() where id = ${call.id} and status = 'iniciando'`;

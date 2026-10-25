@@ -475,7 +475,9 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect((await inbound(whatsapp("1", phone, "phone-call-once"))).status).toBe(200);
     const retry = await inbound(whatsapp("1", phone, "phone-call-once"));
     expect(await retry.json()).toEqual({ duplicate: true });
-    expect(fake.calls.filter((c) => c.url.includes("twilio/outbound-call"))).toHaveLength(1);
+    const telephoneCalls = fake.calls.filter((c) => c.url.includes("twilio/outbound-call"));
+    expect(telephoneCalls).toHaveLength(1);
+    expect(telephoneCalls[0].body).toMatchObject({call_recording_enabled:true});
     const [state] = await sql`select call_attempts from demo_sessions where phone = ${phone}`;
     expect(state.call_attempts).toBe(1);
     vi.mocked(fetch).mockImplementation(fakeFetch);
