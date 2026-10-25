@@ -6,9 +6,10 @@ import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { ElevenLabsError } from "@/lib/elevenlabs";
 import { setupSalesAgent, sofiSalesVoiceId, SalesSetupError } from "@/lib/sales/agent";
-import { authorizeBudget, blockProspect, dialProspect, refreshSalesCall, saveProspect, SalesError } from "@/lib/sales/service";
+import { salesConfiguration, salesConfigurationSchema, type SalesConfiguration } from "@/lib/sales/config";
+import { authorizeBudget, blockProspect, dialProspect, refreshSalesCall, salesSettings, saveProspect, SalesError } from "@/lib/sales/service";
 
-export type SalesActionState = { message?: string; error?: string; prospectId?: string };
+export type SalesActionState = { message?: string; error?: string; prospectId?: string; configuration?: SalesConfiguration & { voice_id: string; version: number } };
 export async function salesAction(_previous: SalesActionState, form: FormData): Promise<SalesActionState> {
   await requireAdmin();
   const intent = form.get("intent");
@@ -16,7 +17,19 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
   try {
     if (intent === "prepare" || intent === "prepare_sofi") {
       await setupSalesAgent(intent === "prepare_sofi" ? await sofiSalesVoiceId() : String(form.get("voice_id") || ""));
-      result = { message: "Sofi comercial preparada con su voz y el pitch actualizado. Límite de 60 segundos de conversación, más despedida. El piloto queda pausado. No se inició ninguna llamada." };
+      result = { message: "Configuración guardada de Sofi comercial sincronizada con ElevenLabs. Límite de 60 segundos de conversación, más despedida. El piloto queda pausado. No se inició ninguna llamada." };
+    } else if (intent === "configure" || intent === "restore_config") {
+      const expectedVersion = z.coerce.number().int().nonnegative().parse(form.get("config_version"));
+      if (intent === "restore_config") {
+        await setupSalesAgent(undefined, { expectedVersion, restorePrevious: true });
+      } else {
+        const config = salesConfigurationSchema.parse(Object.fromEntries(form));
+        const selected = z.string().min(1, "Elegí una voz.").max(200).parse(form.get("voice_id"));
+        await setupSalesAgent(selected === "sofi" ? await sofiSalesVoiceId() : selected, { expectedVersion, config });
+      }
+      result = { message: intent === "restore_config" ? "Versión anterior restaurada y comprobada en ElevenLabs. El piloto queda pausado; no se inició ninguna llamada." : "Saludo, instrucciones y voz guardados y comprobados en ElevenLabs. El piloto queda pausado; no se inició ninguna llamada." };
+      const s = await salesSettings();
+      result.configuration = { ...salesConfiguration(s), voice_id: s.voice_id!, version: s.config_version };
     } else if (intent === "budget") {
       const dollars = z.string().regex(/^\d{1,3}(?:[.,]\d{1,2})?$/, "Ingresá un importe en dólares, sin signo.").parse(form.get("budget"));
       const enabled = form.get("enabled") === "on";
@@ -43,6 +56,7 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
     } else throw new SalesError("Acción inválida.");
   } catch (e) {
     // Los errores del proveedor pueden incluir variables privadas. Nunca devolver su cuerpo al cliente.
+    revalidatePath("/panel/comercial", "layout");
     return { error: e instanceof SalesError || e instanceof SalesSetupError ? e.message : e instanceof z.ZodError ? e.issues.map((i) => i.message).join(". ") : e instanceof ElevenLabsError ? `ElevenLabs rechazó la operación (HTTP ${e.status}). No se inició una llamada. Revisá la configuración antes de repetirla.` : "No se completó la operación. Revisá la configuración del proveedor y volvé a consultar el estado antes de repetirla." };
   }
   revalidatePath("/panel/comercial", "layout");

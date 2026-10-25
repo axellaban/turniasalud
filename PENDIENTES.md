@@ -1,6 +1,6 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 24/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 25/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
@@ -55,6 +55,8 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] **Sobreturnos** (dos pacientes a la misma hora con el mismo profesional). Hoy la base lo impide a propósito. El panel ya puede dar turnos fuera de horario, en días bloqueados u ocupados en Google («Darlo igual»).
 - [ ] **Aviso cuando Google pide reconectar** (permiso vencido o revocado). Hoy solo se ve en el panel; podría ir por n8n a la clínica.
 - [ ] Mejoras posibles: roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.
+- [x] **Campañas para activar la base** (25/10): oportunidades con valor, controles por prestación y por paciente, reglas de contacto, lista que se revisa, envío desde el WhatsApp de la clínica o con Sofi, e importación de pacientes desde Excel o CSV. Ver [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md).
+- [ ] Que el usuario pruebe Campañas con una planilla real de un consultorio (por ejemplo, Guerra–Mininni) y el envío desde su WhatsApp. Siguientes pasos de campañas (secuencias, respuestas marcadas a mano, automáticas por clínica, segmentos por edad) en `PLAN_CAMPANAS.md`.
 
 ## 4. Web pública (estado: home terminada)
 
@@ -73,6 +75,10 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [x] **Twilio saliente configurado** (24/10): línea propia verificada, importada en ElevenLabs y `ELEVENLABS_PHONE_NUMBER_ID` guardada en Production; despliegue Ready, salud con `llamada_telefonica: true`. La conexión final usa credenciales de la cuenta existente por elección del usuario; no una subcuenta. Detalle y alcance en `ESTADO_Y_PRIORIDADES.md`.
 - [x] **Conversación telefónica real validada por el usuario** (24/10): Sofi habló y escuchó por Twilio, registro de 21 mensajes y cierre por el destinatario. ElevenLabs: 2:11 y 1.464 créditos totales; Twilio: 2:12 y US$1,0584. Cinco intentos autorizados en total; los errores manuales de variables quedaron corregidos y documentados. No reintentar lotes ni llamar de nuevo sin pedido explícito. Telegram sigue usando enlace web.
 - [x] **Identificación de llamada confirmada por el usuario:** en el celular receptor apareció la línea de Turnia.
+- [x] **Grabación nativa en Twilio solicitada** (25/10): `call_recording_enabled: true` en llamadas salientes comerciales y clínicas iniciadas por Turnia. Sin grabación global ni cambios de otras líneas; accesos a Recording Logs en el panel.
+- [ ] **Ver el primer audio grabado real en Twilio** tras una llamada nueva autorizada y con saldo. Los audios viejos no grabados no se reconstruyen. La prueba de código pasó; no se hizo una llamada paga para comprobar el artefacto.
+- [x] **Editor de Sofi comercial**: `/panel/comercial/configuracion`, saludo/system prompt/voz, aplicación comprobada, versiones y restauración. Fichas con bloqueo concreto y enlace para resolverlo. Guardar pausa y no llama. 232 pruebas; detalle en `COMERCIAL_AGUSTIN.md`.
+- [ ] **Saldo de Twilio (actualización 24/10, tarde)**: la consola muestra suspensión por fondos y **−US$0,49524**. Resolver con el titular, sin recargas del agente ni cambios en HolaVeggie. El saldo positivo de notas anteriores quedó desactualizado. El panel no detecta el saldo automáticamente.
 - [x] **Sofi comercial, voz y pitch**: pedido posterior del usuario de usar la voz real de la recepcionista, con agente separado y mismo ID. Panel explica pruebas al mismo número y alta de uno nuevo. No se llamó nuevamente; piloto pausado. Falta validar por teléfono el pitch nuevo y las herramientas cuando haya saldo y autorización. Ver [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md).
 - [x] **Agente comercial Agustín/Mauricio probado**: el usuario autorizó **US$5/día** y una única llamada propia, ya atendida y con voz confirmada. 65 s reales (configuración de 60 s más cierre), Twilio US$0,7056 y ElevenLabs 452 créditos. El panel conserva cupo US$5 y reserva US$1, pero quedó **pausado por saldo Twilio US$0,21916**, insuficiente para otro minuto al móvil. No recargar ni tocar otros negocios. Falta saldo disponible, destinatarios revisados y prueba real de herramientas de interés/baja/end_call antes de prospectar. Estado e IDs en [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md).
 - [ ] **Atención humana por chat**: implementar Tomar / Devolver al agente con pausa persistida y descarte de respuestas pendientes; conservar la app WhatsApp Business y WAHA, sin incorporar Chatwoot por rutina.
@@ -92,5 +98,6 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 | WhatsApp (WAHA + Custom Channel) | `PLAN_WHATSAPP.md` |
 | Web pública copycat de Assort | `PLAN_WEB_ASSORT.md` |
 | Demo «Probá con tu web» | `PLAN_LEAD_MAGNET.md` |
+| Campañas, importación de pacientes y CRM | `PLAN_CAMPANAS.md` |
 | Google Calendar | `GOOGLE_CALENDAR.md` |
 | Qué es Turnia, decisiones y arquitectura | `CONTEXTO_PROYECTO.md` |

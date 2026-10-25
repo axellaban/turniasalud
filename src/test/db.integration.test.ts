@@ -685,7 +685,7 @@ describe.runIf(url)("integración con Postgres", () => {
     pages.push(
       ["conversación", async () => (await import("@/app/panel/(app)/conversaciones/[id]/page")).default({ params: Promise.resolve({ id: conversation.id }) } as never)],
       ["paciente", async () => (await import("@/app/panel/(app)/pacientes/[id]/page")).default({ params: Promise.resolve({ id: "00000000-0000-4000-8000-0000000000c2" }) } as never)],
-      ["campaña", async () => (await import("@/app/panel/(app)/campanas/[id]/page")).default({ params: Promise.resolve({ id: campaign.id }) } as never)],
+      ["campaña", async () => (await import("@/app/panel/(app)/campanas/[id]/page")).default({ params: Promise.resolve({ id: campaign.id }), searchParams: Promise.resolve({}) } as never)],
     );
     for (const [name, render] of pages) {
       const html = renderToStaticMarkup((await render()) as React.ReactElement);

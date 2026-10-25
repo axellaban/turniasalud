@@ -38,7 +38,12 @@ export function templateKeyFor(type: string): TemplateKey {
 
 export function renderTemplate(key: TemplateKey, params: string[], opts: { optOutFooter?: boolean } = {}): string {
   const text = TEMPLATE_TEXTS[key].replace(/\{\{(\d)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "");
-  return opts.optOutFooter && PROMOTIONAL.has(key) ? `${text}\n\n${OPT_OUT_FOOTER}` : text;
+  return withOptOutFooter(key, text, opts.optOutFooter ?? false);
+}
+
+/** Suma cómo darse de baja a los mensajes que no pidió el paciente. */
+export function withOptOutFooter(key: TemplateKey, text: string, footer = true): string {
+  return footer && PROMOTIONAL.has(key) ? `${text}\n\n${OPT_OUT_FOOTER}` : text;
 }
 
 /** Por qué no se puede escribir por WhatsApp todavía (null = listo). */
@@ -63,6 +68,8 @@ export type PatientMessage = {
   /** Qué tiene que saber el agente si el paciente responde. */
   context: string;
   campaignId?: string;
+  /** Texto propio de la campaña, ya completado (solo WAHA: por Meta va el template aprobado). */
+  text?: string;
 };
 
 /** Le escribe al paciente. Devuelve el ID de conversación de ElevenLabs si ya existe (Meta). */
@@ -73,7 +80,7 @@ export async function sendPatientMessage(clinic: Clinic, msg: PatientMessage): P
   if (problem) throw new Error(problem);
 
   if (clinic.whatsapp_provider === "waha") {
-    const text = renderTemplate(msg.templateKey, msg.params, { optOutFooter: true });
+    const text = msg.text ? withOptOutFooter(msg.templateKey, msg.text) : renderTemplate(msg.templateKey, msg.params, { optOutFooter: true });
     const chatId = chatIdForPhone(msg.phone);
     await wahaSendText(chatId, text);
     await registerOutbound(clinic.id, { phone: msg.phone, chatId, text, context: msg.context, campaignId: msg.campaignId });

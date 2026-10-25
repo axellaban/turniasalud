@@ -2,6 +2,34 @@
 
 24/10/2026. Oferta elegida por Axel: **demo personalizada y después charla con él**, sin cotizar precios. Después de la preparación, autorizó **US$5 por día** y **una única primera prueba a su teléfono**. Esa prueba ya terminó. No habilita llamadas a prospectos ni reintentos sin destinatarios autorizados.
 
+## Grabaciones telefónicas en Twilio — 25/10/2026
+
+- Pedido explícito: poder ver en Twilio las llamadas grabadas de **Sofi comercial y Sofi de turnos**.
+- Confirmado en la API oficial de ElevenLabs: el cuerpo de `/v1/convai/twilio/outbound-call` admite **`call_recording_enabled: true`**, que pide grabación nativa a Twilio. Se agregó en los **dos** caminos salientes de Turnia: `src/lib/sales/service.ts` (comercial) y `startPhoneCall` de `src/lib/elevenlabs.ts` (callback/demos clínicas). No requiere nuevas credenciales ni configurar números o webhooks de HolaVeggie.
+- Destino: **Twilio → Monitor → Logs → Call recordings / Recording Logs**. Accesos también en la ficha comercial y en Configuración clínica (solo administrador). La confirmación manual comercial indica que se autoriza una llamada grabada.
+- Alcance: **llamadas telefónicas nuevas iniciadas por Turnia**. Las conversaciones web/Telegram no pasan por Twilio y no aparecen allí; los registros previos sin audio no se pueden reconstruir. Esto no incorpora una línea entrante ni modifica las llamadas del operador móvil. Las llamadas que alguien dispare manualmente fuera de Turnia necesitan su propia opción de grabación.
+- El audio se solicita en **Twilio**. `privacy.record_voice` de ElevenLabs es independiente y se dejó como estaba; no se activó una segunda copia allí ni grabación global de la cuenta. No se modificó la recepcionista clínica, WAHA, Telegram ni otro negocio.
+- Costos publicados consultados el 25/10: **US$0,0025/min** por grabación y **US$0,0005/min/mes** por almacenamiento, más impuestos si corresponden. No se activó transcripción paga, recarga automática ni cambio de plan. No se inició una llamada real desde esta tarea.
+- Validación: 232 pruebas, incluidas verificaciones de `call_recording_enabled` en las dos solicitudes reales de código con proveedor simulado y conservación de no-duplicación. TypeScript, ESLint y build correctos. **Pendiente validar el primer audio real en Twilio** después de una llamada autorizada y con saldo disponible. No afirmar que existe una grabación nueva antes de verla.
+- Editor previo: PR #51 integrado en `main`, deploy de producción Ready. Primera configuración guardada desde el panel el 25/10: **versión 1**, voz de Sofi, prompt y conexiones comprobados en ElevenLabs, piloto pausado. La configuración clínica comparada por hash antes/después siguió idéntica. Borradores/guardado/restauración ya estaban probados con proveedor simulado; no se alteró el pitch con textos de prueba en producción.
+- Fuentes: [ElevenLabs / Twilio outbound-call](https://elevenlabs.io/docs/eleven-agents/api-reference/integrations/twilio/outbound-call), [Twilio / grabaciones](https://www.twilio.com/docs/voice/api/recording), [Twilio / tarifas](https://www.twilio.com/en-us/voice/pricing/us).
+
+
+## Editor del agente comercial — 24/10/2026
+
+- **Panel → Comercial → «Editar saludo, instrucciones y voz»** (`/panel/comercial/configuracion`). El saludo y el system prompt se editan completos desde el panel y se guardan en `sales_settings`, junto con la voz y la versión aplicada. El código solo aporta el texto inicial cuando todavía no hay una versión guardada.
+- **«Guardar y aplicar en ElevenLabs»** actualiza el mismo agente comercial y consulta de nuevo su configuración real antes de confirmar. Siempre pausa el piloto y conserva el cupo. No llama, recarga saldo ni modifica la recepcionista clínica.
+- Cada aplicación conserva una versión en `sales_config_versions`; **«Restaurar la versión anterior»** recupera saludo, prompt y voz, los comprueba y agrega otra versión sin borrar historia. Cambiar de voz/sincronizar conserva el texto editado. La ficha de cada llamada registra `config_version`; las llamadas anteriores al editor quedan con versión 0.
+- Los formularios viejos se rechazan por número de versión, y el borrador permanece visible si hay error. Si una aplicación parcial no se puede comprobar, queda `needs_sync` y el piloto pausado hasta guardar/aplicar de nuevo. No se reserva ni inicia un intento con esa marca.
+- Las variables internas, las herramientas comerciales, el límite de duración y las reglas operativas se mantienen fuera del editor. El saludo admite `{{business_name}}`; las instrucciones también `{{sales_context}}`. No pegar claves en el prompt.
+- La validación previa a llamar compara el **texto guardado** con el remoto, en vez de exigir el texto fijo del código. Antes de enviar, vuelve a comprobar que no cambió la versión. Ediciones directas en ElevenLabs siguen requiriendo reconciliar desde el panel.
+- Las fichas muestran **el motivo concreto** del bloqueo (pausa, autorización vencida, cupo agotado, contacto sin revisar/vencido, baja, llamada pendiente, línea ausente o aplicación sin comprobar), con enlace al paso que lo resuelve. El panel no consulta el saldo de Twilio ni los créditos de ElevenLabs: hay que comprobarlos por separado.
+- Validación: **232 pruebas** (21 comerciales de integración y 4 de bloqueos), TypeScript, ESLint y build. Navegador local con base y proveedor simulados: error conserva borrador, edición y restauración funcionan y muestran versión/confirmación. Sin llamadas reales para esta implementación.
+
+## Twilio observado durante este cambio
+
+El usuario pidió abrir el registro. Se dejaron **Call Logs**, filtrado por la línea de Turnia, y **Recording Logs**. Aparece una llamada posterior iniciada fuera de este trabajo: **24/10/2026 19:03:19 Argentina, Completed, 63 s**. No se inició ninguna desde esta tarea. Twilio muestra **cuenta suspendida por falta de fondos**, saldo **−US$0,49524**. No se recargó ni se tocó la configuración de HolaVeggie. La cuenta comparte saldo por decisión expresa del usuario; esto requiere atención del titular. Sofi comercial sigue sin grabación de audio; no se activó grabación ni escucha en vivo.
+
 ## Cambio vigente — misma voz de Sofi y pitch breve
 
 El usuario pidió usar la misma voz de la recepcionista y mejorar la venta. El agente comercial pasa a presentarse como **Sofi**, conservando su ID `agent_4501m5qvpjwrfcxrafq64zmx0y0q`. El botón **«Usar la voz de Sofi y aplicar pitch»** lee la voz real del agente de la clínica principal (`ijxn8I4NzJccD2Sa7lcj`), independientemente de la clínica seleccionada en el navegador, y la aplica solo al comercial. No modifica la recepcionista. Prepararlo siempre pausa el piloto; no llama.

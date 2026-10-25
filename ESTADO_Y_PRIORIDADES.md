@@ -1,6 +1,51 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Campañas para activar la base — 25/10/2026
+
+- **Pedido del usuario:** mejorar la UX/UI y las funciones de Panel → Campañas para activar la base dormida (controles trimestrales, semestrales, chequeos programados), pensando el negocio con Assort Activate como referencia, y decidir qué hacer con un CRM. Después propuso abrir WhatsApp desde el panel con el mensaje escrito: quedó como el modo principal de envío.
+- **Decisión:** sin CRM externo. Turnia es el CRM de pacientes, y la base entra por la agenda propia y por una importación desde Excel o CSV. Los conectores con sistemas de gestión quedan para más adelante. Detalle, referencia de Assort y hoja de ruta en [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md).
+- **Campañas:**
+  - Arriba, la base para volver a agendar, con su valor según los precios de referencia.
+  - Oportunidades con «Revisar y enviar»: controles vencidos, inactivos, ausentes, lista de espera, recordatorios y encuestas.
+  - Frecuencia del control de cada prestación (mensual a cada 2 años) y reglas de contacto: meses para contar como inactivo y tope de mensajes por paciente.
+  - Historial con embudo: enviados, respondieron, sacaron turno y valor.
+- **Cada campaña:**
+  - La lista queda guardada y se revisa: quitar, volver a sumar o actualizar.
+  - Envío **desde el WhatsApp de la clínica**: abre WhatsApp Web o la app con el mensaje escrito y lo marca como enviado.
+  - Envío **con Sofi** (de a 50, por Meta o WAHA, cuando WhatsApp esté conectado).
+  - Mensaje editable con `{nombre}` y `{detalle}`. Un turno sacado por cualquier vía después del mensaje cuenta como resultado.
+- **Pacientes:**
+  - Importación con reconocimiento de columnas, vista previa, una fila por paciente o por visita, confirmación de consentimiento y opción de deshacer.
+  - «Próximo control» por paciente y visitas importadas en la ficha.
+- **No se activó nada:** WhatsApp sigue pausado para Sofi, el workflow de campañas de n8n sigue desactivado, no se envió ningún mensaje y no se tocaron WAHA ni ElevenLabs.
+- **Validación:**
+  - 244 pruebas (12 nuevas de campañas e importación), TypeScript, ESLint y build.
+  - En el navegador local: importación de 30 pacientes, oportunidades, campaña con envío desde WhatsApp Web (enlace abierto y paciente marcado), en compu y en celular, sin scroll horizontal.
+  - axe sin problemas en Campañas, la campaña e Importar.
+
+## Grabaciones telefónicas en Twilio — 25/10/2026
+
+- Pedido explícito: poder ver en Twilio las llamadas grabadas de **Sofi comercial y Sofi de turnos**.
+- Confirmado en la API oficial de ElevenLabs: el cuerpo de `/v1/convai/twilio/outbound-call` admite **`call_recording_enabled: true`**, que pide grabación nativa a Twilio. Se agregó en los **dos** caminos salientes de Turnia: `src/lib/sales/service.ts` (comercial) y `startPhoneCall` de `src/lib/elevenlabs.ts` (callback/demos clínicas). No requiere nuevas credenciales ni configurar números o webhooks de HolaVeggie.
+- Destino: **Twilio → Monitor → Logs → Call recordings / Recording Logs**. Accesos también en la ficha comercial y en Configuración clínica (solo administrador). La confirmación manual comercial indica que se autoriza una llamada grabada.
+- Alcance: **llamadas telefónicas nuevas iniciadas por Turnia**. Las conversaciones web/Telegram no pasan por Twilio y no aparecen allí; los registros previos sin audio no se pueden reconstruir. Esto no incorpora una línea entrante ni modifica las llamadas del operador móvil. Las llamadas que alguien dispare manualmente fuera de Turnia necesitan su propia opción de grabación.
+- El audio se solicita en **Twilio**. `privacy.record_voice` de ElevenLabs es independiente y se dejó como estaba; no se activó una segunda copia allí ni grabación global de la cuenta. No se modificó la recepcionista clínica, WAHA, Telegram ni otro negocio.
+- Costos publicados consultados el 25/10: **US$0,0025/min** por grabación y **US$0,0005/min/mes** por almacenamiento, más impuestos si corresponden. No se activó transcripción paga, recarga automática ni cambio de plan. No se inició una llamada real desde esta tarea.
+- Validación: 232 pruebas, incluidas verificaciones de `call_recording_enabled` en las dos solicitudes reales de código con proveedor simulado y conservación de no-duplicación. TypeScript, ESLint y build correctos. **Pendiente validar el primer audio real en Twilio** después de una llamada autorizada y con saldo disponible. No afirmar que existe una grabación nueva antes de verla.
+- Editor previo: PR #51 integrado en `main`, deploy de producción Ready. Primera configuración guardada desde el panel el 25/10: **versión 1**, voz de Sofi, prompt y conexiones comprobados en ElevenLabs, piloto pausado. La configuración clínica comparada por hash antes/después siguió idéntica. Borradores/guardado/restauración ya estaban probados con proveedor simulado; no se alteró el pitch con textos de prueba en producción.
+- Fuentes: [ElevenLabs / Twilio outbound-call](https://elevenlabs.io/docs/eleven-agents/api-reference/integrations/twilio/outbound-call), [Twilio / grabaciones](https://www.twilio.com/docs/voice/api/recording), [Twilio / tarifas](https://www.twilio.com/en-us/voice/pricing/us).
+
+
+## Editor de Sofi comercial y bloqueos claros — 24/10/2026
+
+- Pedido: incorporar el editor propuesto y resolver la confusión del botón de llamada desactivado. Nuevo `/panel/comercial/configuracion`: saludo, system prompt y voz editables, guardado/aplicación con comprobación real en ElevenLabs, historial y restauración de versión anterior. No se necesita editar el repo para cambiar el pitch.
+- Persistencia en `sales_settings` + `sales_config_versions`. Migración aditiva/idempotente en el despliegue, sin seed de producción. El texto editado se conserva al sincronizar voces y se valida antes de llamar; cada intento registra versión. Formularios obsoletos no pisan cambios nuevos. Si hay fallo parcial del proveedor se marca `needs_sync` y se bloquean llamadas hasta una nueva aplicación correcta.
+- La ficha de contacto explica cada bloqueo y enlaza a su solución; incluye revisión vencida y llamadas pendientes de cualquier ficha. Guardar configuración pausa y conserva el cupo; habilitar llamadas sigue siendo un paso separado con confirmación individual.
+- Se mantienen agente comercial separado, herramientas de resultado/baja/cierre y límite remoto de 60 s más despedida. Recepcionista clínica, WAHA, Telegram y conexiones de HolaVeggie no se modifican. No se inician llamadas ni recargas en esta implementación.
+- **Twilio, lectura solicitada por el usuario:** consola muestra cuenta suspendida por falta de fondos y saldo **−US$0,49524** (reemplaza el saldo positivo del registro anterior). Se abrieron llamadas y grabaciones; última llamada visible de Turnia **19:03:19 Argentina, completada, 63 s**, iniciada fuera de esta tarea. No habilitar ni recargar automáticamente la cuenta compartida.
+- Validación: **232 pruebas** (21 comerciales + 4 bloqueos), TypeScript, ESLint y build. En navegador local: validación con borrador conservado, guardado y restauración del saludo/voz con proveedor simulado. Detalle y uso en [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md).
 
 ## Revisión de turnos, cambios y cancelaciones — 25/10/2026
 

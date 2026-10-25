@@ -7,10 +7,8 @@ import { syncCalendarLater } from "@/lib/calendar/sync";
 import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
-import { createCampaign, sendCampaign, CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
-import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
 import { addDaysKey, humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
@@ -586,51 +584,6 @@ export async function runAgentSetup(): Promise<AgentSetupState> {
       message: `${result.created ? "Agente creado" : "Agente actualizado"} (${result.agentId}) con ${result.toolIds.length} herramientas${
         result.voiceId ? "" : ". No se pudo elegir una voz argentina: elegí una en ElevenLabs y pegá su ID en Configuración"
       }.`,
-    };
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Campañas
-// ---------------------------------------------------------------------------
-export async function createCampaignAction(form: FormData) {
-  await requireSession();
-  const clinic = await getPanelClinic(form);
-  const type = text(form, "type") as CampaignType | null;
-  if (!type || !CAMPAIGN_TYPES.includes(type)) return;
-  const templateKey = type === "personalizada" ? "" : type;
-  // Por WAHA no hay templates de Meta: se manda el texto sugerido para ese tipo.
-  const template = text(form, "template_name") ?? clinic.templates?.[templateKey] ?? (clinic.whatsapp_provider === "waha" ? type : null);
-  if (!template) return;
-  if (clinic.is_demo) throw new Error("Los perfiles de demo usan datos ficticios y no envían campañas.");
-  const campaign = await createCampaign({
-    clinicId: clinic.id,
-    name: text(form, "name") ?? CAMPAIGN_LABELS[type].label,
-    type,
-    templateName: template,
-    templateLanguage: text(form, "template_language") ?? clinic.templates?.idioma ?? "es_AR",
-    goal: text(form, "goal") ?? undefined,
-  });
-  redirect(`/panel/campanas/${campaign.id}`);
-}
-
-export type SendState = { ok?: boolean; message?: string };
-
-export async function sendCampaignAction(_prev: SendState | undefined, form: FormData): Promise<SendState> {
-  await requireSession();
-  const id = uuid(form, "id");
-  if (!id) return { ok: false, message: "Falta la campaña." };
-  const clinic = await getPanelClinic(form);
-  if (clinic.is_demo) return { ok: false, message: "Los perfiles de demo no envían campañas." };
-  if (!(await sql`select id from campaigns where id = ${id} and clinic_id = ${clinic.id}`).length) return { ok: false, message: "La campaña no pertenece a esta clínica." };
-  try {
-    const r = await sendCampaign(id);
-    revalidatePath(`/panel/campanas/${id}`);
-    return {
-      ok: r.failed === 0,
-      message: `Audiencia: ${r.audience}. Enviados: ${r.sent}. Omitidos: ${r.skipped}. Errores: ${r.failed}.${r.errors.length ? ` ${r.errors.slice(0, 3).join(" · ")}` : ""}`,
     };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };

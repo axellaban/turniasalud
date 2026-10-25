@@ -46,7 +46,8 @@ export default async function PanelHome() {
         (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since} and outcome = 'resuelto') as resolved,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and source in ('whatsapp', 'telefono', 'web', 'campana') and created_at >= ${since}) as booked_by_ai,
         (select count(*)::int from tasks where clinic_id = ${clinic.id} and status <> 'resuelta') as open_tasks,
-        (select count(*)::int from campaign_recipients r join campaigns c on c.id = r.campaign_id where c.clinic_id = ${clinic.id} and r.status = 'agendo') as recovered`,
+        (select count(*)::int from campaign_recipients r join campaigns c on c.id = r.campaign_id where c.clinic_id = ${clinic.id}
+          and (r.status = 'agendo' or exists (select 1 from appointments a where a.patient_id = r.patient_id and r.sent_at is not null and a.created_at >= r.sent_at and a.status <> 'cancelado'))) as recovered`,
     // Últimos 30 días: satisfacción, confirmación de recordatorios y ausentismo.
     sql<Array<{ satisfaction: number | null; answers: number; reminded: number; confirmed: number; attended: number; absent: number }>>`
       select
@@ -56,7 +57,8 @@ export default async function PanelHome() {
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month} and confirmed_at is not null) as confirmed,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'atendido') as attended,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'ausente') as absent`,
-    // Turnos que sacaron pacientes después de recibir una campaña (90 días) y su valor de referencia.
+    // Turnos que sacaron pacientes después de recibir una campaña (90 días), con Sofi, en el panel
+    // o por teléfono (también los que se escribieron desde el WhatsApp de la clínica), y su valor de referencia.
     sql<Array<{ appointments: number; revenue: number }>>`
       select count(*)::int as appointments, coalesce(sum(t.price), 0)::float8 as revenue
       from campaign_recipients r
@@ -68,7 +70,7 @@ export default async function PanelHome() {
         limit 1
       ) booked on true
       join appointment_types t on t.id = booked.appointment_type_id
-      where c.clinic_id = ${clinic.id} and r.status = 'agendo' and r.sent_at >= ${quarter}`,
+      where c.clinic_id = ${clinic.id} and r.sent_at >= ${quarter}`,
     sql<Array<{ id: string; starts_at: string; status: string; patient: string | null; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, p.full_name as patient, pr.full_name as professional, t.name as type_name
       from appointments a
