@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
   // Localmente y en CI no hay id y no cambia nada.
   deploymentId: process.env.VERCEL_DEPLOYMENT_ID || undefined,
   env: { TURNIA_AUDIOS_REPO: audiosDelRepo.join(",") },
+  // Importar pacientes manda la planilla entera a una server action (hasta ~3,5 MB de CSV).
+  experimental: { serverActions: { bodySizeLimit: "4mb" } },
   // Direcciones parecidas a las del panel (singular, sin tilde, abreviadas) llevan a la
   // página correcta en lugar de un 404. Son temporales (307): no quedan cacheadas.
   async redirects() {

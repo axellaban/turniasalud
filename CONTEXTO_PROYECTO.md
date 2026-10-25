@@ -45,7 +45,7 @@
 | Assort | Turnia | Implementación |
 |---|---|---|
 | Concierge (inbound) | **Recepción** | Agente en ElevenLabs + `src/app/api/agent/tools/[name]` |
-| Activate (outbound) | **Activa** | `src/lib/campaigns.ts`, panel → Campañas, `n8n/turnia-campanas-automaticas.json`, `offerFreedSlot` en `service.ts` |
+| Activate (outbound) | **Activa** | `src/lib/campaigns.ts`, panel → Campañas (oportunidades, lista que se revisa, envío desde el WhatsApp de la clínica o con Sofi), importación de pacientes (`src/lib/patient-import.ts`), `n8n/turnia-campanas-automaticas.json`, `offerFreedSlot` en `service.ts`. Ver `PLAN_CAMPANAS.md` |
 | Orchestrate | **Circuitos** | `registrar_paciente` (también desde foto de la credencial), órdenes médicas por WhatsApp → turno o tarea `orden_medica`, indicaciones previas. Faltan formularios digitales previos a la visita. |
 | Empower | **Equipo** | Panel: tareas con respuesta al paciente por WhatsApp, conversaciones con transcripción, resumen y encuesta, métricas, memoria del paciente |
 | Patient Journey Memory | Memoria del paciente | `patients.memory_summary` + webhook de inicio (`patient_context`) + `data_collection.memoria` post-llamada |
@@ -104,7 +104,8 @@ src/lib/agent/setup.ts     Crea/actualiza tools + agente vía API de ElevenLabs 
 src/lib/agent/auth.ts      Verificación del header x-turnia-secret
 src/lib/elevenlabs.ts      fetch a la API REST, token/signed URL, envío de templates de WhatsApp, verificación HMAC
 src/lib/conversations.ts   Procesa el webhook post-conversación (guardar, memoria, campañas, n8n)
-src/lib/campaigns.ts       Audiencias (recall, reactivación, recordatorio, ausentes, lista de espera, encuesta, personalizada; respeta contact_opt_out) y envío
+src/lib/campaigns.ts       Audiencias (recall con visitas importadas y controles por paciente, reactivación, recordatorio, ausentes, lista de espera, encuesta, aviso; respeta contact_opt_out y el tope de contacto), oportunidades, lista guardada, envío manual o con Sofi y resultados
+src/lib/patient-import.ts  Lectura de planillas de pacientes (Excel pegado o CSV), compartida entre navegador y servidor
 src/lib/tasks.ts           resolveTask(): resuelve un pedido y le manda la respuesta al paciente (template "respuesta")
 src/lib/n8n.ts             notifyN8n() (nunca rompe el flujo principal)
 src/lib/session.ts         Cookie de sesión del panel (HMAC)

@@ -2,6 +2,29 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Campañas para activar la base — 25/10/2026
+
+- **Pedido del usuario:** mejorar la UX/UI y las funciones de Panel → Campañas para activar la base dormida (controles trimestrales, semestrales, chequeos programados), pensando el negocio con Assort Activate como referencia, y decidir qué hacer con un CRM. Después propuso abrir WhatsApp desde el panel con el mensaje escrito: quedó como el modo principal de envío.
+- **Decisión:** sin CRM externo. Turnia es el CRM de pacientes, y la base entra por la agenda propia y por una importación desde Excel o CSV. Los conectores con sistemas de gestión quedan para más adelante. Detalle, referencia de Assort y hoja de ruta en [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md).
+- **Campañas:**
+  - Arriba, la base para volver a agendar, con su valor según los precios de referencia.
+  - Oportunidades con «Revisar y enviar»: controles vencidos, inactivos, ausentes, lista de espera, recordatorios y encuestas.
+  - Frecuencia del control de cada prestación (mensual a cada 2 años) y reglas de contacto: meses para contar como inactivo y tope de mensajes por paciente.
+  - Historial con embudo: enviados, respondieron, sacaron turno y valor.
+- **Cada campaña:**
+  - La lista queda guardada y se revisa: quitar, volver a sumar o actualizar.
+  - Envío **desde el WhatsApp de la clínica**: abre WhatsApp Web o la app con el mensaje escrito y lo marca como enviado.
+  - Envío **con Sofi** (de a 50, por Meta o WAHA, cuando WhatsApp esté conectado).
+  - Mensaje editable con `{nombre}` y `{detalle}`. Un turno sacado por cualquier vía después del mensaje cuenta como resultado.
+- **Pacientes:**
+  - Importación con reconocimiento de columnas, vista previa, una fila por paciente o por visita, confirmación de consentimiento y opción de deshacer.
+  - «Próximo control» por paciente y visitas importadas en la ficha.
+- **No se activó nada:** WhatsApp sigue pausado para Sofi, el workflow de campañas de n8n sigue desactivado, no se envió ningún mensaje y no se tocaron WAHA ni ElevenLabs.
+- **Validación:**
+  - 244 pruebas (12 nuevas de campañas e importación), TypeScript, ESLint y build.
+  - En el navegador local: importación de 30 pacientes, oportunidades, campaña con envío desde WhatsApp Web (enlace abierto y paciente marcado), en compu y en celular, sin scroll horizontal.
+  - axe sin problemas en Campañas, la campaña e Importar.
+
 ## Grabaciones telefónicas en Twilio — 25/10/2026
 
 - Pedido explícito: poder ver en Twilio las llamadas grabadas de **Sofi comercial y Sofi de turnos**.

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDate } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
-import { Card, Empty, PageHeader, inputClass, secondaryButtonClass } from "@/components/ui";
+import { Card, Empty, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import type { Patient } from "@/lib/types";
 import type { Metadata } from "next";
 
@@ -23,7 +23,15 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
 
   return (
     <>
-      <PageHeader title="Pacientes" description="Cada paciente con su memoria: cobertura, preferencias y lo que contó en conversaciones anteriores." />
+      <PageHeader
+        title="Pacientes"
+        description="Cada paciente con su memoria: cobertura, preferencias y lo que contó en conversaciones anteriores."
+        actions={
+          <Link href="/panel/pacientes/importar" className={buttonClass}>
+            Importar pacientes
+          </Link>
+        }
+      />
       <form className="mb-5 flex max-w-md gap-2">
         <input name="q" defaultValue={search} placeholder="Buscar por nombre, celular o DNI" className={inputClass} />
         <button className={secondaryButtonClass}>Buscar</button>
@@ -63,7 +71,19 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
           </table>
         </Card>
       ) : (
-        <Empty>{search ? "No encontramos pacientes con esa búsqueda." : "Todavía no hay pacientes."}</Empty>
+        <Empty>
+          {search ? (
+            "No encontramos pacientes con esa búsqueda."
+          ) : (
+            <>
+              Todavía no hay pacientes.{" "}
+              <Link href="/panel/pacientes/importar" className="font-medium text-brand-700 underline">
+                Importá los de tu sistema o tu Excel
+              </Link>
+              .
+            </>
+          )}
+        </Empty>
       )}
     </>
   );

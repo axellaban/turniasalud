@@ -28,6 +28,10 @@ export type Clinic = {
   context_revision: number;
   payment_methods: string | null;
   agent_context: string | null;
+  /** Meses sin venir para que un paciente cuente como inactivo (campaña de reactivación). */
+  reactivation_months: number;
+  /** Días mínimos entre dos campañas para volver a sacar turno al mismo paciente (0 = sin tope). */
+  contact_cooldown_days: number;
   created_at: string;
 };
 
@@ -80,6 +84,24 @@ export type Patient = {
   /** Pidió no recibir mensajes de campañas (recall, reactivación, encuestas…). */
   contact_opt_out: boolean;
   last_contact_at: string | null;
+  /** Control indicado para este paciente (AAAA-MM-DD): entra en el recall cuando llega la fecha. */
+  next_control_at: string | null;
+  next_control_reason: string | null;
+  /** Importación que creó la ficha (para poder deshacerla). */
+  import_id: string | null;
+  created_at: string;
+};
+
+/** Visita anterior a Turnia, traída de la importación: cuenta como un turno atendido. */
+export type PatientVisit = {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  appointment_type_id: string | null;
+  service: string;
+  professional: string | null;
+  visited_at: string;
+  import_id: string | null;
   created_at: string;
 };
 
@@ -183,6 +205,9 @@ export type Campaign = {
   template_name: string;
   template_language: string;
   goal: string | null;
+  /** Mensaje propio con {nombre} y {detalle} (por WAHA y desde el WhatsApp de la clínica); null = el sugerido. */
+  message: string | null;
+  /** borrador = lista para revisar · enviando = en curso (quedan pendientes) · finalizada = enviada a todos. */
   status: "borrador" | "enviando" | "finalizada";
   created_at: string;
   sent_at: string | null;
@@ -202,8 +227,16 @@ export type CampaignRecipient = {
   id: string;
   campaign_id: string;
   patient_id: string;
-  status: "pendiente" | "enviado" | "error" | "respondio" | "agendo";
+  /** excluido = lo quitó el equipo, o dejó de cumplir las condiciones (el motivo queda en error). */
+  status: "pendiente" | "enviado" | "error" | "respondio" | "agendo" | "excluido";
   elevenlabs_conversation_id: string | null;
   error: string | null;
   sent_at: string | null;
+  detail: string | null;
+  context: string | null;
+  /** Precio de referencia del turno que se le ofrece (null si la prestación no tiene precio). */
+  value: string | null;
+  /** Lo envió el equipo desde su WhatsApp (chat abierto desde el panel con el mensaje escrito). */
+  manual: boolean;
+  created_at: string;
 };
