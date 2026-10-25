@@ -236,7 +236,7 @@ function TarjetaChat({ paciente, agente, titulo }: { paciente: string; agente: s
         <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "18px 22px", backgroundColor: "#075e54", color: "#fff" }}>
           <svg width={44} height={44} viewBox="0 0 32 32">
             <rect width="32" height="32" rx="16" fill="#fff" />
-            <path d="M9 10.5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v6.5a3 3 0 0 1-3 3h-4.2L11.5 24v-4.1A3 3 0 0 1 9 17z" fill={COLOR.azul} />
+            <path d={MARK_PATH} fill={COLOR.azul} fillRule="evenodd" transform="translate(6.24 5.79) scale(0.61)" />
           </svg>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", fontSize: 21, fontWeight: 600 }}>{titulo}</div>
