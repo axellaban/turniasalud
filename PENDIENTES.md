@@ -64,6 +64,8 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [x] «Escuchá a Sofi en acción» en una pantalla: recepcionista a la izquierda, paciente a la derecha, texto al ritmo del audio real.
 - [ ] Si el usuario trae un video propio: reemplazar `public/videos/hero.mp4`, `hero.webm`, `hero-mobile.mp4` y `hero-poster.jpg`, y ajustar los tiempos de `ESCENAS` en `src/components/site/agente-en-vivo.tsx`. Cómo se armó el actual (ffmpeg, clips de 8 s, fundido de 0,6 s): [`PLAN_WEB_ASSORT.md`](PLAN_WEB_ASSORT.md).
 - [ ] Contenido real: casos, precios y (cuando haya) testimonios. Hoy no se inventa nada.
+- [x] **Video demo para consultorios** (25/10): `video/demo/out/turnia-horizontal.mp4` (1920 × 1080) y `turnia-vertical.mp4` (1080 × 1920), de 47 s. Muestra WhatsApp con nota de voz, una llamada con la voz real de Sofi, la agenda, la conversación y Campañas. El panel se capturó en local con datos ficticios, nunca en producción. Las voces son cortes de los audios ya generados de la web: no se generó audio nuevo. Cómo regenerarlo: [`video/demo/README.md`](video/demo/README.md).
+- [ ] Que el usuario mire el video y decida dónde usarlo. El chat de WhatsApp es una escena animada: cuando WhatsApp esté activo en producción se puede reemplazar por capturas reales.
 - [x] **Skills de diseño** instaladas en `.claude/skills` y auditoría de accesibilidad hecha (24/10): de 512 problemas a 6 decorativos. Detalle en `ESTADO_Y_PRIORIDADES.md`.
 - [x] Crítica de diseño de la home y `/probar-demo` hecha y aplicada (24/10). Queda a criterio: los titulares en dos colores se repiten en casi todas las secciones (es el estilo de Assort; no se tocó).
 
