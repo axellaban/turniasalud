@@ -1,6 +1,19 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 24/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Grabaciones telefónicas en Twilio — 25/10/2026
+
+- Pedido explícito: poder ver en Twilio las llamadas grabadas de **Sofi comercial y Sofi de turnos**.
+- Confirmado en la API oficial de ElevenLabs: el cuerpo de `/v1/convai/twilio/outbound-call` admite **`call_recording_enabled: true`**, que pide grabación nativa a Twilio. Se agregó en los **dos** caminos salientes de Turnia: `src/lib/sales/service.ts` (comercial) y `startPhoneCall` de `src/lib/elevenlabs.ts` (callback/demos clínicas). No requiere nuevas credenciales ni configurar números o webhooks de HolaVeggie.
+- Destino: **Twilio → Monitor → Logs → Call recordings / Recording Logs**. Accesos también en la ficha comercial y en Configuración clínica (solo administrador). La confirmación manual comercial indica que se autoriza una llamada grabada.
+- Alcance: **llamadas telefónicas nuevas iniciadas por Turnia**. Las conversaciones web/Telegram no pasan por Twilio y no aparecen allí; los registros previos sin audio no se pueden reconstruir. Esto no incorpora una línea entrante ni modifica las llamadas del operador móvil. Las llamadas que alguien dispare manualmente fuera de Turnia necesitan su propia opción de grabación.
+- El audio se solicita en **Twilio**. `privacy.record_voice` de ElevenLabs es independiente y se dejó como estaba; no se activó una segunda copia allí ni grabación global de la cuenta. No se modificó la recepcionista clínica, WAHA, Telegram ni otro negocio.
+- Costos publicados consultados el 25/10: **US$0,0025/min** por grabación y **US$0,0005/min/mes** por almacenamiento, más impuestos si corresponden. No se activó transcripción paga, recarga automática ni cambio de plan. No se inició una llamada real desde esta tarea.
+- Validación: 232 pruebas, incluidas verificaciones de `call_recording_enabled` en las dos solicitudes reales de código con proveedor simulado y conservación de no-duplicación. TypeScript, ESLint y build correctos. **Pendiente validar el primer audio real en Twilio** después de una llamada autorizada y con saldo disponible. No afirmar que existe una grabación nueva antes de verla.
+- Editor previo: PR #51 integrado en `main`, deploy de producción Ready. Primera configuración guardada desde el panel el 25/10: **versión 1**, voz de Sofi, prompt y conexiones comprobados en ElevenLabs, piloto pausado. La configuración clínica comparada por hash antes/después siguió idéntica. Borradores/guardado/restauración ya estaban probados con proveedor simulado; no se alteró el pitch con textos de prueba en producción.
+- Fuentes: [ElevenLabs / Twilio outbound-call](https://elevenlabs.io/docs/eleven-agents/api-reference/integrations/twilio/outbound-call), [Twilio / grabaciones](https://www.twilio.com/docs/voice/api/recording), [Twilio / tarifas](https://www.twilio.com/en-us/voice/pricing/us).
+
 
 ## Editor de Sofi comercial y bloqueos claros — 24/10/2026
 
