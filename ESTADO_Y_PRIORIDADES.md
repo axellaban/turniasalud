@@ -2,6 +2,18 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Prospección a odontólogos de Mar del Plata y Miramar — 25/10/2026
+
+- **Pedido:** seguir la prospección del tablero viejo (artefacto de la otra cuenta, sin créditos) llegando a **quien decide** y no a la recepción, con la meta de **250 primeros contactos en la semana del 26 al 30/10** en Mar del Plata y Miramar. Estrategia, plan por día y mensajes en [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md).
+- **El tablero viejo no se puede leer desde esta cuenta** (la base del artefacto es de la otra organización): ni la lista ni los estados. Quien ya recibió mensaje se reconoce al abrir el chat y se marca «Ya le había escrito».
+- **Lista nueva, de personas:** 408 odontólogos del listado público del Círculo Odontológico de Mar del Plata, cruzados con Doctoralia (especialidades, opiniones, agenda online, si pagan la plataforma, Dr./Dra.). 141 con celular propio, 30 que comparten el celular de un consultorio (13 números), 196 con fijo y 41 sin teléfono. Se entregó como CSV al usuario: **no está en el repo**.
+- **Panel → Prospección** (`/panel/prospeccion`, solo administrador): importación (CSV o celdas; reimportar solo completa lo que falta), cola «Para hoy» (seguimientos que vencieron y nuevos por prioridad hasta la meta diaria, un número compartido una sola vez), botón de WhatsApp con el mensaje armado (WhatsApp Web en la compu, la app en el celular; registra el contacto y programa el seguimiento: 2 y 4 días hábiles, tres mensajes como máximo), Instagram (copia el mensaje y abre el chat), llamada con guion, estados, ficha editable, notas e historia, y mensajes y metas editables.
+- **Demo personal por odontólogo:** `/p/<código>` con su nombre, la vista previa de WhatsApp con su consultorio en el chat (`opengraph-image`) y un botón que arranca la demo sin web con su consultorio, su dirección y **su nombre como profesional** (`demo_sessions.manual_professional`). La página avisa cuando la abre (no cuenta si la abre Axel desde el panel) y `/api/demo/iniciar` con `ref` deja la demo en su ficha y pasa el seguimiento a hoy.
+- **Baja:** «Pidió no recibir más» lo saca de la cola para siempre y lo suma a `sales_suppressions` (tampoco lo llama Sofi).
+- Tablas nuevas `sales_outreach` y `sales_outreach_events`; `sales_settings` suma mensajes y metas. Código en `src/lib/sales/outreach*.ts` y `src/app/panel/(app)/prospeccion/`.
+- Validación: 13 pruebas nuevas (7 de integración con Postgres), 272 en total; TypeScript, ESLint y build. Recorrido en el navegador con la lista real en una base local: importación de las 408, cola, WhatsApp (mensaje y link correctos), «Ya le había escrito», seguimiento del día, ficha, interesados, mensajes, página pública en escritorio y celular, vista previa e inicio de la demo desde el link (queda registrada). axe sin problemas y sin scroll horizontal.
+- **Pendiente del usuario:** importar la lista en producción, poner el perfil de Turnia en su WhatsApp Business y arrancar el lunes con «Para hoy».
+
 ## Teléfono editable y guion breve — 25/10/2026
 
 - Pedido: escribir el teléfono en un campo y reducir la mezcla de instrucciones; **saludo inicial intacto**. La última prueba del usuario (13:23, 63 s) mostró el desvío: aceptó un control y el prompt lo llevaba a vender Turnia.
