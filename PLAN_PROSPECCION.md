@@ -5,21 +5,21 @@ Actualizado: 25/10/2026. Estrategia, plan de la semana del 26 al 30/10 (meta: 25
 ## La táctica, en cinco líneas
 
 1. **A la persona que decide, no a la recepción.** La lista es de odontólogos con nombre propio, no de consultorios. Los primeros 50 se contactaron sobre todo al WhatsApp que cada consultorio publica en su web: ahí contesta la recepción, que no compra y puede sentir que la reemplazan.
-2. **Su WhatsApp personal primero.** El listado público del Círculo Odontológico de Mar del Plata da el teléfono que cada odontólogo publica para sus pacientes: 141 tienen un celular propio (138 números). A esos se les escribe directo.
+2. **Su WhatsApp personal primero.** El listado público del Círculo Odontológico de Mar del Plata da el teléfono que cada odontólogo publica para sus pacientes: 139 tienen un celular propio (137 números). A esos se les escribe directo.
 3. **La demo es el mensaje.** Cada uno tiene su link (`/p/<código>`). La vista previa de WhatsApp muestra **el nombre de su consultorio** en un chat, y al tocar «Probar la demo» Sofi lo atiende como su recepción y da turnos con **su nombre**. Es el «esto es para mí» que separa un mensaje de un spam.
 4. **La recepción como aliada.** Cuando el número es del consultorio (fijo, o un celular que comparten varios), el mensaje va a nombre del odontólogo y le habla a la recepción de lo que le duele a ella: los mensajes acumulados de la noche y el fin de semana. Sofi cubre esas horas, no la reemplaza.
 5. **Ahora, por la temporada.** En diciembre llegan los turistas a Mar del Plata y Miramar: más urgencias y más consultas por WhatsApp a cualquier hora, justo cuando la secretaria se toma vacaciones. El seguimiento usa ese gancho.
 
-## La lista (408 personas)
+## La lista (407 personas)
 
 Se entrega como `lista-odontologos-mdp-miramar.csv` (fuera del repo) y se importa en Panel → Prospección → Importar lista.
 
 | Grupo | Personas | Números | Canal |
 |---|---:|---:|---|
-| Celular propio | 141 | 138 | WhatsApp a la persona. Prioridad 1 (7): además muestran que invierten en su consultorio (Doctoralia con agenda u opiniones, implantes, ortodoncia, estética) |
-| Celular de un consultorio con varios odontólogos | 30 | 13 | Un solo mensaje por número, a la recepción y a nombre del que más señales tiene (suele ser el dueño) |
+| Celular propio | 139 | 137 | WhatsApp a la persona. Prioridad 1 (7): además muestran que invierten en su consultorio (Doctoralia con agenda u opiniones, implantes, ortodoncia, estética) |
+| Celular de un consultorio con varios odontólogos | 32 | 14 | Un solo mensaje por número, a la recepción y a nombre del que más señales tiene (suele ser el dueño) |
 | Teléfono fijo | 196 | 139 | WhatsApp si el fijo lo tiene; si no, llamar para pedir el WhatsApp del odontólogo, o su Instagram |
-| Sin teléfono (Doctoralia, con señales) | 41 | — | Buscar su Instagram desde la ficha |
+| Sin teléfono (Doctoralia, con señales) | 40 | — | Buscar su Instagram desde la ficha |
 
 Para los 250 de la semana alcanzan los 151 celulares (propios y de consultorio) más unos 100 entre fijos, Instagram y la visita a Miramar.
 
@@ -34,8 +34,8 @@ Para los 250 de la semana alcanzan los 151 celulares (propios y de consultorio) 
 |---|---|---|
 | Lunes | 50 celulares propios (empieza por la prioridad 1) | Contestar en el día a quien responda |
 | Martes | 50 celulares propios | 10 a 15 llamadas a fijos de prioridad 2 para conseguir el WhatsApp |
-| Miércoles | 50: los últimos celulares y los 13 consultorios | Seguimientos del lunes (aparecen solos en «Para hoy») |
-| Jueves | 40: Miramar y fijos | **Miramar en persona a la mañana** (14 odontólogos, filtro «Miramar»), con el celular y su demo abierta. Seguimientos del martes |
+| Miércoles | 50: los últimos celulares y los 14 consultorios | Seguimientos del lunes (aparecen solos en «Para hoy») |
+| Jueves | 40: Miramar y fijos | **Miramar en persona a la mañana** (13 odontólogos, más 2 en Otamendi; filtro «Miramar»), con el celular y su demo abierta. Seguimientos del martes |
 | Viernes | 60: fijos e Instagram | Seguimientos. Cerrar reuniones para la semana siguiente |
 
 - **Horarios:** de 8:30 a 9:30 (antes del primer paciente) y de 13 a 14:30 (corte del mediodía). Nunca después de las 21.
