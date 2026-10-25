@@ -132,6 +132,15 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     conversationOverride.metadata={call_duration_secs:3,phone_call:{type:"twilio",direction:"outbound",external_number:sent.to_number,call_result:"no_answer"}};
     await expect(refreshSalesCall(callId)).rejects.toThrow("todavía");expect(outbound).toBe(1);
   });
+  it("editar el nombre comercial cambia la próxima llamada y conserva el historial y el destino",async()=>{
+    const id=await prospect();await authorizeBudget(300,true);const previous=await dialProspect(id,randomUUID());await refreshSalesCall(previous);
+    const form=new FormData();form.set("intent","review");form.set("id",id);form.set("business_name","Consultorio Odontológico Dr. Guerra y Dr. Mininni");form.set("context","Prueba de la clínica, conservando el teléfono de prueba.");form.set("eligibility","solicito_llamada");form.set("evidence","Prueba local autorizada hoy por el titular del teléfono.");
+    const before=providerRequests.length;const result=await salesAction({},form);expect(result.error).toBeUndefined();expect(providerRequests).toHaveLength(before);expect(outbound).toBe(1);
+    const [old]=await sql`select business_name from sales_calls where id=${previous}`;expect(old.business_name).toBe("Odontología de prueba");
+    await dialProspect(id,randomUUID());expect(sent.conversation_initiation_client_data.dynamic_variables.business_name).toBe("Consultorio Odontológico Dr. Guerra y Dr. Mininni");expect(sent.to_number).toBe("+5491112345678");
+    form.set("business_name","  ");expect((await salesAction({},form)).error).toBeTruthy();
+    const [p]=await sql`select business_name from sales_prospects where id=${id}`;expect(p.business_name).toBe("Consultorio Odontológico Dr. Guerra y Dr. Mininni");
+  });
   it("dos confirmaciones distintas simultáneas no exceden una llamada activa",async()=>{
     const id=await prospect(); await authorizeBudget(200,true);
     const results=await Promise.allSettled([dialProspect(id,randomUUID()),dialProspect(id,randomUUID())]);

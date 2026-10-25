@@ -31,7 +31,7 @@ export default async function CommercialPage() {
       </div>
       <Card id="agregar-consultorio" className="scroll-mt-24"><details open={prospects.length === 0}><summary className="cursor-pointer font-display text-xl">Agregar otro número o consultorio</summary><p className="my-4 text-sm">Completá estos datos solo para un destinatario nuevo. Para el mismo número, volvé a su ficha guardada.</p>
         <SalesForm intent="prospect" label="Guardar contacto">
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Nombre del consultorio o contacto de prueba"><input name="business_name" className={inputClass} minLength={3} maxLength={160} required /></Field><Field label="Teléfono internacional" hint="Ejemplo: +54 9 11 1234 5678"><input name="phone" type="tel" autoComplete="tel" className={inputClass} required /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Nombre de la clínica que dirá Sofi"><input name="business_name" className={inputClass} minLength={3} maxLength={160} required /></Field><Field label="Teléfono internacional" hint="Ejemplo: +54 9 11 1234 5678"><input name="phone" type="tel" autoComplete="tel" className={inputClass} required /></Field></div>
           <Field label="Web pública"><input name="website" type="url" placeholder="https://…" className={inputClass} maxLength={500} required /></Field><ReviewFields />
         </SalesForm>
       </details></Card>

@@ -2,6 +2,13 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Nombre de la clínica en la llamada comercial — 25/10/2026
+
+- El usuario escuchó «Consultorio de prueba de Axel» porque `business_name` salía de la ficha comercial, no de la clínica seleccionada en el encabezado. Se conserva esa separación para no cambiar un destinatario comercial al navegar entre clínicas.
+- El nombre se puede editar desde «Editar datos y revisión del contacto». La ficha muestra «Nombre que dirá Sofi» y una vista previa del saludo con el nombre real sustituido. La creación de contactos usa la misma etiqueta para evitar guardar alias de prueba que luego se pronuncien.
+- Guardar el nombre no aplica cambios al agente ni inicia llamadas. La próxima solicitud usa el nombre actualizado; las llamadas anteriores conservan el nombre que tenían al iniciarse y el teléfono de destino se mantiene.
+- Corrección solicitada en esta ficha: «Consultorio Odontológico Dr. Guerra y Dr. Mininni». No se modifica el saludo personalizado ni la configuración clínica.
+
 ## Comercial: llamada lista y contexto en un solo lugar — 25/10/2026
 
 - El usuario no podía habilitar otra prueba: ElevenLabs devolvía `status: initiated` pero `metadata.phone_call.call_result: no_answer`, duración 0 y sin stream. El panel solo reconocía `done`/`failed` y mantenía la llamada bloqueada.
