@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import { dentalServices, servicesPhrase } from "./dental-services";
 import type { ScrapeResult } from "./scraper";
 import type { ManualClinic } from "./website";
 
@@ -186,8 +187,13 @@ const DENTAL_TYPES: DemoProfile["prestaciones"] = [
 export function manualProfile(input: ManualClinic): DemoProfile {
   const said = input.especialidad ?? input.nombre;
   const specialty = SPECIALTIES.find(([re]) => re.test(said))?.[1] ?? clean(input.especialidad, 80) ?? "Consulta médica";
+  // Los tratamientos que declara el odontólogo suman su turno de primera vez (implantes, ortodoncia…).
+  const services = specialty === "Odontología" ? dentalServices(input.servicios) : [];
   const prestaciones = specialty === "Odontología"
-    ? DENTAL_TYPES
+    ? [
+        ...DENTAL_TYPES,
+        ...services.map((s) => ({ nombre: s.turno, especialidad: "Odontología", duracion_min: s.duracion_min, precio: null, indicaciones: null, primera_vez: true })),
+      ]
     : [
         { nombre: "Consulta de primera vez", especialidad: specialty, duracion_min: 30, precio: null, indicaciones: null, primera_vez: true },
         { nombre: "Control", especialidad: specialty, duracion_min: 20, precio: null, indicaciones: null, primera_vez: false },
@@ -201,11 +207,21 @@ export function manualProfile(input: ManualClinic): DemoProfile {
     horario_texto: "Lunes a viernes de 9 a 18 h (horario de ejemplo de la demo)",
     horarios: [],
     coberturas: [],
-    profesionales: input.profesional ? [{ nombre: input.profesional, especialidad: specialty, dias: [], bio: null }] : [],
+    profesionales: input.profesional
+      ? [{ nombre: input.profesional, especialidad: specialty, dias: [], bio: services.length ? `Odontología general, ${servicesPhrase(services)}` : null }]
+      : [],
     prestaciones,
-    preguntas_frecuentes: input.profesional
-      ? `- Demo armada sin web: del consultorio solo se conocen el nombre, la dirección y que atiende ${input.profesional}.\n- Precios y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.`
-      : "- Demo armada sin web: del consultorio solo se conocen el nombre y la dirección.\n- Precios, profesionales y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.",
+    preguntas_frecuentes: [
+      input.profesional
+        ? `- Demo armada sin web: del consultorio solo se conocen el nombre, la dirección y que atiende ${input.profesional}.`
+        : "- Demo armada sin web: del consultorio solo se conocen el nombre y la dirección.",
+      services.length && `- Tratamientos que figuran en su perfil profesional: odontología general, ${servicesPhrase(services)}.`,
+      input.profesional
+        ? "- Precios y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme."
+        : "- Precios, profesionales y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     politicas: null,
   };
 }

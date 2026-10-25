@@ -1,6 +1,7 @@
 import { TAMANO, imagenPagina, imagenPortada } from "@/lib/og";
 import { publicOutreach } from "@/lib/sales/outreach";
-import { withArticle } from "@/lib/sales/outreach-messages";
+import { demoExample, dentalServices } from "@/lib/demo/dental-services";
+import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
 
 // La vista previa del link en WhatsApp: con el nombre de su consultorio en el chat.
 export const alt = "Demo de Turnia para tu consultorio";
@@ -14,7 +15,7 @@ export default async function Image({ params }: { params: Promise<{ code: string
   return imagenPagina({
     eyebrow: `Demo para ${consultorio}`,
     titulo: "Sofi, atendiendo el WhatsApp de tu consultorio",
-    chat: { paciente: "Hola, ¿tienen turno para una limpieza esta semana?", agente: `¡Hola! Sí: el martes a las 10:30 con ${withArticle(p.title, p.name)}. ¿Te lo reservo?` },
+    chat: demoExample(dentalServices(p.specialty), withArticle(p.title, p.name), ofBusiness(consultorio), true),
     nombreChat: consultorio,
   });
 }

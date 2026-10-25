@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Datos = { website: string } | { nombre: string; direccion: string | null; especialidad: string; profesional: string | null };
+type Datos = { website: string } | { nombre: string; direccion: string | null; especialidad: string; profesional: string | null; servicios: string | null };
 
 /**
  * Arranca la demo con los datos de su consultorio, sin pedirle nada: un toque y Sofi lo atiende.

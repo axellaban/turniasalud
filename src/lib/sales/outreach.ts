@@ -206,12 +206,12 @@ export async function getOutreach(id: string): Promise<Outreach | null> {
 }
 
 /** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. */
-export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "website">;
+export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website">;
 
 export async function publicOutreach(code: string): Promise<PublicOutreach | null> {
   if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code)) return null;
   const [row] = await sql<PublicOutreach[]>`
-    select code, name, greeting, title, business_name, zone, address, website from sales_outreach where code = ${code}`;
+    select code, name, greeting, title, business_name, zone, address, specialty, website from sales_outreach where code = ${code}`;
   return row ?? null;
 }
 
@@ -292,6 +292,41 @@ export async function updateOutreach(id: string, edit: OutreachEdit): Promise<vo
   if (!Object.keys(fields).length) return;
   const [row] = await sql<Array<{ id: string }>>`update sales_outreach set ${sql(fields)}, updated_at = now() where id = ${id} returning id`;
   if (!row) throw new OutreachError("No encontramos ese contacto.");
+}
+
+/**
+ * Deshace el último contacto registrado (una prueba, o un chat que se abrió y no se mandó): borra
+ * ese mensaje, llamada o visita y recalcula el seguimiento. Sin contactos, vuelve a «Por contactar»
+ * y deja de contar para la meta.
+ */
+export async function undoLastTouch(id: string): Promise<void> {
+  await sql.begin(async (tx) => {
+    const [row] = await tx<Array<{ status: OutreachStatus; touches: number }>>`select status, touches from sales_outreach where id = ${id} for update`;
+    if (!row) throw new OutreachError("No encontramos ese contacto.");
+    const contacts = () => tx<Array<{ id: string; kind: string; channel: string | null; created_at: string }>>`
+      select id, kind, channel, created_at from sales_outreach_events
+      where outreach_id = ${id} and kind in ('mensaje', 'llamada', 'visita') order by created_at desc`;
+    const [last] = await contacts();
+    if (!last) throw new OutreachError("No hay contactos para deshacer.");
+    await tx`delete from sales_outreach_events where id = ${last.id}`;
+    const left = await contacts();
+    const touches = left.filter((e) => e.kind === "mensaje").length;
+    if (!left.length) {
+      await tx`
+        update sales_outreach set touches = 0, first_contact_at = null, last_contact_at = null, last_channel = null, next_action_on = null,
+          status = case when status = 'contactado' then 'por_contactar' else status end, updated_at = now()
+        where id = ${id}`;
+    } else {
+      // El seguimiento se cuenta desde el último mensaje que quedó (o desde la llamada, si no hubo mensajes).
+      const base = left.find((e) => e.kind === "mensaje") ?? left[0];
+      const next = row.status === "contactado" ? nextFollowUp(localDateKey(new Date(base.created_at), TZ), Math.max(touches, 1)) : undefined;
+      await tx`
+        update sales_outreach set touches = ${touches}, last_contact_at = ${left[0].created_at}, last_channel = ${left[0].channel},
+          next_action_on = ${next === undefined ? tx`next_action_on` : next}, updated_at = now()
+        where id = ${id}`;
+    }
+    await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', 'Se deshizo un contacto (prueba o error).')`;
+  });
 }
 
 export async function addOutreachNote(id: string, text: string): Promise<void> {

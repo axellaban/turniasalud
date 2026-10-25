@@ -19,7 +19,7 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
 export async function POST(request: Request) {
   const raw = await request.text();
   if (raw.length > 4096) return NextResponse.json({ error: "La dirección es demasiado larga." }, { status: 400 });
-  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown; ref?: unknown };
+  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown; servicios?: unknown; ref?: unknown };
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 }); }
   const website = typeof body?.website === "string" && body.website.length <= 2000 ? normalizeWebsite(body.website) : null;
   // Sin web, alcanza con el nombre del consultorio (la demo se arma con eso).

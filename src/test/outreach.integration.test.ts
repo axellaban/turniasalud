@@ -140,6 +140,29 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(events.map((e) => e.detail)).toEqual(["último", "seguimiento", "primero"]);
   });
 
+  it("deshace un contacto de prueba: vuelve a «Por contactar» y no cuenta para la meta", async () => {
+    const pruebas = "codigo,nombre,saludo,consultorio,zona,telefono,tipo_telefono,prioridad\nprueba-x1y,Prueba Deshacer,Prueba,Consultorio Prueba,Mar del Plata,+5492230000001,movil,3";
+    await actions.importOutreachAction(undefined, form({ text: pruebas }));
+    const prueba = await id("prueba-x1y");
+    const antes = (await outreach.outreachStats()).today_new;
+    expect(await actions.undoTouchAction(form({ id: prueba }))).toMatchObject({ ok: false, message: expect.stringContaining("No hay contactos") });
+    await actions.touchAction(form({ id: prueba, channel: "whatsapp" }));
+    await actions.touchAction(form({ id: prueba, channel: "whatsapp" }));
+    expect((await outreach.outreachStats()).today_new).toBe(antes + 1);
+    // Deshacer el segundo: queda un mensaje y el seguimiento vuelve a contarse desde ese.
+    expect(await actions.undoTouchAction(form({ id: prueba }))).toMatchObject({ ok: true });
+    const { nextFollowUp } = await import("@/lib/sales/outreach-messages");
+    let [row] = await sql`select status, touches, next_action_on, first_contact_at is not null as contacted from sales_outreach where id = ${prueba}`;
+    expect(row).toEqual({ status: "contactado", touches: 1, next_action_on: nextFollowUp(outreach.todayKey(), 1), contacted: true });
+    // Deshacer el primero: como si no se le hubiera escrito.
+    await actions.undoTouchAction(form({ id: prueba }));
+    [row] = await sql`select status, touches, next_action_on, first_contact_at, last_channel from sales_outreach where id = ${prueba}`;
+    expect(row).toEqual({ status: "por_contactar", touches: 0, next_action_on: null, first_contact_at: null, last_channel: null });
+    expect((await outreach.outreachStats()).today_new).toBe(antes);
+    expect((await outreach.outreachEvents(prueba)).map((e) => e.kind)).toEqual(["nota", "nota"]);
+    await sql`delete from sales_outreach where id = ${prueba}`;
+  });
+
   it("respondió, no le interesa y la baja (que vale también para las llamadas de Sofi)", async () => {
     const lopez = await id("lopez-j7k");
     expect(await actions.statusAction(form({ id: lopez, status: "respondio" }))).toMatchObject({ ok: true });
@@ -171,7 +194,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
 
   it("su link de demo registra que la abrió y que la probó, con su nombre como profesional", async () => {
     const pub = await outreach.publicOutreach("lopez-j7k");
-    expect(pub).toEqual({ code: "lopez-j7k", name: "María Elvira López Sánchez", greeting: "María", title: "Dra.", business_name: "Consultorio Odontológico López", zone: "Mar del Plata", address: "Saavedra 3527", website: null });
+    expect(pub).toEqual({ code: "lopez-j7k", name: "María Elvira López Sánchez", greeting: "María", title: "Dra.", business_name: "Consultorio Odontológico López", zone: "Mar del Plata", address: "Saavedra 3527", specialty: "Ortodoncia", website: null });
     expect(await outreach.publicOutreach("NO VALE")).toBeNull();
 
     const abrir = (await import("@/app/api/p/[code]/route")).POST;
@@ -188,8 +211,13 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const html = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
     expect(html).toContain("Hola María");
     expect(html).toContain("Demo para Consultorio Odontológico López");
-    expect(html).toContain("con la Dra. María Elvira López Sánchez");
-    expect(html).toContain("Soy Sofi, del Consultorio Odontológico López");
+    expect(html).toContain("con la Dra. María Elvira López Sánchez, también para ortodoncia.");
+    // El ejemplo es sobre su tratamiento (ortodoncia), con su nombre.
+    expect(html).toContain("Hola, ¿atienden ortodoncia? Es para mi hija.");
+    expect(html).toContain("Tengo el jueves a las 17 para la consulta con la Dra. María Elvira López Sánchez.");
+    // Sin tratamientos reconocidos, el ejemplo es la limpieza de siempre.
+    const pirera = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "pirera-g6h" }), searchParams: Promise.resolve({ vista: "panel" }) }));
+    expect(pirera).toContain("Soy Sofi, del Consultorio Odontológico Pirera");
 
     // Empieza la demo desde su link (con el profesional): queda en su ficha y el seguimiento pasa a hoy.
     await sql`update messaging_settings set active_channel = 'pausado' where id`;
@@ -199,12 +227,20 @@ describe.runIf(base)("prospección a odontólogos", () => {
       new Request("https://turnia.example/api/demo/iniciar", {
         method: "POST",
         headers: { "x-real-ip": "190.1.1.9" },
-        body: JSON.stringify({ nombre: "Consultorio Odontológico López", direccion: "Saavedra 3527, Mar del Plata", especialidad: "Odontología", profesional: "Dra. María Elvira López Sánchez", via: "navegador", ref: "lopez-j7k" }),
+        body: JSON.stringify({
+          nombre: "Consultorio Odontológico López",
+          direccion: "Saavedra 3527, Mar del Plata",
+          especialidad: "Odontología",
+          profesional: "Dra. María Elvira López Sánchez",
+          servicios: "Ortodoncia",
+          via: "navegador",
+          ref: "lopez-j7k",
+        }),
       }),
     );
     expect(res.status).toBe(200);
-    const [session] = await sql`select manual_name, manual_professional, lead_id from demo_sessions order by created_at desc limit 1`;
-    expect(session).toMatchObject({ manual_name: "Consultorio Odontológico López", manual_professional: "Dra. María Elvira López Sánchez" });
+    const [session] = await sql`select manual_name, manual_professional, manual_services, lead_id from demo_sessions order by created_at desc limit 1`;
+    expect(session).toMatchObject({ manual_name: "Consultorio Odontológico López", manual_professional: "Dra. María Elvira López Sánchez", manual_services: "Ortodoncia" });
     const { manualProfile } = await import("@/lib/demo/profile");
     expect(manualProfile({ nombre: "X", direccion: null, especialidad: "Odontología", profesional: "Dra. López" }).profesionales).toEqual([
       { nombre: "Dra. López", especialidad: "Odontología", dias: [], bio: null },

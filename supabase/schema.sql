@@ -394,6 +394,8 @@ alter table demo_sessions add column if not exists manual_address text;
 alter table demo_sessions add column if not exists manual_specialty text;
 -- Link de la prospección: la demo sin web da turnos con el nombre del odontólogo.
 alter table demo_sessions add column if not exists manual_professional text;
+-- Y los tratamientos que declara (Doctoralia): suman sus turnos a la demo (implantes, ortodoncia…).
+alter table demo_sessions add column if not exists manual_services text;
 create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
 alter table demo_sessions enable row level security;

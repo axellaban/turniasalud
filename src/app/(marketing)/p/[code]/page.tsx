@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { demoStatus } from "@/lib/demo/config";
+import { demoExample, dentalServices, servicesPhrase } from "@/lib/demo/dental-services";
 import { isConfigured } from "@/lib/env";
 import { publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
 import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
@@ -29,9 +30,18 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
   const contar = (await searchParams).vista !== "panel";
   const status = await demoStatus();
   const lista = status.base && isConfigured().elevenlabs;
+  // Los tratamientos que declara (Doctoralia) arman los turnos de su demo y el ejemplo de abajo.
+  const services = dentalServices(p.specialty);
   const datos = p.website
     ? { website: p.website }
-    : { nombre: consultorio(p), direccion: [p.address, p.zone].filter(Boolean).join(", ") || null, especialidad: "Odontología", profesional: profesional(p) };
+    : {
+        nombre: consultorio(p),
+        direccion: [p.address, p.zone].filter(Boolean).join(", ") || null,
+        especialidad: "Odontología",
+        profesional: profesional(p),
+        servicios: services.length ? p.specialty : null,
+      };
+  const ejemplo = demoExample(services, withArticle(p.title, p.name), ofBusiness(consultorio(p)));
 
   return (
     <section className="bg-gradient-to-b from-[#eef2ff] to-white">
@@ -42,7 +52,8 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
         </h1>
         <p className="mx-auto mt-5 max-w-[560px] text-[17px] leading-relaxed text-tinta">
           Probala como si fueras un paciente: pedile un turno, preguntale algo o cancelá. Contesta al instante, también a la noche y el fin de semana, y
-          da los turnos con {withArticle(p.title, p.name)}.
+          da los turnos con {withArticle(p.title, p.name)}
+          {services.length ? `, también para ${servicesPhrase(services)}` : ""}.
         </p>
 
         {lista ? (
@@ -59,12 +70,9 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
         {/* Ejemplo ilustrativo, para saber qué esperar antes de tocar el botón. */}
         <figure className="mx-auto mt-12 max-w-[460px] rounded-2xl bg-[#f5f7fc] p-4 text-left ring-1 ring-brand-950/5">
           <figcaption className="mb-3 text-xs font-medium text-tinta">Ejemplo de una conversación</figcaption>
-          <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3.5 py-2 text-[15px] text-white">
-            Hola, ¿tienen turno para una limpieza esta semana?
-          </p>
+          <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3.5 py-2 text-[15px] text-white">{ejemplo.paciente}</p>
           <p className="mt-2 w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-white px-3.5 py-2 text-[15px] text-brand-950 ring-1 ring-brand-950/5">
-            ¡Hola! Soy Sofi, {ofBusiness(consultorio(p))}. Tengo el martes a las 10:30 o el jueves a las 16 con {withArticle(p.title, p.name)}. ¿Cuál te queda
-            mejor?
+            {ejemplo.agente}
           </p>
         </figure>
 

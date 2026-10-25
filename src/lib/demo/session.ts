@@ -45,6 +45,7 @@ export type DemoSession = {
   manual_address: string | null;
   manual_specialty: string | null;
   manual_professional: string | null;
+  manual_services: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -255,7 +256,13 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
   try {
     // Sin web no hay nada que leer: la ficha sale del nombre del consultorio.
     const manual = session.manual_name
-      ? manualProfile({ nombre: session.manual_name, direccion: session.manual_address, especialidad: session.manual_specialty, profesional: session.manual_professional })
+      ? manualProfile({
+          nombre: session.manual_name,
+          direccion: session.manual_address,
+          especialidad: session.manual_specialty,
+          profesional: session.manual_professional,
+          servicios: session.manual_services,
+        })
       : null;
     const site = manual ? null : await scrapeSite(session.website);
     const [active] = await sql`select id from demo_sessions where id = ${session.id} and status = 'analizando'`;
