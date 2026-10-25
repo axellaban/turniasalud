@@ -20,6 +20,7 @@ const base = testDatabaseUrl();
 let outbound = 0;
 let lost = false;
 let noAnswer = false;
+let conversationOverride: Record<string, unknown> = {};
 let moderatedVoice = false;
 let recoverAgent = false;
 let failUpdate = false;
@@ -42,7 +43,7 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
     if (noAnswer) return response({ success:false });
     return response({ success:true,conversation_id:"conv_sales" });
   }
-  if (path === "/v1/convai/conversations/conv_sales") return response(eventData());
+  if (path === "/v1/convai/conversations/conv_sales") return response({ ...eventData(), ...conversationOverride });
   if (path === "/v2/voices") return response({ voices:[{voice_id:"voz-agustin",name:"Voz comercial de prueba",sharing:{live_moderation_enabled:moderatedVoice}},{voice_id:"voz-sofi",name:"Voz de Sofi",sharing:{live_moderation_enabled:false}}] });
   if (path === "/v1/convai/tools" && !init.method) return response({tools:remoteTools});
   if (path === "/v1/convai/tools" && init.method === "POST") { const t={id:`sales-tool-${remoteTools.length+1}`,tool_config:JSON.parse(String(init.body)).tool_config}; remoteTools.push(t); return response({id:t.id}); }
@@ -71,7 +72,7 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     await sql`truncate sales_suppressions,sales_calls,sales_prospects,sales_config_versions`;
     await sql`update sales_settings set agent_id='agent-sales',voice_id='voz-agustin',tool_ids=array['sales-tool-1','sales-tool-2'],enabled=false,budget_cents=0,budget_date=null,first_message=null,system_prompt=null,config_version=0,applied_at=null,needs_sync=false where id=1`;
     await sql`update clinics set elevenlabs_agent_id=null where id='00000000-0000-4000-8000-000000000001'`;
-    remoteTools=[]; failUpdate=false; ignoreUpdate=false; changeDuringVerify=false;
+    conversationOverride={}; remoteTools=[]; failUpdate=false; ignoreUpdate=false; changeDuringVerify=false;
     outbound=0; lost=false; noAnswer=false; moderatedVoice=false; recoverAgent=false; mocks.admin=true; providerRequests.length=0;
     remote=salesAgentBody("voz-agustin",["sales-tool-1","sales-tool-2"]);
     vi.stubGlobal("fetch",fakeFetch);
@@ -105,6 +106,31 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     await refreshSalesCall(ids[0]);
     await expect(dialProspect(id,randomUUID())).rejects.toThrow("cupo");
     expect(outbound).toBe(1);
+  });
+  it.each(["no_answer", "busy", "failed"])("concilia initiated con resultado telefónico terminal %s sin repetir ni devolver la reserva", async result => {
+    const id=await prospect(); await authorizeBudget(200,true);
+    const callId=await dialProspect(id,randomUUID());
+    conversationOverride={ status:"initiated", transcript:[], metadata:{call_duration_secs:0,cost:0,phone_call:{type:"twilio",direction:"outbound",external_number:sent.to_number,call_result:result,stream_sid:""}} };
+    await refreshSalesCall(callId);
+    const [call]=await sql`select status,reserved_cents,duration_secs,summary from sales_calls where id=${callId}`;
+    expect(call.status).toBe("fallida"); expect(call.reserved_cents).toBe(100); expect(call.duration_secs).toBe(0); expect(call.summary).toBeTruthy();
+    expect(outbound).toBe(1);
+  });
+  it.each([
+    {call_result:"answered"}, {external_number:"+5491199999999"}, {stream_sid:"MZ_active"}, {direction:"inbound"}, {type:"sip"},
+  ])("no libera una llamada con datos no concluyentes: %j", async patch => {
+    const id=await prospect(); await authorizeBudget(200,true); const callId=await dialProspect(id,randomUUID());
+    conversationOverride={status:"initiated",transcript:[],metadata:{call_duration_secs:0,phone_call:{type:"twilio",direction:"outbound",external_number:sent.to_number,call_result:"no_answer",stream_sid:"",...patch}}};
+    await expect(refreshSalesCall(callId)).rejects.toThrow("todavía");
+    await expect(dialProspect(id,randomUUID())).rejects.toThrow("pendiente"); expect(outbound).toBe(1);
+  });
+  it("no concilia otro intento ni convierte una llamada con audio en fallo de conexión", async()=>{
+    const id=await prospect(); await authorizeBudget(200,true);const callId=await dialProspect(id,randomUUID());
+    conversationOverride={status:"initiated",transcript:[],conversation_initiation_client_data:{dynamic_variables:{sales_call_id:randomUUID()}},metadata:{call_duration_secs:0,phone_call:{type:"twilio",direction:"outbound",external_number:sent.to_number,call_result:"no_answer"}}};
+    await expect(refreshSalesCall(callId)).rejects.toThrow("no pertenece");
+    delete conversationOverride.conversation_initiation_client_data;
+    conversationOverride.metadata={call_duration_secs:3,phone_call:{type:"twilio",direction:"outbound",external_number:sent.to_number,call_result:"no_answer"}};
+    await expect(refreshSalesCall(callId)).rejects.toThrow("todavía");expect(outbound).toBe(1);
   });
   it("dos confirmaciones distintas simultáneas no exceden una llamada activa",async()=>{
     const id=await prospect(); await authorizeBudget(200,true);

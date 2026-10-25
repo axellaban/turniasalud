@@ -2,7 +2,7 @@ import { Field, inputClass } from "@/components/ui";
 
 export function ReviewFields({ eligibility = "sin_revisar", evidence = "", context = "" }: { eligibility?: string; evidence?: string; context?: string }) {
   return <>
-    <Field label="Contexto para Sofi comercial" hint="Solo datos comerciales revisados: especialidades, web, motivo de contacto. No incluyas datos de pacientes.">
+    <Field label="Datos de este consultorio para Sofi (opcional)" hint="Solo para este destinatario: especialidades, motivo de contacto o detalles que Sofi deba conocer. El saludo y el guion general se editan en Configuración de Sofi. No incluyas datos de pacientes.">
       <textarea name="context" className={inputClass} maxLength={3000} rows={3} defaultValue={context} />
     </Field>
     <Field label="Habilitación del contacto" hint="Un teléfono publicado en una web no acredita permiso. Revisá No Llame antes de ofrecer servicios por teléfono.">
