@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: "session-test" }) }) }));
 vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("REDIRECT_LOGIN"); } }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
+// La copia a Google Sheets corre después de responder: en el test no hay pedido HTTP.
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: () => {} }));
 vi.mock("@/lib/session", () => ({ SESSION_COOKIE: "turnia_session", isAdminSessionToken: () => mocks.authenticated }));
 vi.mock("@/lib/db", () => ({ sql: mocks.query }));
 

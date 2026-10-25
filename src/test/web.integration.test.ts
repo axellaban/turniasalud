@@ -5,6 +5,8 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 
 const mocks = vi.hoisted(() => ({ notifyN8n: vi.fn(async () => {}) }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: mocks.notifyN8n }));
+// La copia a Google Sheets corre después de responder: en el test no hay pedido HTTP.
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: () => {} }));
 
 const baseUrl = testDatabaseUrl();
 

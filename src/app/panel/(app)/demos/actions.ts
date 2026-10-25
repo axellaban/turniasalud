@@ -3,8 +3,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { sql } from "@/lib/db";
 import { isLeadStatus } from "@/lib/leads";
+import { removeLeadFromSheet, syncLeadsToSheet } from "@/lib/leads-sheet";
 import { SESSION_COOKIE, isAdminSessionToken } from "@/lib/session";
 
 export type LeadFormState = { ok?: boolean; message?: string };
@@ -30,6 +32,7 @@ export async function updateLead(_prev: LeadFormState | undefined, form: FormDat
       update leads set status = ${status}, notes = ${notes.trim() || null}, updated_at = now()
       where id = ${id} returning id`;
     if (!rows.length) return { ok: false, message: "El pedido ya no está disponible." };
+    after(() => syncLeadsToSheet([id]));
     revalidatePath("/panel/demos");
     return { ok: true, message: "Seguimiento guardado." };
   } catch {
@@ -56,5 +59,6 @@ export async function deleteLead(form: FormData): Promise<void> {
     }
     await tx`delete from leads where id = ${id}`;
   });
+  after(() => removeLeadFromSheet(id));
   revalidatePath("/panel", "layout");
 }

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
 import { isLeadStatus, LEAD_STATUSES, type LeadStatus } from "@/lib/leads";
-import { Badge, Card, Empty, PageHeader, Stat, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
+import { sheetSettings } from "@/lib/leads-sheet";
+import { Badge, Card, Empty, Notice, PageHeader, Stat, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { DeleteLeadButton, FollowupForm } from "./followup-form";
 import type { Metadata } from "next";
 
@@ -70,12 +71,22 @@ export default async function DemoRequestsPage({ searchParams }: PageProps<"/pan
       count(*) filter (where status = 'demo_agendada')::int as agendadas from leads`,
     sql<{ count: number }[]>`select count(*)::int as count from leads ${where}`,
   ]);
+  const sheet = await sheetSettings();
   const activity = await demoActivity(rows.filter((r) => (r.source === "demo-whatsapp" || r.source === "demo-telegram" || r.source === "demo-web")).map((r) => r.id));
   const pageUrl = (n: number) => `/panel/demos?${new URLSearchParams({ ...(q ? { q } : {}), ...(status ? { estado: status } : {}), pagina: String(n) })}`;
 
   return (
     <>
-      <PageHeader title="Pedidos de demo" description="Los contactos que llegan desde la web, con su mensaje y seguimiento comercial." />
+      <PageHeader
+        title="Pedidos de demo"
+        description="Los contactos que llegan desde la web, con su mensaje y seguimiento comercial."
+        actions={<Link href="/panel/demos/planilla" className={secondaryButtonClass}>{sheet.url ? "Google Sheets: conectada" : "Copiar a Google Sheets"}</Link>}
+      />
+      {sheet.url && sheet.error && (
+        <Notice tone="error" className="mb-4">
+          La última copia a la planilla falló: {sheet.error} <Link href="/panel/demos/planilla" className="underline">Revisar</Link>
+        </Notice>
+      )}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Pedidos recibidos" value={totals.total} />
         <Stat label="Por contactar" value={totals.nuevos} />
