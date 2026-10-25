@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import { statusAction, touchAction, type ActionState } from "./actions";
+import { statusAction, touchAction, undoTouchAction, type ActionState } from "./actions";
 
 function useRecord() {
   const [pending, startTransition] = useTransition();
@@ -82,7 +82,7 @@ export function CallButton({ id, phone, children, className }: { id: string; pho
   );
 }
 
-/** Un toque: cambia el estado o registra un contacto sin abrir nada (visita, «ya le había escrito»). */
+/** Un toque: cambia el estado, registra un contacto sin abrir nada (visita, «ya le había escrito») o deshace el último. */
 export function ActionButton({
   id,
   kind,
@@ -92,7 +92,7 @@ export function ActionButton({
   before = false,
 }: {
   id: string;
-  kind: "status" | "touch";
+  kind: "status" | "touch" | "undo";
   value: string;
   children: ReactNode;
   className: string;
@@ -104,7 +104,13 @@ export function ActionButton({
       <button
         type="button"
         disabled={pending}
-        onClick={() => (kind === "status" ? run(statusAction, { id, status: value }) : run(touchAction, { id, channel: value, ...(before ? { before: "1" } : {}) }))}
+        onClick={() =>
+          kind === "status"
+            ? run(statusAction, { id, status: value })
+            : kind === "undo"
+              ? run(undoTouchAction, { id })
+              : run(touchAction, { id, channel: value, ...(before ? { before: "1" } : {}) })
+        }
         className={`${className} ${pending ? "opacity-60" : ""}`}
       >
         {children}

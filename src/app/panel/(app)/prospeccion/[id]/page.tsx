@@ -122,7 +122,17 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
                   </ActionButton>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-brand-900/60">«Pidió no recibir más» lo saca de la lista para siempre, también de las llamadas de Sofi.</p>
+              {events.some((e) => e.kind === "mensaje" || e.kind === "llamada" || e.kind === "visita") && (
+                <div className="mt-3">
+                  <ActionButton id={p.id} kind="undo" value="" className={smallButtonClass}>
+                    Deshacer el último contacto
+                  </ActionButton>
+                </div>
+              )}
+              <p className="mt-2 text-xs text-brand-900/60">
+                «Deshacer» borra el último mensaje, llamada o visita registrados (si fue una prueba o no lo mandaste). «Pidió no recibir más» lo saca de
+                la lista para siempre, también de las llamadas de Sofi.
+              </p>
             </div>
           </Card>
 

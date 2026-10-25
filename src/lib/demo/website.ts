@@ -24,7 +24,7 @@ export function normalizeWebsite(input: string | null | undefined): string | nul
 }
 
 /** Consultorio sin web: la demo se arma con su nombre (y, si vienen en el link, dirección y especialidad). */
-export type ManualClinic = { nombre: string; direccion: string | null; especialidad: string | null; profesional?: string | null };
+export type ManualClinic = { nombre: string; direccion: string | null; especialidad: string | null; profesional?: string | null; servicios?: string | null };
 
 const text = (value: unknown, max: number): string | null => {
   if (typeof value !== "string") return null;
@@ -33,16 +33,19 @@ const text = (value: unknown, max: number): string | null => {
 };
 
 /** Valida lo que llega del formulario o del link. Null si no hay un nombre usable. Pura. */
-export function normalizeManualClinic(input: { nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown }): ManualClinic | null {
+export function normalizeManualClinic(input: { nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown; servicios?: unknown }): ManualClinic | null {
   const nombre = text(input.nombre, 120);
   // Un nombre de verdad tiene letras; una dirección web no es un nombre.
   if (!nombre || nombre.length < 3 || !/\p{L}{2}/u.test(nombre) || /https?:\/\/|www\./i.test(nombre)) return null;
   // El profesional llega en el link de la prospección: así Sofi da turnos con su nombre.
   const profesional = text(input.profesional, 80);
+  // Y los tratamientos que declara (Doctoralia): suman sus turnos a la demo.
+  const servicios = text(input.servicios, 300);
   return {
     nombre,
     direccion: text(input.direccion, 200),
     especialidad: text(input.especialidad, 80),
     ...(profesional && /\p{L}{2}/u.test(profesional) ? { profesional } : {}),
+    ...(servicios ? { servicios } : {}),
   };
 }

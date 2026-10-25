@@ -64,6 +64,30 @@ describe("perfil de la demo", () => {
     expect(manualProfile({ nombre: "Centro Norte", direccion: null, especialidad: "Fonoaudiología" }).especialidad).toBe("Fonoaudiología");
   });
 
+  it("con los tratamientos que declara el odontólogo, la demo suma sus turnos y lo sabe", () => {
+    const p = manualProfile({
+      nombre: "Consultorio Odontológico Moreta",
+      direccion: "Juan José Paso 2121, Mar del Plata",
+      especialidad: "Odontología",
+      profesional: "Dra. Myriam Moreta",
+      servicios: "Odontopediatría, Ortodoncia, Blanqueamiento dental, Ortopedia dentomaxilar",
+    });
+    expect(p.prestaciones.map((t) => t.nombre)).toEqual([
+      "Consulta de primera vez",
+      "Limpieza dental",
+      "Control",
+      "Urgencia odontológica",
+      "Consulta de ortodoncia",
+      "Consulta de estética dental y blanqueamiento",
+      "Consulta de odontopediatría",
+    ]);
+    expect(p.profesionales).toEqual([{ nombre: "Dra. Myriam Moreta", especialidad: "Odontología", dias: [], bio: "Odontología general, ortodoncia, estética dental y odontopediatría" }]);
+    expect(p.preguntas_frecuentes).toContain("Tratamientos que figuran en su perfil profesional: odontología general, ortodoncia, estética dental y odontopediatría.");
+    expect(p.preguntas_frecuentes).toContain("Precios y obras sociales no figuran");
+    // Sin tratamientos reconocidos, quedan los cuatro turnos de siempre.
+    expect(manualProfile({ nombre: "Consultorio X", direccion: null, especialidad: "Odontología", servicios: "Estomatología" }).prestaciones).toHaveLength(4);
+  });
+
   it("valida el consultorio sin web que llega del formulario o del link", () => {
     expect(normalizeManualClinic({ nombre: "  Consultorio   Arroyo ", direccion: "Córdoba 3380", especialidad: 5 })).toEqual({
       nombre: "Consultorio Arroyo",
@@ -73,5 +97,13 @@ describe("perfil de la demo", () => {
     expect(normalizeManualClinic({ nombre: "ab" })).toBeNull();
     expect(normalizeManualClinic({ nombre: "https://miclinica.com.ar" })).toBeNull();
     expect(normalizeManualClinic({ nombre: "x".repeat(121) })).toBeNull();
+    expect(normalizeManualClinic({ nombre: "Consultorio Moreta", profesional: "Dra. Moreta", servicios: " Ortodoncia,  Implantes " })).toEqual({
+      nombre: "Consultorio Moreta",
+      direccion: null,
+      especialidad: null,
+      profesional: "Dra. Moreta",
+      servicios: "Ortodoncia, Implantes",
+    });
+    expect(normalizeManualClinic({ nombre: "Consultorio Moreta", servicios: "x".repeat(301) })).not.toHaveProperty("servicios");
   });
 });

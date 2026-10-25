@@ -11,6 +11,7 @@ import {
   recordTouch,
   saveOutreachSettings,
   setOutreachStatus,
+  undoLastTouch,
   updateOutreach,
   type OutreachEdit,
 } from "@/lib/sales/outreach";
@@ -36,6 +37,19 @@ export async function touchAction(form: FormData): Promise<ActionState> {
   if (!(CHANNELS as readonly string[]).includes(channel)) return { ok: false, message: "Canal desconocido." };
   try {
     await recordTouch(id, channel, { before: form.get("before") === "1" });
+  } catch (e) {
+    return fail(e);
+  }
+  refresh(id);
+  return { ok: true, message: "Listo." };
+}
+
+/** Deshace el último contacto: una prueba o un chat que se abrió y no se mandó. */
+export async function undoTouchAction(form: FormData): Promise<ActionState> {
+  await requireAdmin();
+  const id = text(form, "id");
+  try {
+    await undoLastTouch(id);
   } catch (e) {
     return fail(e);
   }

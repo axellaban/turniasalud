@@ -83,9 +83,9 @@ export async function startWebDemo(input: { website: string | null; manual: Manu
       values (${label}, ${input.email}, ${label}, ${note}, 'demo-web')
       returning id`)[0];
     const [session] = await tx<{ id: string }[]>`
-      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty, manual_professional)
+      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty, manual_professional, manual_services)
       values (${id}, ${id}, ${input.website ?? ""}, ${lead.id}, ${handoff}, ${token}, ${settings.revision},
-              ${manual?.nombre ?? null}, ${manual?.direccion ?? null}, ${manual?.especialidad ?? null}, ${manual?.profesional ?? null})
+              ${manual?.nombre ?? null}, ${manual?.direccion ?? null}, ${manual?.especialidad ?? null}, ${manual?.profesional ?? null}, ${manual?.servicios ?? null})
       returning id`;
     return { sessionId: session.id, leadId: lead.id, createdLead: !existing };
   });

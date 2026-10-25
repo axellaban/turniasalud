@@ -2,6 +2,14 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Prospección: tratamientos en la demo y «Deshacer contacto» — 25/10/2026
+
+- **Pedido:** que la demo de cada link use lo que sabemos del odontólogo, y poder sacar el «Contactado» de las pruebas.
+- **Tratamientos:** el link pasa la especialidad de la ficha (de Doctoralia en 208 de los 407) como `servicios`; `manualProfile` suma un turno de primera vez por tratamiento reconocido (implantes, ortodoncia, estética/blanqueamiento, endodoncia, odontopediatría, prótesis/rehabilitación, periodoncia, cirugía), los pone en la bio del profesional y en las preguntas frecuentes. La página `/p/<código>` y la vista previa de WhatsApp muestran un ejemplo sobre su tratamiento principal. Columna nueva `demo_sessions.manual_services`. Código en `src/lib/demo/dental-services.ts`.
+- **Ninguno de la lista tiene web cargada** (el Círculo no la trae): todos usan la demo sin web. Si se carga la web en la ficha, la demo la lee al tocar «Probar la demo».
+- **Deshacer contacto** (fila y ficha): borra el último mensaje, llamada o visita y recalcula el seguimiento; sin contactos vuelve a «Por contactar» y sale de la meta del día.
+- Validación: 276 pruebas, TypeScript, ESLint y build. En el navegador: demo de un odontólogo con implantes (8 turnos, bio y preguntas frecuentes con sus tratamientos), páginas y vistas previas, y deshacer un contacto (la meta vuelve a 0 y reaparece en la cola).
+
 ## Prospección a odontólogos de Mar del Plata y Miramar — 25/10/2026
 
 - **Pedido:** seguir la prospección del tablero viejo (artefacto de la otra cuenta, sin créditos) llegando a **quien decide** y no a la recepción, con la meta de **250 primeros contactos en la semana del 26 al 30/10** en Mar del Plata y Miramar. Estrategia, plan por día y mensajes en [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md).

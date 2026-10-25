@@ -129,6 +129,11 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
             )}
           </>
         )}
+        {p.first_contact_at && (
+          <ActionButton id={p.id} kind="undo" value="" className={`${smallButtonClass} text-brand-900/70`}>
+            Deshacer contacto
+          </ActionButton>
+        )}
         {(p.status === "respondio" || p.status === "reunion") && (
           <Link href={`/panel/prospeccion/${p.id}`} className={outlineClass}>
             Ver ficha
