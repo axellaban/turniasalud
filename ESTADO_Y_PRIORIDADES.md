@@ -2,6 +2,28 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Logo nuevo — 25/10/2026
+
+- **Pedido del usuario:** un logo más profesional, tomando como referencia el de Assort.
+- **De Assort se tomaron solo los principios, no su figura** (sigue la regla de no usar su material):
+  - el isotipo va suelto, sin el cuadrado de fondo;
+  - la marca va en dos pesos: «Turnia» en negrita y «Salud» liviano;
+  - todo de un solo color, con el espaciado ajustado.
+- **Isotipo:** una burbuja de conversación con la T calada, que une turnos y WhatsApp.
+  - Está definido una sola vez en `MARK_PATH` (`src/components/logo.tsx`) y se reutiliza en el header, el panel, el footer y las miniaturas para compartir (`src/lib/og.tsx`).
+  - `LogoMark` queda como ícono de app (cuadrado azul) para los avatares y el encabezado del panel en el celular.
+- **Íconos:**
+  - `src/app/icon.svg` y `favicon.ico` (16, 32 y 48 px): el isotipo azul sin fondo.
+  - `src/app/apple-icon.png` (180 px): el ícono de iOS.
+  - Las miniaturas usan Geist Light y Bold (`src/assets/og`, licencia OFL incluida).
+- **Miniaturas para compartir:** las de la home, especialidades, soluciones y organizaciones llevan el logo nuevo, incluido el avatar del chat de especialidades. WhatsApp, LinkedIn y otras redes guardan las miniaturas viejas un tiempo: un link compartido antes puede seguir mostrando el logo anterior.
+- **Kit de marca en `public/marca/`** (se descarga desde `turniasalud.vercel.app/marca/…`):
+  - `turnia-perfil.png`: 640×640, la foto de perfil para WhatsApp Business, Telegram y redes;
+  - `turnia-logo.png` y `turnia-logo-blanco.png`: el logo horizontal sobre transparente;
+  - `turnia-isotipo.svg`: el isotipo solo.
+- **Queda a mano del usuario:** cambiar la foto del bot @TurnIA_salud_bot (con BotFather), la del WhatsApp Business de Turnia y las de las redes, si tienen el logo viejo. No se pueden cambiar desde el código.
+- **Validación:** build, TypeScript, ESLint y 245 pruebas. Revisado en el header de la compu y del celular (también sobre el video), en el panel, en el footer, en las miniaturas y en el favicon, sobre claro y oscuro.
+
 ## Campañas para activar la base — 25/10/2026
 
 - **Pedido del usuario:** mejorar la UX/UI y las funciones de Panel → Campañas para activar la base dormida (controles trimestrales, semestrales, chequeos programados), pensando el negocio con Assort Activate como referencia, y decidir qué hacer con un CRM. Después propuso abrir WhatsApp desde el panel con el mensaje escrito: quedó como el modo principal de envío.
