@@ -204,6 +204,16 @@ export async function refreshSalesCall(id: string, suppliedConversationId?: stri
   if (!call || !conversationId || !/^conv_[a-zA-Z0-9]+$/.test(conversationId)) throw new SalesError("No hay ID confirmado. Revisá el proveedor e ingresá su ID de conversación; no repitas la llamada.");
   const data = await elevenlabs<PostCallPayload>(`/v1/convai/conversations/${encodeURIComponent(conversationId)}`, { signal: AbortSignal.timeout(15000) });
   if (data.agent_id !== call.agent_id || data.conversation_initiation_client_data?.dynamic_variables?.sales_call_id !== call.id || data.conversation_id !== conversationId) throw new SalesError("La conversación no pertenece a este intento comercial.");
-  if (data.status !== "done" && data.status !== "failed") throw new SalesError("La conversación todavía está en curso o en análisis.");
+  if (data.status !== "done" && data.status !== "failed") {
+    // ElevenLabs puede conservar `initiated` cuando Twilio terminó sin conectar.
+    // Solo conciliamos un resultado telefónico terminal del mismo destinatario,
+    // sin audio ni transcripción. Nunca liberamos por antigüedad del intento.
+    const phone = data.metadata?.phone_call;
+    const reasons: Record<string, string> = { no_answer: "El destinatario no atendió.", busy: "El teléfono estaba ocupado.", failed: "El proveedor no pudo conectar la llamada." };
+    const reason = phone?.call_result ? reasons[phone.call_result] : undefined;
+    if (data.status !== "initiated" || !reason || phone?.type !== "twilio" || phone.direction !== "outbound" || phone.external_number !== call.phone || phone.stream_sid || data.metadata?.call_duration_secs !== 0 || data.transcript?.length) throw new SalesError("La conversación todavía está en curso o en análisis. Comprobá el resultado de nuevo cuando termine; no repitas la llamada.");
+    await recordSalesConversation({ ...data, status: "failed", analysis: { ...data.analysis, transcript_summary: reason } });
+    return;
+  }
   await recordSalesConversation(data);
 }

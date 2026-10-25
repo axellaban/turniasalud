@@ -14,7 +14,7 @@ export type PostCallPayload = {
   metadata?: {
     start_time_unix_secs?: number;
     call_duration_secs?: number;
-    phone_call?: { type?: string; external_number?: string } | null;
+    phone_call?: { type?: string; external_number?: string; direction?: string; call_result?: string | null; stream_sid?: string | null } | null;
     whatsapp?: unknown;
     [key: string]: unknown;
   };

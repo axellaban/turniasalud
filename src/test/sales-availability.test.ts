@@ -12,7 +12,7 @@ describe("Motivo concreto del bloqueo de llamadas",()=>{
   });
   it("distingue pausa de cupo vencido o agotado y enlaza al paso correcto",()=>{
     const paused=salesCallBlockers({...ready,enabled:false},budget,false,true,contact);
-    expect(paused).toHaveLength(1);expect(paused[0]).toMatchObject({message:"El piloto está pausado.",href:"/panel/comercial#presupuesto"});
+    expect(paused).toHaveLength(1);expect(paused[0]).toMatchObject({message:"El piloto está pausado.",href:"#presupuesto"});
     expect(salesCallBlockers({...ready,budget_date:"2026-10-23"},budget,false,true,contact)[0].message).toContain("venció");
     expect(salesCallBlockers({...ready,budget_cents:100},budget,false,true,contact)[0].message).toContain("reserva");
   });

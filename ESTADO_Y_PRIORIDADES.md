@@ -2,6 +2,17 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Comercial: llamada lista y contexto en un solo lugar — 25/10/2026
+
+- El usuario no podía habilitar otra prueba: ElevenLabs devolvía `status: initiated` pero `metadata.phone_call.call_result: no_answer`, duración 0 y sin stream. El panel solo reconocía `done`/`failed` y mantenía la llamada bloqueada.
+- `refreshSalesCall` concilia también `no_answer`, `busy` y `failed` **solo** si el agente, ID del intento y conversación coinciden, es Twilio saliente al mismo teléfono, sigue `initiated`, no tiene stream, duración ni transcripción. Se conserva la reserva de US$1. No se libera por tiempo transcurrido ni se reintenta.
+- Panel comercial: contactos primero; cupo diario y guion general separados. Agregar otro número queda plegado para no pedir datos de nuevo al repetir una prueba.
+- Ficha: control de llamada arriba, estado concreto y confirmación individual. Datos del consultorio guardados y editor plegable; guion general en su propio enlace. Cupo editable en la misma ficha. Llamada pendiente con «Comprobar si ya terminó» en ambas pantallas, sin circular entre enlaces `#pendiente`.
+- Se conserva el saludo personalizado **versión 2** y el cupo ya autorizado de US$5 del usuario. No se cambió configuración en ElevenLabs, WAHA, clínica, Twilio ni otro negocio; no se inició ninguna llamada.
+- Pruebas de conciliación: terminales sin respuesta/ocupado/fallo; se rechazan destinatario distinto, stream activo, dirección entrante, SIP, otro ID y llamadas con duración. Los controles de gasto, baja, revisión y no duplicación siguen vigentes.
+- Validación: 254 pruebas con Postgres local, TypeScript, ESLint y build correctos; ficha revisada en navegador local sin llamar.
+- Fuente del campo `call_result`: [ElevenLabs, cambios de API](https://elevenlabs.io/docs/changelog/2026/10/12).
+
 ## Logo nuevo — 25/10/2026
 
 - **Pedido del usuario:** un logo más profesional, tomando como referencia el de Assort.
