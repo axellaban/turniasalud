@@ -27,6 +27,8 @@ export type GridEvent = Span & {
   color: number;
   href: string;
   selected: boolean;
+  /** Ya terminó y nadie lo marcó como atendido o ausente. */
+  unmarked?: boolean;
 };
 
 export type GridColumn = {
@@ -146,7 +148,7 @@ export function CalendarGrid({ columns, events, hours, minWidth }: { columns: Gr
                     scroll={false}
                     aria-current={e.selected ? "true" : undefined}
                     title={`${e.time} · ${e.title} · ${e.detail}`}
-                    className={`absolute z-10 overflow-hidden rounded-md border-l-[3px] px-1.5 leading-tight shadow-sm ring-1 ring-black/5 transition hover:z-20 hover:shadow-md ${PRO_COLORS[e.color % PRO_COLORS.length].block} ${STATUS_STYLE[e.status] ?? ""} ${e.selected ? "z-20 ring-2 ring-brand-600" : ""}`}
+                    className={`absolute z-10 overflow-hidden rounded-md border-l-[3px] px-1.5 leading-tight shadow-sm ring-1 ring-black/5 transition hover:z-20 hover:shadow-md ${PRO_COLORS[e.color % PRO_COLORS.length].block} ${STATUS_STYLE[e.status] ?? ""} ${e.selected ? "z-20 ring-2 ring-brand-600" : e.unmarked ? "ring-1 ring-amber-400" : ""}`}
                     style={{
                       top: top(e.start) + 1,
                       height: h,

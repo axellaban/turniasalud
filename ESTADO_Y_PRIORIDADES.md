@@ -47,6 +47,41 @@ Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - **Twilio, lectura solicitada por el usuario:** consola muestra cuenta suspendida por falta de fondos y saldo **−US$0,49524** (reemplaza el saldo positivo del registro anterior). Se abrieron llamadas y grabaciones; última llamada visible de Turnia **19:03:19 Argentina, completada, 63 s**, iniciada fuera de esta tarea. No habilitar ni recargar automáticamente la cuenta compartida.
 - Validación: **232 pruebas** (21 comerciales + 4 bloqueos), TypeScript, ESLint y build. En navegador local: validación con borrador conservado, guardado y restauración del saludo/voz con proveedor simulado. Detalle y uso en [`COMERCIAL_AGUSTIN.md`](COMERCIAL_AGUSTIN.md).
 
+## Revisión de turnos, cambios y cancelaciones — 25/10/2026
+
+Pedido del usuario: revisar todo el circuito de turnos y calendario. Lo que probó él funcionaba; esto es lo que se encontró y se arregló.
+
+**Errores que había**
+- **Coberturas con mayúsculas:** «osde» no coincidía con «OSDE» y el turno se rechazaba («no atiende por osde»). Ahora se comparan sin mayúsculas, tildes ni espacios, y el turno guarda el nombre como lo cargó la clínica.
+- **Reintento del agente:** si ElevenLabs repetía `reservar_turno` después de que el primero había entrado, el segundo decía «se acaba de ocupar» (era el propio turno del paciente). Ahora devuelve el turno que ya estaba.
+- **Cancelar desde el panel** no avisaba a n8n ni le ofrecía el hueco a la lista de espera (el agente sí). Ahora hacen lo mismo.
+- **Reprogramar con otro profesional** no revisaba si atiende la cobertura del paciente.
+- **Turnos pasados** se podían cancelar o reprogramar. Ahora no: se marcan como atendidos o ausentes.
+- **Dos cambios a la vez** (paciente y panel) podían pisarse. Ahora el segundo recibe «ya no está activo».
+- **Atendido o Ausente en un turno futuro:** se podía marcar por error, sin deshacer.
+
+**Casos que no estaban contemplados**
+- Un paciente con **dos turnos a la misma hora** (con distintos profesionales): ahora no se permite.
+- **Dos turnos de lo mismo:** se da, pero el agente recibe un aviso para preguntarle si quiere los dos. El panel lo muestra.
+- **El panel no podía reprogramar:** ahora la ficha tiene «Reprogramar», con los horarios libres del día y la opción de otro profesional de la misma especialidad. Abre la ficha del turno nuevo.
+- **Fuera de horario, día bloqueado u ocupado en Google:** desde el panel se puede «Darlo igual». El agente nunca. Otro turno de Turnia en ese horario no se puede superponer nunca.
+- **Turnos pasados sin marcar:** sin la marca no andan las encuestas, el recall ni el seguimiento de ausentes, y nadie los marcaba. La Agenda los avisa arriba («Marcar todos como atendidos», con confirmación) y los resalta en la grilla.
+- **Marcas equivocadas:** «Era ausente», «Era atendido» y «Quitar la marca».
+- **Cancelados:** ya no desaparecen de la Agenda. Se listan debajo de la grilla, con su ficha.
+- **Cancelar pide confirmación** y un motivo opcional. Avisa que el paciente no recibe un mensaje automático.
+- **Turno a mano:**
+  - Al escribir el celular reconoce al paciente: completa nombre y cobertura y muestra sus próximos turnos.
+  - Rechaza celulares sin código de área, porque a esos no les llegan los recordatorios.
+
+**Quedan como propuestas** (en `PENDIENTES.md`): avisar al paciente cuando la clínica cancela o mueve, familias con un mismo celular, sobreturnos y aviso cuando Google pide reconectar.
+
+Código:
+- `src/lib/agent/service.ts`: `assertBookable` con `force`, `acceptedCoverage`, `upcomingOf`, `cancelClinicAppointment` y `rescheduleClinicAppointment`.
+- `src/app/panel/actions.ts`: `changeAppointmentStatus`, `markDayAttended`, `rescheduleFromPanel` y `lookupPatient`.
+- `src/app/panel/(app)/agenda/`: `appointment-actions.tsx` y `slot-picker.tsx`.
+
+Pruebas: 223 en verde, con un caso de integración que recorre todo lo de arriba. Revisado en el navegador en local.
+
 ## Sofi comercial · voz y pitch revisados — 24/10/2026
 
 - Pedido posterior: **misma voz de Sofi**, pitch de venta mejorado y cómo disparar pruebas desde el panel. Prevalece sobre el nombre/voz Agustín–Mauricio del registro histórico de abajo.

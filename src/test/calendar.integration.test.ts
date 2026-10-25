@@ -228,6 +228,14 @@ describe.runIf(baseUrl)("Google Calendar", () => {
     google.events.get(CAL)!.push({ id: "reunion", start: { dateTime: at("15:00") }, end: { dateTime: at("16:00") } });
     await expect(service.bookAppointment(ctx, { tipo_turno_id: CONSULTA, profesional_id: RUIZ, inicio: at("15:00"), nombre_completo: "Juan Carlos Pérez" }))
       .rejects.toThrow("ocupado");
+    // Al paciente no se le dice qué tiene el profesional en Google; el panel lo ve y lo puede dar igual.
+    const { createManualAppointment } = await import("@/app/panel/actions");
+    const manual = new FormData();
+    for (const [k, v] of Object.entries({ phone: "11 6666-0099", full_name: "Ana Forzada", appointment_type_id: CONSULTA, professional_id: RUIZ, date: day, time: "15:00" })) manual.set(k, v);
+    expect(await createManualAppointment(undefined, manual)).toEqual({ ok: false, message: "Ese horario está ocupado en el Google Calendar de Dra. Carolina Ruiz.", forzable: true });
+    manual.set("force", "1");
+    expect(await createManualAppointment(undefined, manual)).toMatchObject({ ok: true });
+    await sql`delete from appointments where patient_id = (select id from patients where phone = '5491166660099')`;
 
     const booked = (await service.bookAppointment(ctx, { tipo_turno_id: CONSULTA, profesional_id: RUIZ, inicio: at("12:00"), nombre_completo: "Juan Carlos Pérez" })) as { turno_id: string };
     const [pending] = await sql`select calendar_sync from appointments where id = ${booked.turno_id}`;
