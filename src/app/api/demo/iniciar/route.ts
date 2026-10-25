@@ -8,6 +8,7 @@ import { createDemoHandoff } from "@/lib/demo/handoff";
 import { analyzeDemo } from "@/lib/demo/session";
 import { startWebDemo } from "@/lib/demo/web";
 import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
+import { recordDemo } from "@/lib/sales/outreach";
 
 export const dynamic = "force-dynamic";
 // En el navegador, la lectura de la web corre después de responder (≈1 minuto).
@@ -18,7 +19,7 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
 export async function POST(request: Request) {
   const raw = await request.text();
   if (raw.length > 4096) return NextResponse.json({ error: "La dirección es demasiado larga." }, { status: 400 });
-  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown };
+  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown; ref?: unknown };
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 }); }
   const website = typeof body?.website === "string" && body.website.length <= 2000 ? normalizeWebsite(body.website) : null;
   // Sin web, alcanza con el nombre del consultorio (la demo se arma con eso).
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
     const started = await startWebDemo({ website, manual, email, ip });
     if (!started) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
     after(() => analyzeDemo(started.sessionId));
+    // Llegó desde el link de su demo (/p/<código>): queda en su ficha de la prospección.
+    if (typeof body.ref === "string") after(() => recordDemo(body.ref as string, started.leadId));
     return NextResponse.json({ url: `/probar-demo/sesion/${started.token}` }, { headers: { "Cache-Control": "no-store" } });
   }
   if (!website) return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 });

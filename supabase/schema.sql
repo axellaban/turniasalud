@@ -392,6 +392,8 @@ alter table demo_sessions add column if not exists call_attempts integer not nul
 alter table demo_sessions add column if not exists manual_name text;
 alter table demo_sessions add column if not exists manual_address text;
 alter table demo_sessions add column if not exists manual_specialty text;
+-- Link de la prospección: la demo sin web da turnos con el nombre del odontólogo.
+alter table demo_sessions add column if not exists manual_professional text;
 create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
 alter table demo_sessions enable row level security;
@@ -705,3 +707,62 @@ create index if not exists campaign_recipients_patient_idx on campaign_recipient
 alter table campaigns add column if not exists message text;
 -- Enviado a mano desde el WhatsApp de la clínica (botón que abre el chat con el mensaje escrito).
 alter table campaign_recipients add column if not exists manual boolean not null default false;
+
+-- ---------------------------------------------------------------------------
+-- Prospección: odontólogos a los que Axel les escribe a mano (WhatsApp, Instagram, llamada o
+-- visita), cada uno con su link de demo (/p/<código>). Separado de las llamadas de Sofi.
+-- ---------------------------------------------------------------------------
+create table if not exists sales_outreach (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique check (code ~ '^[a-z0-9][a-z0-9-]{2,39}$'),
+  name text not null,
+  greeting text not null default '',
+  title text not null default '',
+  business_name text not null default '',
+  zone text not null default '',
+  address text not null default '',
+  specialty text not null default '',
+  phone text check (phone is null or phone ~ '^\+54[0-9]{10,11}$'),
+  phone_kind text check (phone_kind in ('movil', 'fijo')),
+  instagram text,
+  email text,
+  website text,
+  priority smallint not null default 2 check (priority between 1 and 3),
+  signals text not null default '',
+  source text not null default '',
+  status text not null default 'por_contactar'
+    check (status in ('por_contactar', 'contactado', 'respondio', 'reunion', 'cliente', 'no_interesa', 'sin_canal', 'baja')),
+  touches smallint not null default 0,
+  last_channel text,
+  first_contact_at timestamptz,
+  last_contact_at timestamptz,
+  next_action_on date,
+  opened_at timestamptz,
+  opens integer not null default 0,
+  demo_at timestamptz,
+  lead_id uuid references leads(id) on delete set null,
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists sales_outreach_queue_idx on sales_outreach (status, next_action_on, priority);
+create index if not exists sales_outreach_phone_idx on sales_outreach (phone);
+alter table sales_outreach enable row level security;
+
+-- Historia de cada contacto: mensajes, llamadas, visitas, respuestas, cambios de estado y la demo.
+create table if not exists sales_outreach_events (
+  id uuid primary key default gen_random_uuid(),
+  outreach_id uuid not null references sales_outreach(id) on delete cascade,
+  kind text not null check (kind in ('mensaje', 'llamada', 'visita', 'estado', 'nota', 'abrio', 'demo')),
+  channel text,
+  detail text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists sales_outreach_events_idx on sales_outreach_events (outreach_id, created_at desc);
+create index if not exists sales_outreach_events_day_idx on sales_outreach_events (created_at) where kind = 'mensaje';
+alter table sales_outreach_events enable row level security;
+
+-- Mensajes de la prospección (editables desde el panel) y metas de la semana.
+alter table sales_settings add column if not exists outreach_templates jsonb not null default '{}'::jsonb;
+alter table sales_settings add column if not exists outreach_daily_goal integer not null default 50;
+alter table sales_settings add column if not exists outreach_weekly_goal integer not null default 250;

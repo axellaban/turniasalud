@@ -23,6 +23,7 @@ const PATHS = {
   derecha: ["M9 6l6 6-6 6"],
   llave: ["M14.5 9.5a4.5 4.5 0 1 0-1.3 3.2L20 19.5V16h-2v-2h-2.2"],
   chat: ["M5 5h14v10H9l-4 4z"],
+  prospeccion: ["M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M12 12h.01"],
 } as const;
 
 export type PanelIconName = keyof typeof PATHS;

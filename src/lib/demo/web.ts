@@ -41,7 +41,7 @@ export type WebDemoState =
  * sesión, que hay que analizar después de responder. null: superó el límite.
  * Con web se lee la web; sin web (manual) la ficha sale del nombre del consultorio.
  */
-export async function startWebDemo(input: { website: string | null; manual: ManualClinic | null; email: string | null; ip: string }): Promise<{ token: string; sessionId: string } | null> {
+export async function startWebDemo(input: { website: string | null; manual: ManualClinic | null; email: string | null; ip: string }): Promise<{ token: string; sessionId: string; leadId: string } | null> {
   const manual = input.website ? null : input.manual;
   if (!input.website && !manual) return null;
   const label = input.website ? hostOf(input.website) : manual!.nombre;
@@ -83,9 +83,9 @@ export async function startWebDemo(input: { website: string | null; manual: Manu
       values (${label}, ${input.email}, ${label}, ${note}, 'demo-web')
       returning id`)[0];
     const [session] = await tx<{ id: string }[]>`
-      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty)
+      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty, manual_professional)
       values (${id}, ${id}, ${input.website ?? ""}, ${lead.id}, ${handoff}, ${token}, ${settings.revision},
-              ${manual?.nombre ?? null}, ${manual?.direccion ?? null}, ${manual?.especialidad ?? null})
+              ${manual?.nombre ?? null}, ${manual?.direccion ?? null}, ${manual?.especialidad ?? null}, ${manual?.profesional ?? null})
       returning id`;
     return { sessionId: session.id, leadId: lead.id, createdLead: !existing };
   });
@@ -96,7 +96,7 @@ export async function startWebDemo(input: { website: string | null; manual: Manu
       lead: { id: result.leadId, nombre: label, email: input.email, telefono: null, organizacion: label, mensaje: note, origen: "demo-web", web: input.website },
     });
   }
-  return { token, sessionId: result.sessionId };
+  return { token, sessionId: result.sessionId, leadId: result.leadId };
 }
 
 async function sessionForToken(token: string): Promise<DemoSession | null> {

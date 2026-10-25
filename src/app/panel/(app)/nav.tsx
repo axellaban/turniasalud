@@ -18,6 +18,7 @@ const CLINIC: Item[] = [
 ];
 
 const ADMIN: Item[] = [
+  { href: "/panel/prospeccion", label: "Prospección", icon: "prospeccion" },
   { href: "/panel/comercial", label: "Comercial", icon: "campanas" },
   { href: "/panel/clinicas", label: "Clínicas", icon: "clinicas" },
   { href: "/panel/demos", label: "Pedidos de demo", icon: "demos" },

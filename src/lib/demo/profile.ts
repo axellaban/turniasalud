@@ -201,10 +201,11 @@ export function manualProfile(input: ManualClinic): DemoProfile {
     horario_texto: "Lunes a viernes de 9 a 18 h (horario de ejemplo de la demo)",
     horarios: [],
     coberturas: [],
-    profesionales: [],
+    profesionales: input.profesional ? [{ nombre: input.profesional, especialidad: specialty, dias: [], bio: null }] : [],
     prestaciones,
-    preguntas_frecuentes:
-      "- Demo armada sin web: del consultorio solo se conocen el nombre y la dirección.\n- Precios, profesionales y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.",
+    preguntas_frecuentes: input.profesional
+      ? `- Demo armada sin web: del consultorio solo se conocen el nombre, la dirección y que atiende ${input.profesional}.\n- Precios y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.`
+      : "- Demo armada sin web: del consultorio solo se conocen el nombre y la dirección.\n- Precios, profesionales y obras sociales no figuran: si preguntan, ofrecer que la recepción lo confirme.",
     politicas: null,
   };
 }
