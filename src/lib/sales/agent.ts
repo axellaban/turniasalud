@@ -129,7 +129,7 @@ export async function setupSalesAgent(selectedVoiceId?: string, change?: SalesCo
     attemptedVersion = settings.config_version;
     const configs = [
       toolConfig("registrar_baja_comercial", "Guarda de inmediato la petición de no recibir más llamadas. Esperá ok antes de confirmar y luego colgá.", { reason: { type: "string", description: "Motivo de la baja sin datos sensibles" } }, ["reason"]),
-      toolConfig("registrar_resultado_comercial", "Guarda el resultado para el seguimiento manual de Axel. No envía mensajes.", {
+      toolConfig("registrar_resultado_comercial", "Guarda el resultado y las preferencias para seguimiento manual. No envía mensajes ni reserva turnos.", {
         outcome: { type: "string", enum: ["interesado", "seguimiento", "no_interesado", "numero_equivocado"], description: "Resultado confirmado por el interlocutor" },
         summary: { type: "string", description: "Resumen breve y próximo paso acordado, sin datos de pacientes" },
       }, ["outcome", "summary"]),

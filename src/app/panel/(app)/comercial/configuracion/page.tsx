@@ -16,7 +16,7 @@ export default async function SalesConfigurationPage() {
     sql`select id from sales_calls where status in ('iniciando','en_curso','incierta') limit 1`,
   ]);
   return <>
-    <PageHeader title="Configuración de Sofi comercial" description="Editá el saludo, las instrucciones y la voz. Esta configuración es solo para ventas; la recepcionista clínica conserva la suya." actions={<Link href="/panel/comercial" className="underline">Volver a Comercial</Link>} />
+    <PageHeader title="Configuración de Sofi comercial" description="Editá el saludo, las instrucciones y la voz. Este es el agente de pruebas telefónicas de Comercial; la recepcionista clínica conserva su configuración." actions={<Link href="/panel/comercial" className="underline">Volver a Comercial</Link>} />
     {s.needs_sync && <Notice tone="error">La última aplicación no se pudo comprobar. El piloto sigue pausado. Revisá el formulario y volvé a guardar y aplicar; la versión anterior sigue conservada.</Notice>}
     {pending.length>0 && <Notice tone="warning">Hay una llamada pendiente. Podés revisar el texto, pero primero actualizá su resultado para aplicar cambios.</Notice>}
     {voices.length===0 && <Notice tone="warning">No se pudo leer la lista de voces. Podés conservar la actual; la disponibilidad se comprueba al aplicar.</Notice>}

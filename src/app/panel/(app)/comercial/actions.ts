@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/panel-clinic";
 import { ElevenLabsError } from "@/lib/elevenlabs";
 import { setupSalesAgent, sofiSalesVoiceId, SalesSetupError } from "@/lib/sales/agent";
 import { salesConfiguration, salesConfigurationSchema, type SalesConfiguration } from "@/lib/sales/config";
-import { authorizeBudget, blockProspect, dialProspect, refreshSalesCall, salesSettings, saveProspect, SalesError } from "@/lib/sales/service";
+import { authorizeBudget, blockProspect, dialProspect, refreshSalesCall, salesSettings, saveProspect, updateSalesPhone, SalesError } from "@/lib/sales/service";
 
 export type SalesActionState = { message?: string; error?: string; prospectId?: string; configuration?: SalesConfiguration & { voice_id: string; version: number } };
 export async function salesAction(_previous: SalesActionState, form: FormData): Promise<SalesActionState> {
@@ -39,13 +39,18 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
     } else if (intent === "prospect") {
       result = { prospectId: await saveProspect(Object.fromEntries(form)), message: "Consultorio guardado. Todavía no se llamó." };
     } else if (intent === "review") {
-      const p = z.object({ id: z.uuid(), business_name: z.string().trim().min(3, "Ingresá el nombre de la clínica que dirá Sofi.").max(160), eligibility: z.enum(["sin_revisar", "solicito_llamada", "no_llame_revisado"]), evidence: z.string().trim().max(1500), context: z.string().trim().max(3000) }).parse(Object.fromEntries(form));
+      const p = z.object({ id: z.uuid(), expected_phone: z.string().min(1), business_name: z.string().trim().min(3, "Ingresá el nombre de la clínica que dirá Sofi.").max(160), eligibility: z.enum(["sin_revisar", "solicito_llamada", "no_llame_revisado"]), evidence: z.string().trim().max(1500), context: z.string().trim().max(3000) }).parse(Object.fromEntries(form));
       if (p.eligibility !== "sin_revisar" && p.evidence.length < 15) throw new SalesError("Anotá la fuente y fecha del permiso o de la revisión de No Llame.");
-      await sql`update sales_prospects set business_name = ${p.business_name}, eligibility = ${p.eligibility}, evidence = ${p.evidence}, context = ${p.context}, reviewed_at = ${p.eligibility === "sin_revisar" ? null : new Date().toISOString()} where id = ${p.id}`;
+      const updated = await sql`update sales_prospects set business_name = ${p.business_name}, eligibility = ${p.eligibility}, evidence = ${p.evidence}, context = ${p.context}, reviewed_at = ${p.eligibility === "sin_revisar" ? null : new Date().toISOString()} where id = ${p.id} and phone = ${p.expected_phone} returning id`;
+      if (!updated.length) throw new SalesError("Cambió el teléfono de esta ficha. Recargá y revisá el nuevo destinatario antes de guardar.");
       result = { message: "Nombre de la clínica, datos y revisión guardados. Sofi usará este nombre en las próximas llamadas. La revisión vale 24 horas." };
+    } else if (intent === "phone") {
+      await updateSalesPhone(String(form.get("id")), String(form.get("phone")), String(form.get("expected_phone")));
+      result = { message: "Número guardado. Si cambió el destinatario, revisá su permiso de contacto antes de llamar. No se inició ninguna llamada." };
     } else if (intent === "dial") {
       if (form.get("confirm") !== "on") throw new SalesError("Confirmá el destinatario de esta única llamada.");
-      await dialProspect(String(form.get("id")),String(form.get("request_key")));
+      const expectedPhone = z.string().min(1, "Recargá la ficha y confirmá el teléfono antes de llamar.").parse(form.get("expected_phone"));
+      await dialProspect(String(form.get("id")),String(form.get("request_key")),expectedPhone);
       result = { message: "Intento registrado. Revisá el estado y actualizá el resultado; no repitas si el inicio quedó incierto." };
     } else if (intent === "refresh") {
       await refreshSalesCall(String(form.get("call_id")), String(form.get("conversation_id") || ""));
