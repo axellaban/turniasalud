@@ -2,30 +2,12 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { submitKeepingValues } from "@/components/keep-form";
-import { createManualAppointment, loadDaySlots } from "../../actions";
-import { Field, buttonClass, ghostButtonClass, inputClass } from "@/components/ui";
-import type { DaySlot } from "@/lib/agent/service";
+import { createManualAppointment, lookupPatient, type KnownPatient } from "../../actions";
+import { Field, buttonClass, inputClass } from "@/components/ui";
 import { parseClockTime } from "@/lib/time";
+import { ForceOption, SlotPicker, dayLabel } from "./slot-picker";
 
 type Option = { id: string; name: string; specialty: string };
-type Day = { turnos: DaySlot[]; horario: string | null; motivo: string | null };
-
-const shiftDay = (key: string, days: number) => {
-  const d = new Date(`${key}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-};
-
-const dayLabel = (key: string) => {
-  const [, m, d] = key.split("-").map(Number);
-  const weekday = new Intl.DateTimeFormat("es-AR", { timeZone: "UTC", weekday: "short" }).format(new Date(`${key}T12:00:00Z`));
-  return `${weekday.replace(".", "")} ${d}/${m}`;
-};
-
-const chipClass = (selected: boolean) =>
-  `rounded-lg px-2 py-1.5 text-sm font-medium tabular-nums ring-1 transition-colors ${
-    selected ? "bg-brand-600 text-white ring-brand-600" : "bg-white text-brand-900 ring-brand-900/15 hover:bg-brand-50 hover:ring-brand-300"
-  }`;
 
 /**
  * Turno a mano: primero qué, con quién y cuándo (se elige entre los horarios libres
@@ -52,6 +34,8 @@ export function ManualAppointmentForm({
 }) {
   const [state, action, pending] = useActionState(createManualAppointment, undefined);
   const form = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const coverageRef = useRef<HTMLInputElement>(null);
   const initialPro = professionals.find((p) => p.id === initialProId);
   const [typeId, setTypeId] = useState((initialPro && types.find((t) => t.specialty === initialPro.specialty)?.id) ?? types[0]?.id ?? "");
   const specialty = types.find((t) => t.id === typeId)?.specialty;
@@ -63,48 +47,42 @@ export function ManualAppointmentForm({
   const [time, setTime] = useState(initialTime ?? "");
   const [custom, setCustom] = useState(false);
   const [reload, setReload] = useState(0);
-  // Los horarios libres son de una combinación prestación + profesional + día: mientras
-  // llega la de la combinación actual, se muestra la anterior atenuada.
-  const key = `${typeId}|${proId}|${date}|${reload}`;
-  const [loaded, setLoaded] = useState<{ key: string; day: Day } | null>(null);
-  const day = loaded?.day ?? null;
-  const loading = Boolean(typeId && proId && date) && loaded?.key !== key;
-
-  useEffect(() => {
-    if (!typeId || !proId || !date) return;
-    let current = true;
-    const data = new FormData();
-    data.set("clinic_id", clinicId);
-    data.set("appointment_type_id", typeId);
-    data.set("professional_id", proId);
-    data.set("date", date);
-    loadDaySlots(data)
-      .then((r) => { if (current) setLoaded({ key, day: r }); })
-      .catch(() => { if (current) setLoaded({ key, day: { turnos: [], horario: null, motivo: "No pude traer los horarios. Probá de nuevo." } }); });
-    return () => { current = false; };
-  }, [clinicId, typeId, proId, date, key]);
+  const [known, setKnown] = useState<KnownPatient | null>(null);
+  // «Darlo igual» vale para el horario que se rechazó: si se elige otro, desaparece.
+  const slotKey = `${proId}|${date}|${time}`;
+  const [forceKey, setForceKey] = useState<string | null>(null);
 
   // Turno reservado: se vacían el horario y el paciente, y se recargan los horarios libres.
   const [seen, setSeen] = useState(state);
   if (state !== seen) {
     setSeen(state);
+    setForceKey(state?.forzable ? slotKey : null);
     if (state?.ok) {
       setTime("");
       setCustom(false);
+      setKnown(null);
       setReload((n) => n + 1);
     }
   }
   useEffect(() => { if (state?.ok) form.current?.reset(); }, [state]);
 
-  const pick = (next: Partial<{ typeId: string; proId: string; date: string }>) => {
+  // Si el celular ya es de un paciente, se completa su nombre y su cobertura (sin pisar lo escrito).
+  async function recognize(phone: string) {
+    const data = new FormData();
+    data.set("clinic_id", clinicId);
+    data.set("phone", phone);
+    const found = await lookupPatient(data).catch(() => null);
+    setKnown(found);
+    if (!found) return;
+    if (nameRef.current && !nameRef.current.value && found.name) nameRef.current.value = found.name;
+    if (coverageRef.current && !coverageRef.current.value && found.coverage) coverageRef.current.value = found.coverage;
+  }
+
+  const pick = (next: Partial<{ typeId: string; proId: string }>) => {
     if (next.typeId !== undefined) setTypeId(next.typeId);
     if (next.proId !== undefined) setProId(next.proId);
-    if (next.date !== undefined) setDate(next.date);
     if (!custom) setTime("");
   };
-
-  const morning = day?.turnos.filter((s) => s.hora < "13:00") ?? [];
-  const afternoon = day?.turnos.filter((s) => s.hora >= "13:00") ?? [];
   const canSubmit = Boolean(typeId && proId && date && time.trim()) && !pending;
 
   if (!types.length || !professionals.length) {
@@ -131,86 +109,48 @@ export function ManualAppointmentForm({
             {!pros.length && <option value="">Nadie hace esta prestación</option>}
           </select>
         </Field>
-        <Field label="Día">
-          <div className="flex items-center gap-1.5">
-            <button type="button" aria-label="Día anterior" disabled={date <= today} onClick={() => pick({ date: shiftDay(date, -1) })} className={`${ghostButtonClass} px-2.5 disabled:opacity-30`}>‹</button>
-            <input type="date" name="date" required min={today} value={date} onChange={(e) => e.target.value && pick({ date: e.target.value })} className={inputClass} />
-            <button type="button" aria-label="Día siguiente" onClick={() => pick({ date: shiftDay(date, 1) })} className={`${ghostButtonClass} px-2.5`}>›</button>
-          </div>
-        </Field>
-
-        <div aria-live="polite">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm font-medium text-brand-900">Horario</span>
-            {day?.horario && !loading && <span className="text-xs text-brand-900/60">Atiende de {day.horario}</span>}
-          </div>
-          {custom ? (
-            <div className="mt-1.5 space-y-1.5">
-              <input
-                name="time"
-                autoFocus
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="Ej.: 9:15 o 19:30"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className={inputClass}
-              />
-              <button type="button" onClick={() => { setCustom(false); setTime(""); }} className="text-xs font-medium text-brand-700 hover:underline">
-                Elegir de los horarios libres
-              </button>
-            </div>
-          ) : (
-            <>
-              <input type="hidden" name="time" value={time} />
-              {loading && !day?.turnos.length ? (
-                <div className="mt-1.5 grid grid-cols-4 gap-1.5" aria-label="Buscando horarios libres">
-                  {Array.from({ length: 8 }, (_, i) => <span key={i} className="h-8 animate-pulse rounded-lg bg-brand-900/5" />)}
-                </div>
-              ) : day && !day.turnos.length ? (
-                <div className="mt-1.5 rounded-xl bg-brand-50/60 p-3 text-sm text-brand-900/75">
-                  <p>{day.motivo}</p>
-                  <button type="button" onClick={() => pick({ date: shiftDay(date, 1) })} className="mt-1 font-medium text-brand-700 hover:underline">
-                    Ver el día siguiente →
-                  </button>
-                </div>
-              ) : (
-                <div className={`mt-1.5 space-y-2 ${loading ? "opacity-50" : ""}`}>
-                  {[["Mañana", morning], ["Tarde", afternoon]].map(([label, list]) =>
-                    (list as DaySlot[]).length ? (
-                      <div key={label as string}>
-                        <p className="mb-1 text-xs text-brand-900/55">{label as string}</p>
-                        <div className="grid grid-cols-4 gap-1.5" role="group" aria-label={`Horarios de la ${(label as string).toLowerCase()}`}>
-                          {(list as DaySlot[]).map((s) => (
-                            <button key={s.inicio} type="button" aria-pressed={time === s.hora} onClick={() => setTime(time === s.hora ? "" : s.hora)} className={chipClass(time === s.hora)}>
-                              {s.hora}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null,
-                  )}
-                </div>
-              )}
-              <button type="button" onClick={() => { setCustom(true); setTime(""); }} className="mt-2 text-xs font-medium text-brand-700 hover:underline">
-                Otro horario (escribirlo)
-              </button>
-            </>
-          )}
-        </div>
+        <SlotPicker
+          clinicId={clinicId}
+          typeId={typeId}
+          proId={proId}
+          today={today}
+          date={date}
+          onDate={setDate}
+          time={time}
+          onTime={setTime}
+          custom={custom}
+          onCustom={setCustom}
+          reload={reload}
+        />
       </fieldset>
 
       <fieldset className="space-y-3 border-t border-brand-900/10 pt-4">
         <legend className="sr-only">Paciente</legend>
         <p aria-hidden className="text-xs font-semibold uppercase tracking-wide text-brand-900/55">Paciente</p>
-        <Field label="Celular">
-          <input name="phone" required type="tel" inputMode="tel" autoComplete="off" placeholder="11 5555-0001" className={inputClass} />
+        <Field label="Celular" hint="Con código de área. Si ya es paciente, completamos sus datos.">
+          <input
+            name="phone"
+            required
+            type="tel"
+            inputMode="tel"
+            autoComplete="off"
+            placeholder="11 5555-0001"
+            onBlur={(e) => e.target.value.trim() && recognize(e.target.value)}
+            onChange={() => known && setKnown(null)}
+            className={inputClass}
+          />
         </Field>
+        {known && (
+          <div role="status" className="rounded-xl bg-brand-50/70 px-3 py-2 text-xs leading-relaxed text-brand-900">
+            <p className="font-medium">Ya es paciente{known.name ? `: ${known.name}` : ""}.</p>
+            {known.upcoming.length > 0 && <p className="mt-0.5 text-brand-900/70">Próximos turnos: {known.upcoming.join(" · ")}.</p>}
+          </div>
+        )}
         <Field label="Nombre y apellido">
-          <input name="full_name" required autoComplete="off" className={inputClass} />
+          <input ref={nameRef} name="full_name" required autoComplete="off" className={inputClass} />
         </Field>
         <Field label="Cobertura" hint="Opcional. Si no la sabés, dejala vacía.">
-          <input name="coverage" placeholder="OSDE, Swiss Medical, Particular…" className={inputClass} />
+          <input ref={coverageRef} name="coverage" placeholder="OSDE, Swiss Medical, Particular…" className={inputClass} />
         </Field>
         <Field label="Notas" hint="Opcional. Solo las ve el consultorio.">
           <input name="notes" className={inputClass} />
@@ -220,6 +160,7 @@ export function ManualAppointmentForm({
       {state?.message && (
         <p role="status" className={`rounded-xl px-3 py-2 text-sm ${state.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>{state.message}</p>
       )}
+      <ForceOption key={slotKey} show={forceKey === slotKey} />
       <button disabled={!canSubmit} className={`${buttonClass} w-full`}>
         {pending ? "Reservando…" : !time.trim() ? "Elegí un horario" : parseClockTime(time) ? `Reservar ${dayLabel(date)} · ${parseClockTime(time)}` : "Reservar turno"}
       </button>

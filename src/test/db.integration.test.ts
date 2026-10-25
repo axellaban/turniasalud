@@ -529,7 +529,10 @@ describe.runIf(url)("integración con Postgres", () => {
     const bad = await actions.createManualAppointment(undefined, form({ ...sosa, phone: "11 6666-0011", full_name: "Hugo Manual", date: day, time: "cualquiera" }));
     expect(bad).toEqual({ ok: false, message: "No entendí la hora «cualquiera». Escribila como 9:15 o 19:30." });
     const outside = await actions.createManualAppointment(undefined, form({ ...sosa, phone: "11 6666-0011", full_name: "Hugo Manual", date: day, time: "23:30" }));
-    expect(outside).toEqual({ ok: false, message: "El profesional no atiende en ese horario." });
+    // Fuera de horario el panel lo puede dar igual; el agente, nunca.
+    expect(outside).toEqual({ ok: false, message: "El profesional no atiende en ese horario.", forzable: true });
+    expect(await actions.createManualAppointment(undefined, form({ ...sosa, phone: "11 6", full_name: "Hugo Manual", date: day, time: "20:00" })))
+      .toEqual({ ok: false, message: "Revisá el celular: va con código de área, por ejemplo 11 5555-0001." });
     const manual = await actions.createManualAppointment(undefined, form({
       phone: "11 6666-0011", full_name: "Hugo Manual", coverage: "Particular", date: day, time: "8:30 pm", ...sosa,
     }));
@@ -542,9 +545,16 @@ describe.runIf(url)("integración con Postgres", () => {
     const [appt] = await sql<Array<{ id: string; source: string }>>`
       select a.id, a.source from appointments a join patients p on p.id = a.patient_id where p.phone = '5491166660011'`;
     expect(appt.source).toBe("panel");
-    await actions.setAppointmentStatus(form({ id: appt.id, status: "atendido" }));
-    const [done] = await sql<Array<{ status: string }>>`select status from appointments where id = ${appt.id}`;
-    expect(done.status).toBe("atendido");
+    // Un turno que todavía no empezó no se marca como atendido; sí se cancela, como si lo cancelara el paciente.
+    expect(await actions.changeAppointmentStatus(undefined, form({ id: appt.id, status: "atendido" })))
+      .toMatchObject({ ok: false, message: "Todavía no empezó: se puede marcar cuando llegue el horario." });
+    expect(await actions.changeAppointmentStatus(undefined, form({ id: appt.id, status: "cancelado", reason: "el doctor no viene" })))
+      .toMatchObject({ ok: true });
+    const [done] = await sql<Array<{ status: string; notes: string }>>`select status, notes from appointments where id = ${appt.id}`;
+    expect(done).toMatchObject({ status: "cancelado", notes: "Cancelado: el doctor no viene" });
+    expect(mocks.notifyN8n).toHaveBeenCalledWith("turno.cancelado", expect.objectContaining({ cancelado_por: "clinica" }));
+    expect(await actions.changeAppointmentStatus(undefined, form({ id: appt.id, status: "cancelado" })))
+      .toMatchObject({ ok: false, message: "Ese turno ya está cancelado." });
 
     const previousClinic = await clinicLib.getClinic();
     await actions.saveClinic(form({
@@ -577,6 +587,86 @@ describe.runIf(url)("integración con Postgres", () => {
     await expect(actions.setTaskStatus(form({ id: appt.id, status: "resuelta" }))).rejects.toThrow("redirect:/panel/login");
     const { createSessionToken } = await import("@/lib/session");
     mocks.session = createSessionToken();
+  });
+
+  it("turnos: coberturas, reservas repetidas, choques del paciente, turnos pasados y cambios desde el panel", async () => {
+    const actions = await import("@/app/panel/actions");
+    const form = (data: Record<string, string | string[]>) => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(data)) for (const x of [v].flat()) f.append(k, x);
+      return f;
+    };
+    const c = ctx("5491166660031");
+    await service.registerPatient(c, { nombre_completo: "Irene Casos", cobertura: "osde " });
+    const { turnos } = await service.checkAvailability(c, { tipo_turno_id: LUNARES, desde: inTwoDays() });
+    const [first, second] = turnos;
+
+    // La cobertura se compara sin mayúsculas ni espacios, y queda como la cargó la clínica.
+    const booked = await service.bookAppointment(c, { tipo_turno_id: LUNARES, profesional_id: first.profesional_id, inicio: first.inicio });
+    const [row] = await sql<Array<{ coverage: string }>>`select coverage from appointments where id = ${booked.turno_id}`;
+    expect(row.coverage).toBe("OSDE");
+
+    // El agente reintenta la misma reserva: no es un error ni duplica el turno.
+    const again = await service.bookAppointment(c, { tipo_turno_id: LUNARES, profesional_id: first.profesional_id, inicio: first.inicio });
+    expect(again).toMatchObject({ ok: true, turno_id: booked.turno_id });
+    expect(again.mensaje).toContain("ya estaba reservado");
+
+    // Una persona no puede estar en dos turnos a la vez (aunque sea con otro profesional y forzando el horario).
+    await expect(service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, inicio: first.inicio }, { force: true }))
+      .rejects.toThrow("ya tiene un turno a esa hora");
+
+    // Otro turno de lo mismo: se da, con un aviso para preguntarle si quiere los dos.
+    const twice = await service.bookAppointment(c, { tipo_turno_id: LUNARES, profesional_id: second.profesional_id, inicio: second.inicio });
+    expect(twice).toMatchObject({ ok: true });
+    expect("aviso" in twice && twice.aviso).toContain("Ya tenía otro turno de Control anual de lunares");
+
+    // Desde el panel se mueve: conserva el canal por el que lo pidió el paciente y se puede corregir el horario.
+    const moved = await service.rescheduleClinicAppointment(CLINIC, twice.turno_id, { nuevo_inicio: turnos[3].inicio });
+    const [after] = await sql<Array<{ source: string; status: string }>>`select source, status from appointments where id = ${moved.turno_id}`;
+    expect(after).toEqual({ source: "whatsapp", status: "confirmado" });
+    const [old] = await sql<Array<{ status: string }>>`select status from appointments where id = ${twice.turno_id}`;
+    expect(old.status).toBe("reprogramado");
+    // A otro profesional que no atiende su cobertura, no.
+    const [other] = await sql<{ id: string }[]>`
+      insert into professionals (clinic_id, full_name, specialty, accepted_coverages) values (${CLINIC}, 'Dra. Otra Piel', 'Dermatología', array['Galeno']) returning id`;
+    await expect(service.rescheduleClinicAppointment(CLINIC, moved.turno_id, { nuevo_inicio: turnos[3].inicio, profesional_id: other.id }, { force: true }))
+      .rejects.toThrow("no atiende por OSDE");
+    await sql`delete from professionals where id = ${other.id}`;
+
+    // Desde la ficha del panel: mueve y abre la ficha del turno nuevo, en su día y con la misma vista.
+    const local = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .format(new Date(iso)).split(", ");
+    const [date5, time5] = local(turnos[5].inicio);
+    await expect(actions.rescheduleFromPanel(undefined, form({ appointment_id: moved.turno_id, date: date5, time: time5, back: "vista=dia&turno=viejo&x=1" })))
+      .rejects.toThrow(new RegExp(`^redirect:/panel/agenda\\?vista=dia&fecha=${date5}&turno=[0-9a-f-]{36}$`));
+    const [{ id: movedAgain }] = await sql<{ id: string }[]>`select id from appointments where patient_id = (select patient_id from appointments where id = ${moved.turno_id}) and status = 'confirmado' and starts_at = ${turnos[5].inicio}`;
+    Object.assign(moved, { turno_id: movedAgain });
+
+    // Dos cancelaciones a la vez (paciente y panel): una sola cuenta.
+    const results = await Promise.allSettled([
+      service.cancelAppointment(c, { turno_id: moved.turno_id }),
+      service.cancelClinicAppointment(CLINIC, moved.turno_id),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(mocks.notifyN8n.mock.calls.filter((call) => (call as unknown[])[0] === "turno.cancelado")).toHaveLength(1);
+
+    // Un turno que ya pasó no se cancela ni se mueve: se marca. Y la marca se puede corregir.
+    const [past] = await sql<Array<{ id: string }>>`
+      insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+      select ${CLINIC}, p.id, ${GOMEZ}, ${LUNARES}, now() - interval '3 hours', now() - interval '2 hours 40 minutes', 'confirmado', 'whatsapp'
+      from patients p where p.phone = '5491166660031' returning id`;
+    await expect(service.cancelAppointment(c, { turno_id: past.id })).rejects.toThrow("ya pasó");
+    await expect(service.rescheduleAppointment(c, { turno_id: past.id, nuevo_inicio: turnos[4].inicio })).rejects.toThrow("ya pasó");
+    expect(await actions.changeAppointmentStatus(undefined, form({ id: past.id, status: "ausente" }))).toMatchObject({ ok: true, message: "Marcado como ausente." });
+    expect(await actions.changeAppointmentStatus(undefined, form({ id: past.id, status: "confirmado" }))).toMatchObject({ ok: true });
+    // «Marcar todos como atendidos» solo toca los que ya terminaron.
+    expect(await actions.markDayAttended(undefined, form({ id: [past.id, booked.turno_id] }))).toMatchObject({ ok: true, message: "1 turno marcado como atendido." });
+    const states = await sql<Array<{ id: string; status: string }>>`select id, status from appointments where id in ${sql([past.id, booked.turno_id])}`;
+    expect(Object.fromEntries(states.map((s) => [s.id, s.status]))).toEqual({ [past.id]: "atendido", [booked.turno_id]: "confirmado" });
+
+    // Al escribir el celular en el turno a mano, el panel reconoce al paciente.
+    expect(await actions.lookupPatient(form({ phone: "11 6666-0031" }))).toMatchObject({ name: "Irene Casos", coverage: "osde " });
+    expect(await actions.lookupPatient(form({ phone: "11 0000-0000" }))).toBeNull();
   });
 
   it("todas las páginas del panel consultan y renderizan con datos reales", async () => {

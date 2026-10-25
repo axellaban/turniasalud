@@ -21,6 +21,8 @@ Actualizado: 24/10/2026. **Código hecho y probado con Google simulado** (`src/t
   - Se escribe después de responder (`after()`).
   - Si falla, lo reintenta la automatización `/api/automations/calendario`, hasta 8 intentos.
   - El id del evento sale del turno, así un reintento no duplica eventos.
+- **Turnia manda sobre sus eventos.** Si alguien mueve o borra en Google un evento de Turnia, el turno sigue igual en Turnia: los cambios se hacen desde el panel o con el agente. El próximo cambio del turno vuelve a escribir el evento.
+- **Desde el panel se puede «Darlo igual»** sobre un horario ocupado en Google (y fuera de horario o en un día bloqueado). El agente nunca lo ofrece.
 - **Si Google pide reconectar** (permiso revocado o vencido):
   - La agenda sigue andando sin lo de Google.
   - El panel muestra «Reconectar».

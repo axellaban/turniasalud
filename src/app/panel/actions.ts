@@ -11,9 +11,9 @@ import { createCampaign, sendCampaign, CAMPAIGN_LABELS } from "@/lib/campaigns";
 import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
-import { bookAppointment, freeSlotsOnDay, registerPatient, ToolError } from "@/lib/agent/service";
+import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
-import { addDaysKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
+import { addDaysKey, humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
 import { selectMessagingChannel, messagingSettings, setDemoDailyLimit } from "@/lib/messaging-settings";
@@ -54,23 +54,73 @@ export async function logout() {
 // ---------------------------------------------------------------------------
 // Agenda y tareas
 // ---------------------------------------------------------------------------
-const APPOINTMENT_STATUSES = ["confirmado", "pendiente", "cancelado", "ausente", "atendido"];
-
-export async function setAppointmentStatus(form: FormData) {
-  await requireSession();
-  const id = uuid(form, "id");
-  const status = text(form, "status");
-  if (!id || !status || !APPOINTMENT_STATUSES.includes(status)) return;
-  const clinic = await getPanelClinic(form);
-  await sql`
-    update appointments set status = ${status},
-      cancelled_at = case when ${status} = 'cancelado' then now() else cancelled_at end
-    where id = ${id} and clinic_id = ${clinic.id}`;
-  syncCalendarLater(clinic.id);
-  revalidatePath("/panel/agenda");
+/** Los errores del servicio le hablan al agente; en el panel alcanza con el motivo. */
+function panelError(e: unknown): FormState {
+  const message = e instanceof Error ? e.message : String(e);
+  if (!(e instanceof ToolError)) return { ok: false, message };
+  return { ok: false, message: (e.panelMessage ?? message).replace(/ Consultá la disponibilidad.*$/, "").replace(/ Si lo quiere cambiar, usá reprogramar_turno\./, " Si lo quiere cambiar, reprogramalo desde su ficha."), forzable: e.forzable };
 }
 
-export type FormState = { ok?: boolean; message?: string };
+/**
+ * Marcar un turno desde su ficha. Atendido y ausente, cuando ya empezó; corregir
+ * (volver a confirmado), solo un turno pasado; cancelar, como si lo cancelara el
+ * paciente: avisa a n8n y le ofrece el hueco a la lista de espera.
+ */
+export async function changeAppointmentStatus(_prev: FormState | undefined, form: FormData): Promise<FormState> {
+  await requireSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  const status = text(form, "status");
+  if (!id || !status) return { ok: false, message: "Elegí qué hacer con el turno." };
+  const [appt] = await sql<Array<{ status: string; starts_at: string }>>`select status, starts_at from appointments where id = ${id} and clinic_id = ${clinic.id}`;
+  if (!appt) return { ok: false, message: "Ese turno ya no existe." };
+  const started = new Date(appt.starts_at).getTime() <= Date.now();
+  try {
+    if (status === "cancelado") {
+      const r = await cancelClinicAppointment(clinic.id, id, text(form, "reason") ?? undefined);
+      syncCalendarLater(clinic.id);
+      revalidatePath("/panel/agenda");
+      return { ok: true, message: r.mensaje };
+    }
+    if (status === "atendido" || status === "ausente") {
+      if (!started) return { ok: false, message: "Todavía no empezó: se puede marcar cuando llegue el horario." };
+      if (!["confirmado", "pendiente", "atendido", "ausente"].includes(appt.status)) return { ok: false, message: `Ese turno está ${appt.status}.` };
+    } else if (status === "confirmado") {
+      // Deshacer una marca equivocada (atendido ↔ ausente ↔ sin marcar).
+      if (!started || !["atendido", "ausente"].includes(appt.status)) return { ok: false, message: "Solo se corrige la marca de un turno que ya pasó." };
+    } else {
+      return { ok: false, message: "Elegí qué hacer con el turno." };
+    }
+    await sql`update appointments set status = ${status} where id = ${id} and clinic_id = ${clinic.id}`;
+    syncCalendarLater(clinic.id);
+    revalidatePath("/panel/agenda");
+    return { ok: true, message: status === "atendido" ? "Marcado como atendido." : status === "ausente" ? "Marcado como ausente." : "Marca corregida: quedó sin marcar." };
+  } catch (e) {
+    return panelError(e);
+  }
+}
+
+/** Los turnos pasados de un día que siguen sin marcar → atendidos (lo que pasa casi siempre). */
+export async function markDayAttended(_prev: FormState | undefined, form: FormData): Promise<FormState> {
+  await requireSession();
+  const clinic = await getPanelClinic(form);
+  const ids = form.getAll("id").map(String).filter((v) => isUuid(v));
+  if (!ids.length) return { ok: false, message: "No hay turnos para marcar." };
+  const rows = await sql`
+    update appointments set status = 'atendido'
+    where clinic_id = ${clinic.id} and id = any(${ids}::uuid[]) and status in ('confirmado', 'pendiente') and ends_at <= now()
+    returning id`;
+  syncCalendarLater(clinic.id);
+  revalidatePath("/panel/agenda");
+  return { ok: true, message: rows.length === 1 ? "1 turno marcado como atendido." : `${rows.length} turnos marcados como atendidos.` };
+}
+
+export type FormState = {
+  ok?: boolean;
+  message?: string;
+  /** El turno se puede dar igual (fuera de horario, día bloqueado u ocupado en Google). */
+  forzable?: boolean;
+};
 
 export async function setupTelegramChannel(_previous: FormState, _form: FormData): Promise<FormState> {
   void _previous; void _form;
@@ -118,43 +168,99 @@ export async function loadDaySlots(form: FormData) {
     tipo_turno_id: uuid(form, "appointment_type_id") ?? "",
     profesional_id: uuid(form, "professional_id") ?? "",
     fecha: text(form, "date") ?? "",
+    ignorar_turno_id: uuid(form, "ignore_id") ?? undefined,
   });
+}
+
+export type KnownPatient = { name: string | null; coverage: string | null; upcoming: string[] };
+
+/** Al escribir el celular en el turno a mano: si ya es paciente, su nombre, su cobertura y sus próximos turnos. */
+export async function lookupPatient(form: FormData): Promise<KnownPatient | null> {
+  await requireSession();
+  const clinic = await getPanelClinic(form);
+  const phone = normalizePhone(text(form, "phone"));
+  if (!/^\d{10,15}$/.test(phone)) return null;
+  const [patient] = await sql<Array<{ id: string; full_name: string | null; coverage: string | null }>>`
+    select id, full_name, coverage from patients where clinic_id = ${clinic.id} and phone = ${phone}`;
+  if (!patient) return null;
+  const next = await sql<Array<{ starts_at: string; type_name: string }>>`
+    select a.starts_at, t.name as type_name from appointments a join appointment_types t on t.id = a.appointment_type_id
+    where a.patient_id = ${patient.id} and a.status in ('confirmado', 'pendiente') and a.ends_at > now()
+    order by a.starts_at limit 3`;
+  return { name: patient.full_name, coverage: patient.coverage, upcoming: next.map((n) => `${n.type_name}, ${humanSlot(new Date(n.starts_at), clinic.timezone)}`) };
+}
+
+/** Fecha (YYYY-MM-DD) + hora escrita → instante, en la zona de la clínica. */
+function panelStart(form: FormData, timeZone: string): { at: Date } | FormState {
+  const date = parseDateKey(text(form, "date"));
+  if (!date) return { ok: false, message: "Elegí la fecha." };
+  const rawTime = text(form, "time");
+  if (!rawTime) return { ok: false, message: "Elegí un horario." };
+  const time = parseClockTime(rawTime);
+  if (!time) return { ok: false, message: `No entendí la hora «${rawTime}». Escribila como 9:15 o 19:30.` };
+  const [y, m, d] = date.split("-").map(Number);
+  const [hh, mm] = time.split(":").map(Number);
+  return { at: zonedTimeToUtc(y, m, d, hh, mm, timeZone) };
 }
 
 export async function createManualAppointment(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();
   const clinic = await getPanelClinic(form);
   const phone = normalizePhone(text(form, "phone"));
-  const date = parseDateKey(text(form, "date"));
   const typeId = uuid(form, "appointment_type_id");
   const professionalId = uuid(form, "professional_id");
   if (!typeId || !professionalId) return { ok: false, message: "Elegí la prestación y quién la atiende." };
-  if (!date) return { ok: false, message: "Elegí la fecha." };
-  const rawTime = text(form, "time");
-  if (!rawTime) return { ok: false, message: "Elegí un horario." };
-  const time = parseClockTime(rawTime);
-  if (!time) return { ok: false, message: `No entendí la hora «${rawTime}». Escribila como 9:15 o 19:30.` };
+  const start = panelStart(form, clinic.timezone);
+  if (!("at" in start)) return start;
   if (!phone) return { ok: false, message: "Escribí el celular del paciente." };
-  const [y, m, d] = date.split("-").map(Number);
-  const [hh, mm] = time.split(":").map(Number);
-  const startsAt = zonedTimeToUtc(y, m, d, hh, mm, clinic.timezone);
+  // Con código de área: así le llegan los recordatorios por WhatsApp.
+  if (!/^\d{10,15}$/.test(phone)) return { ok: false, message: "Revisá el celular: va con código de área, por ejemplo 11 5555-0001." };
   const ctx = { clinicId: clinic.id, patientPhone: phone, channel: "panel" };
   try {
     await registerPatient(ctx, { nombre_completo: text(form, "full_name") ?? undefined, cobertura: text(form, "coverage") ?? undefined });
-    const r = await bookAppointment(ctx, {
-      tipo_turno_id: typeId,
-      profesional_id: professionalId,
-      inicio: startsAt.toISOString(),
-      notas: text(form, "notes") ?? undefined,
-    });
+    const r = await bookAppointment(
+      ctx,
+      { tipo_turno_id: typeId, profesional_id: professionalId, inicio: start.at.toISOString(), notas: text(form, "notes") ?? undefined },
+      { force: form.get("force") === "1" },
+    );
     syncCalendarLater(clinic.id);
     revalidatePath("/panel/agenda");
-    return { ok: true, message: r.mensaje };
+    const aviso = "aviso" in r && r.aviso ? ` ${r.aviso.replace(" Preguntale si quiere mantener los dos o cancelar el otro.", "")}` : "";
+    return { ok: true, message: `${r.mensaje}${aviso}` };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    // Los errores del servicio le hablan al agente; en el panel alcanza con el motivo.
-    return { ok: false, message: e instanceof ToolError ? message.replace(/ Consultá la disponibilidad.*$/, "") : message };
+    return panelError(e);
   }
+}
+
+/** Mover un turno desde su ficha: mismo paciente y prestación, otro horario (y, si hace falta, otro profesional). */
+export async function rescheduleFromPanel(_prev: FormState | undefined, form: FormData): Promise<FormState> {
+  await requireSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "appointment_id");
+  if (!id) return { ok: false, message: "Ese turno ya no existe." };
+  const start = panelStart(form, clinic.timezone);
+  if (!("at" in start)) return start;
+  let moved: { id: string; day: string };
+  try {
+    const r = await rescheduleClinicAppointment(
+      clinic.id,
+      id,
+      { nuevo_inicio: start.at.toISOString(), profesional_id: uuid(form, "professional_id") ?? undefined },
+      { force: form.get("force") === "1" },
+    );
+    syncCalendarLater(clinic.id);
+    revalidatePath("/panel/agenda");
+    moved = { id: r.turno_id, day: localDateKey(start.at, clinic.timezone) };
+  } catch (e) {
+    return panelError(e);
+  }
+  // Movido: la Agenda abre la ficha del turno nuevo, en su día, con la misma vista y filtro.
+  const back = new URLSearchParams(text(form, "back") ?? "");
+  const next = new URLSearchParams();
+  for (const key of ["vista", "pro"]) if (back.get(key)) next.set(key, back.get(key)!);
+  next.set("fecha", moved.day);
+  next.set("turno", moved.id);
+  redirect(`/panel/agenda?${next}`);
 }
 
 export async function setTaskStatus(form: FormData) {

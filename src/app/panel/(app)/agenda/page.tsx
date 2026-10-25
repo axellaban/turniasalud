@@ -6,8 +6,8 @@ import { googleBusy } from "@/lib/calendar/sync";
 import { bookedMinutes, visibleHours, type Span } from "@/lib/agenda-layout";
 import { addDaysKey, localDateKey, parseDateKey, timeToMinutes, weekdayOfKey, zonedParts, zonedTimeToUtc } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
-import { setAppointmentStatus } from "../../actions";
-import { CHANNEL_LABEL, Empty, PageHeader, StatusBadge, ghostButtonClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
+import { CHANNEL_LABEL, Empty, PageHeader, StatusBadge, ghostButtonClass, secondaryButtonClass } from "@/components/ui";
+import { AppointmentActions, MarkAttended } from "./appointment-actions";
 import { CalendarGrid, ColumnHeading, PRO_COLORS, clock, type GridColumn, type GridEvent } from "./calendar-grid";
 import { ManualAppointmentForm } from "./manual-form";
 import { ManualPanel } from "./manual-panel";
@@ -27,6 +27,7 @@ type Row = {
   reminder_sent_at: string | null;
   calendar_sync: string | null;
   professional_id: string;
+  appointment_type_id: string;
   patient: string | null;
   phone: string;
   type_name: string;
@@ -62,7 +63,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [rows, blocks, google] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.professional_id, p.full_name as patient, p.phone, t.name as type_name
+             a.calendar_sync, a.professional_id, a.appointment_type_id, p.full_name as patient, p.phone, t.name as type_name
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
@@ -106,8 +107,13 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const visible = rows.filter((r) => VISIBLE.includes(r.status) && shownIds.includes(r.professional_id));
   const selectedId = one(params.turno);
   const selected = rows.find((r) => r.id === selectedId) ?? null;
-  const now = zonedParts(new Date(), tz);
+  const nowAt = new Date();
+  const now = zonedParts(nowAt, tz);
   const nowMinute = now.hour * 60 + now.minute;
+  // Turnos que ya terminaron y nadie marcó: sin la marca no hay encuestas, recall ni seguimiento de ausentes.
+  const unmarked = visible.filter((r) => (r.status === "confirmado" || r.status === "pendiente") && new Date(r.ends_at) <= nowAt);
+  const unmarkedIds = new Set(unmarked.map((r) => r.id));
+  const cancelled = rows.filter((r) => r.status === "cancelado" && shownIds.includes(r.professional_id));
 
   const href = (next: Record<string, string | null | undefined>) => {
     const q = new URLSearchParams();
@@ -187,6 +193,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
         color: colorOf.get(r.professional_id) ?? 0,
         href: href({ turno: r.id, nuevo: null, fecha: s.key }),
         selected: r.id === selectedId,
+        unmarked: unmarkedIds.has(r.id),
       }];
     });
   const weekEvents = eventsFor(weekColumns, (r, _c, i) => local(r.starts_at).key === week[i]);
@@ -275,6 +282,9 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-3">
+          {unmarked.length > 0 && (
+            <MarkAttended clinicId={clinic.id} ids={unmarked.map((r) => r.id)} />
+          )}
           {!catalog.professionals.length ? (
             <Empty>Cargá profesionales en Configuración → Equipo y horarios para empezar.</Empty>
           ) : (
@@ -288,13 +298,43 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                 <CalendarGrid columns={dayColumns} events={dayEvents} hours={hours} minWidth={splitByPro ? dayColumns.length * 140 : undefined} />
               </div>
               <Legend google={google.length > 0} />
+              {cancelled.length > 0 && (
+                <details className="rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-brand-900/10">
+                  <summary className="cursor-pointer font-medium text-brand-900">
+                    {cancelled.length === 1 ? "1 turno cancelado" : `${cancelled.length} turnos cancelados`} esta semana
+                  </summary>
+                  <ul className="mt-2 divide-y divide-brand-900/5">
+                    {cancelled.map((r) => (
+                      <li key={r.id}>
+                        <Link href={href({ turno: r.id, fecha: local(r.starts_at).key })} scroll={false} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hover:text-brand-700">
+                          <span className="w-28 shrink-0 tabular-nums text-brand-900/60 first-letter:uppercase">{dayName(local(r.starts_at).key)} {dayNum(local(r.starts_at).key)} · {clock(local(r.starts_at).minute)}</span>
+                          <span className="font-medium text-brand-950 line-through decoration-brand-900/30">{r.patient ?? "Paciente"}</span>
+                          <span className="text-xs text-brand-900/60">{r.type_name} · {proName.get(r.professional_id)}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </>
           )}
         </div>
 
         <div className="h-fit space-y-4 xl:sticky xl:top-20">
           {selected && (
-            <AppointmentDetail row={selected} pro={proName.get(selected.professional_id) ?? ""} tz={tz} closeHref={href({ turno: null })} />
+            <AppointmentDetail
+              key={selected.id}
+              row={selected}
+              pro={proName.get(selected.professional_id) ?? ""}
+              tz={tz}
+              closeHref={href({ turno: null })}
+              clinicId={clinic.id}
+              today={todayKey}
+              dayKey={local(selected.starts_at).key}
+              colleagues={catalog.professionals
+                .filter((p) => p.specialty === catalog.professionals.find((x) => x.id === selected.professional_id)?.specialty)
+                .map((p) => ({ id: p.id, name: p.full_name }))}
+            />
           )}
           <ManualPanel defaultOpen={wantsNew} key={`${wantsNew}|${dayKey}|${newTime}|${newPro}`}>
             <ManualAppointmentForm
@@ -330,7 +370,17 @@ function Legend({ google }: { google: boolean }) {
   );
 }
 
-function AppointmentDetail({ row: a, pro, tz, closeHref }: { row: Row; pro: string; tz: string; closeHref: string }) {
+function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey, colleagues }: {
+  row: Row;
+  pro: string;
+  tz: string;
+  closeHref: string;
+  clinicId: string;
+  today: string;
+  dayKey: string;
+  /** Profesionales que hacen esta prestación (para moverlo a otro). */
+  colleagues: Array<{ id: string; name: string }>;
+}) {
   const when = new Intl.DateTimeFormat("es-AR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(new Date(a.starts_at));
   const time = (iso: string) => new Intl.DateTimeFormat("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
   const wa = /^\d{8,15}$/.test(a.phone) ? `https://wa.me/${a.phone}` : null;
@@ -366,14 +416,12 @@ function AppointmentDetail({ row: a, pro, tz, closeHref }: { row: Row; pro: stri
         ))}
       </dl>
       {wa && <a href={wa} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-medium text-brand-700 hover:underline">Escribirle por WhatsApp →</a>}
-      {(a.status === "confirmado" || a.status === "pendiente") && (
-        <form action={setAppointmentStatus} className="mt-4 flex flex-wrap gap-1.5 border-t border-brand-900/10 pt-4">
-          <input type="hidden" name="id" value={a.id} />
-          <button name="status" value="atendido" className={smallButtonClass}>Atendido</button>
-          <button name="status" value="ausente" className={smallButtonClass}>Ausente</button>
-          <button name="status" value="cancelado" className={`${smallButtonClass} !text-red-700 !ring-red-200 hover:!bg-red-50`}>Cancelar turno</button>
-        </form>
-      )}
+      <AppointmentActions
+        clinicId={clinicId}
+        today={today}
+        professionals={colleagues}
+        appt={{ id: a.id, status: a.status, startsAt: a.starts_at, endsAt: a.ends_at, dayKey, typeId: a.appointment_type_id, professionalId: a.professional_id }}
+      />
     </section>
   );
 }
