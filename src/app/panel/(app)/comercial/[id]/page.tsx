@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { budgetToday, salesSettings, type Prospect, type SalesCall } from "@/lib/sales/service";
+import { salesConfiguration } from "@/lib/sales/config";
 import { salesCallBlockers } from "@/lib/sales/availability";
 import { Badge, Card, PageHeader, Empty, Notice, Field, inputClass } from "@/components/ui";
 import { SalesForm } from "../form";
@@ -47,12 +48,12 @@ export default async function SalesProspectPage({ params }: { params: Promise<{ 
       </div>
       <div className="space-y-6 min-w-0">
         <Card id="contacto" className="scroll-mt-24"><h2 className="font-display text-xl mb-3">Datos de este consultorio</h2>
-          <p className="text-sm break-all">{p.website}</p>
+          <p className="text-sm mb-3"><strong>Nombre que dirá Sofi:</strong> {p.business_name}</p><p className="text-xs mb-3 text-brand-900/70">Se usa el nombre de esta ficha comercial. El selector de clínica del encabezado no cambia el destinatario de la llamada.</p><p className="text-sm break-all">{p.website}</p>
           <p className="mt-3 text-sm whitespace-pre-wrap break-words">{p.context || "Sin datos adicionales. Sofi usará el nombre del consultorio y su guion general."}</p>
           <p className="mt-3 text-xs text-brand-900/70">{needsReview ? "La revisión del contacto necesita actualizarse." : p.suppressed ? "Este número está bloqueado." : "Contacto revisado. Podés llamar sin volver a guardar estos datos mientras la revisión siga vigente."}</p>
-          <details className="mt-4" open={needsReview}><summary className="cursor-pointer font-semibold text-sm">Editar datos y revisión del contacto</summary><div className="mt-4"><SalesForm intent="review" label="Guardar datos de este contacto"><input type="hidden" name="id" value={id} /><ReviewFields eligibility={p.eligibility} evidence={p.evidence} context={p.context} /></SalesForm></div></details>
+          <details className="mt-4" open={needsReview}><summary className="cursor-pointer font-semibold text-sm">Editar datos y revisión del contacto</summary><div className="mt-4"><SalesForm intent="review" label="Guardar datos de este contacto"><input type="hidden" name="id" value={id} /><Field label="Nombre de la clínica que dirá Sofi" hint="Usá el nombre real del consultorio. No pongas un alias como «prueba de Axel», porque Sofi lo pronunciará."><input name="business_name" className={inputClass} minLength={3} maxLength={160} defaultValue={p.business_name} required /></Field><ReviewFields eligibility={p.eligibility} evidence={p.evidence} context={p.context} /></SalesForm></div></details>
         </Card>
-        <Card><h2 className="font-display text-xl mb-3">Qué va a decir Sofi</h2><p className="text-sm mb-3">El saludo y las instrucciones generales están guardados en una única configuración para todas las llamadas comerciales.</p><Link className="font-semibold underline text-sm" href="/panel/comercial/configuracion">Ver o editar el guion general de Sofi</Link></Card>
+        <Card><h2 className="font-display text-xl mb-3">Qué va a decir Sofi</h2><p className="text-sm mb-3">Así empezará la llamada con el nombre guardado en esta ficha:</p><blockquote className="border-l-2 border-brand-300 pl-3 mb-4 text-sm whitespace-pre-wrap break-words">{salesConfiguration(s).first_message.replaceAll("{{business_name}}", p.business_name)}</blockquote><p className="text-xs mb-3 text-brand-900/70">El saludo y las instrucciones generales se comparten entre todas las llamadas comerciales.</p><Link className="font-semibold underline text-sm" href="/panel/comercial/configuracion">Ver o editar el guion general de Sofi</Link></Card>
         <Card><details><summary className="cursor-pointer font-semibold">Seguimiento y opciones del contacto</summary><p className="my-3 text-sm">{p.notes || "Sin próximo paso registrado."}</p><Link className="font-semibold underline text-sm" href={demoUrl} target="_blank">Abrir demo con su web</Link><p className="text-xs mt-2 mb-5">Podés compartirla manualmente si te la solicitan.</p><SalesForm intent="block" label="Registrar baja: no volver a llamar" disabled={p.suppressed}><input type="hidden" name="id" value={id} /></SalesForm></details></Card>
       </div>
     </div>

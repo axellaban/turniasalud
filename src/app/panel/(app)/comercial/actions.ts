@@ -39,10 +39,10 @@ export async function salesAction(_previous: SalesActionState, form: FormData): 
     } else if (intent === "prospect") {
       result = { prospectId: await saveProspect(Object.fromEntries(form)), message: "Consultorio guardado. Todavía no se llamó." };
     } else if (intent === "review") {
-      const p = z.object({ id: z.uuid(), eligibility: z.enum(["sin_revisar", "solicito_llamada", "no_llame_revisado"]), evidence: z.string().trim().max(1500), context: z.string().trim().max(3000) }).parse(Object.fromEntries(form));
+      const p = z.object({ id: z.uuid(), business_name: z.string().trim().min(3, "Ingresá el nombre de la clínica que dirá Sofi.").max(160), eligibility: z.enum(["sin_revisar", "solicito_llamada", "no_llame_revisado"]), evidence: z.string().trim().max(1500), context: z.string().trim().max(3000) }).parse(Object.fromEntries(form));
       if (p.eligibility !== "sin_revisar" && p.evidence.length < 15) throw new SalesError("Anotá la fuente y fecha del permiso o de la revisión de No Llame.");
-      await sql`update sales_prospects set eligibility = ${p.eligibility}, evidence = ${p.evidence}, context = ${p.context}, reviewed_at = ${p.eligibility === "sin_revisar" ? null : new Date().toISOString()} where id = ${p.id}`;
-      result = { message: "Contexto y revisión guardados. La revisión de contacto vale 24 horas." };
+      await sql`update sales_prospects set business_name = ${p.business_name}, eligibility = ${p.eligibility}, evidence = ${p.evidence}, context = ${p.context}, reviewed_at = ${p.eligibility === "sin_revisar" ? null : new Date().toISOString()} where id = ${p.id}`;
+      result = { message: "Nombre de la clínica, datos y revisión guardados. Sofi usará este nombre en las próximas llamadas. La revisión vale 24 horas." };
     } else if (intent === "dial") {
       if (form.get("confirm") !== "on") throw new SalesError("Confirmá el destinatario de esta única llamada.");
       await dialProspect(String(form.get("id")),String(form.get("request_key")));
