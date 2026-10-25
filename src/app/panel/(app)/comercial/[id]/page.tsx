@@ -11,6 +11,7 @@ import { Badge, Card, PageHeader, Empty, Notice, Field, inputClass } from "@/com
 import { SalesForm } from "../form";
 import { ReviewFields } from "../fields";
 import { BudgetControl, PendingCalls } from "../call-controls";
+import { CallDestination } from "../destination";
 
 export const maxDuration = 60;
 
@@ -36,11 +37,8 @@ export default async function SalesProspectPage({ params }: { params: Promise<{ 
           <p className="mt-4 text-sm">Sofi llamará a <strong>{p.business_name}</strong></p><p className="my-2 font-display text-2xl break-all">{p.phone}</p>
           <p className="text-sm mb-4">Usará el guion general guardado (versión {s.config_version}) y los datos de este consultorio. No necesitás volver a escribir el contexto para repetir la prueba.</p>
           {!enabled && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="font-semibold text-sm">Resolvé lo siguiente</h3><ul className="mt-2 space-y-3">{blockers.map(block=><li key={block.message} className="text-sm"><p>{block.message}</p><Link className="underline font-semibold" href={block.href}>{block.action}</Link></li>)}</ul></div>}
-          {enabled && <p className="text-sm mb-4 font-semibold text-brand-700">Confirmá el destinatario y tocá «Llamar ahora». Solo inicia una llamada.</p>}
-          <SalesForm intent="dial" label="Llamar ahora" disabled={!enabled}>
-            <input type="hidden" name="id" value={id} /><input type="hidden" name="request_key" value={randomUUID()} />
-            <label className="flex gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm"><input type="checkbox" name="confirm" required /> Autorizo una llamada grabada ahora a {p.phone}, con el cupo de hoy.</label>
-          </SalesForm>
+          {enabled && <p className="text-sm mb-4 font-semibold text-brand-700">Si el número está bien, confirmá y tocá «Llamar ahora». Solo inicia una llamada.</p>}
+          <CallDestination key={p.phone} id={id} phone={p.phone} requestKey={randomUUID()} enabled={enabled} pendingCall={pending.some(c => c.prospect_id === id)} />
           <p className="mt-4 text-xs text-brand-900/70">Máximo de 60 segundos de conversación, más despedida. Reserva de US$1 por intento, sin reintentos automáticos. La grabación y el almacenamiento de Twilio tienen cargo por uso.</p>
           <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm underline">Ver grabaciones en Twilio</a>
         </Card>
@@ -51,7 +49,7 @@ export default async function SalesProspectPage({ params }: { params: Promise<{ 
           <p className="text-sm mb-3"><strong>Nombre que dirá Sofi:</strong> {p.business_name}</p><p className="text-xs mb-3 text-brand-900/70">Se usa el nombre de esta ficha comercial. El selector de clínica del encabezado no cambia el destinatario de la llamada.</p><p className="text-sm break-all">{p.website}</p>
           <p className="mt-3 text-sm whitespace-pre-wrap break-words">{p.context || "Sin datos adicionales. Sofi usará el nombre del consultorio y su guion general."}</p>
           <p className="mt-3 text-xs text-brand-900/70">{needsReview ? "La revisión del contacto necesita actualizarse." : p.suppressed ? "Este número está bloqueado." : "Contacto revisado. Podés llamar sin volver a guardar estos datos mientras la revisión siga vigente."}</p>
-          <details className="mt-4" open={needsReview}><summary className="cursor-pointer font-semibold text-sm">Editar datos y revisión del contacto</summary><div className="mt-4"><SalesForm intent="review" label="Guardar datos de este contacto"><input type="hidden" name="id" value={id} /><Field label="Nombre de la clínica que dirá Sofi" hint="Usá el nombre real del consultorio. No pongas un alias como «prueba de Axel», porque Sofi lo pronunciará."><input name="business_name" className={inputClass} minLength={3} maxLength={160} defaultValue={p.business_name} required /></Field><ReviewFields eligibility={p.eligibility} evidence={p.evidence} context={p.context} /></SalesForm></div></details>
+          <details className="mt-4" open={needsReview}><summary className="cursor-pointer font-semibold text-sm">Editar datos y revisión del contacto</summary><div className="mt-4"><SalesForm key={p.phone} intent="review" label="Guardar datos de este contacto"><input type="hidden" name="id" value={id} /><input type="hidden" name="expected_phone" value={p.phone} /><Field label="Nombre de la clínica que dirá Sofi" hint="Usá el nombre real del consultorio. No pongas un alias como «prueba de Axel», porque Sofi lo pronunciará."><input name="business_name" className={inputClass} minLength={3} maxLength={160} defaultValue={p.business_name} required /></Field><ReviewFields eligibility={p.eligibility} evidence={p.evidence} context={p.context} /></SalesForm></div></details>
         </Card>
         <Card><h2 className="font-display text-xl mb-3">Qué va a decir Sofi</h2><p className="text-sm mb-3">Así empezará la llamada con el nombre guardado en esta ficha:</p><blockquote className="border-l-2 border-brand-300 pl-3 mb-4 text-sm whitespace-pre-wrap break-words">{salesConfiguration(s).first_message.replaceAll("{{business_name}}", p.business_name)}</blockquote><p className="text-xs mb-3 text-brand-900/70">El saludo y las instrucciones generales se comparten entre todas las llamadas comerciales.</p><Link className="font-semibold underline text-sm" href="/panel/comercial/configuracion">Ver o editar el guion general de Sofi</Link></Card>
         <Card><details><summary className="cursor-pointer font-semibold">Seguimiento y opciones del contacto</summary><p className="my-3 text-sm">{p.notes || "Sin próximo paso registrado."}</p><Link className="font-semibold underline text-sm" href={demoUrl} target="_blank">Abrir demo con su web</Link><p className="text-xs mt-2 mb-5">Podés compartirla manualmente si te la solicitan.</p><SalesForm intent="block" label="Registrar baja: no volver a llamar" disabled={p.suppressed}><input type="hidden" name="id" value={id} /></SalesForm></details></Card>

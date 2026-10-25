@@ -2,6 +2,16 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Teléfono editable y guion breve — 25/10/2026
+
+- Pedido: escribir el teléfono en un campo y reducir la mezcla de instrucciones; **saludo inicial intacto**. La última prueba del usuario (13:23, 63 s) mostró el desvío: aceptó un control y el prompt lo llevaba a vender Turnia.
+- Campo «Teléfono a llamar» y «Guardar número» en la ficha. No llama al guardar. Un borrador sin guardar deshabilita la llamada. Cambiar de número conserva contexto e historial, invalida la revisión del destino anterior y vuelve a pedir revisión del nuevo. Se bloquean bajas, formatos ambiguos, llamada activa y formularios viejos; la confirmación de llamada está vinculada al teléfono mostrado.
+- El editor de revisión se remonta al cambiar el teléfono para no conservar en pantalla la autorización anterior. La acción de revisión valida también el teléfono esperado. No se trasladan permisos entre destinos.
+- Prompt predeterminado y reglas agregadas reducidos. Ya no se fuerza una secuencia comercial sobre una demostración de seguimiento. Se mantienen límites de herramientas, no inventar disponibilidad, no confirmar reservas inexistentes, bajas y cierre. Los identificadores internos siguen en los parámetros automáticos de herramientas; no hace falta incluirlos en el texto que lee el modelo.
+- Contexto dinámico reducido a clínica y notas; se quitó la oferta fija con «Axel» que contradecía «Facu». La respuesta de la herramienta de seguimiento es neutral y no afirma reservar turnos.
+- Validación: 259 pruebas locales, 39 específicas de Comercial/bloqueos tras los ajustes, TypeScript, ESLint y build; navegador local confirma borrador bloqueado, teléfono guardado y revisión anterior limpiada.
+- Aplicación en producción: editar solo el system prompt, conservar exactamente saludo y voz, guardar versión y comprobar ElevenLabs; simplificar también las notas de la ficha de prueba. Mantener el cupo autorizado de US$5 y sus reservas, sin llamar ni recargar. No se modifica la recepcionista clínica ni WAHA.
+
 ## Nombre de la clínica en la llamada comercial — 25/10/2026
 
 - El usuario escuchó «Consultorio de prueba de Axel» porque `business_name` salía de la ficha comercial, no de la clínica seleccionada en el encabezado. Se conserva esa separación para no cambiar un destinatario comercial al navegar entre clínicas.

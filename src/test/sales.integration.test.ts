@@ -9,7 +9,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn() }));
 
 import { closeDb, sql } from "@/lib/db";
-import { authorizeBudget, blockProspect, dialProspect, recordSalesConversation, refreshSalesCall, runSalesTool, salesPhone, saveProspect } from "@/lib/sales/service";
+import { authorizeBudget, blockProspect, dialProspect, recordSalesConversation, refreshSalesCall, runSalesTool, salesPhone, saveProspect, updateSalesPhone } from "@/lib/sales/service";
 import { renderSalesPrompt } from "@/lib/sales/config";
 import { salesAgentBody, setupSalesAgent, verifySalesAgent } from "@/lib/sales/agent";
 import { salesAction } from "@/app/panel/(app)/comercial/actions";
@@ -134,12 +134,41 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
   });
   it("editar el nombre comercial cambia la próxima llamada y conserva el historial y el destino",async()=>{
     const id=await prospect();await authorizeBudget(300,true);const previous=await dialProspect(id,randomUUID());await refreshSalesCall(previous);
-    const form=new FormData();form.set("intent","review");form.set("id",id);form.set("business_name","Consultorio Odontológico Dr. Guerra y Dr. Mininni");form.set("context","Prueba de la clínica, conservando el teléfono de prueba.");form.set("eligibility","solicito_llamada");form.set("evidence","Prueba local autorizada hoy por el titular del teléfono.");
+    const form=new FormData();form.set("intent","review");form.set("id",id);form.set("expected_phone",sent.to_number);form.set("business_name","Consultorio Odontológico Dr. Guerra y Dr. Mininni");form.set("context","Prueba de la clínica, conservando el teléfono de prueba.");form.set("eligibility","solicito_llamada");form.set("evidence","Prueba local autorizada hoy por el titular del teléfono.");
     const before=providerRequests.length;const result=await salesAction({},form);expect(result.error).toBeUndefined();expect(providerRequests).toHaveLength(before);expect(outbound).toBe(1);
     const [old]=await sql`select business_name from sales_calls where id=${previous}`;expect(old.business_name).toBe("Odontología de prueba");
     await dialProspect(id,randomUUID());expect(sent.conversation_initiation_client_data.dynamic_variables.business_name).toBe("Consultorio Odontológico Dr. Guerra y Dr. Mininni");expect(sent.to_number).toBe("+5491112345678");
     form.set("business_name","  ");expect((await salesAction({},form)).error).toBeTruthy();
     const [p]=await sql`select business_name from sales_prospects where id=${id}`;expect(p.business_name).toBe("Consultorio Odontológico Dr. Guerra y Dr. Mininni");
+  });
+  it("cambiar el teléfono conserva historial y contexto, exige revisar el nuevo destino y no llama",async()=>{
+    const id=await prospect();await authorizeBudget(300,true);const old=await dialProspect(id,randomUUID());await refreshSalesCall(old);
+    const before=providerRequests.length;await updateSalesPhone(id,"00549 11 8765-4321",sent.to_number);
+    expect(providerRequests).toHaveLength(before);expect(outbound).toBe(1);
+    const [p]=await sql`select * from sales_prospects where id=${id}`;expect(p).toMatchObject({phone:"+5491187654321",context:"Ofrece odontología general",eligibility:"sin_revisar",reviewed_at:null,evidence:""});
+    expect((await sql`select phone from sales_calls where id=${old}`)[0].phone).toBe("+5491112345678");
+    expect((await sql`select budget_cents,enabled from sales_settings where id=1`)[0]).toMatchObject({budget_cents:300,enabled:true});
+    await expect(dialProspect(id,randomUUID())).rejects.toThrow("revisar");
+    const stale=new FormData();for(const [key,value] of Object.entries({intent:"review",id,expected_phone:"+5491112345678",business_name:p.business_name,context:p.context,eligibility:"solicito_llamada",evidence:"Autorización que pertenecía al teléfono anterior"})) stale.set(key,value);
+    expect((await salesAction({},stale)).error).toContain("Cambió el teléfono");expect((await sql`select reviewed_at from sales_prospects where id=${id}`)[0].reviewed_at).toBeNull();
+    await sql`update sales_prospects set eligibility='solicito_llamada',evidence='Nuevo destinatario revisado hoy',reviewed_at=now() where id=${id}`;
+    await expect(dialProspect(id,randomUUID(),"+5491112345678")).rejects.toThrow("Cambió el teléfono");
+    await dialProspect(id,randomUUID(),p.phone);expect(sent.to_number).toBe("+5491187654321");expect(outbound).toBe(2);
+    expect(JSON.parse(sent.conversation_initiation_client_data.dynamic_variables.sales_context)).toEqual({clinica:p.business_name,notas:p.context});
+  });
+  it("no cambia un teléfono con llamada pendiente, con formato inválido, bloqueado o desde un formulario viejo",async()=>{
+    const id=await prospect();await authorizeBudget(300,true);const call=await dialProspect(id,randomUUID());
+    await expect(updateSalesPhone(id,"+5491187654321",sent.to_number)).rejects.toThrow("cierre");await refreshSalesCall(call);
+    await expect(updateSalesPhone(id,"01187654321",sent.to_number)).rejects.toThrow("internacional");
+    const blocked=await saveProspect({business_name:"Contacto bloqueado",phone:"+5491187654321",website:"https://example.org",context:"",eligibility:"sin_revisar",evidence:""});await blockProspect(blocked);
+    await expect(updateSalesPhone(id,"+5491187654321",sent.to_number)).rejects.toThrow("no recibir");
+    await expect(updateSalesPhone(id,"+5491187654322","+5491100000000")).rejects.toThrow("Otra pestaña");expect(outbound).toBe(1);
+  });
+  it("guardar el mismo número normalizado no invalida la revisión ni dispara una llamada",async()=>{
+    const id=await prospect();const [before]=await sql`select * from sales_prospects where id=${id}`;
+    const f=new FormData();f.set("intent","phone");f.set("id",id);f.set("phone","00549 11 1234-5678");f.set("expected_phone",before.phone);
+    expect((await salesAction({},f)).error).toBeUndefined();expect((await sql`select * from sales_prospects where id=${id}`)[0]).toEqual(before);expect(outbound).toBe(0);
+    mocks.admin=false;await expect(salesAction({},f)).rejects.toThrow("admin requerido");
   });
   it("dos confirmaciones distintas simultáneas no exceden una llamada activa",async()=>{
     const id=await prospect(); await authorizeBudget(200,true);
@@ -242,6 +271,12 @@ describe.skipIf(!base)("Piloto comercial: permisos, gasto, bajas y aislamiento",
     const id=await prospect();await authorizeBudget(500,true);await dialProspect(id,randomUUID());
     expect(outbound).toBe(1);
     expect((await sql`select config_version from sales_calls`)[0].config_version).toBe(2);
+  });
+  it("aplicar instrucciones breves conserva exactamente el saludo y las conexiones",async()=>{
+    const original=editedConfig("Saludo personalizado que no debe cambiar.");await configure(original);
+    const simple={first_message:original.first_message,system_prompt:"Sos Sofi. Conversá con calidez y una pregunta por vez. Seguí la respuesta al saludo, sin repetirlo ni cambiar de tema. Facu coordina lo que no podés resolver."};
+    expect((await configure(simple,1)).error).toBeUndefined();expect(remote.conversation_config.agent.first_message).toBe(original.first_message);
+    expect(remote.conversation_config.agent.prompt.prompt).toBe(renderSalesPrompt(simple));expect(remote.conversation_config.agent.prompt.tool_ids).toEqual(["sales-tool-1","sales-tool-2"]);expect(outbound).toBe(0);
   });
   it("restaura texto y voz de la versión anterior sin borrar el historial ni habilitar llamadas",async()=>{
     const first=editedConfig("Primera versión."),second=editedConfig("Segunda versión.");

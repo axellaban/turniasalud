@@ -63,8 +63,24 @@ function callToken(id: string, phone: string): string {
   return createHmac("sha256", env.agentToolsSecret()).update(`turnia-sales:${id}:${phone}`).digest("hex");
 }
 
+/** Cambiar destino no llama ni traslada el permiso del teléfono anterior. */
+export async function updateSalesPhone(id: string, rawPhone: string, expectedPhone: string): Promise<void> {
+  z.uuid().parse(id);
+  const phone = salesPhone(rawPhone);
+  await sql.begin(async tx => {
+    await tx`select id from sales_settings where id = 1 for update`;
+    const [p] = await tx<Prospect[]>`select * from sales_prospects where id = ${id} for update`;
+    if (!p) throw new SalesError("Consultorio inexistente.");
+    if (p.phone !== expectedPhone) throw new SalesError("Otra pestaña cambió el teléfono. Recargá antes de guardar.");
+    if (phone === p.phone) return;
+    if ((await tx`select id from sales_calls where prospect_id = ${id} and status in ('iniciando','en_curso','incierta') limit 1`).length) throw new SalesError("Primero comprobá el cierre de la llamada anterior a este contacto.");
+    if ((await tx`select phone from sales_suppressions where phone = ${phone}`).length) throw new SalesError("Ese número pidió no recibir más llamadas.");
+    await tx`update sales_prospects set phone = ${phone}, eligibility = 'sin_revisar', evidence = '', reviewed_at = null where id = ${id}`;
+  });
+}
+
 /** Reservar es atómico; el proveedor se llama una sola vez y nunca se reintenta automáticamente. */
-export async function dialProspect(prospectId: string, requestKey: string): Promise<string> {
+export async function dialProspect(prospectId: string, requestKey: string, expectedPhone?: string): Promise<string> {
   z.uuid().parse(prospectId); z.uuid().parse(requestKey);
   const reservation = await sql.begin(async (tx) => {
     const [s] = await tx<SalesSettings[]>`select * from sales_settings where id = 1 for update`;
@@ -81,12 +97,13 @@ export async function dialProspect(prospectId: string, requestKey: string): Prom
     if (s.budget_date !== today) throw new SalesError("La autorización venció. Definí el presupuesto de hoy.");
     const [p] = await tx<Prospect[]>`select * from sales_prospects where id = ${prospectId} for update`;
     if (!p) throw new SalesError("Consultorio inexistente.");
+    if (expectedPhone !== undefined && p.phone !== expectedPhone) throw new SalesError("Cambió el teléfono de esta ficha. Recargá y confirmá el nuevo destinatario antes de llamar.");
     if ((await tx`select phone from sales_suppressions where phone = ${p.phone}`).length) throw new SalesError("Ese número pidió no recibir más llamadas.");
     if (p.eligibility === "sin_revisar" || p.evidence.length < 15 || !p.reviewed_at || Date.now() - Date.parse(p.reviewed_at) > 24 * 3600_000) throw new SalesError("Falta revisar hoy el permiso de contacto y registrar su evidencia.");
     if ((await tx`select id from sales_calls where status in ('iniciando','en_curso','incierta') limit 1`).length) throw new SalesError("Hay una llamada pendiente. Revisá su resultado antes de iniciar otra.");
     const [{ spent }] = await tx<{ spent: number }[]>`select coalesce(sum(reserved_cents),0)::int as spent from sales_calls where budget_date = ${today}`;
     if (spent + RESERVE_CENTS > s.budget_cents) throw new SalesError("El cupo de hoy no alcanza para otro intento.");
-    const context = JSON.stringify({ consultorio: p.business_name, web: p.website, datos_revisados: p.context || "Sin información adicional", motivo_contacto: p.eligibility === "solicito_llamada" ? "Solicitó una llamada" : "Presentación comercial", oferta: "Demo personalizada y después charla con Axel" });
+    const context = JSON.stringify({ clinica: p.business_name, notas: p.context || "Sin información adicional" });
     const [call] = await tx<SalesCall[]>`insert into sales_calls (request_key, prospect_id, agent_id, phone, business_name, context, budget_date, config_version)
       values (${requestKey},${p.id},${s.agent_id},${p.phone},${p.business_name},${context},${today},${s.config_version}) returning *`;
     return { call, settings: s, context };
@@ -166,7 +183,7 @@ export async function runSalesTool(name: string, raw: unknown) {
     if (name === "registrar_resultado_comercial" && p.outcome && p.summary) {
       await tx`update sales_calls set outcome = ${p.outcome}, summary = ${p.summary} where id = ${call.id} and outcome is distinct from 'baja'`;
       await tx`update sales_prospects set outcome = ${p.outcome}, notes = ${p.summary} where id = ${call.prospect_id} and outcome is distinct from 'baja'`;
-      return { ok: true, message: "Resultado guardado para seguimiento manual de Axel. No se envió ningún mensaje." };
+      return { ok: true, message: "Resultado guardado para seguimiento. No se envió ningún mensaje ni se reservó un turno." };
     }
     throw new SalesError("Herramienta o parámetros inválidos.");
   });

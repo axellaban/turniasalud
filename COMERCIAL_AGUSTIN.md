@@ -2,6 +2,13 @@
 
 24/10/2026. Oferta elegida por Axel: **demo personalizada y después charla con él**, sin cotizar precios. Después de la preparación, autorizó **US$5 por día** y **una única primera prueba a su teléfono**. Esa prueba ya terminó. No habilita llamadas a prospectos ni reintentos sin destinatarios autorizados.
 
+## Uso actual: teléfono y demostración — 25/10/2026
+
+- En la ficha, escribir «Teléfono a llamar» y tocar «Guardar número». Si se cambia, revisar el permiso del nuevo destinatario en «Editar datos y revisión del contacto» y luego confirmar la llamada. No hace falta duplicar la ficha. Historial y contexto se conservan.
+- Un número sin guardar bloquea el botón. Una pestaña vieja no puede guardar una revisión ni iniciar una llamada sobre un teléfono que cambió. Guardar un formato equivalente del mismo número conserva la revisión.
+- Las instrucciones se redujeron; el saludo inicial del usuario se conserva. La prueba actual sigue la situación del saludo (seguimiento odontológico), toma la preferencia para coordinación manual con Facu y no cambia de tema para vender Turnia. No reserva turnos reales ni tiene conexión con agenda clínica.
+- El contexto del modelo contiene solo clínica y notas. Ya no se agrega la oferta fija con Axel ni un enlace que el modelo no consultó. El guion se sigue editando desde Configuración de Sofi comercial.
+
 ## Grabaciones telefónicas en Twilio — 25/10/2026
 
 - Pedido explícito: poder ver en Twilio las llamadas grabadas de **Sofi comercial y Sofi de turnos**.

@@ -35,7 +35,7 @@ export function SalesConfigEditor({ initial, voices, hasPrevious }: { initial: D
       </Field>
       <div className="rounded-xl bg-brand-50 p-4 text-sm">
         <p className="font-semibold">Se conservan las conexiones del agente</p>
-        <p className="mt-1">El registro de interés, la baja y el cierre de llamada siguen conectados. La llamada comercial no atiende pacientes ni envía mensajes. El límite sigue en 60 segundos de conversación más despedida.</p>
+        <p className="mt-1">El registro de interés, la baja y el cierre de llamada siguen conectados. Esta demo registra interés o preferencias; no reserva turnos reales ni envía mensajes. El límite sigue en 60 segundos de conversación más despedida.</p>
       </div>
       {dirty && <p role="status" className="text-sm font-medium">Tenés cambios sin aplicar.</p>}
       <button className={buttonClass} name="intent" value="configure">{pending ? "Guardando y comprobando…" : "Guardar y aplicar en ElevenLabs"}</button>
