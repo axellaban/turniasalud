@@ -2,6 +2,15 @@
 
 Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Pedidos de demo → Google Sheets — 25/10/2026
+
+- **Pedido:** que cada pedido del formulario «Pedí una demo» aparezca en una planilla de Google, directo y sin n8n.
+- **Cómo:** una aplicación web de Apps Script dentro de la planilla del usuario recibe los pedidos. Google no deja escribir en una planilla desde un servidor solo con el link (aunque tenga edición pública): hace falta algo que escriba con la cuenta del dueño. El código sale de Panel → Pedidos de demo → «Copiar a Google Sheets» (`/panel/demos/planilla`) con la clave ya puesta (derivada de `SESSION_SECRET`, no se guarda). El usuario lo pega en Extensiones → Apps Script, lo implementa como aplicación web («Yo» / «Cualquier persona») y pega la URL `/exec` en el panel: se guarda en `sales_settings.leads_sheet_url` y se prueba.
+- **Qué se copia:** cada pedido nuevo (formulario y quienes prueban la demo en el navegador, WhatsApp o Telegram), los cambios de estado y notas del panel (se actualiza la misma fila por ID) y los borrados. «Copiar los pedidos que ya hay» trae los anteriores. Corre después de responder (`after`): si la planilla falla, el pedido igual queda en Turnia y el error se ve en el panel.
+- La planilla tiene datos de contacto de personas: no hace falta que sea pública (el script escribe como su dueño). Se recomendó sacar la edición pública del link que pasó el usuario.
+- Código en `src/lib/leads-sheet.ts`; el código de Apps Script se prueba en Node con una hoja simulada (`src/lib/leads-sheet.test.ts`) y la integración en `src/test/leads-sheet.integration.test.ts`. 282 pruebas, TypeScript, ESLint y build.
+- **Pendiente del usuario:** conectar su planilla desde el panel (cinco pasos, una sola vez).
+
 ## Prospección: tratamientos en la demo y «Deshacer contacto» — 25/10/2026
 
 - **Pedido:** que la demo de cada link use lo que sabemos del odontólogo, y poder sacar el «Contactado» de las pruebas.

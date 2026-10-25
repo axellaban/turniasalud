@@ -8,6 +8,7 @@ import { env } from "../env";
 import { buildDynamicVariables, getClinic } from "../clinic";
 import { forwardToAgent } from "../channel";
 import { startPhoneCall } from "../elevenlabs";
+import { syncLeadsToSheet } from "../leads-sheet";
 import { notifyN8n } from "../n8n";
 import { sendChatText } from "../messaging";
 import { channelForChat, chatIsActive, requireActiveChannel } from "../messaging-settings";
@@ -232,6 +233,8 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
       },
     });
   }
+  // A la planilla de pedidos (si hay una conectada); no se espera: la demo sigue.
+  if (session.lead_id) void syncLeadsToSheet([session.lead_id]);
   if (session.status !== "analizando") return { handled: true, status: session.status };
   await sendChatText(input.chatId, DEMO_TEXTS.started(website));
   return { handled: true, status: "analizando", analyze: session.id };

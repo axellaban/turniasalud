@@ -8,6 +8,7 @@ import { createDemoHandoff } from "@/lib/demo/handoff";
 import { analyzeDemo } from "@/lib/demo/session";
 import { startWebDemo } from "@/lib/demo/web";
 import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
+import { syncLeadsToSheet } from "@/lib/leads-sheet";
 import { recordDemo } from "@/lib/sales/outreach";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
     const started = await startWebDemo({ website, manual, email, ip });
     if (!started) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
     after(() => analyzeDemo(started.sessionId));
+    after(() => syncLeadsToSheet([started.leadId]));
     // Llegó desde el link de su demo (/p/<código>): queda en su ficha de la prospección.
     if (typeof body.ref === "string") after(() => recordDemo(body.ref as string, started.leadId));
     return NextResponse.json({ url: `/probar-demo/sesion/${started.token}` }, { headers: { "Cache-Control": "no-store" } });

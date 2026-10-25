@@ -24,6 +24,8 @@ Actualizado: 25/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 ## 1. Pendiente del usuario (no se puede hacer desde el código)
 
+- [ ] **Conectar la planilla de Google de pedidos de demo:** Panel → Pedidos de demo → «Copiar a Google Sheets» y seguir los cinco pasos (pegar el código en Apps Script, implementarlo como aplicación web, pegar la URL y «Copiar los pedidos que ya hay»). Sacar la edición pública de la planilla: tiene datos de contacto.
+
 - [ ] **Prospección de la semana (26 al 30/10):** importar `lista-odontologos-mdp-miramar.csv` en Panel → Prospección → Importar lista (el archivo se entregó por chat; no va al repo), poner el perfil de Turnia en su WhatsApp Business y seguir «Para hoy». Plan en [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md).
 
 - [ ] **Rotar las credenciales** que quedaron expuestas durante el diagnóstico de WAHA (ver la sección «Diagnóstico histórico de vinculación WAHA» en `ESTADO_Y_PRIORIDADES.md`).

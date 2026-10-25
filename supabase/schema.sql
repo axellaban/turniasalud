@@ -768,3 +768,10 @@ alter table sales_outreach_events enable row level security;
 alter table sales_settings add column if not exists outreach_templates jsonb not null default '{}'::jsonb;
 alter table sales_settings add column if not exists outreach_daily_goal integer not null default 50;
 alter table sales_settings add column if not exists outreach_weekly_goal integer not null default 250;
+
+-- Pedidos de demo → Google Sheets: la URL de la aplicación web de Apps Script que el usuario
+-- implementa en su planilla, y el resultado de la última copia.
+alter table sales_settings add column if not exists leads_sheet_url text;
+alter table sales_settings add column if not exists leads_sheet_name text;
+alter table sales_settings add column if not exists leads_sheet_synced_at timestamptz;
+alter table sales_settings add column if not exists leads_sheet_error text;

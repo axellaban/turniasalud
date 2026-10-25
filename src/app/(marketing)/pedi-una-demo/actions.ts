@@ -1,8 +1,10 @@
 "use server";
 
+import { after } from "next/server";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { isConfigured } from "@/lib/env";
+import { syncLeadsToSheet } from "@/lib/leads-sheet";
 import { notifyN8n } from "@/lib/n8n";
 
 export type EstadoLead = { ok?: boolean; error?: string };
@@ -24,7 +26,7 @@ const campo = (form: FormData, key: string) => {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 };
 
-/** Guarda un pedido de demo y avisa a n8n (evento `lead.nuevo`). */
+/** Guarda un pedido de demo, avisa a n8n (evento `lead.nuevo`) y lo copia en la planilla de Google, si hay una conectada. */
 export async function pedirDemo(_prev: EstadoLead | undefined, form: FormData): Promise<EstadoLead> {
   // Campo trampa para bots: los humanos no lo ven.
   if (campo(form, "empresa_web")) return { ok: true };
@@ -49,6 +51,7 @@ export async function pedirDemo(_prev: EstadoLead | undefined, form: FormData): 
               ${l.especialidad ?? null}, ${l.tamano ?? null}, ${l.mensaje ?? null}, ${l.origen ?? null})
       returning id`;
     await notifyN8n("lead.nuevo", { lead: { id: row.id, ...l } });
+    after(() => syncLeadsToSheet([row.id]));
     return { ok: true };
   } catch (e) {
     console.error("No se pudo guardar el pedido de demo", e);
