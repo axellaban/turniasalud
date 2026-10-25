@@ -575,6 +575,22 @@ create table if not exists sales_settings (
 insert into sales_settings (id) values (1) on conflict do nothing;
 alter table sales_settings enable row level security;
 
+alter table sales_settings add column if not exists first_message text;
+alter table sales_settings add column if not exists system_prompt text;
+alter table sales_settings add column if not exists config_version integer not null default 0;
+alter table sales_settings add column if not exists applied_at timestamptz;
+alter table sales_settings add column if not exists needs_sync boolean not null default false;
+
+create table if not exists sales_config_versions (
+  version integer primary key,
+  first_message text not null,
+  system_prompt text not null,
+  voice_id text not null,
+  source text not null,
+  created_at timestamptz not null default now()
+);
+alter table sales_config_versions enable row level security;
+
 create table if not exists sales_prospects (
   id uuid primary key default gen_random_uuid(),
   business_name text not null,
@@ -615,6 +631,7 @@ create table if not exists sales_calls (
 create index if not exists sales_calls_budget_idx on sales_calls (budget_date);
 create index if not exists sales_calls_prospect_idx on sales_calls (prospect_id, created_at desc);
 alter table sales_calls enable row level security;
+alter table sales_calls add column if not exists config_version integer not null default 0;
 
 create table if not exists sales_suppressions (
   phone text primary key,

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { budgetToday, salesSettings, type Prospect, type SalesCall } from "@/lib/sales/service";
-import { FIRST_MESSAGE, listSalesVoices, type SalesVoice } from "@/lib/sales/agent";
-import { Badge, Card, Field, inputClass, PageHeader, Stat, Empty, secondaryButtonClass } from "@/components/ui";
+import { listSalesVoices, type SalesVoice } from "@/lib/sales/agent";
+import { salesConfiguration } from "@/lib/sales/config";
+import { Badge, Card, Field, inputClass, PageHeader, Stat, Empty, Notice, secondaryButtonClass } from "@/components/ui";
 import { SalesForm } from "./form";
 import { ReviewFields } from "./fields";
 
@@ -25,7 +26,9 @@ export default async function CommercialPage() {
       <Stat label="Cupo autorizado hoy" value={`US$${(s.budget_date === budget.today ? s.budget_cents / 100 : 0).toFixed(2)}`} hint="Vence al terminar el día en Argentina." />
       <Stat label="Reservado por intentos" value={`US$${(budget.spent / 100).toFixed(2)}`} hint="Reserva preventiva: US$1 por intento. 60 s de conversación, más despedida." />
     </div>
-    {active.length > 0 && <Card className="mb-6"><h2 className="font-semibold">Llamada pendiente</h2>{active.map((c) => <p key={c.id} className="mt-2"><Link className="underline" href={`/panel/comercial/${c.prospect_id}`}>{c.business_name}: {c.status.replaceAll("_"," ")}</Link></p>)}<p className="text-sm mt-2">No se habilita otro intento hasta revisar el resultado. Un inicio incierto requiere reconciliar con el proveedor.</p></Card>}
+    {s.needs_sync && <Notice tone="error">La última aplicación de la configuración no se pudo comprobar. <Link href="/panel/comercial/configuracion" className="underline">Guardá y aplicá de nuevo</Link> antes de habilitar llamadas.</Notice>}
+    {!enabled && <Notice tone="warning">{s.enabled ? "La autorización de llamadas venció al terminar el día en Argentina." : "El piloto está pausado."} Para llamar, <a className="underline font-semibold" href="#presupuesto">habilitá las llamadas manuales de hoy y guardá el cupo</a>. Antes comprobá el saldo de Twilio y los créditos de ElevenLabs.</Notice>}
+    {active.length > 0 && <Card className="mb-6" id="pendiente"><h2 className="font-semibold">Llamada pendiente</h2>{active.map((c) => <p key={c.id} className="mt-2"><Link className="underline" href={`/panel/comercial/${c.prospect_id}`}>{c.business_name}: {c.status.replaceAll("_"," ")}</Link></p>)}<p className="text-sm mt-2">No se habilita otro intento hasta revisar el resultado. Un inicio incierto requiere reconciliar con el proveedor.</p></Card>}
     <Card className="mb-6" id="como-llamar">
       <h2 className="font-display text-xl mb-4">Cómo disparar una prueba</h2>
       <div className="grid gap-5 sm:grid-cols-2 text-sm">
@@ -35,23 +38,11 @@ export default async function CommercialPage() {
       <p className="mt-4 text-sm">Antes de llamar: comprobá el saldo compartido de Twilio y <a className="underline" href="#presupuesto">habilitá el cupo de hoy</a>. Guardar una ficha o cambiar la voz no inicia llamadas.</p>
     </Card>
     <div className="grid gap-6 xl:grid-cols-2 mb-6">
-      <Card><h2 className="font-display text-xl mb-3">1. Preparar al agente</h2>
-        <p className="text-sm mb-3">{s.agent_id ? `Agente comercial configurado. Voz: ${voices.find((v) => v.voice_id === s.voice_id)?.name || "guardada en ElevenLabs"}.` : "Todavía no está configurada. Podés usar la misma voz de Sofi."} Prepararlo no inicia llamadas.</p>
-        <blockquote className="border-l-2 border-brand-300 pl-3 text-sm mb-4">{FIRST_MESSAGE.replace("{{business_name}}", "[nombre del consultorio]")}</blockquote>
-        <p className="text-sm mb-4">Si hay interés, registra el pedido de demo para que vos hagas el seguimiento. Si piden no recibir llamadas, guarda la baja y termina. No ofrece precios.</p>
-        <SalesForm intent="prepare_sofi" label="Usar la voz de Sofi y aplicar pitch" />
-        <p className="text-xs text-brand-900/70 mt-2 mb-4">Lee la voz de la recepcionista principal y la aplica al agente comercial. La recepcionista conserva su configuración.</p>
-        <details><summary className="cursor-pointer text-sm font-semibold mb-3">Elegir otra voz guardada</summary>
-        <SalesForm intent="prepare" label="Aplicar voz y pitch, y pausar" disabled={voices.length === 0}>
-          <Field label="Voz comercial" hint="Voces guardadas en tu cuenta. ElevenLabs no admite en agentes las que tienen moderación en vivo; aparecen deshabilitadas.">
-            <select name="voice_id" required className={inputClass} defaultValue={s.voice_id || ""}>
-              <option value="" disabled>Elegí una voz compatible</option>
-              {voices.map((v) => <option key={v.voice_id} value={v.voice_id} disabled={v.live_moderated}>{v.name}{v.label ? ` · ${v.label}` : ""}{v.live_moderated ? " — No apta para agentes (moderación)" : ""}</option>)}
-            </select>
-          </Field>
-          {voices.length === 0 && <p className="text-sm">No se pudo leer la lista de voces. Revisá ElevenLabs y recargá la página.</p>}
-        </SalesForm>
-        </details>
+      <Card><h2 className="font-display text-xl mb-3">1. Configuración de Sofi comercial</h2>
+        <p className="text-sm mb-3">{s.agent_id ? `Voz: ${voices.find((v) => v.voice_id === s.voice_id)?.name || "guardada en ElevenLabs"}.` : "Todavía falta preparar al agente."}{s.applied_at ? ` Versión ${s.config_version} comprobada en ElevenLabs.` : ""}</p>
+        <blockquote className="border-l-2 border-brand-300 pl-3 text-sm mb-4">{salesConfiguration(s).first_message.replaceAll("{{business_name}}", "[nombre del consultorio]")}</blockquote>
+        <Link className={secondaryButtonClass} href="/panel/comercial/configuracion">Editar saludo, instrucciones y voz</Link>
+        <p className="text-sm mt-4">Editar y aplicar guarda una versión y pausa el piloto. Para llamar usá el cupo de hoy y la ficha del destinatario.</p>
       </Card>
       <Card id="presupuesto"><h2 className="font-display text-xl mb-3">2. Autorizar el cupo de hoy</h2>
         <p className="text-sm mb-4">El panel reserva US$1 por intento. El límite es de 60 segundos de conversación más el tiempo de despedida: Twilio puede facturar dos minutos. Es una estimación preventiva, no un saldo ni una factura. Twilio y ElevenLabs cobran por separado y el saldo de Twilio se comparte con tus otros negocios. No habilites un cupo mayor al saldo disponible. Nunca se recarga desde acá.</p>
