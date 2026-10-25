@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { MARK_PATH } from "@/components/logo";
 
 // Miniaturas para compartir links (WhatsApp, LinkedIn, X, Slack): 1200×630, con el
 // key visual de la web. Se generan una vez en el build desde los opengraph-image.tsx.
@@ -20,11 +21,16 @@ const COLOR = {
 
 const asset = (archivo: string) => readFile(join(process.cwd(), "src", "assets", "og", archivo));
 
+// Geist (licencia SIL OFL, en src/assets/og/Geist-OFL.txt): liviana y negrita para el logo.
 async function fuentes() {
-  const [medium, semibold] = await Promise.all([asset("Geist-Medium.ttf"), asset("Geist-SemiBold.ttf")]);
+  const [light, medium, semibold, bold] = await Promise.all(
+    ["Geist-Light.ttf", "Geist-Medium.ttf", "Geist-SemiBold.ttf", "Geist-Bold.ttf"].map(asset),
+  );
   return [
+    { name: "Geist", data: light, weight: 300 as const, style: "normal" as const },
     { name: "Geist", data: medium, weight: 500 as const, style: "normal" as const },
     { name: "Geist", data: semibold, weight: 600 as const, style: "normal" as const },
+    { name: "Geist", data: bold, weight: 700 as const, style: "normal" as const },
   ];
 }
 
@@ -32,16 +38,16 @@ async function retrato() {
   return `data:image/jpeg;base64,${(await asset("retrato.jpg")).toString("base64")}`;
 }
 
+/** El logo de la web (`src/components/logo.tsx`), en blanco sobre el fondo oscuro. */
 function Marca({ tamano = 44 }: { tamano?: number }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: tamano * 0.3 }}>
       <svg width={tamano} height={tamano} viewBox="0 0 32 32">
-        <rect width="32" height="32" rx="9" fill={COLOR.azul} />
-        <path d="M9 10.5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v6.5a3 3 0 0 1-3 3h-4.2L11.5 24v-4.1A3 3 0 0 1 9 17z" fill="#fff" />
-        <path d="M16 10.6v6.3M12.85 13.75h6.3" stroke={COLOR.azul} strokeWidth="2.2" strokeLinecap="round" />
+        <path d={MARK_PATH} fill="#fff" fillRule="evenodd" />
       </svg>
-      <div style={{ display: "flex", fontSize: tamano * 0.66, fontWeight: 600, letterSpacing: -0.5, color: "#fff" }}>
-        Turnia<span style={{ color: COLOR.azulClaro, marginLeft: 8 }}>Salud</span>
+      <div style={{ display: "flex", fontSize: tamano * 0.76, letterSpacing: -tamano * 0.026, color: "#fff" }}>
+        <span style={{ fontWeight: 700 }}>Turnia</span>
+        <span style={{ fontWeight: 300, marginLeft: tamano * 0.2 }}>Salud</span>
       </div>
     </div>
   );
