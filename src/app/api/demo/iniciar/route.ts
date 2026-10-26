@@ -10,6 +10,7 @@ import { startWebDemo } from "@/lib/demo/web";
 import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
 import { syncLeadsToSheet } from "@/lib/leads-sheet";
 import { recordDemo } from "@/lib/sales/outreach";
+import { syncTurniaSheet } from "@/lib/sheets/turnia-sheet";
 
 export const dynamic = "force-dynamic";
 // En el navegador, la lectura de la web corre después de responder (≈1 minuto).
@@ -42,8 +43,13 @@ export async function POST(request: Request) {
     if (!started) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
     after(() => analyzeDemo(started.sessionId));
     after(() => syncLeadsToSheet([started.leadId]));
-    // Llegó desde el link de su demo (/p/<código>): queda en su ficha de la prospección.
-    if (typeof body.ref === "string") after(() => recordDemo(body.ref as string, started.leadId));
+    // Llegó desde el link de su demo (/p/<código>): queda en su ficha de la prospección. Después,
+    // la planilla de Google (con el pedido nuevo y, si vino de su link, «Probó la demo»).
+    const ref = typeof body.ref === "string" ? body.ref : null;
+    after(async () => {
+      if (ref) await recordDemo(ref, started.leadId);
+      await syncTurniaSheet();
+    });
     return NextResponse.json({ url: `/probar-demo/sesion/${started.token}` }, { headers: { "Cache-Control": "no-store" } });
   }
   if (!website) return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 });

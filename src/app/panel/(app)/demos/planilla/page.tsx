@@ -22,6 +22,15 @@ export default async function PlanillaPage() {
         description="Cada pedido que llega (el formulario «Pedí una demo» y quienes prueban la demo) se copia solo en tu planilla, y se actualiza cuando le cambiás el estado o las notas."
       />
 
+      <Notice tone="success" className="mb-6">
+        Más fácil: en{" "}
+        <Link href="/panel/prospeccion/planilla" className="font-medium underline">
+          Prospección → Google Sheets
+        </Link>{" "}
+        conectás tu cuenta de Google con un botón, sin pegar código, y la planilla trae también la prospección. Lo de abajo sirve si preferís usar una
+        planilla tuya con Apps Script.
+      </Notice>
+
       {settings.url ? (
         <Card className="mb-6">
           <h2 className="font-display text-xl text-brand-950">Conectada con «{settings.name}»</h2>

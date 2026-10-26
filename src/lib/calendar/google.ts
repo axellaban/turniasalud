@@ -5,7 +5,8 @@ import { env } from "../env";
 import { decryptSecret, encryptSecret } from "./crypto";
 
 // Google Calendar por la API REST (sin SDK): conexión OAuth de la cuenta de la
-// clínica, renovación del token, lista de calendarios y eventos.
+// clínica, renovación del token, lista de calendarios y eventos. El OAuth (estado
+// firmado, canje del código, renovación y revocación) también lo usa Google Sheets.
 
 export const GOOGLE_SCOPES = [
   "openid",
@@ -53,29 +54,30 @@ export const OAUTH_COOKIE = "turnia_google_oauth";
 const STATE_TTL_SECS = 10 * 60;
 const signState = (payload: string) => createHmac("sha256", `google-oauth:${env.sessionSecret()}`).update(payload).digest("base64url");
 
-export function createOAuthState(clinicId: string, now = Date.now()): { state: string; nonce: string } {
+/** `subject`: para quién es la conexión (el id de la clínica, o la planilla de Turnia). Sin puntos. */
+export function createOAuthState(subject: string, now = Date.now()): { state: string; nonce: string } {
   const nonce = randomBytes(16).toString("base64url");
-  const payload = `${clinicId}.${nonce}.${Math.floor(now / 1000) + STATE_TTL_SECS}`;
+  const payload = `${subject}.${nonce}.${Math.floor(now / 1000) + STATE_TTL_SECS}`;
   return { state: `${payload}.${signState(payload)}`, nonce };
 }
 
 export function readOAuthState(state: string, nonce: string | undefined, now = Date.now()): string | null {
   const parts = state.split(".");
   if (parts.length !== 4 || !nonce) return null;
-  const [clinicId, stateNonce, expires, signature] = parts;
-  const expected = Buffer.from(signState(`${clinicId}.${stateNonce}.${expires}`));
+  const [subject, stateNonce, expires, signature] = parts;
+  const expected = Buffer.from(signState(`${subject}.${stateNonce}.${expires}`));
   const given = Buffer.from(signature);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
   if (stateNonce !== nonce || !/^\d+$/.test(expires) || Number(expires) * 1000 < now) return null;
-  return clinicId;
+  return subject;
 }
 
-export function authorizationUrl(state: string): string {
+export function authorizationUrl(state: string, scopes: readonly string[] = GOOGLE_SCOPES): string {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? "",
     redirect_uri: redirectUri(),
     response_type: "code",
-    scope: GOOGLE_SCOPES.join(" "),
+    scope: scopes.join(" "),
     access_type: "offline",
     // Siempre pide el consentimiento: es la única forma de recibir un refresh token nuevo.
     prompt: "consent",
@@ -89,7 +91,9 @@ async function call(url: string, init: RequestInit = {}): Promise<Response> {
   return fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
 }
 
-async function tokenRequest(body: Record<string, string>): Promise<{ access_token: string; expires_in: number; refresh_token?: string; scope?: string }> {
+export type GoogleTokens = { access_token: string; expires_in: number; refresh_token?: string; scope?: string };
+
+async function tokenRequest(body: Record<string, string>): Promise<GoogleTokens> {
   const res = await call(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -101,19 +105,40 @@ async function tokenRequest(body: Record<string, string>): Promise<{ access_toke
     const reconnect = data.error === "invalid_grant";
     throw new GoogleError(reconnect ? "Google pidió volver a conectar la cuenta." : `Google rechazó el pedido (${String(data.error ?? res.status)}).`, res.status, reconnect);
   }
-  return data as { access_token: string; expires_in: number; refresh_token?: string; scope?: string };
+  return data as GoogleTokens;
+}
+
+/** Canje del código de la vuelta del OAuth (de cualquier conexión con Google). */
+export const exchangeCode = (code: string) => tokenRequest({ code, grant_type: "authorization_code", redirect_uri: redirectUri() });
+
+/** Un token de acceso nuevo, con el permiso permanente guardado (cifrado). */
+export const refreshAccessToken = (sealedRefreshToken: string) =>
+  tokenRequest({ refresh_token: decryptSecret(sealedRefreshToken), grant_type: "refresh_token" });
+
+/** El email de la cuenta que dio el permiso (null si Google no lo dice). */
+export async function accountEmail(accessToken: string): Promise<string | null> {
+  const me = await call(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+  return me.ok ? (((await me.json()) as { email?: string }).email ?? null) : null;
+}
+
+/** Revoca el permiso en Google. Si Google no responde, se puede quitar desde la cuenta de Google. */
+export async function revokeGrant(sealedRefreshToken: string): Promise<void> {
+  try {
+    await call(`${REVOKE_URL}?token=${encodeURIComponent(decryptSecret(sealedRefreshToken))}`, { method: "POST" });
+  } catch {
+    // Igual se borra de Turnia.
+  }
 }
 
 /** Canje del código de la vuelta del OAuth: guarda la conexión de la clínica (cifrada). */
 export async function connectWithCode(clinicId: string, code: string): Promise<CalendarConnection> {
-  const tokens = await tokenRequest({ code, grant_type: "authorization_code", redirect_uri: redirectUri() });
+  const tokens = await exchangeCode(code);
   if (!tokens.refresh_token) throw new GoogleError("Google no entregó un permiso permanente. Volvé a intentar.", 400);
   const granted = (tokens.scope ?? "").split(" ");
   if (!granted.includes("https://www.googleapis.com/auth/calendar.events")) {
     throw new GoogleError("Hay que aceptar el permiso para ver y editar eventos del calendario.", 400);
   }
-  const me = await call(USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
-  const email = me.ok ? (((await me.json()) as { email?: string }).email ?? null) : null;
+  const email = await accountEmail(tokens.access_token);
   const [row] = await sql<CalendarConnection[]>`
     insert into calendar_connections (clinic_id, account_email, refresh_token, access_token, access_expires_at, status, last_error)
     values (${clinicId}, ${email}, ${encryptSecret(tokens.refresh_token)}, ${encryptSecret(tokens.access_token)},
@@ -140,7 +165,7 @@ export async function accessToken(conn: CalendarConnection): Promise<string> {
     return decryptSecret(conn.access_token);
   }
   try {
-    const tokens = await tokenRequest({ refresh_token: decryptSecret(conn.refresh_token), grant_type: "refresh_token" });
+    const tokens = await refreshAccessToken(conn.refresh_token);
     await sql`
       update calendar_connections set access_token = ${encryptSecret(tokens.access_token)},
         access_expires_at = now() + make_interval(secs => ${tokens.expires_in}),
@@ -184,11 +209,11 @@ export async function listCalendars(conn: CalendarConnection): Promise<GoogleCal
 export async function disconnect(clinicId: string): Promise<void> {
   const conn = await getConnection(clinicId);
   if (!conn) return;
-  try {
-    await call(`${REVOKE_URL}?token=${encodeURIComponent(decryptSecret(conn.refresh_token))}`, { method: "POST" });
-  } catch {
-    // Si Google no responde, igual se borra: el permiso se puede quitar desde la cuenta de Google.
-  }
+  // Google revoca todo junto: si la misma cuenta tiene conectada otra clínica o la planilla de Turnia, no se revoca.
+  const [shared] = await sql`
+    select 1 from calendar_connections where account_email = ${conn.account_email} and clinic_id <> ${clinicId}
+    union all select 1 from sheets_connections where account_email = ${conn.account_email} limit 1`;
+  if (!shared) await revokeGrant(conn.refresh_token);
   await sql.begin(async (tx) => {
     await tx`delete from calendar_connections where clinic_id = ${clinicId}`;
     await tx`update professionals set google_busy = null, google_busy_at = null where clinic_id = ${clinicId}`;

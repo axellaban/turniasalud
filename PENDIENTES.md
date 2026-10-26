@@ -1,6 +1,6 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 25/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 26/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
@@ -9,7 +9,7 @@ Actualizado: 25/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 3. Ramas: se trabaja en una rama, se abre un PR contra `main`, CI (`verificar`) y Vercel tienen que dar verde, y se hace merge squash. Producción se publica sola desde `main` y cada deploy aplica `supabase/schema.sql` (idempotente) con `scripts/migrate-db.mjs`.
 4. Diseño: hay skills en `.claude/skills` (`frontend-design`, `web-design-guidelines`, `react-best-practices`, `impeccable`); ver su `README.md`. Para auditar accesibilidad, axe-core está en `node_modules`.
 5. Pruebas locales: `npx tsc --noEmit`, `npx eslint src`, `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx vitest run` (177 tests al 23/10) y `npx next build`. Para mirar la web, `next start` con un Postgres local; Chromium está en `/opt/pw-browsers`.
-6. Google Calendar: cómo está armado y qué falta configurar en `GOOGLE_CALENDAR.md`.
+6. Google Calendar y Google Sheets: cómo están armados y qué falta configurar en `GOOGLE_CALENDAR.md` y `GOOGLE_SHEETS.md` (usan la misma conexión con Google).
 
 ## Reglas que no se rompen
 
@@ -24,7 +24,7 @@ Actualizado: 25/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 ## 1. Pendiente del usuario (no se puede hacer desde el código)
 
-- [ ] **Conectar la planilla de Google de pedidos de demo:** Panel → Pedidos de demo → «Copiar a Google Sheets» y seguir los cinco pasos (pegar el código en Apps Script, implementarlo como aplicación web, pegar la URL y «Copiar los pedidos que ya hay»). Sacar la edición pública de la planilla: tiene datos de contacto.
+- [ ] **Google Sheets (prospección y pedidos de demo):** en el proyecto de Google Cloud de Calendar, habilitar **Google Sheets API** y agregar el permiso `drive.file`. Después, Panel → Prospección → Google Sheets → «Conectar con Google». Para que el permiso no venza a los 7 días, publicar la app. Pasos en [`GOOGLE_SHEETS.md`](GOOGLE_SHEETS.md). Con esto ya no hace falta lo de Apps Script. A la planilla «Interesados TurnIA» conviene sacarle la edición pública o borrarla, porque está vacía.
 
 - [ ] **Consultorios con web:** importar `consultorios-con-web-mdp-miramar.csv` (entregado por chat) en Panel → Prospección → Importar lista, con «Reemplazar los datos de los que ya están por los del archivo» marcado. Suma 13 personas y les carga la web y el WhatsApp del consultorio a 12 que ya estaban.
 - [ ] **Prospección de la semana (26 al 30/10):** importar `lista-odontologos-mdp-miramar.csv` en Panel → Prospección → Importar lista (el archivo se entregó por chat; no va al repo), poner el perfil de Turnia en su WhatsApp Business y seguir «Para hoy». Plan en [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md).
@@ -105,4 +105,5 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 | Demo «Probá con tu web» | `PLAN_LEAD_MAGNET.md` |
 | Campañas, importación de pacientes y CRM | `PLAN_CAMPANAS.md` |
 | Google Calendar | `GOOGLE_CALENDAR.md` |
+| Google Sheets | `GOOGLE_SHEETS.md` |
 | Qué es Turnia, decisiones y arquitectura | `CONTEXTO_PROYECTO.md` |

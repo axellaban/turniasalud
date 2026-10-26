@@ -8,6 +8,7 @@ import { sql } from "@/lib/db";
 import { isLeadStatus } from "@/lib/leads";
 import { removeLeadFromSheet, syncLeadsToSheet } from "@/lib/leads-sheet";
 import { SESSION_COOKIE, isAdminSessionToken } from "@/lib/session";
+import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
 
 export type LeadFormState = { ok?: boolean; message?: string };
 
@@ -33,6 +34,7 @@ export async function updateLead(_prev: LeadFormState | undefined, form: FormDat
       where id = ${id} returning id`;
     if (!rows.length) return { ok: false, message: "El pedido ya no está disponible." };
     after(() => syncLeadsToSheet([id]));
+    queueTurniaSheetSync();
     revalidatePath("/panel/demos");
     return { ok: true, message: "Seguimiento guardado." };
   } catch {
@@ -60,5 +62,6 @@ export async function deleteLead(form: FormData): Promise<void> {
     await tx`delete from leads where id = ${id}`;
   });
   after(() => removeLeadFromSheet(id));
+  queueTurniaSheetSync();
   revalidatePath("/panel", "layout");
 }
