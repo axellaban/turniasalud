@@ -15,15 +15,16 @@ export default async function ImportarProspeccionPage() {
       </Link>
       <PageHeader
         title="Importar la lista"
-        description="Un CSV o celdas de Excel con una fila por odontólogo. Quien ya estaba solo completa los datos que le faltan: no se pisa lo que corregiste ni su estado."
+        description="Un CSV o celdas de Excel con una fila por odontólogo. Quien ya estaba solo completa los datos que le faltan (salvo que elijas reemplazarlos): no se pisa su estado ni sus contactos."
       />
       <Card>
         <ImportOutreachForm />
         <div className="mt-6 border-t border-brand-900/5 pt-4 text-sm text-brand-900/70">
           <p className="font-medium text-brand-900">Columnas que reconoce</p>
           <p className="mt-1">
-            nombre (obligatoria), saludo, tratamiento (Dr. o Dra.), consultorio, zona, dirección, especialidad, teléfono, tipo_telefono (movil o fijo),
-            instagram, email, web, prioridad (1 a 3), señales, fuente y código. Sin código, cada persona recibe uno nuevo para su link de demo.
+            nombre (obligatoria), saludo, tratamiento (Dr. o Dra.), consultorio, zona, dirección, especialidad, teléfono, tipo_telefono (movil,
+            consultorio o fijo: «consultorio» es el celular del consultorio, el que lee la recepción), otros_telefonos, instagram, email, web,
+            prioridad (1 a 3), señales, fuente, notas y código. Sin código, cada persona recibe uno nuevo para su link de demo.
           </p>
           <p className="mt-2">Los datos de contacto quedan solo en la base de Turnia: no los subas al repositorio.</p>
         </div>

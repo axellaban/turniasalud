@@ -1,6 +1,15 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 25/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 26/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Prospección: consultorios con web y «celular del consultorio» — 26/10/2026
+
+- **Pedido:** integrar los consultorios del tablero viejo (el de la otra cuenta) que no se contactaron. Su base no se puede leer desde esta cuenta: se rearmaron los de Mar del Plata y Miramar con web leyendo cada web (dueños, profesionales, WhatsApp, Instagram) y Páginas Amarillas. Los celulares del Círculo de ese tablero ya están en la lista de 407.
+- **Archivo** `consultorios-con-web-mdp-miramar.csv` (fuera del repo, entregado por chat): 25 filas. 12 ya estaban en la lista: se les carga la web (su demo pasa a leerla), el nombre real del consultorio y, si la web lo da, el WhatsApp del consultorio. 13 son nuevas: 5 dueños de consultorios con web y 8 de Páginas Amarillas con fijo (3 de Mar del Plata y 5 de Miramar). Quedaron afuera las redes y prepagas, las webs que ya no existen y un consultorio sin dueño identificable.
+- **Panel:** el tipo de teléfono suma **«Celular del consultorio»** (el WhatsApp de su web, lo lee la recepción): recibe el mensaje para la recepción, como el fijo, y tiene su filtro. Importar suma la casilla **«Reemplazar los datos de los que ya están por los del archivo»**: sin marcarla, solo se completa lo que falta, como antes. El nombre, el estado y los contactos no cambian nunca, y las notas nuevas se suman sin repetirse.
+- Corregido: el mensaje a la recepción decía «Le armé a el Dr. …» (ahora «al Dr. …») y el guion de llamada, «de el Dr. …».
+- Probado: importando la lista de 407 y después este archivo en un panel local (13 nuevas y 12 actualizadas, sin perder un contacto ya hecho), axe sin problemas y sin scroll horizontal a 390 px. 283 pruebas, TypeScript, ESLint y build.
+- **Pendiente del usuario:** importar el archivo con la casilla marcada.
 
 ## Pedidos de demo → Google Sheets — 25/10/2026
 

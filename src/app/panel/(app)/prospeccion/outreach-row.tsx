@@ -9,6 +9,7 @@ import {
   STATUS_LABEL,
   STATUS_TONE,
   displayOutreachPhone,
+  isBusinessLine,
   renderTemplate,
   whatsappLinks,
   whatsappTemplateKey,
@@ -23,8 +24,8 @@ const signals = (p: Outreach) =>
     .filter((s) => s && !s.startsWith("celular ") && !s.startsWith("mismo teléfono") && s !== p.specialty)
     .join(" · ");
 
-/** Varios odontólogos con el mismo número: lo lee la recepción. */
-export const isConsultorioLine = (p: Outreach) => p.phone_kind === "fijo" || p.shared.length >= 2;
+/** El fijo, el celular del consultorio o un número de varios odontólogos: lo lee la recepción. */
+export const isConsultorioLine = (p: Outreach) => isBusinessLine(p.phone_kind) || p.shared.length >= 2;
 
 /**
  * Qué se le manda y por dónde, según cuántas veces se le escribió y si probó la demo. `early`: el

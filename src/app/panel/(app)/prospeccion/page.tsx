@@ -108,6 +108,7 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
               <select name="canal" defaultValue={filter.channel ?? ""} className={`${inputClass} sm:w-auto`}>
                 <option value="">Cualquier canal</option>
                 <option value="celular">Celular</option>
+                <option value="consultorio">Celular del consultorio</option>
                 <option value="fijo">Teléfono fijo</option>
                 <option value="instagram">Instagram</option>
                 <option value="sin">Sin contacto</option>
