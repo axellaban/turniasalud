@@ -57,6 +57,9 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
             <Link href="/panel/prospeccion/importar" className={secondaryButtonClass}>
               Importar lista
             </Link>
+            <Link href="/panel/prospeccion/planilla" className={secondaryButtonClass}>
+              Google Sheets
+            </Link>
           </>
         }
       />

@@ -31,13 +31,14 @@ Actualizado: 24/10/2026. **Código hecho y probado con Google simulado** (`src/t
   - Los tokens se guardan cifrados con AES-256-GCM (`src/lib/calendar/crypto.ts`).
   - El OAuth usa un estado firmado, atado a una cookie del navegador que lo pidió.
   - Un consultorio solo puede conectar su propia clínica.
+  - Al desconectar se revoca el permiso en Google, salvo que la misma cuenta siga conectada en otra clínica o en la planilla de Turnia (`GOOGLE_SHEETS.md`): Google revoca todo junto.
 
 Código: `src/lib/calendar/` (google.ts, sync.ts, crypto.ts), `src/app/api/google/` (conectar, callback), `src/app/panel/calendar-actions.ts`, `src/app/panel/(app)/configuracion/calendario/`.
 
 ## Lo que hay que hacer en Google (una sola vez)
 
 1. **Proyecto.** En [Google Cloud Console](https://console.cloud.google.com/), crear un proyecto (por ejemplo «Turnia Salud»).
-2. **API.** En APIs y servicios → Biblioteca, habilitar **Google Calendar API**.
+2. **API.** En APIs y servicios → Biblioteca, habilitar **Google Calendar API** (y **Google Sheets API** para la planilla de Turnia: ver `GOOGLE_SHEETS.md`).
 3. **Pantalla de consentimiento** (Google Auth Platform):
    - Tipo de usuario **Externo**.
    - Nombre «Turnia Salud», email de soporte y email del desarrollador.

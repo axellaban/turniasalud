@@ -76,7 +76,10 @@ export function toSheetLead(r: LeadRow): SheetLead {
   };
 }
 
-async function leadsForSheet(ids: string[] | "all"): Promise<SheetLead[]> {
+/** Los títulos de las columnas, en el orden de SheetLead. */
+export const LEAD_COLUMNS = ["ID", "Fecha", "Nombre", "Email", "WhatsApp", "Clínica o consultorio", "Rol", "Especialidad", "Profesionales", "Qué quiere resolver", "Origen", "Estado", "Notas", "Actualizado"];
+
+export async function leadsForSheet(ids: string[] | "all"): Promise<SheetLead[]> {
   if (ids !== "all" && !ids.length) return [];
   const rows = await sql<LeadRow[]>`
     select id, name, email, phone, organization, role, specialty, size, message, source, status, notes, created_at, updated_at
@@ -178,7 +181,7 @@ export function appsScriptCode(key: string): string {
     "// Pegalo en Extensiones → Apps Script, guardá e implementalo como «Aplicación web».",
     `const CLAVE = "${key}";`,
     'const HOJA = "Pedidos de demo";',
-    'const COLUMNAS = ["ID", "Fecha", "Nombre", "Email", "WhatsApp", "Clínica o consultorio", "Rol", "Especialidad", "Profesionales", "Qué quiere resolver", "Origen", "Estado", "Notas", "Actualizado"];',
+    `const COLUMNAS = [${LEAD_COLUMNS.map((c) => JSON.stringify(c)).join(", ")}];`,
     "",
     "function doPost(e) {",
     "  let datos;",

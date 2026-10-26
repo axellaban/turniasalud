@@ -6,6 +6,7 @@ import { sql } from "@/lib/db";
 import { isConfigured } from "@/lib/env";
 import { syncLeadsToSheet } from "@/lib/leads-sheet";
 import { notifyN8n } from "@/lib/n8n";
+import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
 
 export type EstadoLead = { ok?: boolean; error?: string };
 
@@ -52,6 +53,7 @@ export async function pedirDemo(_prev: EstadoLead | undefined, form: FormData): 
       returning id`;
     await notifyN8n("lead.nuevo", { lead: { id: row.id, ...l } });
     after(() => syncLeadsToSheet([row.id]));
+    queueTurniaSheetSync();
     return { ok: true };
   } catch (e) {
     console.error("No se pudo guardar el pedido de demo", e);

@@ -2,6 +2,22 @@
 
 Actualización: 26/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Google Sheets con un botón — 26/10/2026
+
+- **Pedido:** otra forma de llevar los datos a Google Sheets, sin pegar código (lo de Apps Script), que sirva también para que cada clínica conecte su planilla. Se arranca con la de prospección del usuario.
+- **Cómo:** «Conectar con Google» en Panel → Prospección → Google Sheets, con el mismo OAuth de Calendar (estado firmado, tokens cifrados, misma vuelta `/api/google/callback`). Pide solo `drive.file`, que no es sensible: Turnia ve únicamente las planillas que crea ella.
+- **Qué hace:** crea «Turnia · Prospección y pedidos de demo» en el Drive del usuario, con dos pestañas, y la reescribe completa después de cada cambio (`after()`), una copia por vez. Si se borra una pestaña, vuelve en la próxima copia. Si se borra la planilla, el panel ofrece crear otra; si Google pide reconectar, «Reconectar».
+- **Para clínicas:** la conexión (`sheets_connections`) es por dueño. Falta el selector de una planilla existente y la importación de pacientes e historial desde ahí (`GOOGLE_SHEETS.md`).
+- Si falta habilitar Google Sheets API, el panel lo dice y ofrece «Crear la planilla». Desconectar no revoca el permiso si la misma cuenta tiene Calendar conectado: Google revoca todo junto. Calendar hace lo mismo al revés.
+- Probado con Google simulado (7 pruebas nuevas):
+  - la conexión y las dos pestañas;
+  - la copia después de cada cambio, y una copia por vez;
+  - la pestaña borrada y la planilla borrada;
+  - la API sin habilitar;
+  - reconectar y desconectar.
+- Calendar sigue igual. 290 pruebas, TypeScript, ESLint y build.
+- **Pendiente del usuario:** habilitar Google Sheets API y el permiso `drive.file` en el proyecto de Calendar y tocar «Conectar con Google». Para que el permiso no venza a los 7 días, publicar la app.
+
 ## Prospección: consultorios con web y «celular del consultorio» — 26/10/2026
 
 - **Pedido:** integrar los consultorios del tablero viejo (el de la otra cuenta) que no se contactaron. Su base no se puede leer desde esta cuenta: se rearmaron los de Mar del Plata y Miramar con web leyendo cada web (dueños, profesionales, WhatsApp, Instagram) y Páginas Amarillas. Los celulares del Círculo de ese tablero ya están en la lista de 407.

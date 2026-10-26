@@ -778,3 +778,29 @@ alter table sales_settings add column if not exists leads_sheet_url text;
 alter table sales_settings add column if not exists leads_sheet_name text;
 alter table sales_settings add column if not exists leads_sheet_synced_at timestamptz;
 alter table sales_settings add column if not exists leads_sheet_error text;
+
+-- ---------------------------------------------------------------------------
+-- Google Sheets: la planilla que Turnia mantiene al día en el Drive de quien conectó su cuenta
+-- (src/lib/sheets/). owner = 'turnia' es la de prospección y pedidos de demo; más adelante, una por
+-- clínica. Con el permiso drive.file Turnia solo ve las planillas que creó (o que le eligieron).
+-- ---------------------------------------------------------------------------
+create table if not exists sheets_connections (
+  id uuid primary key default gen_random_uuid(),
+  owner text not null unique,
+  account_email text,
+  -- Cifrados con AES-256-GCM (src/lib/calendar/crypto.ts): nunca en texto plano.
+  refresh_token text not null,
+  access_token text,
+  access_expires_at timestamptz,
+  spreadsheet_id text,
+  spreadsheet_url text,
+  status text not null default 'conectado' check (status in ('conectado', 'reconectar', 'sin_planilla')),
+  last_error text,
+  -- Una copia por vez: quién pidió copiar, quién está copiando y hasta cuándo quedó copiado.
+  sync_requested_at timestamptz,
+  sync_started_at timestamptz,
+  last_sync_at timestamptz,
+  connected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table sheets_connections enable row level security;

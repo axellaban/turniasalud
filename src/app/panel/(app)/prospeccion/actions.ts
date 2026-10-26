@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/panel-clinic";
+import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
 import {
   CHANNELS,
@@ -34,9 +35,11 @@ const fail = (e: unknown): ActionState => {
   throw e;
 };
 
+/** Después de cada cambio: el panel se refresca y la planilla de Google (si hay una) se copia de nuevo. */
 function refresh(id?: string) {
   revalidatePath("/panel/prospeccion");
   if (id) revalidatePath(`/panel/prospeccion/${id}`);
+  queueTurniaSheetSync();
 }
 
 /** Le escribió (o lo llamó, o lo visitó): suma el contacto y programa el seguimiento. */
