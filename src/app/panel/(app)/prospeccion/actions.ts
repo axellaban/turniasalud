@@ -3,7 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
-import { CHANNELS, OUTREACH_STATUSES, TEMPLATE_KEYS, normalizeInstagram, outreachPhone, type OutreachChannel, type OutreachStatus } from "@/lib/sales/outreach-messages";
+import {
+  CHANNELS,
+  OUTREACH_STATUSES,
+  PHONE_KINDS,
+  TEMPLATE_KEYS,
+  normalizeInstagram,
+  outreachPhone,
+  type OutreachChannel,
+  type OutreachStatus,
+  type PhoneKind,
+} from "@/lib/sales/outreach-messages";
 import {
   OutreachError,
   addOutreachNote,
@@ -75,7 +85,8 @@ export async function updateOutreachAction(_prev: ActionState, form: FormData): 
   await requireAdmin();
   const id = text(form, "id");
   const rawPhone = text(form, "phone");
-  const kind = text(form, "phone_kind") === "fijo" ? "fijo" : "movil";
+  const kindRaw = text(form, "phone_kind");
+  const kind: PhoneKind = (PHONE_KINDS as readonly string[]).includes(kindRaw) ? (kindRaw as PhoneKind) : "movil";
   const phone = rawPhone ? outreachPhone(rawPhone, kind) : null;
   if (rawPhone && !phone) return { ok: false, message: "Revisá el teléfono: código de área y número, por ejemplo 223 512-3456." };
   const rawInstagram = text(form, "instagram");
@@ -142,11 +153,13 @@ export async function importOutreachAction(_prev: ImportState, form: FormData): 
   if (raw.length > 3_000_000) return { ok: false, message: "El archivo es muy grande: dividilo en partes." };
   const preview = parseOutreachImport(raw);
   if (!preview.rows.length) return { ok: false, message: preview.problems[0]?.reason ?? "No encontramos filas para importar." };
-  const result = await importOutreach(preview.rows);
+  const overwrite = form.get("actualizar") === "1";
+  const result = await importOutreach(preview.rows, { overwrite });
   refresh();
+  const already = overwrite ? "con los datos del archivo" : "solo se completó lo que faltaba";
   return {
     ok: true,
-    message: `Listo: ${result.created} ${result.created === 1 ? "persona nueva" : "personas nuevas"}${result.updated ? ` y ${result.updated} que ya estaban (solo se completó lo que faltaba)` : ""}.`,
+    message: `Listo: ${result.created} ${result.created === 1 ? "persona nueva" : "personas nuevas"}${result.updated ? ` y ${result.updated} que ya estaban (${already})` : ""}.`,
     ...result,
   };
 }

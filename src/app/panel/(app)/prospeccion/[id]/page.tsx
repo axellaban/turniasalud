@@ -58,10 +58,10 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
           <Card>
             <h2 className="font-display text-xl text-brand-950">Contactar</h2>
             {p.suppressed && <p className="mt-2 text-sm font-medium text-red-700">Pidió no recibir más mensajes: no se le escribe ni lo llama Sofi.</p>}
-            {p.shared.length > 0 && (
+            {p.phone && (p.shared.length > 0 || isConsultorioLine(p)) && (
               <p className="mt-2 text-sm text-brand-900/75">
-                Mismo teléfono que {p.shared.map((s) => `${s.name}${s.touched ? " (ya contactado)" : ""}`).join(", ")}.
-                {isConsultorioLine(p) ? " Es el número del consultorio: el mensaje le pide a la recepción que se lo pase." : ""}
+                {p.shared.length > 0 && `Mismo teléfono que ${p.shared.map((s) => `${s.name}${s.touched ? " (ya contactado)" : ""}`).join(", ")}. `}
+                {isConsultorioLine(p) ? "Es el número del consultorio: el mensaje le pide a la recepción que se lo pase." : ""}
               </p>
             )}
             {plan.whatsapp ? (

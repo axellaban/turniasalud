@@ -2,8 +2,12 @@
 // la vista previa del navegador y la importación del servidor.
 
 import { parseTable } from "@/lib/patient-import";
-import { normalizeInstagram, outreachPhone } from "./outreach-messages";
+import { normalizeInstagram, outreachPhone, type PhoneKind } from "./outreach-messages";
 
+/**
+ * Una fila tal como viene en el archivo: lo que falta queda vacío (o null) para no pisar datos al
+ * actualizar. Al crear a alguien nuevo, el saludo es su primer nombre y la prioridad, 2.
+ */
 export type OutreachImportRow = {
   line: number;
   code: string | null;
@@ -15,11 +19,11 @@ export type OutreachImportRow = {
   address: string;
   specialty: string;
   phone: string | null;
-  phone_kind: "movil" | "fijo" | null;
+  phone_kind: PhoneKind | null;
   instagram: string | null;
   email: string | null;
   website: string | null;
-  priority: number;
+  priority: number | null;
   signals: string;
   source: string;
   notes: string;
@@ -107,7 +111,12 @@ export function parseOutreachImport(text: string): OutreachImportPreview {
     const name = get("name").replace(/\s+/g, " ");
     if (!name) return void problems.push({ line, reason: "Sin nombre." });
     const kindRaw = key(get("phone_kind"));
-    const kind = kindRaw.startsWith("movil") || kindRaw.startsWith("celular") ? "movil" : kindRaw.startsWith("fijo") ? "fijo" : null;
+    // «consultorio», «celular del consultorio», «recepción»: el WhatsApp del consultorio.
+    const kind: PhoneKind | null = /consultorio|recepcion/.test(kindRaw)
+      ? "consultorio"
+      : kindRaw.startsWith("movil") || kindRaw.startsWith("celular") ? "movil"
+      : kindRaw.startsWith("fijo") ? "fijo"
+      : null;
     const phone = outreachPhone(get("phone"), kind);
     if (get("phone") && !phone) problems.push({ line, reason: `Teléfono que no se pudo leer: ${get("phone")}. Se importa sin teléfono.` });
     const instagram = normalizeInstagram(get("instagram"));
@@ -121,7 +130,7 @@ export function parseOutreachImport(text: string): OutreachImportPreview {
       line,
       code: /^[a-z0-9][a-z0-9-]{2,39}$/.test(code) ? code : null,
       name,
-      greeting: get("greeting") || name.split(" ")[0],
+      greeting: get("greeting"),
       title: ["Dr.", "Dra."].includes(get("title")) ? get("title") : "",
       business_name: get("business_name"),
       zone: get("zone"),
@@ -132,7 +141,7 @@ export function parseOutreachImport(text: string): OutreachImportPreview {
       instagram,
       email,
       website: website(get("website")),
-      priority: priority >= 1 && priority <= 3 ? Math.round(priority) : 2,
+      priority: priority >= 1 && priority <= 3 ? Math.round(priority) : null,
       signals: get("signals"),
       source: get("source"),
       notes,

@@ -88,6 +88,40 @@ describe.runIf(base)("prospección a odontólogos", () => {
     await sql`delete from sales_outreach where name = 'Nueva Persona'`;
   });
 
+  it("al actualizar con el archivo, lo que trae reemplaza a lo cargado; al celular del consultorio le escribe a la recepción", async () => {
+    const alta = "codigo,nombre,saludo,tratamiento,consultorio,zona,telefono,tipo_telefono,prioridad,notas\narias-k2m,Rodrigo Arias,Rodrigo,Dr.,Consultorio Odontológico Arias,Mar del Plata,223 4123000,fijo,3,Del Círculo";
+    await actions.importOutreachAction(undefined, form({ text: alta }));
+    const web = [
+      "codigo,nombre,consultorio,telefono,tipo_telefono,web,instagram,notas",
+      "arias-k2m,Rodrigo Arias,AB Consultorios Odontológicos,223 562-7681,consultorio,abconsultorios.com,@ab.consultorios,Dueño de AB Consultorios (web)",
+    ].join("\n");
+    const read = async () =>
+      (await sql`select business_name, phone, phone_kind, website, instagram, notes, greeting, priority from sales_outreach where code = 'arias-k2m'`)[0];
+    // Sin marcar la casilla: completa la web y el Instagram y suma la nota; el consultorio y el teléfono quedan.
+    expect(await actions.importOutreachAction(undefined, form({ text: web }))).toMatchObject({ ok: true, created: 0, updated: 1 });
+    expect(await read()).toEqual({
+      business_name: "Consultorio Odontológico Arias", phone: "+542234123000", phone_kind: "fijo", website: "https://abconsultorios.com/",
+      instagram: "ab.consultorios", notes: "Del Círculo\nDueño de AB Consultorios (web)", greeting: "Rodrigo", priority: 3,
+    });
+    // Marcada: manda el archivo. Lo que no trae (saludo, prioridad) queda y la nota no se repite.
+    expect(await actions.importOutreachAction(undefined, form({ text: web, actualizar: "1" }))).toMatchObject({
+      ok: true, created: 0, updated: 1, message: expect.stringContaining("con los datos del archivo"),
+    });
+    expect(await read()).toEqual({
+      business_name: "AB Consultorios Odontológicos", phone: "+5492235627681", phone_kind: "consultorio", website: "https://abconsultorios.com/",
+      instagram: "ab.consultorios", notes: "Del Círculo\nDueño de AB Consultorios (web)", greeting: "Rodrigo", priority: 3,
+    });
+    // Es el WhatsApp del consultorio: el primer mensaje es el de la recepción, a nombre del Dr. Arias.
+    const { rows } = await outreach.listOutreach({ view: "todos", channel: "consultorio" });
+    expect(rows.map((p) => p.code)).toEqual(["arias-k2m"]);
+    const detail = (await import("@/app/panel/(app)/prospeccion/[id]/page")).default;
+    const ficha = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: await id("arias-k2m") }), searchParams: Promise.resolve({}) }));
+    expect(ficha).toContain("Es el número del consultorio: el mensaje le pide a la recepción que se lo pase.");
+    expect(ficha).toContain("Le armé al Dr. Arias una demo");
+    expect(ficha).toContain('<option value="consultorio" selected="">Celular del consultorio</option>');
+    await sql`delete from sales_outreach where code = 'arias-k2m'`;
+  });
+
   it("la cola de hoy va por prioridad, respeta la meta y no repite un número compartido", async () => {
     const { fresh } = await outreach.outreachQueue({}, 50);
     // Sin contacto no entra; los demás, por prioridad (y, a igual prioridad, primero los celulares).

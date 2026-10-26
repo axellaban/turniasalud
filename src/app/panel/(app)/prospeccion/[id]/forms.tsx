@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Field, Notice, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { Outreach } from "@/lib/sales/outreach";
-import { displayOutreachPhone } from "@/lib/sales/outreach-messages";
+import { PHONE_KINDS, PHONE_KIND_LABEL, displayOutreachPhone } from "@/lib/sales/outreach-messages";
 import { noteAction, updateOutreachAction } from "../actions";
 
 export function EditOutreachForm({ p }: { p: Outreach }) {
@@ -40,14 +40,17 @@ export function EditOutreachForm({ p }: { p: Outreach }) {
           <input name="zone" defaultValue={p.zone} maxLength={80} className={inputClass} />
         </Field>
       </div>
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem]">
         <Field label="Teléfono" hint={p.phone ? `Hoy: ${displayOutreachPhone(p.phone)}` : "Con código de área: 223 512-3456"}>
           <input name="phone" type="tel" defaultValue={p.phone ?? ""} className={inputClass} />
         </Field>
         <Field label="Tipo">
           <select name="phone_kind" defaultValue={p.phone_kind ?? "movil"} className={inputClass}>
-            <option value="movil">Celular</option>
-            <option value="fijo">Fijo</option>
+            {PHONE_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {PHONE_KIND_LABEL[kind]}
+              </option>
+            ))}
           </select>
         </Field>
       </div>

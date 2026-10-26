@@ -725,7 +725,7 @@ create table if not exists sales_outreach (
   address text not null default '',
   specialty text not null default '',
   phone text check (phone is null or phone ~ '^\+54[0-9]{10,11}$'),
-  phone_kind text check (phone_kind in ('movil', 'fijo')),
+  phone_kind text check (phone_kind in ('movil', 'consultorio', 'fijo')),
   instagram text,
   email text,
   website text,
@@ -750,6 +750,9 @@ create table if not exists sales_outreach (
 create index if not exists sales_outreach_queue_idx on sales_outreach (status, next_action_on, priority);
 create index if not exists sales_outreach_phone_idx on sales_outreach (phone);
 alter table sales_outreach enable row level security;
+-- «consultorio»: el celular del consultorio, el WhatsApp que figura en su web (lo lee la recepción).
+alter table sales_outreach drop constraint if exists sales_outreach_phone_kind_check;
+alter table sales_outreach add constraint sales_outreach_phone_kind_check check (phone_kind in ('movil', 'consultorio', 'fijo'));
 
 -- Historia de cada contacto: mensajes, llamadas, visitas, respuestas, cambios de estado y la demo.
 create table if not exists sales_outreach_events (

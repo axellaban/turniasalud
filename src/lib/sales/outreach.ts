@@ -141,6 +141,7 @@ function filters(f: OutreachFilter) {
     : sql``;
   const channel =
     f.channel === "celular" ? sql`and o.phone_kind = 'movil'`
+    : f.channel === "consultorio" ? sql`and o.phone_kind = 'consultorio'`
     : f.channel === "fijo" ? sql`and o.phone_kind = 'fijo'`
     : f.channel === "instagram" ? sql`and o.instagram is not null`
     : f.channel === "sin" ? sql`and o.phone is null and o.instagram is null`
@@ -380,9 +381,11 @@ function newCode(name: string): string {
 
 /**
  * Importa la lista. Las personas que ya estaban (mismo código, o mismo nombre y teléfono) solo
- * completan los datos que les faltan: no se pisa lo que se corrigió en el panel ni su estado.
+ * completan los datos que les faltan y suman las notas nuevas: no se pisa lo que se corrigió en el
+ * panel. Con `overwrite`, lo que trae el archivo reemplaza a lo cargado. El nombre, el estado y los
+ * contactos no cambian nunca.
  */
-export async function importOutreach(rows: OutreachImportRow[]): Promise<{ created: number; updated: number }> {
+export async function importOutreach(rows: OutreachImportRow[], { overwrite = false } = {}): Promise<{ created: number; updated: number }> {
   if (!rows.length) return { created: 0, updated: 0 };
   const existing = await sql<Array<{ code: string; name: string; phone: string | null }>>`select code, lower(name) as name, phone from sales_outreach`;
   const byCode = new Set(existing.map((e) => e.code));
@@ -400,11 +403,13 @@ export async function importOutreach(rows: OutreachImportRow[]): Promise<{ creat
     });
   }
   let created = 0;
-  let updated = 0;
+  const updated: string[] = [];
   await sql.begin(async (tx) => {
     for (let i = 0; i < records.length; i += 500) {
-      const result = await tx<Array<{ inserted: boolean }>>`
-        insert into sales_outreach ${tx(records.slice(i, i + 500))}
+      // A quien se crea: su primer nombre como saludo y prioridad 2 si el archivo no dice otra cosa.
+      const chunk = records.slice(i, i + 500).map((r) => ({ ...r, greeting: r.greeting || r.name.split(" ")[0], priority: r.priority ?? 2 }));
+      const result = await tx<Array<{ code: string; inserted: boolean }>>`
+        insert into sales_outreach ${tx(chunk)}
         on conflict (code) do update set
           name = sales_outreach.name,
           greeting = case when sales_outreach.greeting = '' then excluded.greeting else sales_outreach.greeting end,
@@ -420,12 +425,29 @@ export async function importOutreach(rows: OutreachImportRow[]): Promise<{ creat
           website = coalesce(sales_outreach.website, excluded.website),
           signals = case when sales_outreach.signals = '' then excluded.signals else sales_outreach.signals end,
           source = case when sales_outreach.source = '' then excluded.source else sales_outreach.source end,
-          notes = case when sales_outreach.notes = '' then excluded.notes else sales_outreach.notes end,
+          notes = case
+            when excluded.notes = '' or position(excluded.notes in sales_outreach.notes) > 0 then sales_outreach.notes
+            when sales_outreach.notes = '' then excluded.notes
+            else sales_outreach.notes || E'\n' || excluded.notes end,
           updated_at = now()
-        returning (xmax = 0) as inserted`;
+        returning code, (xmax = 0) as inserted`;
       created += result.filter((r) => r.inserted).length;
-      updated += result.filter((r) => !r.inserted).length;
+      updated.push(...result.filter((r) => !r.inserted).map((r) => r.code));
+    }
+    if (overwrite) {
+      const byRecord = new Map(records.map((r) => [r.code, r]));
+      for (const code of updated) {
+        const fields = fromFile(byRecord.get(code)!);
+        if (Object.keys(fields).length) await tx`update sales_outreach set ${tx(fields)}, updated_at = now() where code = ${code}`;
+      }
     }
   });
-  return { created, updated };
+  return { created, updated: updated.length };
+}
+
+/** Lo que el archivo trae con dato, para reemplazar a lo cargado (el nombre no se toca). */
+function fromFile(r: Omit<OutreachImportRow, "line">) {
+  const keys = ["greeting", "title", "business_name", "zone", "address", "specialty", "instagram", "email", "website", "priority", "signals", "source"] as const;
+  const fields = Object.fromEntries(keys.filter((key) => r[key]).map((key) => [key, r[key]]));
+  return r.phone ? { ...fields, phone: r.phone, phone_kind: r.phone_kind } : fields;
 }

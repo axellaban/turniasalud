@@ -36,8 +36,8 @@ export function ImportOutreachForm() {
     );
   }
 
-  const phones = preview ? preview.rows.filter((r) => r.phone_kind === "movil").length : 0;
-  const landlines = preview ? preview.rows.filter((r) => r.phone_kind === "fijo").length : 0;
+  const count = (kind: string) => (preview ? preview.rows.filter((r) => r.phone_kind === kind).length : 0);
+  const [phones, business, landlines] = [count("movil"), count("consultorio"), count("fijo")];
   return (
     <form action={action} className="space-y-5">
       <input type="hidden" name="text" value={text} />
@@ -77,7 +77,8 @@ export function ImportOutreachForm() {
       {preview && (
         <div className="rounded-xl bg-brand-50/60 p-4 text-sm">
           <p className="font-medium text-brand-950">
-            {preview.rows.length.toLocaleString("es-AR")} {preview.rows.length === 1 ? "persona" : "personas"} · {phones} con celular · {landlines} con fijo
+            {preview.rows.length.toLocaleString("es-AR")} {preview.rows.length === 1 ? "persona" : "personas"} · {phones} con celular
+            {business > 0 && ` · ${business} con el celular del consultorio`} · {landlines} con fijo
             {preview.problems.length > 0 && <span className="font-normal text-sun-700"> · {preview.problems.length} avisos</span>}
           </p>
           {preview.rows.length > 0 && (
@@ -104,6 +105,16 @@ export function ImportOutreachForm() {
           )}
         </div>
       )}
+
+      <label className="flex items-start gap-2 text-sm text-brand-900">
+        <input type="checkbox" name="actualizar" value="1" className="mt-1 size-4 accent-brand-600" />
+        <span>
+          Reemplazar los datos de los que ya están por los del archivo
+          <span className="block text-xs text-brand-900/65">
+            Sin marcarlo, a los que ya están solo se les completa lo que falta. El nombre, el estado y los contactos no cambian nunca.
+          </span>
+        </span>
+      </label>
 
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending || !preview?.rows.length} className={buttonClass}>
