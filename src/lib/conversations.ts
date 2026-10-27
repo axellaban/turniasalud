@@ -2,8 +2,11 @@ import "server-only";
 import { json, sql } from "./db";
 import { INBOUND_CONTEXT, findPatientByPhone, isUuid, resolveClinic } from "./clinic";
 import { normalizePhone } from "./phone";
+import { mergeMemory } from "./memory";
 import { notifyN8n } from "./n8n";
 import type { Conversation, Patient } from "./types";
+
+export { mergeMemory };
 
 export type PostCallPayload = {
   agent_id: string;
@@ -50,13 +53,6 @@ export function detectChannel(data: PostCallPayload, phone: string): Conversatio
   return /^\d+$/.test(phone) ? "whatsapp" : "web";
 }
 
-/** Combina la memoria previa con lo nuevo, sin crecer indefinidamente. */
-export function mergeMemory(previous: string | null, addition: string | null, max = 800): string | null {
-  if (!addition) return previous;
-  if (previous?.includes(addition)) return previous;
-  const merged = previous ? `${previous} ${addition}` : addition;
-  return merged.length > max ? `…${merged.slice(merged.length - max)}` : merged;
-}
 
 export async function recordConversation(data: PostCallPayload): Promise<void> {
   const vars = data.conversation_initiation_client_data?.dynamic_variables ?? {};

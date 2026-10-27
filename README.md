@@ -60,7 +60,7 @@ La app se conecta directo a Postgres con una sola variable, `DATABASE_URL`, solo
 3. **Deploy**. Cuando termine, abrí `https://tu-app.vercel.app/panel` e ingresá con `PANEL_PASSWORD`.
 
 ### 3. Agente en ElevenLabs
-1. En el panel → **Configuración** → **Crear / actualizar agente**. Esto crea en tu cuenta de ElevenLabs el agente "Turnia · …" con sus 9 herramientas, el prompt en rioplatense, una voz argentina y el webhook de inicio. Si cargaste un *teléfono para pasar llamadas*, suma la transferencia a una persona (solo en llamadas).
+1. En el panel → **Configuración** → **Crear / actualizar agente**. Esto crea en tu cuenta de ElevenLabs el agente "Turnia · …" con sus 10 herramientas, el prompt en rioplatense, una voz argentina y el webhook de inicio. Si cargaste un *teléfono para pasar llamadas*, suma la transferencia a una persona (solo en llamadas).
 2. En ElevenLabs → **Agents → Settings → Post-call webhook**: creá un webhook con la URL `https://tu-app.vercel.app/api/elevenlabs/post-call`. Copiá el **secreto** que te muestra, cargalo en Vercel como `ELEVENLABS_WEBHOOK_SECRET` y hacé **Redeploy**.
 3. Ingresá al panel y probalo en `https://tu-app.vercel.app/demo` (chat o voz). La demo requiere sesión del panel. Los turnos que reserves aparecen en el panel → Agenda, y la conversación en → Conversaciones.
 

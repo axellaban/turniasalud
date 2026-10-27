@@ -5,12 +5,13 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { syncCalendarLater } from "@/lib/calendar/sync";
 import { sql } from "@/lib/db";
-import { getClinic, isUuid } from "@/lib/clinic";
+import { findPatientByPhone, getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
+import { mergeDuplicates } from "@/lib/patients";
 import { addDaysKey, humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
@@ -178,8 +179,7 @@ export async function lookupPatient(form: FormData): Promise<KnownPatient | null
   const clinic = await getPanelClinic(form);
   const phone = normalizePhone(text(form, "phone"));
   if (!/^\d{10,15}$/.test(phone)) return null;
-  const [patient] = await sql<Array<{ id: string; full_name: string | null; coverage: string | null }>>`
-    select id, full_name, coverage from patients where clinic_id = ${clinic.id} and phone = ${phone}`;
+  const patient = await findPatientByPhone(clinic.id, phone);
   if (!patient) return null;
   const next = await sql<Array<{ starts_at: string; type_name: string }>>`
     select a.starts_at, t.name as type_name from appointments a join appointment_types t on t.id = a.appointment_type_id
@@ -281,6 +281,18 @@ export async function setContactOptOut(form: FormData) {
   const clinic = await getPanelClinic(form);
   await sql`update patients set contact_opt_out = ${form.get("opt_out") === "true"} where id = ${id} and clinic_id = ${clinic.id}`;
   revalidatePath(`/panel/pacientes/${id}`);
+}
+
+/** Ficha del paciente → «Unificar en esta ficha»: junta las fichas repetidas con el mismo DNI. */
+export async function mergePatientDuplicates(form: FormData) {
+  await requireSession();
+  const id = uuid(form, "id");
+  if (!id) return;
+  const clinic = await getPanelClinic(form);
+  const merged = await mergeDuplicates(clinic.id, id);
+  revalidatePath("/panel/pacientes");
+  revalidatePath(`/panel/pacientes/${id}`);
+  redirect(`/panel/pacientes/${id}?unificadas=${merged}`);
 }
 
 export async function resolveTaskAction(_prev: FormState | undefined, form: FormData): Promise<FormState> {

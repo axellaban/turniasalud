@@ -5,20 +5,24 @@ import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { formatDate, formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
-import { Card, CHANNEL_LABEL, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
-import { setContactOptOut } from "../../../actions";
+import { Card, CHANNEL_LABEL, Notice, PageHeader, StatusBadge, buttonClass, smallButtonClass } from "@/components/ui";
+import { mergePatientDuplicates, setContactOptOut } from "../../../actions";
+import { duplicatesOf } from "@/lib/patients";
 import { NextControl } from "./next-control";
 import type { Patient, PatientVisit } from "@/lib/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Paciente · Panel" };
 
-export default async function PatientDetail({ params }: PageProps<"/panel/pacientes/[id]">) {
+export default async function PatientDetail({ params, searchParams }: PageProps<"/panel/pacientes/[id]">) {
   const { id } = await params;
+  // Las pruebas renderizan la ficha sin searchParams.
+  const { unificadas } = (await searchParams) ?? {};
+  const mergedCount = typeof unificadas === "string" ? Number(unificadas) : 0;
   const clinic = await getPanelClinic();
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
-  const [appointments, conversations, tasks, visits] = await Promise.all([
+  const [appointments, conversations, tasks, visits, duplicates] = await Promise.all([
     sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, t.name as type_name
       from appointments a
@@ -36,6 +40,7 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
     sql<Array<PatientVisit & { type_name: string | null }>>`
       select v.*, t.name as type_name from patient_visits v left join appointment_types t on t.id = v.appointment_type_id
       where v.patient_id = ${p.id} order by v.visited_at desc limit 30`,
+    duplicatesOf(p),
   ]);
   const tz = clinic.timezone;
 
@@ -55,6 +60,41 @@ export default async function PatientDetail({ params }: PageProps<"/panel/pacien
         ← Pacientes
       </Link>
       <PageHeader title={p.full_name ?? "Paciente sin nombre"} />
+      {mergedCount > 0 && (
+        <Notice tone="success" className="mb-4">
+          {mergedCount === 1 ? "Se unificó 1 ficha repetida" : `Se unificaron ${mergedCount} fichas repetidas`} en esta: sus turnos,
+          conversaciones y visitas ahora están acá.
+        </Notice>
+      )}
+      {duplicates.length > 0 && (
+        <Card className="mb-6 border-sun-300 bg-sun-100/40">
+          <h2 className="text-sm font-semibold text-brand-950">
+            {duplicates.length === 1 ? "Hay otra ficha" : `Hay ${duplicates.length} fichas más`} con el DNI {p.dni}
+          </h2>
+          <p className="mt-1 text-xs text-brand-900/70">
+            Al unificarlas, sus turnos, conversaciones, pedidos y visitas pasan a esta ficha, se completan los datos que le falten y las
+            repetidas se borran. Sus números quedan asociados a esta ficha.
+          </p>
+          <ul className="mt-3 divide-y divide-brand-900/5 text-sm">
+            {duplicates.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+                <Link href={`/panel/pacientes/${d.id}`} className="font-medium text-brand-800 hover:underline">
+                  {d.full_name ?? "Sin nombre"}
+                </Link>
+                <span className="text-xs text-brand-900/65">{displayPhone(d.phone)}</span>
+                <span className="text-xs text-brand-900/65">
+                  {d.last_contact_at ? `Último contacto: ${formatDate(d.last_contact_at, tz)}` : "Sin contacto"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <form action={mergePatientDuplicates} className="mt-3">
+            <input type="hidden" name="id" value={p.id} />
+            <input type="hidden" name="clinic_id" value={clinic.id} />
+            <button className={buttonClass}>Unificar en esta ficha</button>
+          </form>
+        </Card>
+      )}
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
           <Card>
