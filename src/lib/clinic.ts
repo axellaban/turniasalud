@@ -3,6 +3,7 @@ import { sql } from "./db";
 import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
+import { patientForPhone } from "./patients";
 import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule, ScheduleBlock, Task } from "./types";
 
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
@@ -111,8 +112,14 @@ export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], time
   return blockLines.length ? `${text}\n\nDÍAS SIN ATENCIÓN (próximos 60 días):\n${blockLines.join("\n")}` : text;
 }
 
+/** Sin ficha para este número: puede ser nuevo o un paciente que escribe desde otro lado. */
+export const NO_PATIENT_CONTEXT =
+  "No hay una ficha para este número. Si dice o da a entender que ya es paciente, pedile DNI y fecha de nacimiento y usá buscar_paciente antes de pedir cualquier otro dato. Si es nuevo, pedí nombre y apellido, DNI y cobertura antes de reservar.";
+
+const loaded = (value: unknown, label = "cargado") => (value ? label : "sin dato");
+
 export async function patientContextText(clinic: Clinic, patient: Patient | null): Promise<string> {
-  if (!patient) return "Paciente nuevo: todavía no tenemos datos. Pedí nombre y apellido, DNI y cobertura antes de reservar.";
+  if (!patient) return NO_PATIENT_CONTEXT;
   const upcoming = await sql<
     Array<Pick<Appointment, "id" | "starts_at" | "status"> & { professional: string; type_name: string }>
   >`
@@ -128,10 +135,43 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
     where patient_id = ${patient.id} and (status <> 'resuelta' or responded_at > now() - interval '30 days')
     order by created_at desc
     limit 5`;
+  // Última vez que vino: turnos atendidos en Turnia o visitas traídas de la importación.
+  const [last] = await sql<Array<{ visited_at: string; service: string | null }>>`
+    select visited_at, service from (
+      select (a.starts_at at time zone ${clinic.timezone})::date::text as visited_at, t.name as service
+      from appointments a join appointment_types t on t.id = a.appointment_type_id
+      where a.patient_id = ${patient.id} and (a.status = 'atendido' or (a.status = 'confirmado' and a.ends_at < now()))
+      union all
+      select v.visited_at::text, coalesce(t.name, nullif(v.service, '')) as service
+      from patient_visits v left join appointment_types t on t.id = v.appointment_type_id
+      where v.patient_id = ${patient.id}
+    ) visits
+    order by visited_at desc
+    limit 1`;
+  const particular = /particular/i.test(patient.coverage ?? "");
+  const missing = [
+    !patient.full_name && "nombre y apellido",
+    !patient.dni && "DNI",
+    !patient.birth_date && "fecha de nacimiento",
+    !patient.email && "mail",
+    !patient.coverage && "cobertura",
+    patient.coverage && !particular && !patient.member_number && "número de afiliado",
+  ].filter(Boolean);
+  const yearAgo = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 10);
   const lines = [
+    patient.dni
+      ? "Ya tiene ficha: no le vuelvas a pedir los datos que están cargados."
+      : "Hay una ficha incompleta para este número (sin DNI). Si dice que ya es paciente, pedile DNI y fecha de nacimiento y usá buscar_paciente; si no, pedí los datos que faltan.",
     `Nombre: ${patient.full_name ?? "sin dato"}`,
     `DNI: ${patient.dni ?? "sin dato"}`,
+    `Fecha de nacimiento: ${loaded(patient.birth_date, "cargada")}`,
+    `Mail: ${loaded(patient.email)}`,
     `Cobertura: ${patient.coverage ?? "sin dato"}${patient.coverage_plan ? ` plan ${patient.coverage_plan}` : ""}`,
+    patient.coverage && !particular && `Número de afiliado: ${loaded(patient.member_number)}`,
+    missing.length ? `Faltan en la ficha (pedilos antes de reservar): ${missing.join(", ")}` : "La ficha está completa.",
+    last
+      ? `Ya se atendió en el consultorio. Última visita: ${formatDate(`${last.visited_at}T12:00:00Z`, "UTC")}${last.service ? ` (${last.service})` : ""}${last.visited_at < yearAgo ? ", hace más de un año" : ""}. No le preguntes si ya vino antes.`
+      : "Todavía no tiene visitas registradas en el consultorio.",
     patient.preferences && `Preferencias: ${patient.preferences}`,
     patient.memory_summary && `Lo que sabemos de conversaciones anteriores: ${patient.memory_summary}`,
     upcoming.length
@@ -154,10 +194,9 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
   return lines.filter(Boolean).join("\n");
 }
 
+/** Ficha del paciente que escribe desde este número (o de otro número suyo ya identificado). */
 export async function findPatientByPhone(clinicId: string, phone: string): Promise<Patient | null> {
-  if (!phone) return null;
-  const [patient] = await sql<Patient[]>`select * from patients where clinic_id = ${clinicId} and phone = ${phone}`;
-  return patient ?? null;
+  return patientForPhone(sql, clinicId, phone);
 }
 
 /** Variables dinámicas que recibe el agente al empezar cada conversación. */

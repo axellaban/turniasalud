@@ -1,6 +1,7 @@
 import "server-only";
 import { sql, pgErrorCode, type TransactionSql } from "../db";
-import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid } from "../clinic";
+import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText } from "../clinic";
+import { identifyPatient, normalizeDni, sameCoverage, type Identification } from "../patients";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree } from "../slots";
 import { env } from "../env";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
@@ -65,6 +66,24 @@ async function ensurePatient(ctx: ToolContext, name?: string): Promise<Patient> 
 // ---------------------------------------------------------------------------
 // registrar_paciente
 // ---------------------------------------------------------------------------
+/** Lo que se le dice al agente cuando un DNI no se pudo unir con su ficha. */
+function identificationNotice(result: Exclude<Identification, { estado: "vinculado" }>): string {
+  switch (result.estado) {
+    case "sin_ficha":
+      return "No hay ninguna ficha con ese DNI. Si dice que ya es paciente, puede que todavía no esté cargado: explicale que vas a completar su ficha, pedí los datos que falten y guardalos con registrar_paciente. Para elegir el turno, seguí las instrucciones de la clínica para pacientes que ya vinieron.";
+    case "falta_fecha":
+      return "Para confirmar quién es necesito su fecha de nacimiento. Pedísela y volvé a llamar a buscar_paciente con el DNI y la fecha. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
+    case "falta_nombre":
+      return "Para confirmar quién es necesito su nombre y apellido. Pedíselos y volvé a llamar a buscar_paciente con el DNI y el nombre. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
+    case "no_coincide":
+      return "Los datos no coinciden con la ficha de ese DNI. No le des ningún dato de esa ficha ni le digas qué no coincide. Pedile que revise el DNI y la fecha de nacimiento; si siguen sin coincidir, seguí como con un paciente sin ficha o ofrecele comunicarse con recepción.";
+    case "otra_persona":
+      return `Este número ya es la ficha de ${result.patient.full_name ?? "otra persona"}, y ese DNI es de otro paciente. Hoy cada número tiene una sola ficha: no cambies los datos de esta. Si quiere un turno para otra persona, creá una tarea de tipo derivacion_humana con sus datos para que recepción lo agende.`;
+  }
+}
+
+type PatientSummary = { nombre: string | null; dni: string | null; cobertura: string | null; plan: string | null; numero_afiliado: string | null };
+
 export async function registerPatient(
   ctx: ToolContext,
   input: {
@@ -78,24 +97,66 @@ export async function registerPatient(
     preferencias?: string;
     no_recibir_mensajes?: boolean;
   },
-) {
-  const patient = await ensurePatient(ctx, input.nombre_completo);
+): Promise<{ ok: true; mensaje: string; paciente: PatientSummary | null; ficha?: string }> {
+  const phone = normalizePhone(ctx.patientPhone);
+  const birthDate = parseDateKey(input.fecha_nacimiento);
+  const dni = input.dni ? normalizeDni(input.dni) : null;
+  const notices: string[] = [];
+  if (input.dni && !dni) notices.push("El DNI no parece válido: pedíselo de nuevo, solo números.");
+
+  // Un DNI que ya está en otra ficha no crea un paciente repetido: si confirma
+  // quién es, la conversación se une a esa ficha; si no, el DNI no se guarda.
+  let saveDni = Boolean(dni);
+  let joined = false;
+  if (dni && phone && phone !== "desconocido") {
+    const current = await findPatientByPhone(ctx.clinicId, phone);
+    if (current?.dni !== dni) {
+      const [taken] = await sql`
+        select 1 from patients where clinic_id = ${ctx.clinicId} and dni = ${dni} ${current ? sql`and id <> ${current.id}` : sql``} limit 1`;
+      if (taken) {
+        const result = await identifyPatient(ctx.clinicId, phone, {
+          dni,
+          birthDate: birthDate ?? current?.birth_date,
+          name: input.nombre_completo ?? current?.full_name,
+        });
+        if (result.estado === "vinculado") joined = true;
+        else {
+          saveDni = false;
+          notices.push(identificationNotice(result));
+          if (result.estado === "otra_persona") return { ok: true, mensaje: notices.join(" "), paciente: null };
+        }
+      }
+    }
+  }
+
+  const patient = await ensurePatient(ctx, joined ? undefined : input.nombre_completo);
   const patch: Partial<Patient> = { last_contact_at: new Date().toISOString() };
-  if (input.nombre_completo) patch.full_name = input.nombre_completo;
-  if (input.dni) patch.dni = input.dni.replace(/\D/g, "");
-  if (input.fecha_nacimiento && parseDateKey(input.fecha_nacimiento)) patch.birth_date = parseDateKey(input.fecha_nacimiento);
+  if (input.nombre_completo && !(joined && patient.full_name)) patch.full_name = input.nombre_completo;
+  if (dni && saveDni) patch.dni = dni;
+  if (birthDate && !(joined && patient.birth_date)) patch.birth_date = birthDate;
   if (input.email) patch.email = input.email;
-  if (input.cobertura) patch.coverage = input.cobertura;
+  if (input.cobertura) {
+    patch.coverage = input.cobertura;
+    // Cambió de cobertura: el plan y el afiliado de la anterior ya no valen.
+    if (patient.coverage && !sameCoverage(patient.coverage, input.cobertura)) {
+      patch.coverage_plan = input.plan ?? null;
+      patch.member_number = input.numero_afiliado ?? null;
+      if (!input.plan && !/particular/i.test(input.cobertura)) notices.push("Cambió de cobertura: pedile el plan y el número de afiliado nuevos.");
+    }
+  }
   if (input.plan) patch.coverage_plan = input.plan;
   if (input.numero_afiliado) patch.member_number = input.numero_afiliado;
   if (input.preferencias) patch.preferences = input.preferencias;
   if (typeof input.no_recibir_mensajes === "boolean") patch.contact_opt_out = input.no_recibir_mensajes;
   const [updated] = await sql<Patient[]>`update patients set ${sql(patch)} where id = ${patient.id} returning *`;
+  const saved = updated.contact_opt_out && input.no_recibir_mensajes
+    ? "Listo: no le vamos a mandar más campañas ni avisos. Los recordatorios de sus propios turnos siguen llegando."
+    : joined
+      ? "Ya era paciente: confirmé quién es y esta conversación quedó unida a su ficha. No le vuelvas a pedir los datos cargados; pedí solo los que faltan."
+      : "Datos del paciente guardados.";
   return {
     ok: true,
-    mensaje: updated.contact_opt_out && input.no_recibir_mensajes
-      ? "Listo: no le vamos a mandar más campañas ni avisos. Los recordatorios de sus propios turnos siguen llegando."
-      : "Datos del paciente guardados.",
+    mensaje: [saved, ...notices].join(" "),
     paciente: {
       nombre: updated.full_name,
       dni: updated.dni,
@@ -103,6 +164,36 @@ export async function registerPatient(
       plan: updated.coverage_plan,
       numero_afiliado: updated.member_number,
     },
+    ...(joined ? { ficha: await patientContextText(await getClinic(ctx.clinicId), updated) } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// buscar_paciente
+// ---------------------------------------------------------------------------
+export async function findPatientByDni(
+  ctx: ToolContext,
+  input: { dni: string; fecha_nacimiento?: string; nombre_completo?: string },
+) {
+  const phone = normalizePhone(ctx.patientPhone);
+  if (!phone || phone === "desconocido") throw new ToolError("No tengo el teléfono del paciente para identificarlo.");
+  const dni = normalizeDni(input.dni);
+  if (!dni) return { ok: true, encontrado: false, mensaje: "Ese DNI no parece válido. Pedíselo de nuevo, solo números." };
+  const result = await identifyPatient(ctx.clinicId, phone, {
+    dni,
+    birthDate: parseDateKey(input.fecha_nacimiento),
+    name: input.nombre_completo,
+  });
+  if (result.estado !== "vinculado") {
+    return { ok: true, encontrado: result.estado === "sin_ficha" ? false : null, mensaje: identificationNotice(result) };
+  }
+  await sql`update patients set last_contact_at = now() where id = ${result.patient.id}`;
+  return {
+    ok: true,
+    encontrado: true,
+    mensaje:
+      "Es paciente del consultorio y quedó identificado: esta conversación ya usa su ficha. Saludalo por su nombre, no le vuelvas a pedir los datos cargados y pedí solo los que faltan.",
+    ficha: await patientContextText(await getClinic(ctx.clinicId), result.patient),
   };
 }
 

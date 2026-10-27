@@ -804,3 +804,22 @@ create table if not exists sheets_connections (
   updated_at timestamptz not null default now()
 );
 alter table sheets_connections enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Otros números de un mismo paciente. Cuando alguien que ya es paciente escribe
+-- desde otro número (o desde la demo web) y se confirma quién es por DNI, ese
+-- número queda apuntando a su ficha en lugar de crear una nueva.
+-- ---------------------------------------------------------------------------
+create table if not exists patient_phones (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  phone text not null,
+  patient_id uuid not null references patients(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (clinic_id, phone)
+);
+create index if not exists patient_phones_patient_idx on patient_phones (patient_id);
+alter table patient_phones enable row level security;
+
+-- Buscar al paciente por DNI (agente y unificación de fichas repetidas).
+create index if not exists patients_dni_idx on patients (clinic_id, dni) where dni is not null;

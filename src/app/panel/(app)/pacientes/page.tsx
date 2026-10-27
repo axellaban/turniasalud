@@ -14,8 +14,10 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
   const { q } = await searchParams;
   const search = typeof q === "string" ? q.trim() : "";
   const pattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const rows = await sql<Patient[]>`
-    select * from patients
+  const rows = await sql<Array<Patient & { same_dni: number }>>`
+    select p.*,
+      (select count(*) from patients d where d.clinic_id = p.clinic_id and d.dni = p.dni)::int as same_dni
+    from patients p
     where clinic_id = ${clinic.id}
       ${search ? sql`and (full_name ilike ${pattern} or phone ilike ${pattern} or dni ilike ${pattern})` : sql``}
     order by last_contact_at desc nulls last, created_at desc
@@ -55,7 +57,12 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
                     <Link href={`/panel/pacientes/${p.id}`} className="font-medium text-brand-950 hover:underline">
                       {p.full_name ?? "Sin nombre"}
                     </Link>
-                    {p.dni && <p className="text-xs text-brand-900/65">DNI {p.dni}</p>}
+                    {p.dni && (
+                      <p className="text-xs text-brand-900/65">
+                        DNI {p.dni}
+                        {p.same_dni > 1 && <span className="ml-1.5 font-medium text-sun-700">· {p.same_dni} fichas con este DNI</span>}
+                      </p>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-brand-900/70">{displayPhone(p.phone)}</td>
                   <td className="px-5 py-3 text-brand-900/70">

@@ -8,6 +8,7 @@ import {
   checkAvailability,
   confirmAppointment,
   createTask,
+  findPatientByDni,
   joinWaitlist,
   listPatientAppointments,
   registerPatient,
@@ -20,6 +21,7 @@ export const dynamic = "force-dynamic";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown>> = {
+  buscar_paciente: findPatientByDni,
   registrar_paciente: registerPatient,
   consultar_disponibilidad: checkAvailability,
   reservar_turno: bookAppointment,

@@ -1,6 +1,6 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 26/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 27/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
@@ -56,7 +56,8 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] El consultorio Guerra–Mininni (demo conservada) tiene que entrar con su código y cargar sus reglas reales. El código lo crea el administrador en Panel → Configuración → «Acceso del consultorio» y se manda por WhatsApp desde ahí.
 - [x] **Google Calendar** (24/10): credenciales en Vercel, reintentos en n8n y conexión probada en vivo por el usuario (demo «Marcos», el turno apareció en su calendario). Para clínicas reales falta publicar la app y pasar la verificación de Google. Ver [`GOOGLE_CALENDAR.md`](GOOGLE_CALENDAR.md).
 - [ ] **Avisar al paciente cuando la clínica cancela o mueve un turno.** Hoy el panel avisa que hay que hacerlo a mano. Se puede mandar por WhatsApp cuando el canal esté conectado.
-- [ ] **Familias con un mismo celular.** Hoy un celular es un paciente: si una madre saca turno para dos hijos, quedan en la misma ficha. Hace falta «titular y familiares» (cambia el esquema y cómo el agente identifica al paciente).
+- [ ] **Familias con un mismo celular.** Hoy un celular es un paciente: si una madre saca turno para dos hijos, quedan en la misma ficha. Hace falta «titular y familiares» (cambia el esquema y cómo el agente identifica al paciente). Desde el 27/10, `buscar_paciente` ya no mezcla fichas en ese caso: le pide al agente derivar a recepción.
+- [ ] **Unificar las fichas repetidas del consultorio Guerra–Mininni** (Mariano Mininni, Juan Carlos Montes) desde Panel → Pacientes → ficha → «Unificar en esta ficha», y borrar las de prueba (Martina López, «Sin nombre» DNI 30111222) cuando haya cómo.
 - [ ] **Sobreturnos** (dos pacientes a la misma hora con el mismo profesional). Hoy la base lo impide a propósito. El panel ya puede dar turnos fuera de horario, en días bloqueados u ocupados en Google («Darlo igual»).
 - [ ] **Aviso cuando Google pide reconectar** (permiso vencido o revocado). Hoy solo se ve en el panel; podría ir por n8n a la clínica.
 - [ ] Mejoras posibles: roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.

@@ -1,6 +1,17 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 26/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 27/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Pacientes que ya existen: por DNI y sin fichas repetidas — 27/10/2026
+
+- **Pedido (consultorio Guerra–Mininni):** «aunque ya figuro como paciente, cuando pido un turno nuevo me pide todos los datos nuevamente». En las pruebas, el agente pedía DNI y fecha de nacimiento pero no encontraba la ficha: solo reconocía al paciente por el número. Cada conversación web creaba una ficha nueva (Mariano Mininni tenía 6).
+- **Herramienta nueva `buscar_paciente`** (son 10): con DNI y fecha de nacimiento (o nombre y apellido si la ficha no tiene fecha) confirma quién es y une la conversación a su ficha. Si no coincide, no devuelve datos ni dice qué falló. Si el número ya es la ficha de otra persona, no las mezcla (sigue pendiente «familias con un mismo celular»).
+- **Otros números del paciente** (`patient_phones`): el número desde el que se identificó queda apuntando a su ficha; todas las búsquedas por teléfono lo usan. `registrar_paciente` con un DNI que ya está en otra ficha hace la misma verificación: si confirma, se une; si no, el DNI no se guarda.
+- **Cambio de cobertura:** borra el plan y el afiliado de la anterior y le pide al agente los nuevos.
+- **Contexto del paciente:** dice qué datos faltan, cuándo vino por última vez (turnos atendidos o visitas importadas) y que no pregunte si ya vino. Sin ficha, indica usar `buscar_paciente` si dice que ya es paciente.
+- **Prompt:** las instrucciones de la clínica mandan sobre las generales; si piden usted, se usa usted desde el primer mensaje. Saludo neutro: «¿En qué puedo ayudar?».
+- **Panel → Pacientes:** la lista marca «N fichas con este DNI» y la ficha ofrece «Unificar en esta ficha» (pasa turnos, conversaciones, pedidos, visitas y campañas; completa datos; los números de las repetidas siguen llevando a la que queda).
+- 9 pruebas nuevas (299 en total), TypeScript y ESLint. Después del deploy hay que tocar «Crear / actualizar agente» (Panel → Sistema) para subir la herramienta, el prompt y el saludo.
 
 ## Google Sheets con un botón — 26/10/2026
 
