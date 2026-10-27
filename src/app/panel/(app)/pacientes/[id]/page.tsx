@@ -1,4 +1,4 @@
-import { getPanelClinic } from "@/lib/panel-clinic";
+import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
@@ -9,6 +9,7 @@ import { Card, CHANNEL_LABEL, Notice, PageHeader, StatusBadge, buttonClass, smal
 import { mergePatientDuplicates, setContactOptOut } from "../../../actions";
 import { duplicatesOf } from "@/lib/patients";
 import { NextControl } from "./next-control";
+import { DeletePatientButton } from "../delete-patients";
 import type { Patient, PatientVisit } from "@/lib/types";
 import type { Metadata } from "next";
 
@@ -20,6 +21,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
   const { unificadas } = (await searchParams) ?? {};
   const mergedCount = typeof unificadas === "string" ? Number(unificadas) : 0;
   const clinic = await getPanelClinic();
+  const canDelete = (await getPanelUser()).role === "admin";
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
   const [appointments, conversations, tasks, visits, duplicates] = await Promise.all([
@@ -124,6 +126,15 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
             <h2 className="text-sm font-semibold text-brand-950">🧠 Memoria del paciente</h2>
             <p className="mt-2 text-sm text-brand-900/75">{p.memory_summary || "Todavía no hay nada para recordar."}</p>
           </Card>
+          {canDelete && (
+            <Card>
+              <h2 className="text-sm font-semibold text-brand-950">Borrar ficha</h2>
+              <p className="mb-3 mt-1 text-xs text-brand-900/65">
+                Para fichas de prueba o cargadas por error. Se borran también sus turnos, conversaciones y pedidos.
+              </p>
+              <DeletePatientButton id={p.id} clinicId={clinic.id} name={p.full_name ?? "Paciente sin nombre"} />
+            </Card>
+          )}
         </div>
         <div className="space-y-6">
           <Card>

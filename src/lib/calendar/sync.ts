@@ -268,6 +268,31 @@ export async function syncPendingCalendar(clinicId?: string): Promise<{ ok: numb
   return result;
 }
 
+/**
+ * Antes de borrar turnos (al borrar una ficha): saca sus eventos del calendario
+ * del profesional. Devuelve cuántos eventos no se pudieron sacar.
+ */
+export async function removeCalendarEvents(clinicId: string, appointmentIds: string[]): Promise<number> {
+  if (!appointmentIds.length) return 0;
+  const rows = await sql<Array<{ calendar_event_id: string; calendar_event_calendar: string }>>`
+    select calendar_event_id, calendar_event_calendar from appointments
+    where clinic_id = ${clinicId} and id = any(${appointmentIds}::uuid[])
+      and calendar_event_id is not null and calendar_event_calendar is not null`;
+  if (!rows.length) return 0;
+  const conn = await getConnection(clinicId);
+  if (!conn || conn.status === "error") return rows.length;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      await removeEvent(conn, row.calendar_event_calendar, row.calendar_event_id);
+    } catch (e) {
+      failed++;
+      console.error("Calendario: no se pudo sacar el evento de un turno borrado", e instanceof Error ? e.message : e);
+    }
+  }
+  return failed;
+}
+
 /** Al cambiar el calendario de un profesional, sus turnos próximos se vuelven a escribir donde corresponde. */
 export async function resyncProfessional(professionalId: string): Promise<void> {
   await sql`

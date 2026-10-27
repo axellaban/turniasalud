@@ -4,7 +4,7 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 // Pacientes que ya existen: identificarlos por DNI desde otro número (o la
 // demo web) sin crear fichas repetidas, y unificar las que ya se repitieron.
 
-const mocks = vi.hoisted(() => ({ cookies: new Map<string, string>() }));
+const mocks = vi.hoisted(() => ({ cookies: new Map<string, string>(), calendarFetch: vi.fn(async () => new Response(null, { status: 204 })) }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: (name: string) => (mocks.cookies.has(name) ? { value: mocks.cookies.get(name) } : undefined),
@@ -22,6 +22,11 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn(async () => {}) }));
+vi.mock("@/lib/calendar/google", async (original) => ({
+  ...(await original<typeof import("@/lib/calendar/google")>()),
+  getConnection: vi.fn(async () => ({ clinic_id: "x", status: "conectado" })),
+  calendarFetch: mocks.calendarFetch,
+}));
 
 const base = testDatabaseUrl();
 const CLINIC = "00000000-0000-4000-8000-000000000001";
@@ -223,6 +228,68 @@ describe.runIf(base)("pacientes que ya existen", () => {
     // Los números de las fichas repetidas siguen llevando a la ficha que quedó.
     expect((await clinicLib.findPatientByPhone(CLINIC, "telegram:99"))?.id).toBe(keep);
     expect((await clinicLib.findPatientByPhone(CLINIC, "web-dup00001"))?.id).toBe(keep);
+  });
+
+  it("el administrador borra fichas de prueba con todo lo suyo; el consultorio no puede", async () => {
+    const gone = await addPatient({ phone: "web-borrar01", name: "Ficha De Prueba", dni: "40555666" });
+    const alsoGone = await addPatient({ phone: "web-borrar02", name: "Sin Nombre" });
+    const stays = await addPatient({ phone: "5491170000009", name: "Se Queda", dni: "11222333" });
+    const start = new Date(Date.now() + 3 * 86400_000);
+    start.setUTCHours(15, 0, 0, 0);
+    const [appt] = await sql<Array<{ id: string }>>`
+      insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source,
+        calendar_event_id, calendar_event_calendar, calendar_sync)
+      values (${CLINIC}, ${gone}, ${RUIZ}, ${LIMPIEZA}, ${start.toISOString()}, ${new Date(start.getTime() + 30 * 60_000).toISOString()},
+        'confirmado', 'web', 'evento123', 'cal@group.calendar.google.com', 'ok')
+      returning id`;
+    await sql`insert into tasks (clinic_id, patient_id, type, title) values (${CLINIC}, ${gone}, 'administrativo', 'Pedido de prueba')`;
+    await sql`insert into conversations (clinic_id, patient_id, elevenlabs_conversation_id, channel) values (${CLINIC}, ${gone}, 'conv_borrar', 'web')`;
+    await sql`insert into patient_phones (clinic_id, phone, patient_id) values (${CLINIC}, 'web-alias-borrar', ${gone})`;
+    const actions = await import("@/app/panel/actions");
+    const form = new FormData();
+    for (const id of [gone, alsoGone, "no-es-un-id"]) form.append("ids", id);
+    form.set("clinic_id", CLINIC);
+
+    // Con el acceso del consultorio, no se borra nada.
+    const [access] = await sql<Array<{ id: string }>>`
+      insert into clinic_access (clinic_id, label, code_hash, code_hint) values (${CLINIC}, 'Consultorio', 'hash-borrar', 'XXXX') returning id`;
+    mocks.cookies.set("turnia_session", (await import("@/lib/session")).createClinicSessionToken(access.id));
+    await expect(actions.deletePatientsAction(form)).rejects.toThrow("redirect:/panel");
+    const [{ n: before }] = await sql<Array<{ n: number }>>`select count(*)::int as n from patients where id in (${gone}, ${alsoGone})`;
+    expect(before).toBe(2);
+
+    mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
+    mocks.calendarFetch.mockClear();
+    await expect(actions.deletePatientsAction(form)).rejects.toThrow("redirect:/panel/pacientes?borradas=2");
+    const [{ n: after }] = await sql<Array<{ n: number }>>`select count(*)::int as n from patients where id in (${gone}, ${alsoGone})`;
+    expect(after).toBe(0);
+    expect(mocks.calendarFetch).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("/events/evento123"), { method: "DELETE" });
+    const leftovers = await sql`
+      select 'turno' from appointments where id = ${appt.id}
+      union all select 'tarea' from tasks where title = 'Pedido de prueba'
+      union all select 'conversacion' from conversations where elevenlabs_conversation_id = 'conv_borrar'
+      union all select 'numero' from patient_phones where phone = 'web-alias-borrar'`;
+    expect(leftovers.length).toBe(0);
+    expect((await clinicLib.findPatientByPhone(CLINIC, "5491170000009"))?.id).toBe(stays);
+  });
+
+  it("la lista y la ficha muestran el borrado solo al administrador", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const list = (await import("@/app/panel/(app)/pacientes/page")).default;
+    const html = renderToStaticMarkup(await list({ params: Promise.resolve({}), searchParams: Promise.resolve({ borradas: "2" }) } as never));
+    expect(html).toContain("Se borraron 2 fichas");
+    expect(html).toContain('name="ids"');
+    const detail = (await import("@/app/panel/(app)/pacientes/[id]/page")).default;
+    const ficha = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: MARIA }), searchParams: Promise.resolve({}) } as never));
+    expect(ficha).toContain("Borrar ficha");
+
+    const [access] = await sql<Array<{ id: string }>>`
+      insert into clinic_access (clinic_id, label, code_hash, code_hint) values (${CLINIC}, 'Consultorio', 'hash-lista', 'YYYY') returning id`;
+    mocks.cookies.set("turnia_session", (await import("@/lib/session")).createClinicSessionToken(access.id));
+    const asClinic = renderToStaticMarkup(await list({ params: Promise.resolve({}), searchParams: Promise.resolve({}) } as never));
+    expect(asClinic).not.toContain('name="ids"');
+    const fichaClinic = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: MARIA }), searchParams: Promise.resolve({}) } as never));
+    expect(fichaClinic).not.toContain("Borrar ficha");
   });
 
   it("la herramienta buscar_paciente está publicada por HTTP", async () => {

@@ -11,7 +11,7 @@ import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
-import { mergeDuplicates } from "@/lib/patients";
+import { deletePatients, mergeDuplicates } from "@/lib/patients";
 import { addDaysKey, humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
@@ -293,6 +293,21 @@ export async function mergePatientDuplicates(form: FormData) {
   revalidatePath("/panel/pacientes");
   revalidatePath(`/panel/pacientes/${id}`);
   redirect(`/panel/pacientes/${id}?unificadas=${merged}`);
+}
+
+/** Pacientes → borrar una o varias fichas (solo el administrador, como dice el acceso del consultorio). */
+export async function deletePatientsAction(form: FormData) {
+  await requireAdmin();
+  const ids = [...new Set(form.getAll("ids").filter(isUuid))];
+  if (!ids.length) return;
+  const clinic = await getPanelClinic(form);
+  const { borradas, eventosSinSacar } = await deletePatients(clinic.id, ids);
+  revalidatePath("/panel/pacientes");
+  revalidatePath("/panel/agenda");
+  revalidatePath("/panel/conversaciones");
+  revalidatePath("/panel/tareas");
+  revalidatePath("/panel");
+  redirect(`/panel/pacientes?borradas=${borradas}${eventosSinSacar ? `&eventos=${eventosSinSacar}` : ""}`);
 }
 
 export async function resolveTaskAction(_prev: FormState | undefined, form: FormData): Promise<FormState> {
