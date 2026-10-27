@@ -2,6 +2,12 @@
 
 Actualización: 27/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Prueba completa por chat y ajuste del prompt — 27/10/2026
+
+- **Probado en producción por chat** (Guerra–Mininni): reconoce por celular, reserva, reprograma y cancela (Valeria Soto); reconoce por DNI y aplica «menos de 24 hs → secretaria» con tarea (Mininni); paciente nuevo con reserva, centro de Rx según cobertura (TcMax para Swiss Medical) y cancelación; precio solo de la primera consulta; ortodoncia derivada; conducto sin obra social; urgencia según el protocolo; ficha sin fecha de nacimiento reconocida por nombre (Diego Romero).
+- **Corregido en el prompt:** con un paciente nuevo, confirmaba el turno antes de pedir los datos que la clínica exige para agendar (nacimiento, mail, alergias) y los pedía después. Ahora no ofrece ni reserva hasta tenerlos. Tampoco vuelve a saludar después del primer mensaje.
+- Hace falta «Crear / actualizar agente» después del deploy.
+
 ## Borrar fichas de pacientes — 27/10/2026
 
 - **Pedido:** limpiar las fichas de prueba del consultorio Guerra–Mininni y dejar solo los mejores casos.
