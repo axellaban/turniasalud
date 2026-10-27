@@ -1,6 +1,7 @@
 import "server-only";
 import { sql, type Sql, type TransactionSql } from "./db";
 import { mergeMemory } from "./memory";
+import { removeCalendarEvents } from "./calendar/sync";
 import type { Patient } from "./types";
 
 // Identidad del paciente más allá del número desde el que escribe.
@@ -230,4 +231,24 @@ export async function mergeDuplicates(clinicId: string, keepId: string): Promise
     for (const other of others) await mergePatientInto(tx, clinicId, keepId, other.id);
     return others.length;
   });
+}
+
+/**
+ * Panel: borra fichas de la clínica con todo lo suyo (turnos, conversaciones,
+ * pedidos, lista de espera, campañas, visitas y otros números). Antes saca del
+ * calendario los eventos de sus turnos.
+ */
+export async function deletePatients(clinicId: string, ids: string[]): Promise<{ borradas: number; eventosSinSacar: number }> {
+  if (!ids.length) return { borradas: 0, eventosSinSacar: 0 };
+  const appointments = await sql<Array<{ id: string }>>`
+    select a.id from appointments a join patients p on p.id = a.patient_id
+    where p.clinic_id = ${clinicId} and p.id = any(${ids}::uuid[])`;
+  const eventosSinSacar = await removeCalendarEvents(clinicId, appointments.map((a) => a.id));
+  const borradas = await sql.begin(async (tx) => {
+    await tx`delete from tasks where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])`;
+    await tx`delete from conversations where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])`;
+    const deleted = await tx`delete from patients where clinic_id = ${clinicId} and id = any(${ids}::uuid[]) returning id`;
+    return deleted.length;
+  });
+  return { borradas, eventosSinSacar };
 }

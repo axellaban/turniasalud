@@ -2,6 +2,14 @@
 
 Actualización: 27/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Borrar fichas de pacientes — 27/10/2026
+
+- **Pedido:** limpiar las fichas de prueba del consultorio Guerra–Mininni y dejar solo los mejores casos.
+- **Panel → Pacientes** (solo el administrador; el acceso del consultorio sigue sin poder borrar): casillas por ficha, «Seleccionar todas» y «Borrar N fichas», con confirmación. En la ficha, «Borrar ficha».
+- Se borran la ficha y todo lo suyo: turnos, conversaciones, pedidos, lista de espera, campañas, visitas y otros números. Antes se sacan del Google Calendar del profesional los eventos de sus turnos; si alguno no se puede sacar, el aviso lo dice.
+- Mismo día: se unificaron las fichas repetidas (Mininni 5 → 1, Montes 2 → 1) con «Unificar en esta ficha».
+- 2 pruebas nuevas (301 en total), TypeScript y ESLint.
+
 ## Pacientes que ya existen: por DNI y sin fichas repetidas — 27/10/2026
 
 - **Pedido (consultorio Guerra–Mininni):** «aunque ya figuro como paciente, cuando pido un turno nuevo me pide todos los datos nuevamente». En las pruebas, el agente pedía DNI y fecha de nacimiento pero no encontraba la ficha: solo reconocía al paciente por el número. Cada conversación web creaba una ficha nueva (Mariano Mininni tenía 6).
@@ -11,7 +19,7 @@ Actualización: 27/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - **Contexto del paciente:** dice qué datos faltan, cuándo vino por última vez (turnos atendidos o visitas importadas) y que no pregunte si ya vino. Sin ficha, indica usar `buscar_paciente` si dice que ya es paciente.
 - **Prompt:** las instrucciones de la clínica mandan sobre las generales; si piden usted, se usa usted desde el primer mensaje. Saludo neutro: «¿En qué puedo ayudar?».
 - **Panel → Pacientes:** la lista marca «N fichas con este DNI» y la ficha ofrece «Unificar en esta ficha» (pasa turnos, conversaciones, pedidos, visitas y campañas; completa datos; los números de las repetidas siguen llevando a la que queda).
-- 9 pruebas nuevas (299 en total), TypeScript y ESLint. Después del deploy hay que tocar «Crear / actualizar agente» (Panel → Sistema) para subir la herramienta, el prompt y el saludo.
+- 9 pruebas nuevas (299 en total), TypeScript y ESLint. Ya se tocó «Crear / actualizar agente» (10 herramientas) y se probó en producción: reconoce por DNI, por nombre si la ficha no tiene fecha, no muestra datos si no coinciden, no pregunta si ya vino, cobertura no aceptada → particular y trato de usted.
 
 ## Google Sheets con un botón — 26/10/2026
 
