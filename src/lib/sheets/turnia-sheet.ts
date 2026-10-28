@@ -207,7 +207,7 @@ function stamp(iso: string | null): string {
 
 const OUTREACH_COLUMNS = [
   "Código", "Nombre", "Trato", "Saludo", "Consultorio", "Zona", "Dirección", "Especialidad", "Teléfono", "De quién es el teléfono",
-  "Instagram", "Email", "Web", "Prioridad", "Estado", "Mensajes", "Primer contacto", "Último contacto", "Último canal", "Próximo paso",
+  "Instagram", "Email", "Web", "Prioridad", "Estado", "Mensajes", "Saludo enviado", "Primer contacto", "Último contacto", "Último canal", "Próximo paso",
   "Abrió su demo", "Veces que la abrió", "Probó la demo", "Link de su demo", "Señales", "Fuente", "Notas", "Actualizado",
 ];
 
@@ -222,7 +222,7 @@ async function tabs(): Promise<Tab[]> {
     p.code, p.name, p.title, p.greeting, p.business_name, p.zone, p.address, p.specialty,
     p.phone ? displayOutreachPhone(p.phone) : "", p.phone_kind ? PHONE_KIND_LABEL[p.phone_kind] : "",
     p.instagram ? `@${p.instagram}` : "", p.email ?? "", p.website ?? "", p.priority, STATUS_LABEL[p.status] ?? p.status, p.touches,
-    stamp(p.first_contact_at), stamp(p.last_contact_at), p.last_channel ? (CHANNEL_LABEL[p.last_channel] ?? p.last_channel) : "", p.next_action_on ?? "",
+    stamp(p.greeted_at), stamp(p.first_contact_at), stamp(p.last_contact_at), p.last_channel ? (CHANNEL_LABEL[p.last_channel] ?? p.last_channel) : "", p.next_action_on ?? "",
     stamp(p.opened_at), p.opens, stamp(p.demo_at), demoUrl(env.appUrl(), p.code), p.signals, p.source, p.notes, stamp(p.updated_at),
   ]);
   const leadRows: Cell[][] = leads.map((l) => [

@@ -27,6 +27,7 @@ export class OutreachError extends Error {}
 
 export type Outreach = OutreachPerson & {
   id: string;
+  greeted_at: string | null;
   email: string | null;
   priority: number;
   signals: string;
@@ -221,18 +222,21 @@ export async function outreachEvents(id: string): Promise<OutreachEvent[]> {
 }
 
 const TOUCH_DETAIL = ["primero", "seguimiento", "último"];
+/** El saludo sin link queda en la historia como un mensaje más, pero no es un toque. */
+const GREETING = "saludo";
 
 /**
- * Registra un contacto. Un mensaje (WhatsApp, Instagram, email) suma un toque y programa el
- * seguimiento; una llamada o una visita quedan en la historia sin consumir los mensajes.
- * `before`: le había escrito antes de usar el panel (no cuenta para la meta de hoy).
+ * Registra un contacto. El primer WhatsApp es el saludo sin link: no suma un toque y la presentación
+ * con la demo toca ese mismo día (cuando responde). Después, cada mensaje (WhatsApp, Instagram,
+ * email) suma un toque y programa el seguimiento; una llamada o una visita quedan en la historia sin
+ * consumir los mensajes. `before`: le había escrito antes de usar el panel (no cuenta para la meta de hoy).
  */
 export async function recordTouch(id: string, channel: OutreachChannel, opts: { before?: boolean } = {}): Promise<Outreach> {
   const today = todayKey();
   const message = channel === "whatsapp" || channel === "instagram" || channel === "email";
   const updated = await sql.begin(async (tx) => {
-    const [row] = await tx<Array<{ touches: number; status: OutreachStatus; phone: string | null }>>`
-      select touches, status, phone from sales_outreach where id = ${id} for update`;
+    const [row] = await tx<Array<{ touches: number; status: OutreachStatus; phone: string | null; greeted_at: string | null }>>`
+      select touches, status, phone, greeted_at from sales_outreach where id = ${id} for update`;
     if (!row) throw new OutreachError("No encontramos ese contacto.");
     if (row.status === "baja") throw new OutreachError("Pidió no recibir más mensajes.");
     if (row.phone) {
@@ -240,8 +244,17 @@ export async function recordTouch(id: string, channel: OutreachChannel, opts: { 
       if (blocked) throw new OutreachError("Ese número pidió no recibir más mensajes.");
     }
     if (message && row.touches >= MAX_TOUCHES) throw new OutreachError("Ya le escribiste tres veces: mejor esperar a que responda.");
-    const touches = message ? row.touches + 1 : row.touches;
     const open = row.status === "por_contactar" || row.status === "contactado";
+    if (channel === "whatsapp" && !opts.before && row.touches === 0 && !row.greeted_at) {
+      const [out] = await tx<Array<{ id: string }>>`
+        update sales_outreach set greeted_at = now(), first_contact_at = coalesce(first_contact_at, now()), last_contact_at = now(),
+          last_channel = ${channel}, status = case when status = 'por_contactar' then 'contactado' else status end,
+          next_action_on = ${open ? today : tx`next_action_on`}, updated_at = now()
+        where id = ${id} returning id`;
+      await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'mensaje', ${channel}, ${GREETING})`;
+      return out;
+    }
+    const touches = message ? row.touches + 1 : row.touches;
     const next = !open ? undefined : message ? nextFollowUp(today, touches) : row.status === "por_contactar" ? nextFollowUp(today, 1) : undefined;
     const [out] = await tx<Array<{ id: string }>>`
       update sales_outreach set
@@ -304,25 +317,29 @@ export async function undoLastTouch(id: string): Promise<void> {
   await sql.begin(async (tx) => {
     const [row] = await tx<Array<{ status: OutreachStatus; touches: number }>>`select status, touches from sales_outreach where id = ${id} for update`;
     if (!row) throw new OutreachError("No encontramos ese contacto.");
-    const contacts = () => tx<Array<{ id: string; kind: string; channel: string | null; created_at: string }>>`
-      select id, kind, channel, created_at from sales_outreach_events
+    const contacts = () => tx<Array<{ id: string; kind: string; channel: string | null; detail: string; created_at: string }>>`
+      select id, kind, channel, detail, created_at from sales_outreach_events
       where outreach_id = ${id} and kind in ('mensaje', 'llamada', 'visita') order by created_at desc`;
     const [last] = await contacts();
     if (!last) throw new OutreachError("No hay contactos para deshacer.");
     await tx`delete from sales_outreach_events where id = ${last.id}`;
     const left = await contacts();
-    const touches = left.filter((e) => e.kind === "mensaje").length;
+    const isTouch = (e: (typeof left)[number]) => e.kind === "mensaje" && e.detail !== GREETING;
+    const touches = left.filter(isTouch).length;
+    const greeting = left.find((e) => e.kind === "mensaje" && e.detail === GREETING);
     if (!left.length) {
       await tx`
-        update sales_outreach set touches = 0, first_contact_at = null, last_contact_at = null, last_channel = null, next_action_on = null,
+        update sales_outreach set touches = 0, greeted_at = null, first_contact_at = null, last_contact_at = null, last_channel = null, next_action_on = null,
           status = case when status = 'contactado' then 'por_contactar' else status end, updated_at = now()
         where id = ${id}`;
     } else {
       // El seguimiento se cuenta desde el último mensaje que quedó (o desde la llamada, si no hubo mensajes).
-      const base = left.find((e) => e.kind === "mensaje") ?? left[0];
-      const next = row.status === "contactado" ? nextFollowUp(localDateKey(new Date(base.created_at), TZ), Math.max(touches, 1)) : undefined;
+      // Si solo quedó el saludo, la presentación vuelve a tocar desde ese día.
+      const base = left.find(isTouch) ?? greeting ?? left[0];
+      const from = localDateKey(new Date(base.created_at), TZ);
+      const next = row.status !== "contactado" ? undefined : !touches && greeting ? from : nextFollowUp(from, Math.max(touches, 1));
       await tx`
-        update sales_outreach set touches = ${touches}, last_contact_at = ${left[0].created_at}, last_channel = ${left[0].channel},
+        update sales_outreach set touches = ${touches}, greeted_at = ${greeting?.created_at ?? null}, last_contact_at = ${left[0].created_at}, last_channel = ${left[0].channel},
           next_action_on = ${next === undefined ? tx`next_action_on` : next}, updated_at = now()
         where id = ${id}`;
     }

@@ -82,7 +82,9 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
                   </CopyButton>
                 </div>
                 <p className="mt-2 text-xs text-brand-900/60">
-                  Lo mandás vos desde tu WhatsApp. Al abrirlo queda registrado y el seguimiento se programa solo (dos días hábiles; después, cuatro).
+                  {plan.whatsapp.key.startsWith("whatsapp_saludo")
+                    ? "Primero el saludo, sin link: así WhatsApp no bloquea tu número. Al abrirlo queda registrado y, cuando te responda, acá aparece la presentación con su demo."
+                    : "Lo mandás vos desde tu WhatsApp. Al abrirlo queda registrado y el seguimiento se programa solo (dos días hábiles; después, cuatro)."}
                 </p>
               </div>
             ) : (

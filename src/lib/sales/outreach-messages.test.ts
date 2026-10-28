@@ -60,11 +60,16 @@ describe("prospección: mensajes y reglas", () => {
   });
 
   it("elige el mensaje según cuántas veces se le escribió, el número y la demo", () => {
-    expect(whatsappTemplateKey(person, false)).toBe("whatsapp_1");
-    expect(whatsappTemplateKey({ ...person, phone_kind: "fijo" }, false)).toBe("whatsapp_consultorio");
-    expect(whatsappTemplateKey({ ...person, phone_kind: "consultorio" }, false)).toBe("whatsapp_consultorio");
-    expect(whatsappTemplateKey({ ...person, phone_kind: "consultorio", touches: 1 }, false)).toBe("whatsapp_2");
-    expect(whatsappTemplateKey(person, true)).toBe("whatsapp_consultorio");
+    // Primero el saludo sin link; con el saludo mandado, la presentación con la demo.
+    expect(whatsappTemplateKey(person, false)).toBe("whatsapp_saludo");
+    expect(whatsappTemplateKey({ ...person, phone_kind: "fijo" }, false)).toBe("whatsapp_saludo_consultorio");
+    expect(whatsappTemplateKey(person, true)).toBe("whatsapp_saludo_consultorio");
+    const greeted = { ...person, greeted_at: "2026-10-28T12:00:00Z" };
+    expect(whatsappTemplateKey(greeted, false)).toBe("whatsapp_1");
+    expect(whatsappTemplateKey({ ...greeted, phone_kind: "fijo" }, false)).toBe("whatsapp_consultorio");
+    expect(whatsappTemplateKey({ ...greeted, phone_kind: "consultorio" }, false)).toBe("whatsapp_consultorio");
+    expect(whatsappTemplateKey({ ...greeted, phone_kind: "consultorio", touches: 1 }, false)).toBe("whatsapp_2");
+    expect(whatsappTemplateKey(greeted, true)).toBe("whatsapp_consultorio");
     expect(whatsappTemplateKey({ ...person, touches: 1 }, false)).toBe("whatsapp_2");
     expect(whatsappTemplateKey({ ...person, touches: 1, demo_at: "2026-10-26T12:00:00Z" }, false)).toBe("whatsapp_demo");
     expect(whatsappTemplateKey({ ...person, touches: 2 }, false)).toBe("whatsapp_3");
@@ -73,6 +78,11 @@ describe("prospección: mensajes y reglas", () => {
 
   it("arma el mensaje con su nombre, su consultorio y su demo", () => {
     const link = "https://turnia.example/p/moreta-ab3";
+    // El saludo no lleva link.
+    expect(renderTemplate(DEFAULT_TEMPLATES.whatsapp_saludo, person, link)).toBe("¡Buenas! ¿Hablo con Myriam?");
+    expect(renderTemplate(DEFAULT_TEMPLATES.whatsapp_saludo_consultorio, { ...person, name: "Rodrigo Arias", title: "Dr." }, link)).toBe(
+      "¡Buenas! ¿Hablo con el consultorio del Dr. Arias?",
+    );
     const first = renderTemplate(DEFAULT_TEMPLATES.whatsapp_1, person, link);
     expect(first).toMatch(/^Hola Myriam, ¿cómo estás\? Soy Axel, de Turnia\./);
     expect(first).toContain(link);
