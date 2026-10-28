@@ -6,9 +6,9 @@ import type { Patient } from "./types";
 
 // Identidad del paciente más allá del número desde el que escribe.
 // Una ficha es (clínica, teléfono), pero el mismo paciente puede escribir desde
-// otro número o desde la demo web. Si confirma quién es con su DNI y su fecha
-// de nacimiento (o su nombre, si la ficha no tiene la fecha), ese número queda
-// apuntando a su ficha (patient_phones) en lugar de crear una nueva.
+// otro número o desde la demo web. Si confirma quién es con su DNI y su nombre
+// y apellido (o su fecha de nacimiento, si el nombre no coincide), ese número
+// queda apuntando a su ficha (patient_phones) en lugar de crear una nueva.
 
 type Db = Sql | TransactionSql;
 
@@ -57,22 +57,21 @@ export const isReachablePhone = (phone: string) => !phone.startsWith("web-");
 export type Verification = "ok" | "falta_fecha" | "falta_nombre" | "no_coincide";
 
 /**
- * Confirma que quien habla es el de la ficha: por fecha de nacimiento si la
- * ficha la tiene; si no, por nombre y apellido.
+ * Confirma que quien habla es el de la ficha, como lo haría la recepción: con
+ * el DNI y el nombre y apellido alcanza. La fecha de nacimiento es la segunda
+ * oportunidad cuando el nombre no coincide (un apodo, un segundo nombre) o
+ * cuando la ficha no tiene nombre.
  */
 export function verifyIdentity(
   record: Pick<Patient, "birth_date" | "full_name">,
   given: { birthDate?: string | null; name?: string | null },
 ): Verification {
-  if (record.birth_date) {
-    if (!given.birthDate) return "falta_fecha";
-    return given.birthDate === record.birth_date ? "ok" : "no_coincide";
-  }
-  if (record.full_name) {
-    if (!given.name) return "falta_nombre";
-    return namesMatch(given.name, record.full_name) ? "ok" : "no_coincide";
-  }
-  return "ok";
+  if (!record.full_name && !record.birth_date) return "ok";
+  if (record.full_name && given.name && namesMatch(given.name, record.full_name)) return "ok";
+  if (record.birth_date && given.birthDate === record.birth_date) return "ok";
+  if (record.full_name && !given.name) return "falta_nombre";
+  if (record.birth_date && !given.birthDate) return "falta_fecha";
+  return "no_coincide";
 }
 
 /** Ficha de este número: la propia o la de otro número del mismo paciente. */

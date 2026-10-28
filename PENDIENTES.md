@@ -1,6 +1,6 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 27/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 28/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
@@ -58,6 +58,8 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] **Avisar al paciente cuando la clínica cancela o mueve un turno.** Hoy el panel avisa que hay que hacerlo a mano. Se puede mandar por WhatsApp cuando el canal esté conectado.
 - [ ] **Familias con un mismo celular.** Hoy un celular es un paciente: si una madre saca turno para dos hijos, quedan en la misma ficha. Hace falta «titular y familiares» (cambia el esquema y cómo el agente identifica al paciente). Desde el 27/10, `buscar_paciente` ya no mezcla fichas en ese caso: le pide al agente derivar a recepción.
 - [x] **Fichas repetidas del consultorio Guerra–Mininni unificadas** (27/10): Mariano Mininni (5 → 1) y Juan Carlos Montes (2 → 1). Las fichas de prueba se borran desde Panel → Pacientes (casillas y «Borrar N fichas», solo el administrador).
+- [ ] **Consultorios / sillones** (pedido del Dr. Mininni, 28/10): Guerra–Mininni tiene dos sillones. Hoy la agenda es por profesional, así que si cada uno trabaja siempre en su sillón ya no se pisan; lo que no existe es el consultorio como recurso (sillón por defecto del profesional, elegirlo en el turno, que dos profesionales no usen el mismo sillón a la vez). Antes de hacerlo, confirmar con el consultorio cómo usan los sillones.
+- [ ] **v2: recetas con RCTA** (pedido del Dr. Mininni, 28/10): que el agente pueda mandar recetas (por ejemplo, de radiografías) por la aplicación RCTA. Hoy las recetas son una tarea para el equipo.
 - [ ] **Sobreturnos** (dos pacientes a la misma hora con el mismo profesional). Hoy la base lo impide a propósito. El panel ya puede dar turnos fuera de horario, en días bloqueados u ocupados en Google («Darlo igual»).
 - [ ] **Aviso cuando Google pide reconectar** (permiso vencido o revocado). Hoy solo se ve en el panel; podría ir por n8n a la clínica.
 - [ ] Mejoras posibles: roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.

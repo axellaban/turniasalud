@@ -24,7 +24,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "buscar_paciente",
     description:
-      "Busca la ficha de alguien que dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Pedile DNI y fecha de nacimiento antes de usarla. Si la ficha no tiene fecha de nacimiento, te va a pedir nombre y apellido. Si los datos coinciden, la conversación queda unida a su ficha y te devuelve lo que ya sabemos de él.",
+      "Busca la ficha de alguien que dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Si los datos coinciden, la conversación queda unida a su ficha y te devuelve lo que ya sabemos de él.",
     params: {
       dni: { type: "string", description: "DNI, solo números.", required: true },
       fecha_nacimiento: { type: "string", description: isoDate },

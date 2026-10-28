@@ -72,11 +72,11 @@ function identificationNotice(result: Exclude<Identification, { estado: "vincula
     case "sin_ficha":
       return "No hay ninguna ficha con ese DNI. Si dice que ya es paciente, puede que todavía no esté cargado: explicale que vas a completar su ficha, pedí los datos que falten y guardalos con registrar_paciente. Para elegir el turno, seguí las instrucciones de la clínica para pacientes que ya vinieron.";
     case "falta_fecha":
-      return "Para confirmar quién es necesito su fecha de nacimiento. Pedísela y volvé a llamar a buscar_paciente con el DNI y la fecha. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
+      return "Para confirmar quién es necesito también su fecha de nacimiento. Pedísela sin decirle por qué y volvé a llamar a buscar_paciente con el DNI, el nombre y la fecha. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
     case "falta_nombre":
       return "Para confirmar quién es necesito su nombre y apellido. Pedíselos y volvé a llamar a buscar_paciente con el DNI y el nombre. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
     case "no_coincide":
-      return "Los datos no coinciden con la ficha de ese DNI. No le des ningún dato de esa ficha ni le digas qué no coincide. Pedile que revise el DNI y la fecha de nacimiento; si siguen sin coincidir, seguí como con un paciente sin ficha o ofrecele comunicarse con recepción.";
+      return "Los datos no coinciden con la ficha de ese DNI. No le des ningún dato de esa ficha ni le digas qué no coincide. Pedile que revise el DNI y cómo figura su nombre; si siguen sin coincidir, seguí como con un paciente sin ficha o ofrecele comunicarse con recepción.";
     case "otra_persona":
       return `Este número ya es la ficha de ${result.patient.full_name ?? "otra persona"}, y ese DNI es de otro paciente. Hoy cada número tiene una sola ficha: no cambies los datos de esta. Si quiere un turno para otra persona, creá una tarea de tipo derivacion_humana con sus datos para que recepción lo agende.`;
   }
