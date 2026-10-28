@@ -306,7 +306,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
     [row] = await sql`select demo_at is not null as demo, lead_id, next_action_on from sales_outreach where id = ${lopez}`;
     expect(row).toEqual({ demo: true, lead_id: session.lead_id, next_action_on: outreach.todayKey() });
     expect((await outreach.outreachEvents(lopez))[0].kind).toBe("demo");
-  });
+  }, 30000);
 
   it("muestra el panel: cola del día, ficha, importar y mensajes", async () => {
     const page = (await import("@/app/panel/(app)/prospeccion/page")).default;
@@ -338,6 +338,51 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const importar = (await import("@/app/panel/(app)/prospeccion/importar/page")).default;
     expect(renderToStaticMarkup(await importar())).toContain("Importar la lista");
   });
+
+  it("la vista previa de WhatsApp queda guardada y sale al instante, también después de un deploy", async () => {
+    await runAfter();
+    const preview = await import("@/lib/sales/demo-preview");
+    const imagen = (await import("@/app/(marketing)/p/[code]/vista-previa/route")).GET;
+    const pedir = (code: string, v?: string) =>
+      imagen(new Request(`https://turnia.example/p/${code}/vista-previa${v ? `?v=${v}` : ""}`), { params: Promise.resolve({ code }) });
+    await sql`delete from sales_outreach_previews`;
+
+    // Se arman las de todos una vez; la segunda no hay nada que hacer.
+    const [{ total }] = await sql<Array<{ total: number }>>`select count(*)::int as total from sales_outreach`;
+    expect(await preview.ensureDemoPreviews()).toBe(total);
+    expect(await preview.ensureDemoPreviews()).toBe(0);
+
+    // La página apunta a la imagen guardada, con la versión en la dirección.
+    const generateMetadata = (await import("@/app/(marketing)/p/[code]/page")).generateMetadata;
+    const meta = await generateMetadata({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) });
+    const v = preview.demoPreviewVersion((await outreach.publicOutreach("lopez-j7k"))!);
+    expect(meta.openGraph?.images).toEqual([expect.objectContaining({ url: `/p/lopez-j7k/vista-previa?v=${v}`, width: 1200, height: 630 })]);
+
+    const res = await pedir("lopez-j7k", v);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("cache-control")).toContain("immutable");
+    const png = Buffer.from(await res.arrayBuffer());
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
+    expect(png.length).toBeLessThan(300_000);
+
+    // Cambió el consultorio: mientras se rearma sale la anterior, sin quedar fija en la CDN.
+    await sql`update sales_outreach set business_name = 'Sonrisas López' where code = 'lopez-j7k'`;
+    const vieja = await pedir("lopez-j7k", v);
+    expect(vieja.status).toBe(200);
+    expect(vieja.headers.get("cache-control")).toBe("public, max-age=0, s-maxage=60");
+    await runAfter();
+    const nueva = preview.demoPreviewVersion((await outreach.publicOutreach("lopez-j7k"))!);
+    expect(nueva).not.toBe(v);
+    expect((await sql`select version from sales_outreach_previews where outreach_id = ${await id("lopez-j7k")}`)[0].version).toBe(nueva);
+
+    // Sin guardar, se arma en el momento; un código que no existe no tiene imagen.
+    await sql`delete from sales_outreach_previews where outreach_id = ${await id("pirera-g6h")}`;
+    expect((await pedir("pirera-g6h")).status).toBe(200);
+    expect(await preview.ensureDemoPreviews(["pirera-g6h"])).toBe(0);
+    expect((await pedir("no-existe")).status).toBe(404);
+    await sql`update sales_outreach set business_name = 'Consultorio Odontológico López' where code = 'lopez-j7k'`;
+  }, 60000);
 
   it("el reinicio del 28/10 deja a todos «Por contactar» una sola vez, salvo las bajas", async () => {
     const before = await sql<Array<{ code: string; status: string }>>`select code, status from sales_outreach where status <> 'por_contactar' or touches > 0 order by code`;

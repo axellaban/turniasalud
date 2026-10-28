@@ -770,6 +770,16 @@ create index if not exists sales_outreach_events_idx on sales_outreach_events (o
 create index if not exists sales_outreach_events_day_idx on sales_outreach_events (created_at) where kind = 'mensaje';
 alter table sales_outreach_events enable row level security;
 
+-- La vista previa de su link en WhatsApp, ya armada: armarla tarda 2 a 4 s y WhatsApp no espera
+-- (src/lib/sales/demo-preview.ts). `version` cambia con los datos que muestra o con el dibujo.
+create table if not exists sales_outreach_previews (
+  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
+  version text not null,
+  png bytea not null,
+  created_at timestamptz not null default now()
+);
+alter table sales_outreach_previews enable row level security;
+
 -- Cambios de datos que corren una sola vez (el esquema se aplica en cada deploy).
 create table if not exists data_migrations (
   name text primary key,
