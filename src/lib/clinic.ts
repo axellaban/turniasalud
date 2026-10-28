@@ -114,7 +114,7 @@ export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], time
 
 /** Sin ficha para este número: puede ser nuevo o un paciente que escribe desde otro lado. */
 export const NO_PATIENT_CONTEXT =
-  "No hay una ficha para este número. Si dice o da a entender que ya es paciente, pedile DNI y fecha de nacimiento y usá buscar_paciente antes de pedir cualquier otro dato. Si es nuevo, pedí nombre y apellido, DNI y cobertura antes de reservar.";
+  "No hay una ficha para este número. Si dice o da a entender que ya es paciente, usá buscar_paciente con su DNI y su nombre y apellido (pedile solo lo que no te haya dicho) antes de pedir cualquier otro dato. Si es nuevo, pedí nombre y apellido, DNI y cobertura antes de reservar.";
 
 const loaded = (value: unknown, label = "cargado") => (value ? label : "sin dato");
 
@@ -161,7 +161,7 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
   const lines = [
     patient.dni
       ? "Ya tiene ficha: no le vuelvas a pedir los datos que están cargados."
-      : "Hay una ficha incompleta para este número (sin DNI). Si dice que ya es paciente, pedile DNI y fecha de nacimiento y usá buscar_paciente; si no, pedí los datos que faltan.",
+      : "Hay una ficha incompleta para este número (sin DNI). Si dice que ya es paciente, usá buscar_paciente con su DNI y su nombre y apellido; si no, pedí los datos que faltan.",
     `Nombre: ${patient.full_name ?? "sin dato"}`,
     `DNI: ${patient.dni ?? "sin dato"}`,
     `Fecha de nacimiento: ${loaded(patient.birth_date, "cargada")}`,

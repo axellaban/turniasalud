@@ -1,6 +1,13 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 27/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 28/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Paciente que vuelve: con nombre y DNI alcanza — 28/10/2026
+
+- **Feedback del Dr. Mininni:** «para retomar una conversación te pide la fecha de cumpleaños; no tiene sentido si ya le pasás nombre y DNI». El paciente escribió «soy Jorge Martínez 32064291» y Sofi igual le pidió la fecha de nacimiento.
+- **Ahora:** `buscar_paciente` confirma con DNI + nombre y apellido, como la recepción. La fecha de nacimiento queda como segunda oportunidad: solo se pide si el nombre no coincide (apodo, segundo nombre) o si la ficha no tiene nombre. Si tampoco coincide, sigue sin mostrar la ficha ni decir qué falló. Si el paciente ya dio nombre y DNI en el primer mensaje, el prompt le indica buscarlo enseguida.
+- Pruebas actualizadas (302 en total), TypeScript y ESLint. **Hace falta «Crear / actualizar agente»** después del deploy para que ElevenLabs tome el prompt y la descripción nueva de la herramienta (los mensajes que devuelve la herramienta cambian solos con el deploy).
+- **Mismo feedback, sin tocar todavía:** (1) los **dos sillones** (en Smile Connect cada profesional tiene un sillón por defecto y en el turno se elige profesional y consultorio): hoy la agenda es por profesional y no hay consultorios; ver `PENDIENTES.md`. (2) Integración con **RCTA** para mandar recetas (por ejemplo, de radiografías): queda para v2.
 
 ## Prueba completa por chat y ajuste del prompt — 27/10/2026
 

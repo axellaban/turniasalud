@@ -81,25 +81,38 @@ describe.runIf(base)("pacientes que ya existen", () => {
     expect(patients.namesMatch("Montes", "Juan Carlos Montes")).toBe(false);
     expect(patients.namesMatch("Valeria Sotó", "Valeria Soto")).toBe(true);
     expect(patients.namesMatch("Diego Romero", "Valeria Soto")).toBe(false);
-    expect(patients.verifyIdentity({ birth_date: "1967-09-24", full_name: "Juan" }, { name: "Juan" })).toBe("falta_fecha");
+    // Con DNI y nombre alcanza; la fecha es la segunda oportunidad si el nombre no coincide.
+    const juan = { birth_date: "1967-09-24", full_name: "Juan Carlos Montes" };
+    expect(patients.verifyIdentity(juan, { name: "Juan Carlos Montes" })).toBe("ok");
+    expect(patients.verifyIdentity(juan, {})).toBe("falta_nombre");
+    expect(patients.verifyIdentity(juan, { name: "Pepe Montes" })).toBe("falta_fecha");
+    expect(patients.verifyIdentity(juan, { name: "Pepe Montes", birthDate: "1967-09-24" })).toBe("ok");
+    expect(patients.verifyIdentity(juan, { name: "Pepe Montes", birthDate: "1970-01-01" })).toBe("no_coincide");
+    expect(patients.verifyIdentity({ birth_date: "1967-09-24", full_name: null }, {})).toBe("falta_fecha");
     expect(patients.verifyIdentity({ birth_date: null, full_name: "Valeria Soto" }, {})).toBe("falta_nombre");
+    expect(patients.verifyIdentity({ birth_date: null, full_name: "Valeria Soto" }, { name: "Diego Romero" })).toBe("no_coincide");
   });
 
-  it("reconoce por DNI y fecha de nacimiento a quien escribe desde la web, sin crear otra ficha", async () => {
+  it("reconoce por DNI y nombre a quien escribe desde la web, sin pedirle la fecha ni crear otra ficha", async () => {
     const id = await addPatient({ phone: "5491170000001", name: "Juan Carlos Montes", dni: "43952789", birth: "1967-09-24", coverage: "OSDE", plan: "210", member: "6109279301" });
     const web = ctx("web-aaaa0001");
 
-    const sinFecha = await service.findPatientByDni(web, { dni: "43.952.789" });
-    expect(sinFecha.encontrado).toBeNull();
-    expect(sinFecha.mensaje).toContain("fecha de nacimiento");
-    expect(sinFecha).not.toHaveProperty("ficha");
+    const soloDni = await service.findPatientByDni(web, { dni: "43.952.789" });
+    expect(soloDni.encontrado).toBeNull();
+    expect(soloDni.mensaje).toContain("nombre y apellido");
+    expect(soloDni).not.toHaveProperty("ficha");
 
-    const malaFecha = await service.findPatientByDni(web, { dni: "43952789", fecha_nacimiento: "1970-01-01" });
+    // Un nombre que no coincide pide la fecha, sin decir qué falló ni mostrar la ficha.
+    const apodo = await service.findPatientByDni(web, { dni: "43952789", nombre_completo: "Pepe Montes" });
+    expect(apodo.mensaje).toContain("fecha de nacimiento");
+    expect(apodo).not.toHaveProperty("ficha");
+
+    const malaFecha = await service.findPatientByDni(web, { dni: "43952789", nombre_completo: "Pepe Montes", fecha_nacimiento: "1970-01-01" });
     expect(malaFecha.mensaje).toContain("no coinciden");
     expect(malaFecha).not.toHaveProperty("ficha");
     expect(await clinicLib.findPatientByPhone(CLINIC, "web-aaaa0001")).toBeNull();
 
-    const ok = await service.findPatientByDni(web, { dni: "43952789", fecha_nacimiento: "1967-09-24" });
+    const ok = await service.findPatientByDni(web, { dni: "43952789", nombre_completo: "Juan Carlos Montes" });
     expect(ok.encontrado).toBe(true);
     expect(ok.ficha).toContain("Juan Carlos Montes");
     expect(ok.ficha).toContain("OSDE plan 210");
