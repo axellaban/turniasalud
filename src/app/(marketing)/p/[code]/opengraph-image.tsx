@@ -9,11 +9,13 @@ export const alt = "Demo de Turnia para tu consultorio";
 export const size = TAMANO;
 export const contentType = "image/png";
 // WhatsApp espera poco la imagen y, generada en el momento, tarda 2 o 3 segundos: sin ella, el link
-// sale sin vista previa. Por eso queda guardada (un día) y, en el deploy de producción, se arman las
-// de todos (lo guardado no pasa de un deploy al siguiente). Las que se suman después se arman al
-// importar o al saludar (warmDemoPreviews) o, si no, al primer pedido.
+// sale sin vista previa. Por eso queda guardada y, en el deploy de producción, se arman las de todos
+// (lo guardado no pasa de un deploy al siguiente). Las que se suman después se arman al importar o al
+// saludar (warmDemoPreviews) o, si no, al primer pedido.
+// Sin vencimiento: Vercel no les da lo guardado a los bots (WhatsApp, Facebook) cuando la página se
+// renueva sola cada tanto, y se las vuelve a dibujar. Se rearma solo cuando cambian sus datos (la etiqueta).
 export const dynamic = "force-static";
-export const revalidate = 86400;
+export const revalidate = false;
 
 export async function generateStaticParams() {
   if (process.env.VERCEL_ENV !== "production") return [];
@@ -21,7 +23,7 @@ export async function generateStaticParams() {
 }
 
 // La etiqueta deja rearmar la de una persona cuando cambian sus datos (revalidateTag).
-const demo = (code: string) => unstable_cache(() => publicOutreach(code), ["vista-previa", code], { tags: [demoPreviewTag(code)], revalidate })();
+const demo = (code: string) => unstable_cache(() => publicOutreach(code), ["vista-previa", code], { tags: [demoPreviewTag(code)] })();
 
 export default async function Image({ params }: { params: Promise<{ code: string }> }) {
   const p = await demo((await params).code).catch(() => null);
