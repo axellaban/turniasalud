@@ -25,7 +25,7 @@ vi.mock("next/navigation", () => ({
     throw new Error("notFound");
   },
 }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({ revalidatePath: () => {}, revalidateTag: () => {} }));
 vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   after: (fn: () => unknown) => mocks.after.push(fn),
