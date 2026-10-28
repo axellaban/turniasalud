@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
@@ -19,6 +19,8 @@ import {
 import {
   OutreachError,
   addOutreachNote,
+  demoPreviewTag,
+  getOutreach,
   importOutreach,
   recordTouch,
   saveOutreachSettings,
@@ -26,6 +28,7 @@ import {
   undoLastTouch,
   updateOutreach,
   warmDemoPreview,
+  warmDemoPreviews,
   type OutreachEdit,
 } from "@/lib/sales/outreach";
 
@@ -44,8 +47,12 @@ function refresh(id?: string) {
   queueTurniaSheetSync();
 }
 
-/** Cambió el nombre o el consultorio de alguien: las vistas previas guardadas se vuelven a armar. */
-const refreshPreviews = () => revalidatePath("/(marketing)/p/[code]", "layout");
+/** Cambiaron sus datos (nombre, consultorio): la vista previa de su link se vuelve a armar ya. */
+function refreshPreviews(codes: string[]) {
+  // Mientras se rearma, WhatsApp recibe la anterior: nunca espera.
+  for (const code of codes) revalidateTag(demoPreviewTag(code), "max");
+  after(() => warmDemoPreviews(codes));
+}
 
 /** Le escribió (o lo llamó, o lo visitó): suma el contacto y programa el seguimiento. */
 export async function touchAction(form: FormData): Promise<ActionState> {
@@ -138,7 +145,8 @@ export async function updateOutreachAction(_prev: ActionState, form: FormData): 
   } catch (e) {
     return fail(e);
   }
-  refreshPreviews();
+  const p = await getOutreach(id);
+  if (p) refreshPreviews([p.code]);
   refresh(id);
   return { ok: true, message: "Guardado." };
 }
@@ -165,8 +173,8 @@ export async function importOutreachAction(_prev: ImportState, form: FormData): 
   const preview = parseOutreachImport(raw);
   if (!preview.rows.length) return { ok: false, message: preview.problems[0]?.reason ?? "No encontramos filas para importar." };
   const overwrite = form.get("actualizar") === "1";
-  const result = await importOutreach(preview.rows, { overwrite });
-  refreshPreviews();
+  const { codes, ...result } = await importOutreach(preview.rows, { overwrite });
+  refreshPreviews(codes);
   refresh();
   const already = overwrite ? "con los datos del archivo" : "solo se completó lo que faltaba";
   return {

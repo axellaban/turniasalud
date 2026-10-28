@@ -207,8 +207,15 @@ export async function getOutreach(id: string): Promise<Outreach | null> {
   return row ?? null;
 }
 
+/** La vista previa guardada de su link (src/app/(marketing)/p/[code]/opengraph-image.tsx). */
+export const demoPreviewTag = (code: string) => `vista-previa:${code}`;
+
+export async function outreachCodes(): Promise<string[]> {
+  return (await sql<Array<{ code: string }>>`select code from sales_outreach order by created_at, code`).map((r) => r.code);
+}
+
 /**
- * Deja armada la vista previa de su link (la imagen se guarda un día): así, cuando le llega la demo,
+ * Deja armada la vista previa de su link (la imagen queda guardada): así, cuando le llega la demo,
  * WhatsApp la muestra al instante. Se pide como «Ver lo que recibe», que no cuenta como visita.
  * Solo en producción, que es la dirección que recibe.
  */
@@ -221,6 +228,14 @@ export async function warmDemoPreview(code: string): Promise<void> {
   } catch {
     // Si falla, WhatsApp la arma cuando le llegue el link: tarda un poco más, nada más.
   }
+}
+
+/** Las de una importación, de a seis. */
+export async function warmDemoPreviews(codes: string[]): Promise<void> {
+  const queue = [...codes];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    for (let code = queue.shift(); code; code = queue.shift()) await warmDemoPreview(code);
+  }));
 }
 
 /** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. */
@@ -418,8 +433,11 @@ function newCode(name: string): string {
  * panel. Con `overwrite`, lo que trae el archivo reemplaza a lo cargado. El nombre, el estado y los
  * contactos no cambian nunca.
  */
-export async function importOutreach(rows: OutreachImportRow[], { overwrite = false } = {}): Promise<{ created: number; updated: number }> {
-  if (!rows.length) return { created: 0, updated: 0 };
+export async function importOutreach(
+  rows: OutreachImportRow[],
+  { overwrite = false } = {},
+): Promise<{ created: number; updated: number; codes: string[] }> {
+  if (!rows.length) return { created: 0, updated: 0, codes: [] };
   const existing = await sql<Array<{ code: string; name: string; phone: string | null }>>`select code, lower(name) as name, phone from sales_outreach`;
   const byCode = new Set(existing.map((e) => e.code));
   const byPerson = new Map(existing.map((e) => [`${e.name}|${e.phone ?? ""}`, e.code]));
@@ -435,7 +453,7 @@ export async function importOutreach(rows: OutreachImportRow[], { overwrite = fa
       priority: r.priority, signals: r.signals, source: r.source, notes: r.notes,
     });
   }
-  let created = 0;
+  const created: string[] = [];
   const updated: string[] = [];
   await sql.begin(async (tx) => {
     for (let i = 0; i < records.length; i += 500) {
@@ -464,7 +482,7 @@ export async function importOutreach(rows: OutreachImportRow[], { overwrite = fa
             else sales_outreach.notes || E'\n' || excluded.notes end,
           updated_at = now()
         returning code, (xmax = 0) as inserted`;
-      created += result.filter((r) => r.inserted).length;
+      created.push(...result.filter((r) => r.inserted).map((r) => r.code));
       updated.push(...result.filter((r) => !r.inserted).map((r) => r.code));
     }
     if (overwrite) {
@@ -475,7 +493,7 @@ export async function importOutreach(rows: OutreachImportRow[], { overwrite = fa
       }
     }
   });
-  return { created, updated: updated.length };
+  return { created: created.length, updated: updated.length, codes: [...created, ...updated] };
 }
 
 /** Lo que el archivo trae con dato, para reemplazar a lo cargado (el nombre no se toca). */
