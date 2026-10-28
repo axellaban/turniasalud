@@ -250,9 +250,11 @@ describe.runIf(base)("planilla de Turnia en Google Sheets", () => {
     expect(google.calls).toHaveLength(0);
     await runAfter();
     const moreta = tab("Prospección").find((r) => r[0] === "moreta-ab3")!;
+    // El saludo sin link: contactada, sin toques todavía.
     expect(moreta[14]).toBe("Contactado");
-    expect(moreta[15]).toBe(1);
-    expect(moreta[18]).toBe("WhatsApp");
+    expect(moreta[15]).toBe(0);
+    expect(moreta[16]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(moreta[19]).toBe("WhatsApp");
 
     // Abrió su demo (desde el link del mensaje) y un pedido nuevo del formulario.
     const abrir = (await import("@/app/api/p/[code]/route")).POST;
@@ -260,7 +262,7 @@ describe.runIf(base)("planilla de Turnia en Google Sheets", () => {
     const { pedirDemo } = await import("@/app/(marketing)/pedi-una-demo/actions");
     expect(await pedirDemo(undefined, form({ nombre: "Pablo Ruiz", email: "pablo@odonto.com.ar", organizacion: "Odonto Ruiz", origen: "pedi-una-demo" }))).toEqual({ ok: true });
     await runAfter();
-    expect(tab("Prospección").find((r) => r[0] === "moreta-ab3")![20]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(tab("Prospección").find((r) => r[0] === "moreta-ab3")![21]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     expect(tab("Pedidos de demo").map((r) => r[2])).toEqual(["Nombre", "Laura Gómez", "Pablo Ruiz"]);
   });
 

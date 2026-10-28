@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
@@ -111,13 +112,16 @@ describe.runIf(base)("prospección a odontólogos", () => {
       business_name: "AB Consultorios Odontológicos", phone: "+5492235627681", phone_kind: "consultorio", website: "https://abconsultorios.com/",
       instagram: "ab.consultorios", notes: "Del Círculo\nDueño de AB Consultorios (web)", greeting: "Rodrigo", priority: 3,
     });
-    // Es el WhatsApp del consultorio: el primer mensaje es el de la recepción, a nombre del Dr. Arias.
+    // Es el WhatsApp del consultorio: el saludo y la presentación son los de la recepción, a nombre del Dr. Arias.
     const { rows } = await outreach.listOutreach({ view: "todos", channel: "consultorio" });
     expect(rows.map((p) => p.code)).toEqual(["arias-k2m"]);
     const detail = (await import("@/app/panel/(app)/prospeccion/[id]/page")).default;
     const ficha = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: await id("arias-k2m") }), searchParams: Promise.resolve({}) }));
     expect(ficha).toContain("Es el número del consultorio: el mensaje le pide a la recepción que se lo pase.");
-    expect(ficha).toContain("Le armé al Dr. Arias una demo");
+    expect(ficha).toContain("¡Buenas! ¿Hablo con el consultorio del Dr. Arias?");
+    await actions.touchAction(form({ id: await id("arias-k2m"), channel: "whatsapp" }));
+    const despues = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: await id("arias-k2m") }), searchParams: Promise.resolve({}) }));
+    expect(despues).toContain("Le armé al Dr. Arias una demo");
     expect(ficha).toContain('<option value="consultorio" selected="">Celular del consultorio</option>');
     await sql`delete from sales_outreach where code = 'arias-k2m'`;
   });
@@ -137,19 +141,32 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect((await outreach.outreachQueue({}, 50)).fresh.map((p) => p.code)).toEqual(["moreta-ab3", "lopez-j7k", "pirera-g6h"]);
   });
 
-  it("cada mensaje programa el seguimiento; a los tres toques se frena", async () => {
+  it("primero el saludo sin link y, cuando responde, la demo; cada mensaje programa el seguimiento y a los tres toques se frena", async () => {
     const moreta = await id("moreta-ab3");
     const today = outreach.todayKey();
+    // El saludo: no gasta un toque y la presentación con la demo toca hoy mismo.
     await actions.touchAction(form({ id: moreta, channel: "whatsapp" }));
-    let [row] = await sql`select status, touches, next_action_on, last_channel from sales_outreach where id = ${moreta}`;
+    let [row] = await sql`select status, touches, next_action_on, last_channel, greeted_at is not null as greeted from sales_outreach where id = ${moreta}`;
+    expect(row).toEqual({ status: "contactado", touches: 0, next_action_on: today, last_channel: "whatsapp", greeted: true });
+    // Secreti (saludado en el test anterior) también espera la demo.
+    expect(await outreach.outreachStats()).toMatchObject({ today_new: 2, week_new: 2, contacted: 2, due_followups: 2 });
+    const { followups } = await outreach.outreachQueue({}, 0);
+    expect(followups.map((p) => p.code)).toEqual(["moreta-ab3", "secreti-c4d"]);
+    const { contactPlan } = await import("@/app/panel/(app)/prospeccion/outreach-row");
+    const settings = await outreach.outreachSettings();
+    expect(contactPlan(followups[0], settings.templates, "https://turnia.example/p/moreta-ab3", today).whatsapp).toMatchObject({ key: "whatsapp_1", text: expect.stringContaining("/p/moreta-ab3") });
+
+    // Respondió el saludo: se le manda la demo, que es el primer toque.
+    await actions.touchAction(form({ id: moreta, channel: "whatsapp" }));
+    [row] = await sql`select status, touches, next_action_on, last_channel from sales_outreach where id = ${moreta}`;
     expect(row).toMatchObject({ status: "contactado", touches: 1, last_channel: "whatsapp" });
     const { nextFollowUp } = await import("@/lib/sales/outreach-messages");
     expect(row.next_action_on).toBe(nextFollowUp(today, 1));
-    expect(await outreach.outreachStats()).toMatchObject({ today_new: 2, week_new: 2, contacted: 2, due_followups: 0 });
+    expect(await outreach.outreachStats()).toMatchObject({ today_new: 2, week_new: 2, contacted: 2, due_followups: 1 });
 
     // Llega el día del seguimiento: aparece en la cola y se le manda el segundo.
     await sql`update sales_outreach set next_action_on = ${today} where id = ${moreta}`;
-    expect((await outreach.outreachQueue({}, 0)).followups.map((p) => p.code)).toEqual(["moreta-ab3"]);
+    expect((await outreach.outreachQueue({}, 0)).followups.map((p) => p.code)).toEqual(["moreta-ab3", "secreti-c4d"]);
     await actions.touchAction(form({ id: moreta, channel: "whatsapp" }));
     [row] = await sql`select touches, next_action_on from sales_outreach where id = ${moreta}`;
     expect(row).toEqual({ touches: 2, next_action_on: nextFollowUp(today, 2) });
@@ -171,7 +188,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(row).toEqual({ touches: 1, next_action_on: today, before: true });
     expect((await outreach.outreachStats()).today_new).toBe(3);
     const events = await outreach.outreachEvents(moreta);
-    expect(events.map((e) => e.detail)).toEqual(["último", "seguimiento", "primero"]);
+    expect(events.map((e) => e.detail)).toEqual(["último", "seguimiento", "primero", "saludo"]);
   });
 
   it("deshace un contacto de prueba: vuelve a «Por contactar» y no cuenta para la meta", async () => {
@@ -180,20 +197,24 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const prueba = await id("prueba-x1y");
     const antes = (await outreach.outreachStats()).today_new;
     expect(await actions.undoTouchAction(form({ id: prueba }))).toMatchObject({ ok: false, message: expect.stringContaining("No hay contactos") });
-    await actions.touchAction(form({ id: prueba, channel: "whatsapp" }));
-    await actions.touchAction(form({ id: prueba, channel: "whatsapp" }));
+    for (let i = 0; i < 3; i++) await actions.touchAction(form({ id: prueba, channel: "whatsapp" }));
     expect((await outreach.outreachStats()).today_new).toBe(antes + 1);
-    // Deshacer el segundo: queda un mensaje y el seguimiento vuelve a contarse desde ese.
+    const read = async () =>
+      (await sql`select status, touches, next_action_on, first_contact_at is not null as contacted, greeted_at is not null as greeted from sales_outreach where id = ${prueba}`)[0];
+    // Deshacer el seguimiento: queda la demo y el seguimiento vuelve a contarse desde ese mensaje.
     expect(await actions.undoTouchAction(form({ id: prueba }))).toMatchObject({ ok: true });
     const { nextFollowUp } = await import("@/lib/sales/outreach-messages");
-    let [row] = await sql`select status, touches, next_action_on, first_contact_at is not null as contacted from sales_outreach where id = ${prueba}`;
-    expect(row).toEqual({ status: "contactado", touches: 1, next_action_on: nextFollowUp(outreach.todayKey(), 1), contacted: true });
-    // Deshacer el primero: como si no se le hubiera escrito.
+    const today = outreach.todayKey();
+    expect(await read()).toEqual({ status: "contactado", touches: 1, next_action_on: nextFollowUp(today, 1), contacted: true, greeted: true });
+    // Deshacer la demo: queda el saludo y la demo vuelve a tocar hoy.
     await actions.undoTouchAction(form({ id: prueba }));
-    [row] = await sql`select status, touches, next_action_on, first_contact_at, last_channel from sales_outreach where id = ${prueba}`;
-    expect(row).toEqual({ status: "por_contactar", touches: 0, next_action_on: null, first_contact_at: null, last_channel: null });
+    expect(await read()).toEqual({ status: "contactado", touches: 0, next_action_on: today, contacted: true, greeted: true });
+    // Deshacer el saludo: como si no se le hubiera escrito.
+    await actions.undoTouchAction(form({ id: prueba }));
+    const [row] = await sql`select status, touches, next_action_on, first_contact_at, last_channel, greeted_at from sales_outreach where id = ${prueba}`;
+    expect(row).toEqual({ status: "por_contactar", touches: 0, next_action_on: null, first_contact_at: null, last_channel: null, greeted_at: null });
     expect((await outreach.outreachStats()).today_new).toBe(antes);
-    expect((await outreach.outreachEvents(prueba)).map((e) => e.kind)).toEqual(["nota", "nota"]);
+    expect((await outreach.outreachEvents(prueba)).map((e) => e.kind)).toEqual(["nota", "nota", "nota"]);
     await sql`delete from sales_outreach where id = ${prueba}`;
   });
 
@@ -300,8 +321,9 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const ficha = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: await id("jan-e5f") }), searchParams: Promise.resolve({}) }));
     expect(ficha).toContain("https://turnia.example/p/jan-e5f");
     expect(ficha).toContain("Mismo teléfono que Fernando A. Secreti (ya contactado)");
-    // Comparte el número con un solo colega: el mensaje va a la persona, con su demo.
-    expect(ficha).toContain("Hola Fausto, ¿cómo estás?");
+    // Comparte el número con un solo colega: el saludo va a la persona, sin link.
+    expect(ficha).toContain("¡Buenas! ¿Hablo con Fausto?");
+    expect(ficha).toContain("Primero el saludo, sin link");
 
     const mensajes = (await import("@/app/panel/(app)/prospeccion/mensajes/page")).default;
     expect(renderToStaticMarkup(await mensajes())).toContain("Mensajes y metas");
@@ -315,5 +337,26 @@ describe.runIf(base)("prospección a odontólogos", () => {
 
     const importar = (await import("@/app/panel/(app)/prospeccion/importar/page")).default;
     expect(renderToStaticMarkup(await importar())).toContain("Importar la lista");
+  });
+
+  it("el reinicio del 28/10 deja a todos «Por contactar» una sola vez, salvo las bajas", async () => {
+    const before = await sql<Array<{ code: string; status: string }>>`select code, status from sales_outreach where status <> 'por_contactar' or touches > 0 order by code`;
+    expect(before.length).toBeGreaterThan(1);
+    expect(before).toContainEqual({ code: "pirera-g6h", status: "baja" });
+    const schema = readFileSync(new URL("../../supabase/schema.sql", import.meta.url), "utf8");
+    await sql`delete from data_migrations where name = '2026-10-28-prospeccion-por-contactar'`;
+    await sql.unsafe(schema);
+    const after = await sql`select code, status, touches, greeted_at, first_contact_at, next_action_on from sales_outreach where status <> 'por_contactar' or touches > 0 or greeted_at is not null`;
+    expect(after.map((r) => r.code)).toEqual(["pirera-g6h"]);
+    const moreta = await id("moreta-ab3");
+    const events = await outreach.outreachEvents(moreta);
+    expect(events.filter((e) => e.kind === "mensaje" || e.kind === "estado")).toEqual([]);
+    expect(events[0]).toMatchObject({ kind: "nota", detail: "Se reinició la prospección: vuelve a «Por contactar» (antes: contactado, 3 mensajes)." });
+    // Vuelve a la cola y lo primero que le toca es el saludo; el reinicio no se repite en el próximo deploy.
+    expect((await outreach.outreachQueue({}, 50)).fresh.map((p) => p.code)).toContain("moreta-ab3");
+    await actions.touchAction(form({ id: moreta, channel: "whatsapp" }));
+    await sql.unsafe(schema);
+    const [row] = await sql`select status, greeted_at is not null as greeted from sales_outreach where id = ${moreta}`;
+    expect(row).toEqual({ status: "contactado", greeted: true });
   });
 });

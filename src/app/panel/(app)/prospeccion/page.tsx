@@ -152,7 +152,10 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
               {queue.followups.length > 0 && (
                 <Card>
                   <h2 className="font-display text-xl text-brand-950">Seguimientos de hoy</h2>
-                  <p className="mt-1 text-sm text-brand-900/70">Les escribiste hace unos días y no respondieron. Primero, quienes abrieron o probaron su demo.</p>
+                  <p className="mt-1 text-sm text-brand-900/70">
+                    A quienes saludaste y les falta la demo (mandásela cuando te respondan) y a quienes les escribiste hace unos días y no respondieron.
+                    Primero, quienes abrieron o probaron su demo.
+                  </p>
                   <ul className="mt-2 divide-y divide-brand-900/5">{queue.followups.map(row)}</ul>
                 </Card>
               )}

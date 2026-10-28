@@ -69,16 +69,23 @@ export type OutreachPerson = {
   instagram: string | null;
   website: string | null;
   touches: number;
+  /** Cuándo se le mandó el saludo de WhatsApp (sin link). No cuenta como toque. */
+  greeted_at?: string | null;
 };
 
-export const TEMPLATE_KEYS = ["whatsapp_1", "whatsapp_consultorio", "whatsapp_2", "whatsapp_3", "whatsapp_demo", "instagram", "llamada"] as const;
+export const TEMPLATE_KEYS = ["whatsapp_saludo", "whatsapp_saludo_consultorio", "whatsapp_1", "whatsapp_consultorio", "whatsapp_2", "whatsapp_3", "whatsapp_demo", "instagram", "llamada"] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export type Templates = Record<TemplateKey, string>;
 
 export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }> = {
-  whatsapp_1: { title: "WhatsApp: primer mensaje a la persona", hint: "Para su celular. Lleva el link de su demo." },
+  whatsapp_saludo: {
+    title: "WhatsApp: saludo a la persona",
+    hint: "Va siempre primero, sin link: que un desconocido mande un link de entrada es lo que hace que WhatsApp bloquee el número. Cuando responde, le mandás la presentación.",
+  },
+  whatsapp_saludo_consultorio: { title: "WhatsApp: saludo al número del consultorio", hint: "Lo mismo, para el fijo o el celular del consultorio: lo lee la recepción." },
+  whatsapp_1: { title: "WhatsApp: presentación a la persona", hint: "Después del saludo, para su celular. Lleva el link de su demo." },
   whatsapp_consultorio: {
-    title: "WhatsApp: primer mensaje al número del consultorio",
+    title: "WhatsApp: presentación al número del consultorio",
     hint: "Fijo, celular del consultorio o un número que comparten varios: lo lee la recepción. Le pide que se lo pase a quien decide, sin que suene a reemplazo.",
   },
   whatsapp_2: { title: "WhatsApp: seguimiento", hint: "Dos días hábiles después, si no respondió." },
@@ -89,6 +96,8 @@ export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }
 };
 
 export const DEFAULT_TEMPLATES: Templates = {
+  whatsapp_saludo: "¡Buenas! ¿Hablo con {saludo}?",
+  whatsapp_saludo_consultorio: "¡Buenas! ¿Hablo con el consultorio de {destinatario}?",
   whatsapp_1:
     "Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia.\n" +
     "Te armé una demo con tu consultorio: Sofi contesta el WhatsApp cuando estás atendiendo o fuera de horario, responde las consultas y da el turno.\n" +
@@ -176,12 +185,18 @@ export function renderTemplate(template: string, person: OutreachPerson, link: s
 }
 
 /**
- * Qué mensaje de WhatsApp toca: el primero (a la persona o, si el número es del consultorio, a la
- * recepción), el seguimiento o el último. `null` cuando ya se le escribió tres veces.
+ * Qué mensaje de WhatsApp toca: el saludo sin link, la presentación con la demo (a la persona o, si
+ * el número es del consultorio, a la recepción), el seguimiento o el último. `null` cuando ya se le
+ * escribió tres veces.
  */
-export function whatsappTemplateKey(person: Pick<OutreachPerson, "touches" | "phone_kind"> & { demo_at?: string | null }, sharedPhone: boolean): TemplateKey | null {
+export function whatsappTemplateKey(
+  person: Pick<OutreachPerson, "touches" | "phone_kind" | "greeted_at"> & { demo_at?: string | null },
+  sharedPhone: boolean,
+): TemplateKey | null {
   if (person.touches >= MAX_TOUCHES) return null;
-  if (person.touches === 0) return isBusinessLine(person.phone_kind) || sharedPhone ? "whatsapp_consultorio" : "whatsapp_1";
+  const reception = isBusinessLine(person.phone_kind) || sharedPhone;
+  if (person.touches === 0 && !person.greeted_at) return reception ? "whatsapp_saludo_consultorio" : "whatsapp_saludo";
+  if (person.touches === 0) return reception ? "whatsapp_consultorio" : "whatsapp_1";
   if (person.demo_at) return "whatsapp_demo";
   return person.touches === 1 ? "whatsapp_2" : "whatsapp_3";
 }

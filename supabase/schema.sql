@@ -753,6 +753,9 @@ alter table sales_outreach enable row level security;
 -- «consultorio»: el celular del consultorio, el WhatsApp que figura en su web (lo lee la recepción).
 alter table sales_outreach drop constraint if exists sales_outreach_phone_kind_check;
 alter table sales_outreach add constraint sales_outreach_phone_kind_check check (phone_kind in ('movil', 'consultorio', 'fijo'));
+-- El saludo de WhatsApp sin link («¡Buenas! ¿Hablo con…?») va antes de la presentación con la demo,
+-- para que WhatsApp no bloquee el número. No cuenta como toque.
+alter table sales_outreach add column if not exists greeted_at timestamptz;
 
 -- Historia de cada contacto: mensajes, llamadas, visitas, respuestas, cambios de estado y la demo.
 create table if not exists sales_outreach_events (
@@ -766,6 +769,31 @@ create table if not exists sales_outreach_events (
 create index if not exists sales_outreach_events_idx on sales_outreach_events (outreach_id, created_at desc);
 create index if not exists sales_outreach_events_day_idx on sales_outreach_events (created_at) where kind = 'mensaje';
 alter table sales_outreach_events enable row level security;
+
+-- Cambios de datos que corren una sola vez (el esquema se aplica en cada deploy).
+create table if not exists data_migrations (
+  name text primary key,
+  applied_at timestamptz not null default now()
+);
+alter table data_migrations enable row level security;
+
+-- 28/10/2026: toda la prospección vuelve a «Por contactar» para empezar de nuevo con el saludo sin
+-- link. Se borran los contactos y cambios de estado registrados (queda una nota con lo que había);
+-- se conservan los datos, las notas y si abrió o probó su demo. Los que pidieron la baja siguen así.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-10-28-prospeccion-por-contactar') then
+    insert into sales_outreach_events (outreach_id, kind, detail)
+    select id, 'nota', 'Se reinició la prospección: vuelve a «Por contactar» (antes: ' || status || ', ' || touches || ' mensajes).'
+    from sales_outreach where status <> 'baja' and (status <> 'por_contactar' or touches > 0 or first_contact_at is not null);
+    delete from sales_outreach_events e using sales_outreach o
+    where e.outreach_id = o.id and o.status <> 'baja' and e.kind in ('mensaje', 'llamada', 'visita', 'estado');
+    update sales_outreach set status = 'por_contactar', touches = 0, greeted_at = null, first_contact_at = null, last_contact_at = null,
+      last_channel = null, next_action_on = null, updated_at = now()
+    where status <> 'baja';
+    insert into data_migrations (name) values ('2026-10-28-prospeccion-por-contactar');
+  end if;
+end $$;
 
 -- Mensajes de la prospección (editables desde el panel) y metas de la semana.
 alter table sales_settings add column if not exists outreach_templates jsonb not null default '{}'::jsonb;

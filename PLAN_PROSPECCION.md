@@ -1,6 +1,6 @@
 # Prospección: odontólogos de Mar del Plata y Miramar
 
-Actualizado: 25/10/2026. Estrategia, plan de la semana del 26 al 30/10 (meta: 250 primeros contactos) y cómo usar Panel → Prospección. **No contiene datos de contacto**: la lista se entrega aparte y vive solo en la base de Turnia.
+Actualizado: 28/10/2026. Estrategia, plan de la semana del 26 al 30/10 (meta: 250 primeros contactos) y cómo usar Panel → Prospección. **No contiene datos de contacto**: la lista se entrega aparte y vive solo en la base de Turnia.
 
 ## La táctica, en cinco líneas
 
@@ -51,8 +51,9 @@ Para los 250 de la semana alcanzan los 151 celulares (propios y de consultorio) 
 
 Se editan en Panel → Prospección → Mensajes y metas. Los de fábrica:
 
-- **Primero, a la persona:** saludo con su nombre, «te armé una demo con tu consultorio», qué hace Sofi en una línea, el link y la salida («si no, avisame y no te escribo más»).
-- **Primero, al consultorio:** «Le armé a la Dra. X una demo…», el dolor de la recepción (los mensajes acumulados de la mañana) y el pedido de que se la pasen.
+- **Saludo, siempre primero y sin link:** «¡Buenas! ¿Hablo con {saludo}?» (al consultorio: «¡Buenas! ¿Hablo con el consultorio de la Dra. X?»). Que un número desconocido mande un link de entrada es lo que hace que WhatsApp lo bloquee; si la persona responde, el chat ya cuenta como conversación. El saludo no cuenta como uno de los tres mensajes.
+- **Presentación a la persona (cuando responde el saludo):** saludo con su nombre, «te armé una demo con tu consultorio», qué hace Sofi en una línea, el link y la salida («si no, avisame y no te escribo más»).
+- **Presentación al consultorio:** «Le armé a la Dra. X una demo…», el dolor de la recepción (los mensajes acumulados de la mañana) y el pedido de que se la pasen.
 - **Seguimiento (2 días hábiles después):** la temporada y el mismo link.
 - **Después de probar la demo:** «¿Llegaste a probarla? ¿Qué te pareció?». Nunca «vi que la abriste».
 - **Último (4 días hábiles después):** «¿te la muestro 15 minutos o lo dejamos acá?». Después de tres mensajes no se escribe más.
@@ -65,7 +66,7 @@ Se editan en Panel → Prospección → Mensajes y metas. Los de fábrica:
 
 ## Panel → Prospección
 
-- **Para hoy:** primero los seguimientos que vencieron (arriba, quienes abrieron o probaron su demo), después los nuevos por prioridad hasta la meta del día (50). «Escribir por WhatsApp» abre WhatsApp Web (o la app en el celular) con el mensaje escrito; al tocarlo queda registrado y se programa el seguimiento. Si dos personas comparten número, el mensaje sale una sola vez.
+- **Para hoy:** primero los seguimientos que vencieron (arriba, quienes abrieron o probaron su demo), después los nuevos por prioridad hasta la meta del día (50). «Saludar por WhatsApp» abre WhatsApp Web (o la app en el celular) con el saludo escrito y queda registrado. El mismo día pasa a los seguimientos con «Mandar la demo»: mandásela cuando te responda. Desde ahí se programa el seguimiento. Si dos personas comparten número, el mensaje sale una sola vez.
 - **Esperando respuesta**, **Interesados** (respondieron, abrieron o probaron su demo) y **Todos**, con filtros por zona, canal, estado y búsqueda.
 - **Ficha:** el mensaje que toca, Instagram (copia el mensaje y abre el chat), llamada con guion, «Lo visité», estados, datos editables (saludo, consultorio, teléfono y de quién es —celular de la persona, celular del consultorio o fijo—, Instagram, web), notas e historia. «Buscar su Instagram» y «Buscar en Google» abren la búsqueda armada.
 - **Google Sheets:** con «Conectar con Google», la prospección y los pedidos de demo quedan en una planilla de tu Drive que se actualiza sola con cada cambio (`GOOGLE_SHEETS.md`).

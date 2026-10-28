@@ -42,8 +42,10 @@ export function contactPlan(p: Outreach, templates: Templates, link: string, tod
 }
 
 const WA_LABEL: Record<string, string> = {
-  whatsapp_1: "Escribir por WhatsApp",
-  whatsapp_consultorio: "Escribir al consultorio",
+  whatsapp_saludo: "Saludar por WhatsApp",
+  whatsapp_saludo_consultorio: "Saludar al consultorio",
+  whatsapp_1: "Mandar la demo",
+  whatsapp_consultorio: "Mandar la demo al consultorio",
   whatsapp_2: "Mandar seguimiento",
   whatsapp_3: "Mandar el último",
   whatsapp_demo: "Preguntar por la demo",
@@ -51,6 +53,9 @@ const WA_LABEL: Record<string, string> = {
 
 const waClass = "inline-flex items-center justify-center gap-1 rounded-full bg-[#15803d] px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-[#166534]";
 const outlineClass = "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-sm font-medium text-brand-800 ring-1 ring-brand-200 hover:bg-brand-50";
+
+/** Se le mandó el saludo y todavía no la presentación con la demo. */
+export const awaitingPitch = (p: Outreach) => p.touches === 0 && Boolean(p.greeted_at);
 
 export function OutreachRow({ p, templates, link, today }: { p: Outreach; templates: Templates; link: string; today: string }) {
   const plan = contactPlan(p, templates, link, today);
@@ -83,7 +88,7 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
         )}
         {p.first_contact_at && (
           <p className="mt-1 text-xs text-brand-900/60">
-            {p.touches > 0 ? `${p.touches} ${p.touches === 1 ? "mensaje" : "mensajes"}` : "Contactado"}
+            {p.touches > 0 ? `${p.touches} ${p.touches === 1 ? "mensaje" : "mensajes"}` : awaitingPitch(p) ? "Saludado: cuando responda, mandale la demo" : "Contactado"}
             {p.last_channel ? ` · último por ${CHANNEL_LABEL[p.last_channel] ?? p.last_channel}, el ${formatDate(p.last_contact_at!)}` : ""}
             {p.next_action_on && !plan.closed
               ? p.next_action_on <= today
@@ -117,9 +122,11 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
         )}
         {p.status === "contactado" && (
           <>
-            <ActionButton id={p.id} kind="status" value="respondio" className={smallButtonClass}>
-              Respondió
-            </ActionButton>
+            {!awaitingPitch(p) && (
+              <ActionButton id={p.id} kind="status" value="respondio" className={smallButtonClass}>
+                Respondió
+              </ActionButton>
+            )}
             <ActionButton id={p.id} kind="status" value="no_interesa" className={smallButtonClass}>
               No le interesa
             </ActionButton>
