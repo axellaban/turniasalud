@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { after } from "next/server";
 import { requireAdmin } from "@/lib/panel-clinic";
+import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
 import { Card, Empty, Notice, PageHeader, Stat, Tabs, buttonClass, ghostButtonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import {
   PAGE_SIZE,
@@ -23,6 +25,8 @@ const pct = (part: number, total: number) => (total ? `${Math.round((part / tota
 
 export default async function ProspeccionPage({ searchParams }: PageProps<"/panel/prospeccion">) {
   await requireAdmin();
+  // Las vistas previas de WhatsApp que falten (los recién sumados, o todas si cambió el dibujo).
+  after(() => ensureDemoPreviews());
   const params = await searchParams;
   const view = (VIEWS as string[]).includes(one(params.vista) ?? "") ? (one(params.vista) as OutreachView) : "hoy";
   const filter = { zone: one(params.zona) ?? null, q: one(params.q) ?? null, channel: one(params.canal) ?? null, status: one(params.estado) ?? null };

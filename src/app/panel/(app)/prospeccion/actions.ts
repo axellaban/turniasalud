@@ -1,9 +1,10 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
+import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
 import {
   CHANNELS,
@@ -19,7 +20,6 @@ import {
 import {
   OutreachError,
   addOutreachNote,
-  demoPreviewTag,
   getOutreach,
   importOutreach,
   recordTouch,
@@ -27,8 +27,6 @@ import {
   setOutreachStatus,
   undoLastTouch,
   updateOutreach,
-  warmDemoPreview,
-  warmDemoPreviews,
   type OutreachEdit,
 } from "@/lib/sales/outreach";
 
@@ -50,8 +48,7 @@ function refresh(id?: string) {
 /** Cambiaron sus datos (nombre, consultorio): la vista previa de su link se vuelve a armar ya. */
 function refreshPreviews(codes: string[]) {
   // Mientras se rearma, WhatsApp recibe la anterior: nunca espera.
-  for (const code of codes) revalidateTag(demoPreviewTag(code), "max");
-  after(() => warmDemoPreviews(codes));
+  after(() => ensureDemoPreviews(codes));
 }
 
 /** Le escribió (o lo llamó, o lo visitó): suma el contacto y programa el seguimiento. */
@@ -63,7 +60,7 @@ export async function touchAction(form: FormData): Promise<ActionState> {
   try {
     const p = await recordTouch(id, channel, { before: form.get("before") === "1" });
     // Recién saludado: la demo va en el próximo mensaje.
-    if (p.touches === 0 && p.greeted_at) after(() => warmDemoPreview(p.code));
+    if (p.touches === 0 && p.greeted_at) after(() => ensureDemoPreviews([p.code]));
   } catch (e) {
     return fail(e);
   }

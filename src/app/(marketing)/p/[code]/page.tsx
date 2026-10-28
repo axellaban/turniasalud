@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { demoStatus } from "@/lib/demo/config";
 import { demoExample, dentalServices, servicesPhrase } from "@/lib/demo/dental-services";
 import { isConfigured } from "@/lib/env";
+import { TAMANO } from "@/lib/og";
+import { demoPreviewVersion } from "@/lib/sales/demo-preview";
 import { publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
 import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
 import { EmpezarDemo } from "./empezar-demo";
@@ -19,7 +21,9 @@ export async function generateMetadata({ params }: PageProps<"/p/[code]">): Prom
   if (!p) return { title: "Demo de Turnia", robots: { index: false, follow: false } };
   const title = `Demo para ${consultorio(p)}`;
   const description = "Probá cómo Sofi atiende el WhatsApp de tu consultorio: contesta al instante, también a la noche y el fin de semana, y da los turnos.";
-  return { title, description, robots: { index: false, follow: false }, openGraph: { title, description }, twitter: { title, description } };
+  // La imagen ya armada (src/lib/sales/demo-preview.ts): WhatsApp no espera a que se arme.
+  const images = [{ url: `/p/${p.code}/vista-previa?v=${demoPreviewVersion(p)}`, ...TAMANO, type: "image/png", alt: "Demo de Turnia para tu consultorio" }];
+  return { title, description, robots: { index: false, follow: false }, openGraph: { title, description, images }, twitter: { title, description, images } };
 }
 
 export default async function DemoPersonalPage({ params, searchParams }: PageProps<"/p/[code]">) {
