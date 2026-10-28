@@ -4,7 +4,7 @@ Actualización: 28/10/2026 (Argentina). Este registro prevalece sobre los pendie
 
 ## Vista previa de las demos en WhatsApp, guardada en la base — 28/10/2026
 
-- **Problema:** algunos links de demo (por ejemplo `/p/monte-xbm`) seguían saliendo sin imagen en WhatsApp. La imagen se guardaba en la caché de Vercel, que se pierde en cada deploy y no siempre quedaba armada: cuando faltaba, armarla tardaba 2,5 a 4 s y WhatsApp no la esperaba.
+- **Problema:** algunos links de demo (por ejemplo `/p/monte-xbm`) seguían saliendo sin imagen en WhatsApp, también después de dejar la imagen sin vencimiento (#70). La imagen se guardaba en la caché de Vercel, que se pierde en cada deploy, no siempre quedaba armada y a los bots a veces no se la daba: la de monte-xbm se armó recién a las 18:02, con el primer pedido. Armarla tarda 2,5 a 4 s y WhatsApp no la espera.
 - **Ahora:** la imagen de cada uno queda guardada en la base (`sales_outreach_previews`) y se sirve desde `/p/<código>/vista-previa?v=<versión>`, que sale en menos de un segundo y después queda en la CDN. La versión cambia cuando cambian el nombre, el tratamiento, el consultorio o la especialidad, o el dibujo (`DISENO` en `src/lib/sales/demo-preview.ts`). Mientras se rearma, sale la anterior.
 - Se arma al importar, al editar y al saludar; las que faltan, en segundo plano cada vez que se abre Panel → Prospección (hasta 40 s por vez). Después del deploy, **abrir Panel → Prospección una vez** arma las de todos.
 - WhatsApp recuerda la vista previa de un link en el celular que la pidió: un link que ya salió sin imagen puede seguir así un rato en ese celular.
