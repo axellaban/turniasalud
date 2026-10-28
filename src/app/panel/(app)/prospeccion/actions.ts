@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
@@ -24,6 +25,7 @@ import {
   setOutreachStatus,
   undoLastTouch,
   updateOutreach,
+  warmDemoPreview,
   type OutreachEdit,
 } from "@/lib/sales/outreach";
 
@@ -42,6 +44,9 @@ function refresh(id?: string) {
   queueTurniaSheetSync();
 }
 
+/** Cambió el nombre o el consultorio de alguien: las vistas previas guardadas se vuelven a armar. */
+const refreshPreviews = () => revalidatePath("/(marketing)/p/[code]", "layout");
+
 /** Le escribió (o lo llamó, o lo visitó): suma el contacto y programa el seguimiento. */
 export async function touchAction(form: FormData): Promise<ActionState> {
   await requireAdmin();
@@ -49,7 +54,9 @@ export async function touchAction(form: FormData): Promise<ActionState> {
   const channel = text(form, "channel") as OutreachChannel;
   if (!(CHANNELS as readonly string[]).includes(channel)) return { ok: false, message: "Canal desconocido." };
   try {
-    await recordTouch(id, channel, { before: form.get("before") === "1" });
+    const p = await recordTouch(id, channel, { before: form.get("before") === "1" });
+    // Recién saludado: la demo va en el próximo mensaje.
+    if (p.touches === 0 && p.greeted_at) after(() => warmDemoPreview(p.code));
   } catch (e) {
     return fail(e);
   }
@@ -131,6 +138,7 @@ export async function updateOutreachAction(_prev: ActionState, form: FormData): 
   } catch (e) {
     return fail(e);
   }
+  refreshPreviews();
   refresh(id);
   return { ok: true, message: "Guardado." };
 }
@@ -158,6 +166,7 @@ export async function importOutreachAction(_prev: ImportState, form: FormData): 
   if (!preview.rows.length) return { ok: false, message: preview.problems[0]?.reason ?? "No encontramos filas para importar." };
   const overwrite = form.get("actualizar") === "1";
   const result = await importOutreach(preview.rows, { overwrite });
+  refreshPreviews();
   refresh();
   const already = overwrite ? "con los datos del archivo" : "solo se completó lo que faltaba";
   return {

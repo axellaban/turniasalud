@@ -207,6 +207,22 @@ export async function getOutreach(id: string): Promise<Outreach | null> {
   return row ?? null;
 }
 
+/**
+ * Deja armada la vista previa de su link (la imagen se guarda un día): así, cuando le llega la demo,
+ * WhatsApp la muestra al instante. Se pide como «Ver lo que recibe», que no cuenta como visita.
+ * Solo en producción, que es la dirección que recibe.
+ */
+export async function warmDemoPreview(code: string): Promise<void> {
+  if (process.env.VERCEL_ENV !== "production") return;
+  try {
+    const page = await fetch(`${outreachDemoUrl(code)}?vista=panel`, { signal: AbortSignal.timeout(15_000) });
+    const image = /<meta property="og:image" content="([^"]+)"/.exec(await page.text())?.[1];
+    if (image) await fetch(image.replace(/&amp;/g, "&"), { signal: AbortSignal.timeout(15_000) });
+  } catch {
+    // Si falla, WhatsApp la arma cuando le llegue el link: tarda un poco más, nada más.
+  }
+}
+
 /** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. */
 export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website">;
 

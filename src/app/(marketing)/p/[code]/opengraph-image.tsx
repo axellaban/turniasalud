@@ -7,6 +7,10 @@ import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
 export const alt = "Demo de Turnia para tu consultorio";
 export const size = TAMANO;
 export const contentType = "image/png";
+// Se arma una vez por demo y queda guardada un día: WhatsApp espera poco la vista previa y,
+// generada en el momento, tarda 2 o 3 segundos.
+export const dynamic = "force-static";
+export const revalidate = 86400;
 
 export default async function Image({ params }: { params: Promise<{ code: string }> }) {
   const p = await publicOutreach((await params).code).catch(() => null);
