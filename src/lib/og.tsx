@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import sharp from "sharp";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MARK_PATH } from "@/components/logo";
@@ -6,6 +7,7 @@ import { MARK_PATH } from "@/components/logo";
 // Miniaturas para compartir links (WhatsApp, LinkedIn, X, Slack): 1200×630, con el
 // key visual de la web. Se generan una vez en el build desde los opengraph-image.tsx.
 // Satori solo entiende flexbox y estilos en línea: cada div con más de un hijo lleva display flex.
+// Salen en JPEG: en PNG, las que llevan la foto pesan más de 500 KB y WhatsApp no muestra las de más de ~300 KB.
 
 export const TAMANO = { width: 1200, height: 630 };
 
@@ -252,11 +254,18 @@ function TarjetaChat({ paciente, agente, titulo }: { paciente: string; agente: s
   );
 }
 
+/** El PNG de Satori, en JPEG: la de la portada pasa de 540 KB a 80 KB y se ve igual. */
+async function jpeg(imagen: ImageResponse): Promise<Response> {
+  const png = Buffer.from(await imagen.arrayBuffer());
+  const jpg = await sharp(png).flatten({ background: COLOR.navy }).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+  return new Response(new Uint8Array(jpg), { headers: { "Content-Type": "image/jpeg" } });
+}
+
 const recortar = (t: string, max: number) => (t.length > max ? `${t.slice(0, max - 1).replace(/[\s,.;:]+\S*$/, "")}…` : t);
 
 /** Miniatura general del sitio (home y todas las páginas sin una propia). */
 export async function imagenPortada() {
-  return new ImageResponse(
+  return jpeg(new ImageResponse(
     (
       <Fondo>
         <Texto
@@ -276,7 +285,7 @@ export async function imagenPortada() {
       </Fondo>
     ),
     { ...TAMANO, fonts: await fuentes() },
-  );
+  ));
 }
 
 /** Miniatura de una página interna: título propio y, si hay, un ejemplo de chat. */
@@ -292,7 +301,7 @@ export async function imagenPagina({
   nombreChat?: string;
 }) {
   const tamanoTitulo = titulo.length > 60 ? 54 : titulo.length > 38 ? 62 : 72;
-  return new ImageResponse(
+  return jpeg(new ImageResponse(
     (
       <Fondo>
         <Texto eyebrow={recortar(eyebrow, 46)} tamanoTitulo={tamanoTitulo} titulo={<div style={{ display: "flex" }}>{recortar(titulo, 90)}</div>} />
@@ -306,5 +315,5 @@ export async function imagenPagina({
       </Fondo>
     ),
     { ...TAMANO, fonts: await fuentes() },
-  );
+  ));
 }

@@ -12,7 +12,7 @@ import { ofBusiness, withArticle } from "./outreach-messages";
 // Se arma al importar, al editar y al saludar; la que falte, al abrir Panel → Prospección.
 
 /** Cambialo cuando cambie el dibujo (src/lib/og.tsx o el ejemplo del chat): se rearman todas. */
-const DISENO = "2026-10-28";
+const DISENO = "2026-10-29-jpeg";
 
 type Datos = Pick<PublicOutreach, "name" | "title" | "business_name" | "specialty">;
 type Fila = Datos & { id: string; code: string; version: string | null };
@@ -34,25 +34,25 @@ async function render(p: Datos): Promise<Buffer> {
 }
 
 async function build(p: Fila): Promise<Buffer> {
-  const png = await render(p);
+  const image = await render(p);
   await sql`
-    insert into sales_outreach_previews (outreach_id, version, png) values (${p.id}, ${demoPreviewVersion(p)}, ${png})
-    on conflict (outreach_id) do update set version = excluded.version, png = excluded.png, created_at = now()`;
-  return png;
+    insert into sales_outreach_previews (outreach_id, version, image) values (${p.id}, ${demoPreviewVersion(p)}, ${image})
+    on conflict (outreach_id) do update set version = excluded.version, image = excluded.image, created_at = now()`;
+  return image;
 }
 
 /**
  * La imagen guardada de su link. Si cambiaron sus datos sale la anterior (`fresh: false`, para
  * rearmarla después) y solo se arma en el momento si no hay ninguna.
  */
-export async function demoPreviewImage(code: string): Promise<{ png: Buffer; fresh: boolean } | null> {
+export async function demoPreviewImage(code: string): Promise<{ image: Buffer; fresh: boolean } | null> {
   if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code)) return null;
-  const [p] = await sql<Array<Fila & { png: Buffer | null }>>`
-    select o.id, o.code, o.name, o.title, o.business_name, o.specialty, v.version, v.png
+  const [p] = await sql<Array<Fila & { image: Buffer | null }>>`
+    select o.id, o.code, o.name, o.title, o.business_name, o.specialty, v.version, v.image
     from sales_outreach o left join sales_outreach_previews v on v.outreach_id = o.id where o.code = ${code}`;
   if (!p) return null;
-  if (p.png) return { png: p.png, fresh: p.version === demoPreviewVersion(p) };
-  return { png: await build(p), fresh: true };
+  if (p.image) return { image: p.image, fresh: p.version === demoPreviewVersion(p) };
+  return { image: await build(p), fresh: true };
 }
 
 /**

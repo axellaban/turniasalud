@@ -3,7 +3,7 @@ import { ESPECIALIDADES, getEspecialidad } from "@/content/especialidades";
 
 export const alt = "Turnia Salud por especialidad";
 export const size = TAMANO;
-export const contentType = "image/png";
+export const contentType = "image/jpeg";
 
 export function generateStaticParams() {
   return ESPECIALIDADES.map((e) => ({ slug: e.slug }));

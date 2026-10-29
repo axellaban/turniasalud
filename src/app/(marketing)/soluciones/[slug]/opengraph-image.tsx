@@ -3,7 +3,7 @@ import { CASOS, getCaso } from "@/content/casos";
 
 export const alt = "Turnia Salud por caso de uso";
 export const size = TAMANO;
-export const contentType = "image/png";
+export const contentType = "image/jpeg";
 
 export function generateStaticParams() {
   return CASOS.map((c) => ({ slug: c.slug }));
