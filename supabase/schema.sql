@@ -775,10 +775,17 @@ alter table sales_outreach_events enable row level security;
 create table if not exists sales_outreach_previews (
   outreach_id uuid primary key references sales_outreach(id) on delete cascade,
   version text not null,
-  png bytea not null,
+  image bytea not null,
   created_at timestamptz not null default now()
 );
 alter table sales_outreach_previews enable row level security;
+-- 29/10/2026: pasan a JPEG (pesan un cuarto); la columna deja de llamarse png.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sales_outreach_previews' and column_name = 'png') then
+    alter table sales_outreach_previews rename column png to image;
+  end if;
+end $$;
 
 -- Cambios de datos que corren una sola vez (el esquema se aplica en cada deploy).
 create table if not exists data_migrations (

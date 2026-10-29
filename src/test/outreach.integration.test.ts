@@ -360,11 +360,11 @@ describe.runIf(base)("prospección a odontólogos", () => {
 
     const res = await pedir("lopez-j7k", v);
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("content-type")).toBe("image/jpeg");
     expect(res.headers.get("cache-control")).toContain("immutable");
-    const png = Buffer.from(await res.arrayBuffer());
-    expect(png.subarray(1, 4).toString()).toBe("PNG");
-    expect(png.length).toBeLessThan(300_000);
+    const jpg = Buffer.from(await res.arrayBuffer());
+    expect([jpg[0], jpg[1]]).toEqual([0xff, 0xd8]);
+    expect(jpg.length).toBeLessThan(150_000);
 
     // Cambió el consultorio: mientras se rearma sale la anterior, sin quedar fija en la CDN.
     await sql`update sales_outreach set business_name = 'Sonrisas López' where code = 'lopez-j7k'`;

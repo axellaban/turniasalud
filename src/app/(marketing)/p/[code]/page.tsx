@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: PageProps<"/p/[code]">): Prom
   const title = `Demo para ${consultorio(p)}`;
   const description = "Probá cómo Sofi atiende el WhatsApp de tu consultorio: contesta al instante, también a la noche y el fin de semana, y da los turnos.";
   // La imagen ya armada (src/lib/sales/demo-preview.ts): WhatsApp no espera a que se arme.
-  const images = [{ url: `/p/${p.code}/vista-previa?v=${demoPreviewVersion(p)}`, ...TAMANO, type: "image/png", alt: "Demo de Turnia para tu consultorio" }];
+  const images = [{ url: `/p/${p.code}/vista-previa?v=${demoPreviewVersion(p)}`, ...TAMANO, type: "image/jpeg", alt: "Demo de Turnia para tu consultorio" }];
   return { title, description, robots: { index: false, follow: false }, openGraph: { title, description, images }, twitter: { title, description, images } };
 }
 

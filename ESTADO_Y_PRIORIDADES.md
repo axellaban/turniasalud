@@ -1,6 +1,12 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 28/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 29/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Miniaturas en JPEG: la de la home también sale en WhatsApp — 29/10/2026
+
+- Las miniaturas con la foto (home y todas las páginas sin una propia, soluciones, organizaciones) pesaban 520 a 540 KB en PNG; WhatsApp no muestra las de más de ~300 KB. Ahora todas salen en JPEG (`src/lib/og.tsx`, con `sharp`): la de la home pasa a 78 KB y las demás quedan entre 60 y 80 KB, sin diferencia visible.
+- Las de las demos también: de 184 KB a unos 40 KB. Se rearman solas (cambió `DISENO`); la columna pasa a llamarse `image`.
+- 1 prueba nueva (304 en total), TypeScript, ESLint y build.
 
 ## Vista previa de las demos en WhatsApp, guardada en la base — 28/10/2026
 
