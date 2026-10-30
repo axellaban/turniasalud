@@ -2,6 +2,13 @@
 
 Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Demo en el navegador: el motivo cuando se corta al conectar — 30/10/2026
+
+- **Reporte del usuario:** en `/probar-demo/sesion/…`, desde el celular, la voz pasaba enseguida a «Llamada terminada».
+- **Diagnóstico:** el permiso y las variables salen bien; el agente y los créditos andan (por WebSocket directo, tres conversaciones seguidas respondieron, también sin el saludo fijo). En una sesión de prueba, la primera conversación por chat se cortó apenas conectó y la siguiente anduvo: es intermitente y lo corta ElevenLabs, no la página. La página no mostraba por qué.
+- **Ahora:** si se corta antes de que el agente diga algo y no la cortó la persona, la demo muestra «No se pudo conectar con Sofi (motivo)» en lugar de «Conversación terminada», y `demo_conversation_ended` lleva `end_reason` (`disconnect_agent` o `disconnect_error`) y `end_detail` (el motivo técnico).
+- **Pendiente:** con el motivo a la vista, buscar la causa (límite de conversaciones simultáneas de ElevenLabs u otra). Se creó la demo de prueba «Prueba Claude diagnóstico voz» (`prueba-claude@turnia.test`); se puede borrar.
+
 ## Turno con dos profesionales — 30/10/2026
 
 - **Pedido (Dr. Mininni):** «puede pasar que con Emi hagamos una cirugía juntos: hay que anotar ese turno con los dos profesionales y cancelar el horario de agenda de Emi».

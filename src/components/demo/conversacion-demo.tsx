@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useConversation } from "@elevenlabs/react";
+import { useConversation, type DisconnectionDetails } from "@elevenlabs/react";
 import { Chevron, Icono } from "@/components/site/iconos";
 import { track, trackMilestone } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
@@ -125,13 +125,20 @@ export function ConversacionDemo({
 
   // PostHog: cada conversación de punta a punta (modo, duración y cuántos mensajes), nunca el texto.
   const charla = useRef<{ mode: DemoMode; startedAt: number; user: number; agent: number } | null>(null);
-  const terminarCharla = useCallback((reason: string, beacon = false) => {
+  const terminarCharla = useCallback((reason: string, beacon = false, detail?: string) => {
     const c = charla.current;
     if (!c) return;
     charla.current = null;
     track(
       "demo_conversation_ended",
-      { mode: c.mode, duration_ms: Math.min(Date.now() - c.startedAt, 3_600_000), user_messages: c.user, agent_messages: c.agent, end_reason: reason },
+      {
+        mode: c.mode,
+        duration_ms: Math.min(Date.now() - c.startedAt, 3_600_000),
+        user_messages: c.user,
+        agent_messages: c.agent,
+        end_reason: reason,
+        ...(detail ? { end_detail: detail } : {}),
+      },
       beacon,
     );
   }, []);
@@ -157,8 +164,22 @@ export function ConversacionDemo({
       if (charla.current) track("demo_conversation_error", { mode: charla.current.mode });
       setError(typeof message === "string" ? message : "Se cortó la conversación.");
     },
-    onDisconnect: () => {
-      terminarCharla("disconnect");
+    onDisconnect: (details: DisconnectionDetails) => {
+      // Si se corta antes de que el agente diga algo y no la cortó la persona, se muestra
+      // el motivo que da ElevenLabs: sin esto solo se veía «Conversación terminada».
+      const sinRespuesta = charla.current?.agent === 0 && details.reason !== "user";
+      const motivo =
+        details.reason === "user"
+          ? ""
+          : [details.reason === "error" ? details.message : "", details.closeReason, details.context?.reason, details.closeCode ?? details.context?.code]
+              .filter((x) => x !== undefined && x !== null && x !== "")
+              .join(" · ")
+              .slice(0, 160);
+      terminarCharla(details.reason === "user" ? "disconnect" : `disconnect_${details.reason}`, false, motivo);
+      if (sinRespuesta) {
+        setError(`No se pudo conectar con ${clinic.agentName}${motivo ? ` (${motivo})` : ""}. Probá de nuevo en unos segundos.`);
+        return;
+      }
       push("system", "Conversación terminada.");
     },
   });

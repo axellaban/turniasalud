@@ -128,7 +128,7 @@ Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propi
 | `demo_wait_abandoned` | navegador | `waited_ms`. Se fue mientras se leía la web |
 | `demo_conversation_started` | navegador | `mode` (`voz`, `chat`), `with_suggestion`, `remaining` |
 | `first_demo_conversation` | navegador | Una vez por navegador |
-| `demo_conversation_ended` | navegador | `mode`, `duration_ms`, `user_messages`, `agent_messages`, `end_reason` |
+| `demo_conversation_ended` | navegador | `mode`, `duration_ms`, `user_messages`, `agent_messages`, `end_reason` (`disconnect` si la cortó la persona, `disconnect_agent` o `disconnect_error` si la cortó ElevenLabs), `end_detail` (motivo técnico del corte, sin datos personales) |
 | `demo_conversation_failed` | navegador | `error_kind`: `mic_denied`, `mic_missing`, `start_error` |
 | `demo_conversation_error` | navegador | Se cortó durante la conversación |
 | `demo_mode_switched` | navegador | `to` |
