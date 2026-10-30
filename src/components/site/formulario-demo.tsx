@@ -1,14 +1,25 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { pedirDemo, type EstadoLead } from "@/app/(marketing)/pedi-una-demo/actions";
 import { ESPECIALIDADES } from "@/content/especialidades";
+import { track } from "@/lib/analytics";
+import { useFormTracking } from "@/lib/form-tracking";
 
 const input =
   "mt-1.5 w-full rounded-lg border border-brand-950/12 bg-white px-3.5 py-2.5 text-sm text-brand-950 outline-none placeholder:text-brand-950/35 focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 
 export function FormularioDemo({ origen, compacto = false }: { origen: string; compacto?: boolean }) {
   const [estado, enviar, enviando] = useActionState<EstadoLead | undefined, FormData>(pedirDemo, undefined);
+  // PostHog: visto, empezado, enviado y su resultado (nunca lo que escribió).
+  const form = useFormTracking("lead", { origen, compacto });
+  const reported = useRef<EstadoLead | undefined>(undefined);
+  useEffect(() => {
+    if (!estado || reported.current === estado) return;
+    reported.current = estado;
+    if (estado.ok) track("lead_created", { origen }, false, { first_lead_at: new Date().toISOString() });
+    else if (estado.error) form.failed("rejected");
+  }, [estado, form, origen]);
 
   if (estado?.ok)
     return (
@@ -20,7 +31,7 @@ export function FormularioDemo({ origen, compacto = false }: { origen: string; c
     );
 
   return (
-    <form action={enviar} className="rounded-2xl bg-white p-6 text-left shadow-[0_20px_50px_rgb(8_24_63/0.12)] ring-1 ring-brand-950/5 sm:p-8">
+    <form action={enviar} onSubmit={() => form.submitted()} onInputCapture={form.onInput} className="rounded-2xl bg-white p-6 text-left shadow-[0_20px_50px_rgb(8_24_63/0.12)] ring-1 ring-brand-950/5 sm:p-8">
       <h2 className="text-xl font-medium tracking-tight text-brand-950">Pedí una demo</h2>
       <input type="hidden" name="origen" value={origen} />
       <div className="absolute -left-[9999px]" aria-hidden="true">

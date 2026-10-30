@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Logo, LogoMark } from "@/components/logo";
 import { getPanelUser } from "@/lib/panel-clinic";
 import { ClinicSwitcher } from "./clinic-switcher";
+import { MarcaInterna } from "./marca-interna";
 import { PanelMobileNav, PanelSidebarNav } from "./nav";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export default async function PanelLayout({ children }: LayoutProps<"/panel">) {
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-28 pt-6 sm:px-8 md:pb-12 md:pt-8">{children}</main>
       </div>
       <PanelMobileNav admin={admin} />
+      {admin && <MarcaInterna />}
     </div>
   );
 }

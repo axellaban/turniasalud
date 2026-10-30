@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { normalizeManualClinic, normalizeWebsite, type ManualClinic } from "@/lib/demo/website";
 import { Icono } from "@/components/site/iconos";
+import { analyticsId, track } from "@/lib/analytics";
+import { useFormTracking } from "@/lib/form-tracking";
 
 type Via = "navegador" | "chat";
 type Modo = "web" | "nombre";
@@ -39,20 +41,29 @@ export function ProbarDemoForm({
   const [error, setError] = useState<{ campo: "web" | "nombre" | null; texto: string } | null>(null);
   const [eligiendo, setEligiendo] = useState(false);
   const [pending, setPending] = useState<Via | null>(null);
+  // Para PostHog: si llegó con un link personalizado (?web= o ?nombre=) y con qué modo está el formulario.
+  const prefilled = Boolean(initialWeb || initialManual);
+  const form = useFormTracking("demo", { mode: modo, prefilled, available: webReady || chatReady });
 
   async function abrir(via: Via, body: Record<string, unknown>) {
     setError(null);
     setPending(via);
+    const props = { source: "probar_demo", via, with_web: "website" in body, prefilled };
+    // Sale en el acto: la navegación a la demo (o a WhatsApp) viene enseguida.
+    track("demo_started", props, true);
+    let status = 0;
     try {
       const response = await fetch("/api/demo/iniciar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, via }),
+        body: JSON.stringify({ ...body, via, ph: analyticsId() }),
       });
+      status = response.status;
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "No se pudo abrir la demo.");
       window.location.assign(result.url);
     } catch (e) {
+      track("demo_start_failed", { ...props, error_kind: status ? `api_${status}` : "network" });
       setError({ campo: null, texto: e instanceof Error ? e.message : "No se pudo abrir la demo." });
       setPending(null);
     }
@@ -62,16 +73,28 @@ export function ProbarDemoForm({
     e.preventDefault();
     if (modo === "nombre") {
       const manual = normalizeManualClinic({ nombre, direccion: initialManual?.direccion, especialidad });
-      if (!manual) return void setError({ campo: "nombre", texto: "Escribí el nombre del consultorio. Por ejemplo: Consultorio Pérez" });
-      if (!webReady) return void setError({ campo: null, texto: "La demo sin web no está disponible por el momento." });
+      if (!manual) {
+        form.failed("missing_name");
+        return void setError({ campo: "nombre", texto: "Escribí el nombre del consultorio. Por ejemplo: Consultorio Pérez" });
+      }
+      if (!webReady) {
+        form.failed("unavailable");
+        return void setError({ campo: null, texto: "La demo sin web no está disponible por el momento." });
+      }
+      form.submitted();
       return void abrir("navegador", manual);
     }
     const website = normalizeWebsite(web);
-    if (!website) return void setError({ campo: "web", texto: "Revisá la dirección. Por ejemplo: miclinica.com.ar" });
+    if (!website) {
+      form.failed("invalid_web");
+      return void setError({ campo: "web", texto: "Revisá la dirección. Por ejemplo: miclinica.com.ar" });
+    }
     setError(null);
+    form.submitted();
     const navegador = webReady && !(chatReady && esCelular());
     if (navegador || !chatReady) return void abrir(webReady ? "navegador" : "chat", { website });
     if (!webReady) return void abrir("chat", { website });
+    track("demo_via_offered", { prefilled });
     setEligiendo(true);
   }
 
@@ -141,7 +164,7 @@ export function ProbarDemoForm({
     </button>
   );
   return (
-    <form onSubmit={probar} className="mx-auto mt-10 max-w-[620px] text-left" noValidate>
+    <form onSubmit={probar} onInputCapture={form.onInput} className="mx-auto mt-10 max-w-[620px] text-left" noValidate>
       {modo === "web" ? (
         <div className="grid gap-3 rounded-2xl bg-white p-3 shadow-lg ring-1 ring-brand-950/10 sm:grid-cols-[1fr_auto]">
           <div>

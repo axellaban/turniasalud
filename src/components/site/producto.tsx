@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { getConversacion } from "@/content/conversaciones";
 import type { Producto } from "@/content/productos";
 import { Flecha, Icono } from "./iconos";
@@ -48,7 +49,7 @@ export function PaginaProducto({ p }: { p: Producto }) {
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-[17px] leading-relaxed text-tinta">{p.bajada}</p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link href="/pedi-una-demo" className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
+            <Link href="/pedi-una-demo" {...cta("guided_demo", "product_hero", "pedi_una_demo")} className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
               Pedí una demo <Flecha />
             </Link>
             <Link href={demo ? "#escuchar" : "/escucha-a-nuestros-agentes"} className="inline-flex items-center gap-2 rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-50">
@@ -202,7 +203,7 @@ export function PaginaProducto({ p }: { p: Producto }) {
           <h2 className="mx-auto max-w-2xl text-3xl font-medium tracking-tight sm:text-[40px] sm:leading-tight">{p.cta.titulo}</h2>
           <p className="mx-auto mt-4 max-w-lg text-brand-100">{p.cta.bajada}</p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link href="/pedi-una-demo" className="rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-700 hover:bg-brand-50">
+            <Link href="/pedi-una-demo" {...cta("guided_demo", "product_closing", "pedi_una_demo")} className="rounded-lg bg-white px-5 py-3 text-sm font-medium text-brand-700 hover:bg-brand-50">
               Pedí una demo
             </Link>
             <Link href="/escucha-a-nuestros-agentes" className="rounded-lg px-5 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10">

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
+import { track } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
 
 type Info = { token: string; dynamicVariables: Record<string, string>; userId: string; clinicName: string; agentName: string; error?: string };
@@ -19,9 +20,24 @@ function Llamada({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ended, setEnded] = useState(false);
+  // PostHog: la llamada de la demo de WhatsApp (el link que se manda cuando no se puede llamar al teléfono).
+  const startedAt = useRef<number | null>(null);
+  const cortar = useCallback((reason: string, beacon = false) => {
+    if (startedAt.current === null) return;
+    track("demo_conversation_ended", { demo_kind: "llamada_web", mode: "voz", duration_ms: Math.min(Date.now() - startedAt.current, 3_600_000), end_reason: reason }, beacon);
+    startedAt.current = null;
+  }, []);
+  useEffect(() => {
+    const salir = () => cortar("pagehide", true);
+    window.addEventListener("pagehide", salir);
+    return () => window.removeEventListener("pagehide", salir);
+  }, [cortar]);
   const conversation = useConversation({
     onError: (message) => setError(typeof message === "string" ? message : "Se cortó la llamada."),
-    onDisconnect: () => setEnded(true),
+    onDisconnect: () => {
+      cortar("disconnect");
+      setEnded(true);
+    },
   });
   const connected = conversation.status === "connected";
 
@@ -40,8 +56,11 @@ function Llamada({ token }: { token: string }) {
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar la llamada.");
       setInfo(data);
       await conversation.startSession({ conversationToken: data.token, dynamicVariables: data.dynamicVariables, userId: data.userId });
+      startedAt.current = Date.now();
+      track("demo_conversation_started", { demo_kind: "llamada_web", mode: "voz" });
     } catch (e) {
       const permiso = e instanceof DOMException && e.name === "NotAllowedError";
+      track("demo_conversation_failed", { demo_kind: "llamada_web", mode: "voz", error_kind: permiso ? "mic_denied" : "start_error" });
       setError(permiso ? "Necesitamos permiso para usar el micrófono." : e instanceof Error ? e.message : "No se pudo iniciar la llamada.");
     } finally {
       setLoading(false);

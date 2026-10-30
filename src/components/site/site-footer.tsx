@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cta as ctaAttrs } from "@/lib/analytics-shared";
 import { Logo } from "@/components/logo";
 import { EMPRESA, PLATAFORMA, RECURSOS, SOLUCIONES_CASOS, SOLUCIONES_ESPECIALIDADES, SOLUCIONES_ORGANIZACIONES, type EnlaceMenu } from "@/content/site";
 import { FooterCta } from "./footer-cta";
@@ -32,7 +33,7 @@ export function SiteFooter({ cta = true }: { cta?: boolean }) {
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">
               Agentes de IA que atienden el WhatsApp y el teléfono de clínicas y consultorios. Hecho en Argentina.
             </p>
-            <Link href="/probar-demo" className="mt-5 inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
+            <Link href="/probar-demo" {...ctaAttrs("try_demo", "footer", "probar_demo")} className="mt-5 inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
               <Icono nombre="chat" className="h-4 w-4" /> Probalo con tu web
             </Link>
           </div>
@@ -64,7 +65,7 @@ export function SiteFooter({ cta = true }: { cta?: boolean }) {
             <Link href="/privacidad" className="hover:text-white">
               Política de privacidad
             </Link>
-            <Link href="/pedi-una-demo#contacto" className="hover:text-white">
+            <Link href="/pedi-una-demo#contacto" {...ctaAttrs("guided_demo", "footer", "pedi_una_demo")} className="hover:text-white">
               Contacto
             </Link>
           </div>

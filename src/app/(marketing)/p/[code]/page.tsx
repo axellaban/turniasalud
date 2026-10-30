@@ -8,6 +8,7 @@ import { demoPreviewVersion } from "@/lib/sales/demo-preview";
 import { publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
 import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
 import { EmpezarDemo } from "./empezar-demo";
+import { SeguimientoDemo } from "./seguimiento-demo";
 
 // La demo de cada odontólogo de la prospección: llega por el link del mensaje de Axel.
 export const dynamic = "force-dynamic";
@@ -46,9 +47,19 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
         servicios: services.length ? p.specialty : null,
       };
   const ejemplo = demoExample(services, withArticle(p.title, p.name), ofBusiness(consultorio(p)));
+  // Para PostHog: lo que sirve para comparar, sin nombre ni teléfono (ANALITICA.md).
+  const facts = {
+    prospect_priority: p.priority,
+    prospect_zone: p.zone,
+    prospect_phone_kind: p.phone_kind ?? "",
+    prospect_status: p.status,
+    with_web: Boolean(p.website),
+    demo_ready: lista,
+  };
 
   return (
     <section className="bg-gradient-to-b from-[#eef2ff] to-white">
+      <SeguimientoDemo code={p.code} facts={facts} contar={contar} />
       <div className="mx-auto max-w-[760px] px-4 pb-24 pt-16 text-center sm:px-6 md:pt-24">
         <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Demo para {consultorio(p)}</p>
         <h1 className="mx-auto mt-4 max-w-[680px] text-[34px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:text-[50px]">

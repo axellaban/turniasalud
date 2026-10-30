@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { demoStatus } from "@/lib/demo/config";
 import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
 import { isConfigured } from "@/lib/env";
@@ -66,7 +67,7 @@ export default async function ProbarDemoPage({ searchParams }: PageProps<"/proba
         <p className="mx-auto mt-10 max-w-[620px] text-sm leading-relaxed text-tinta">
           La demo usa solo la información pública de tu web. Los turnos que reserves son de prueba y no llegan a tu agenda real.
           ¿Preferís que te la mostremos nosotros?{" "}
-          <Link href="/pedi-una-demo" className="font-medium text-brand-600 hover:underline">
+          <Link href="/pedi-una-demo" {...cta("guided_demo", "probar_demo_page", "pedi_una_demo")} className="font-medium text-brand-600 hover:underline">
             Pedí una demo guiada
           </Link>
           .

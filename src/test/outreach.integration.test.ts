@@ -10,8 +10,13 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 const mocks = vi.hoisted(() => ({
   session: undefined as string | undefined,
   after: [] as Array<() => unknown>,
+  capture: [] as Array<{ event: string; distinctId: string; properties: Record<string, unknown>; person?: { set?: Record<string, unknown>; setOnce?: Record<string, unknown> } }>,
 }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn(async () => {}) }));
+vi.mock("@/lib/analytics-server", () => ({
+  captureLater: (event: string, distinctId: string, properties: Record<string, unknown> = {}, person?: (typeof mocks.capture)[number]["person"]) =>
+    mocks.capture.push({ event, distinctId, properties, person }),
+}));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: (name: string) => (name === "turnia_session" && mocks.session ? { value: mocks.session } : undefined), set: () => {}, delete: () => {} }),
 }));
@@ -197,8 +202,20 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const prueba = await id("prueba-x1y");
     const antes = (await outreach.outreachStats()).today_new;
     expect(await actions.undoTouchAction(form({ id: prueba }))).toMatchObject({ ok: false, message: expect.stringContaining("No hay contactos") });
+    mocks.capture.length = 0;
     for (let i = 0; i < 3; i++) await actions.touchAction(form({ id: prueba, channel: "whatsapp" }));
     expect((await outreach.outreachStats()).today_new).toBe(antes + 1);
+    // En PostHog, la misma persona que su link de demo: el saludo, la demo enviada y el seguimiento, sin nombre ni teléfono.
+    expect(mocks.capture.map((c) => [c.event, c.distinctId, c.properties.touch_number])).toEqual([
+      ["prospect_greeting_sent", "prospecto:prueba-x1y", 0],
+      ["prospect_pitch_sent", "prospecto:prueba-x1y", 1],
+      ["prospect_followup_sent", "prospecto:prueba-x1y", 2],
+    ]);
+    expect(mocks.capture[1].person).toEqual({
+      set: { prospect_priority: 3, prospect_zone: "Mar del Plata", prospect_specialty: null, prospect_phone_kind: "movil", prospect_status: "contactado", prospect_touches: 1 },
+      setOnce: { prospect_code: "prueba-x1y" },
+    });
+    expect(JSON.stringify(mocks.capture)).not.toMatch(/Prueba Deshacer|5492230000001/);
     const read = async () =>
       (await sql`select status, touches, next_action_on, first_contact_at is not null as contacted, greeted_at is not null as greeted from sales_outreach where id = ${prueba}`)[0];
     // Deshacer el seguimiento: queda la demo y el seguimiento vuelve a contarse desde ese mensaje.
@@ -215,12 +232,21 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(row).toEqual({ status: "por_contactar", touches: 0, next_action_on: null, first_contact_at: null, last_channel: null, greeted_at: null });
     expect((await outreach.outreachStats()).today_new).toBe(antes);
     expect((await outreach.outreachEvents(prueba)).map((e) => e.kind)).toEqual(["nota", "nota", "nota"]);
+    expect(mocks.capture.slice(3).map((c) => [c.event, c.properties.contact_kind])).toEqual([
+      ["prospect_contact_undone", "mensaje"],
+      ["prospect_contact_undone", "mensaje"],
+      ["prospect_contact_undone", "saludo"],
+    ]);
     await sql`delete from sales_outreach where id = ${prueba}`;
   });
 
   it("respondió, no le interesa y la baja (que vale también para las llamadas de Sofi)", async () => {
     const lopez = await id("lopez-j7k");
+    mocks.capture.length = 0;
     expect(await actions.statusAction(form({ id: lopez, status: "respondio" }))).toMatchObject({ ok: true });
+    expect(mocks.capture).toMatchObject([
+      { event: "prospect_status_changed", distinctId: "prospecto:lopez-j7k", properties: { status_from: "contactado", status_to: "respondio" }, person: { set: { prospect_status: "respondio" } } },
+    ]);
     expect((await outreach.listOutreach({ view: "interesados" })).rows.map((p) => p.code)).toContain("lopez-j7k");
     expect(await actions.statusAction(form({ id: lopez, status: "inventado" }))).toMatchObject({ ok: false });
 
@@ -249,7 +275,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
 
   it("su link de demo registra que la abrió y que la probó, con su nombre como profesional", async () => {
     const pub = await outreach.publicOutreach("lopez-j7k");
-    expect(pub).toEqual({ code: "lopez-j7k", name: "María Elvira López Sánchez", greeting: "María", title: "Dra.", business_name: "Consultorio Odontológico López", zone: "Mar del Plata", address: "Saavedra 3527", specialty: "Ortodoncia", website: null });
+    expect(pub).toEqual({ code: "lopez-j7k", name: "María Elvira López Sánchez", greeting: "María", title: "Dra.", business_name: "Consultorio Odontológico López", zone: "Mar del Plata", address: "Saavedra 3527", specialty: "Ortodoncia", website: null, priority: 2, phone_kind: "movil", status: "respondio" });
     expect(await outreach.publicOutreach("NO VALE")).toBeNull();
 
     const abrir = (await import("@/app/api/p/[code]/route")).POST;

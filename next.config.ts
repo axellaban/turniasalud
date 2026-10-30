@@ -22,6 +22,18 @@ const nextConfig: NextConfig = {
   env: { TURNIA_AUDIOS_REPO: audiosDelRepo.join(",") },
   // Importar pacientes manda la planilla entera a una server action (hasta ~3,5 MB de CSV).
   experimental: { serverActions: { bodySizeLimit: "4mb" } },
+  // Lo pide el proxy de PostHog: sus rutas terminan en barra.
+  skipTrailingSlashRedirect: true,
+  // PostHog por el mismo dominio (/ingest): los bloqueadores de anuncios no cortan los eventos.
+  async rewrites() {
+    const host = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+    const assets = host.replace(".i.posthog.com", "-assets.i.posthog.com");
+    return [
+      { source: "/ingest/static/:path*", destination: `${assets}/static/:path*` },
+      { source: "/ingest/array/:path*", destination: `${assets}/array/:path*` },
+      { source: "/ingest/:path*", destination: `${host}/:path*` },
+    ];
+  },
   // Direcciones parecidas a las del panel (singular, sin tilde, abreviadas) llevan a la
   // página correcta en lugar de un 404. Son temporales (307): no quedan cacheadas.
   async redirects() {

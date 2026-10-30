@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { analyticsId, track } from "@/lib/analytics";
 
 type Datos = { website: string } | { nombre: string; direccion: string | null; especialidad: string; profesional: string | null; servicios: string | null };
 
@@ -24,16 +25,22 @@ export function EmpezarDemo({ code, datos, contar }: { code: string; datos: Dato
   async function empezar() {
     setPending(true);
     setError(null);
+    const props = { source: "personal", via: "navegador", with_web: "website" in datos };
+    // Sale en el acto: la navegación a la demo viene enseguida.
+    track("demo_started", props, true);
+    let status = 0;
     try {
       const response = await fetch("/api/demo/iniciar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...datos, via: "navegador", ...(contar ? { ref: code } : {}) }),
+        body: JSON.stringify({ ...datos, via: "navegador", ...(contar ? { ref: code } : {}), ph: analyticsId() }),
       });
+      status = response.status;
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "No se pudo abrir la demo.");
       window.location.assign(result.url);
     } catch (e) {
+      track("demo_start_failed", { ...props, error_kind: status ? `api_${status}` : "network" });
       setError(e instanceof Error ? e.message : "No se pudo abrir la demo.");
       setPending(false);
     }

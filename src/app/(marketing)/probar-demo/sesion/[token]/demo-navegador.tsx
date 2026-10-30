@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
 import { ConversacionDemo } from "@/components/demo/conversacion-demo";
+import { track } from "@/lib/analytics";
+import { cta } from "@/lib/analytics-shared";
+import { startDemoEngagement } from "@/lib/interaction-tracking";
 import type { WebDemoMode, WebDemoState } from "@/lib/demo/web";
 
 // Demo en el navegador: espera a que se lea la web y después deja chatear o
@@ -45,6 +48,31 @@ export function DemoNavegador({ token }: { token: string }) {
     };
   }, [token]);
 
+  // PostHog: el tiempo activo en la demo, lo que terminó viendo (lista o no disponible) y, si se
+  // fue durante la espera, cuánto esperó.
+  const openedAt = useRef(0);
+  const reported = useRef(false);
+  useEffect(() => {
+    openedAt.current = Date.now();
+  }, []);
+  const outcome =
+    missing || state?.status === "terminada" ? "expired" : timedOut ? "timeout" : state?.status === "error" ? "error" : state?.status === "lista" ? "ready" : null;
+  const withWeb = Boolean(state?.website);
+  useEffect(() => startDemoEngagement({ demo_kind: "web" }), []);
+  useEffect(() => {
+    if (!outcome || reported.current) return;
+    reported.current = true;
+    const waited = Date.now() - openedAt.current;
+    if (outcome === "ready") track("demo_ready_seen", { demo_kind: "web", waited_ms: waited, with_web: withWeb });
+    else track("demo_unavailable_seen", { demo_kind: "web", reason: outcome, waited_ms: waited, with_web: withWeb });
+  }, [outcome, withWeb]);
+  useEffect(() => {
+    if (outcome) return;
+    const leave = () => track("demo_wait_abandoned", { demo_kind: "web", waited_ms: Date.now() - openedAt.current }, true);
+    window.addEventListener("pagehide", leave);
+    return () => window.removeEventListener("pagehide", leave);
+  }, [outcome]);
+
   if (missing || state?.status === "terminada") {
     return (
       <Aviso titulo="Esta demo ya no está disponible">
@@ -84,7 +112,7 @@ function Aviso({ titulo, children }: { titulo: string; children: React.ReactNode
     <div className="mx-auto flex min-h-[calc(100dvh-4.5rem)] max-w-[560px] flex-col items-center justify-center py-10 text-center">
       <h1 className="text-[32px] font-medium leading-tight tracking-tight text-brand-950 sm:text-[40px]">{titulo}</h1>
       <p className="mt-4 text-[17px] leading-relaxed text-tinta">{children}</p>
-      <Link href="/probar-demo" className="mt-8 inline-flex rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
+      <Link href="/probar-demo" {...cta("retry_demo", "demo_unavailable", "probar_demo")} className="mt-8 inline-flex rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
         Probar con otra web
       </Link>
     </div>
@@ -284,7 +312,7 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
         ? "Lo que tu web no dice (horarios, coberturas) es de prueba: en tu cuenta lo cargás vos."
         : "Los horarios y las coberturas son de prueba: en tu cuenta los cargás vos."}
       remaining={state.remaining}
-      cta={<>¿Lo querés con tu agenda real?{" "}<Link href="/pedi-una-demo" className="font-medium text-brand-600 hover:underline">Pedí una demo guiada</Link></>}
+      cta={<>¿Lo querés con tu agenda real?{" "}<Link href="/pedi-una-demo" {...cta("guided_demo", "demo_web", "pedi_una_demo")} className="font-medium text-brand-600 hover:underline">Pedí una demo guiada</Link></>}
       pedirCredencial={async (mode: WebDemoMode) => {
         const res = await fetch(`/api/demo/web/${token}`, {
           method: "POST",
