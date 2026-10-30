@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function authorized(request: Request): boolean {
-  const secret = process.env.METRICS_SECRET;
+  // Pegada en Vercel puede traer un espacio o un salto de línea de más.
+  const secret = process.env.METRICS_SECRET?.trim();
   if (!secret || secret.length < 32) return false;
   const a = Buffer.from(request.headers.get("authorization") ?? "");
   const b = Buffer.from(`Bearer ${secret}`);
