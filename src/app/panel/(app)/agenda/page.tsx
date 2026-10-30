@@ -27,6 +27,7 @@ type Row = {
   reminder_sent_at: string | null;
   calendar_sync: string | null;
   professional_id: string;
+  second_professional_id: string | null;
   appointment_type_id: string;
   patient: string | null;
   phone: string;
@@ -35,6 +36,8 @@ type Row = {
 
 const VISIBLE = ["confirmado", "pendiente", "atendido", "ausente"];
 const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
+/** ¿Atiende este turno? También como segundo profesional (por ejemplo, una cirugía conjunta). */
+const attends = (r: Row, ids: string[]) => ids.includes(r.professional_id) || (r.second_professional_id !== null && ids.includes(r.second_professional_id));
 
 export default async function AgendaPage({ searchParams }: PageProps<"/panel/agenda">) {
   const clinic = await getPanelClinic();
@@ -49,6 +52,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const shownIds = shownPros.map((p) => p.id);
   const colorOf = new Map(catalog.professionals.map((p, i) => [p.id, i]));
   const proName = new Map(catalog.professionals.map((p) => [p.id, p.full_name]));
+  const prosOf = (r: Row) => [r.professional_id, r.second_professional_id].flatMap((id) => (id ? [proName.get(id) ?? "Profesional"] : [])).join(" y ");
 
   // Semana (de lunes a domingo) que contiene el día elegido.
   const weekStartKey = addDaysKey(dayKey, -((weekdayOfKey(dayKey) + 6) % 7));
@@ -63,7 +67,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [rows, blocks, google] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.professional_id, a.appointment_type_id, p.full_name as patient, p.phone, t.name as type_name
+             a.calendar_sync, a.professional_id, a.second_professional_id, a.appointment_type_id, p.full_name as patient, p.phone, t.name as type_name
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
@@ -104,7 +108,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const googleFor = (key: string, proIds: string[]) =>
     proIds.length === 1 ? google.filter((g) => g.professional_id === proIds[0]).flatMap((g) => spanOn(key, g.starts_at, g.ends_at) ?? []) : [];
 
-  const visible = rows.filter((r) => VISIBLE.includes(r.status) && shownIds.includes(r.professional_id));
+  const visible = rows.filter((r) => VISIBLE.includes(r.status) && attends(r, shownIds));
   const selectedId = one(params.turno);
   const selected = rows.find((r) => r.id === selectedId) ?? null;
   const nowAt = new Date();
@@ -113,7 +117,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   // Turnos que ya terminaron y nadie marcó: sin la marca no hay encuestas, recall ni seguimiento de ausentes.
   const unmarked = visible.filter((r) => (r.status === "confirmado" || r.status === "pendiente") && new Date(r.ends_at) <= nowAt);
   const unmarkedIds = new Set(unmarked.map((r) => r.id));
-  const cancelled = rows.filter((r) => r.status === "cancelado" && shownIds.includes(r.professional_id));
+  const cancelled = rows.filter((r) => r.status === "cancelado" && attends(r, shownIds));
 
   const href = (next: Record<string, string | null | undefined>) => {
     const q = new URLSearchParams();
@@ -132,12 +136,12 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
       const m = bookedMinutes(
         openFor(key, [id]),
         blocksFor(key, [id]),
-        visible.filter((r) => r.professional_id === id).flatMap((r) => spanOn(key, r.starts_at, r.ends_at) ?? []),
+        visible.filter((r) => attends(r, [id])).flatMap((r) => spanOn(key, r.starts_at, r.ends_at) ?? []),
       );
       available += m.available;
       booked += m.booked;
     }
-    const count = visible.filter((r) => proIds.includes(r.professional_id) && local(r.starts_at).key === key).length;
+    const count = visible.filter((r) => attends(r, proIds) && local(r.starts_at).key === key).length;
     return { count, ratio: available ? Math.min(1, booked / available) : null, blocked: opens && !available };
   };
 
@@ -176,9 +180,9 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
       })();
 
   const eventsFor = (columns: GridColumn[], match: (r: Row, c: GridColumn, ci: number) => boolean): GridEvent[] =>
-    visible.flatMap((r) => {
-      const ci = columns.findIndex((c, i) => match(r, c, i));
-      if (ci < 0) return [];
+    visible.flatMap((r) => columns.flatMap((c, ci) => {
+      // Un turno con dos profesionales va en la columna de cada uno.
+      if (!match(r, c, ci)) return [];
       const s = local(r.starts_at);
       const e = local(r.ends_at);
       return [{
@@ -188,16 +192,16 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
         end: e.key === s.key ? e.minute : 24 * 60,
         time: `${clock(s.minute)}–${clock(e.key === s.key ? e.minute : 24 * 60)}`,
         title: r.patient ?? "Paciente",
-        detail: shownPros.length > 1 && !splitByPro ? `${r.type_name} · ${proName.get(r.professional_id)}` : r.type_name,
+        detail: shownPros.length > 1 && !splitByPro ? `${r.type_name} · ${prosOf(r)}` : r.second_professional_id ? `${r.type_name} · ${prosOf(r)}` : r.type_name,
         status: r.status,
         color: colorOf.get(r.professional_id) ?? 0,
         href: href({ turno: r.id, nuevo: null, fecha: s.key }),
         selected: r.id === selectedId,
         unmarked: unmarkedIds.has(r.id),
       }];
-    });
+    }));
   const weekEvents = eventsFor(weekColumns, (r, _c, i) => local(r.starts_at).key === week[i]);
-  const dayEvents = eventsFor(dayColumns, (r, _c, i) => local(r.starts_at).key === dayKey && (!splitByPro || shownPros[i].id === r.professional_id));
+  const dayEvents = eventsFor(dayColumns, (r, _c, i) => local(r.starts_at).key === dayKey && (!splitByPro || attends(r, [shownPros[i].id])));
 
   const hourSpans = [
     ...catalog.schedules.filter((s) => shownIds.includes(s.professional_id)).map((s) => ({ start: timeToMinutes(s.start_time), end: timeToMinutes(s.end_time) })),
@@ -309,7 +313,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                         <Link href={href({ turno: r.id, fecha: local(r.starts_at).key })} scroll={false} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 hover:text-brand-700">
                           <span className="w-28 shrink-0 tabular-nums text-brand-900/60 first-letter:uppercase">{dayName(local(r.starts_at).key)} {dayNum(local(r.starts_at).key)} · {clock(local(r.starts_at).minute)}</span>
                           <span className="font-medium text-brand-950 line-through decoration-brand-900/30">{r.patient ?? "Paciente"}</span>
-                          <span className="text-xs text-brand-900/60">{r.type_name} · {proName.get(r.professional_id)}</span>
+                          <span className="text-xs text-brand-900/60">{r.type_name} · {prosOf(r)}</span>
                         </Link>
                       </li>
                     ))}
@@ -325,14 +329,14 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
             <AppointmentDetail
               key={selected.id}
               row={selected}
-              pro={proName.get(selected.professional_id) ?? ""}
+              pro={prosOf(selected)}
               tz={tz}
               closeHref={href({ turno: null })}
               clinicId={clinic.id}
               today={todayKey}
               dayKey={local(selected.starts_at).key}
               colleagues={catalog.professionals
-                .filter((p) => p.specialty === catalog.professionals.find((x) => x.id === selected.professional_id)?.specialty)
+                .filter((p) => p.specialty === catalog.professionals.find((x) => x.id === selected.professional_id)?.specialty && p.id !== selected.second_professional_id)
                 .map((p) => ({ id: p.id, name: p.full_name }))}
             />
           )}
@@ -386,7 +390,7 @@ function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey
   const wa = /^\d{8,15}$/.test(a.phone) ? `https://wa.me/${a.phone}` : null;
   const facts: Array<[string, string | null]> = [
     ["Prestación", a.type_name],
-    ["Profesional", pro],
+    [a.second_professional_id ? "Profesionales" : "Profesional", pro],
     ["Cobertura", a.coverage ?? "Sin cobertura"],
     ["Teléfono", displayPhone(a.phone)],
     ["Lo dio", CHANNEL_LABEL[a.source] ?? a.source],
@@ -420,7 +424,7 @@ function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey
         clinicId={clinicId}
         today={today}
         professionals={colleagues}
-        appt={{ id: a.id, status: a.status, startsAt: a.starts_at, endsAt: a.ends_at, dayKey, typeId: a.appointment_type_id, professionalId: a.professional_id }}
+        appt={{ id: a.id, status: a.status, startsAt: a.starts_at, endsAt: a.ends_at, dayKey, typeId: a.appointment_type_id, professionalId: a.professional_id, secondProfessionalId: a.second_professional_id }}
       />
     </section>
   );

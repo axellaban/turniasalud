@@ -43,13 +43,16 @@ export function ManualAppointmentForm({
   const [chosenPro, setProId] = useState(initialPro?.id ?? pros[0]?.id ?? "");
   // Al cambiar de prestación, si el profesional elegido no la hace, va el primero que sí.
   const proId = pros.some((p) => p.id === chosenPro) ? chosenPro : (pros[0]?.id ?? "");
+  // Turno con dos profesionales (por ejemplo, una cirugía conjunta): el otro puede ser de cualquier especialidad.
+  const [chosenSecond, setSecondId] = useState("");
+  const secondId = chosenSecond === proId ? "" : chosenSecond;
   const [date, setDate] = useState(defaultDate < today ? today : defaultDate);
   const [time, setTime] = useState(initialTime ?? "");
   const [custom, setCustom] = useState(false);
   const [reload, setReload] = useState(0);
   const [known, setKnown] = useState<KnownPatient | null>(null);
   // «Darlo igual» vale para el horario que se rechazó: si se elige otro, desaparece.
-  const slotKey = `${proId}|${date}|${time}`;
+  const slotKey = `${proId}|${secondId}|${date}|${time}`;
   const [forceKey, setForceKey] = useState<string | null>(null);
 
   // Turno reservado: se vacían el horario y el paciente, y se recargan los horarios libres.
@@ -59,6 +62,7 @@ export function ManualAppointmentForm({
     setForceKey(state?.forzable ? slotKey : null);
     if (state?.ok) {
       setTime("");
+      setSecondId("");
       setCustom(false);
       setKnown(null);
       setReload((n) => n + 1);
@@ -78,9 +82,10 @@ export function ManualAppointmentForm({
     if (coverageRef.current && !coverageRef.current.value && found.coverage) coverageRef.current.value = found.coverage;
   }
 
-  const pick = (next: Partial<{ typeId: string; proId: string }>) => {
+  const pick = (next: Partial<{ typeId: string; proId: string; secondId: string }>) => {
     if (next.typeId !== undefined) setTypeId(next.typeId);
     if (next.proId !== undefined) setProId(next.proId);
+    if (next.secondId !== undefined) setSecondId(next.secondId);
     if (!custom) setTime("");
   };
   const canSubmit = Boolean(typeId && proId && date && time.trim()) && !pending;
@@ -109,6 +114,16 @@ export function ManualAppointmentForm({
             {!pros.length && <option value="">Nadie hace esta prestación</option>}
           </select>
         </Field>
+        {professionals.length > 1 && (
+          <Field label="También atiende" hint="Opcional. Para un turno que hacen dos (por ejemplo, una cirugía): queda en la agenda de los dos.">
+            <select name="second_professional_id" value={secondId} onChange={(e) => pick({ secondId: e.target.value })} className={inputClass}>
+              <option value="">Nadie más</option>
+              {professionals.filter((p) => p.id !== proId).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
         <SlotPicker
           clinicId={clinicId}
           typeId={typeId}
@@ -121,6 +136,7 @@ export function ManualAppointmentForm({
           custom={custom}
           onCustom={setCustom}
           reload={reload}
+          secondId={secondId || undefined}
         />
       </fieldset>
 

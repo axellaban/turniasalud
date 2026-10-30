@@ -113,6 +113,8 @@ export type Appointment = {
   clinic_id: string;
   patient_id: string;
   professional_id: string;
+  /** Otro profesional que atiende el mismo turno (por ejemplo, una cirugía conjunta). */
+  second_professional_id: string | null;
   appointment_type_id: string;
   starts_at: string;
   ends_at: string;

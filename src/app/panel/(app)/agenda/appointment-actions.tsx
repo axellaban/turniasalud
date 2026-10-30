@@ -18,6 +18,8 @@ export type DetailAppointment = {
   dayKey: string;
   typeId: string;
   professionalId: string;
+  /** Turno con dos profesionales: se mueve para los dos. */
+  secondProfessionalId: string | null;
 };
 
 /**
@@ -149,6 +151,7 @@ function MoveForm({ clinicId, appt, today, professionals, onCancel }: { clinicId
         custom={custom}
         onCustom={setCustom}
         ignoreId={appt.id}
+        secondId={appt.secondProfessionalId ?? undefined}
       />
       {state?.message && <p role="status" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{state.message}</p>}
       <ForceOption key={slotKey} show={forceKey === slotKey} />

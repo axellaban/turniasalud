@@ -2,6 +2,16 @@
 
 Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Turno con dos profesionales — 30/10/2026
+
+- **Pedido (Dr. Mininni):** «puede pasar que con Emi hagamos una cirugía juntos: hay que anotar ese turno con los dos profesionales y cancelar el horario de agenda de Emi».
+- **Panel → Agenda → turno a mano:** campo opcional «También atiende» (cualquier profesional, de cualquier especialidad). Los horarios que ofrece son los que tienen libres los dos y dentro del horario de los dos.
+- `appointments.second_professional_id` (`supabase/schema.sql`, con check de que no sea el mismo). El turno ocupa a los dos: el agente no le ofrece ni le reserva ese horario al segundo, y el panel tampoco (aunque se fuerce). Fuera del horario del segundo, en un bloqueo o con Google ocupado, el panel avisa y deja «Darlo igual».
+- La constraint de superposición de la base cubre al principal; para el segundo, la reserva toma los locks de los dos y revisa dentro de la transacción (`insertAppointment`).
+- En la agenda aparece en la columna de cada uno; la ficha dice «Profesionales: A y B». Mover el turno lo mueve para los dos; cancelarlo libera a los dos. El agente y el paciente ven «con A y B».
+- **Sin hacer:** el evento de Google Calendar se escribe solo en el calendario del profesional principal; Sofi no da estos turnos (los carga el consultorio).
+- 1 prueba nueva (317 en total), TypeScript y ESLint; probado en el panel local (agenda del día, formulario y ficha).
+
 ## Feedback del Dr. Mininni: saludo, prácticas, memoria, precio y sillones — 30/10/2026
 
 - **Doble saludo en el chat** («¡Hola! Soy Sofi…» y enseguida «Hola, Hernán…»): en el chat escribe primero el paciente y el agente mandaba su saludo fijo y además contestaba. Ahora el chat de la demo (panel y `/probar-demo`) arranca sin el saludo fijo (`overrides.agent.firstMessage = ""`) y la primera respuesta saluda, se presenta y contesta en un solo mensaje. ElevenLabs solo lo permite después de «Crear / actualizar agente» (`conversation_config_override.agent.first_message`); hasta entonces `getChatCredential` lo detecta y el chat sigue como antes. La voz no cambia.
@@ -9,7 +19,7 @@ Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendie
 - **Lo que recuerda del paciente, con fecha y con sus palabras:** cada nota nueva de la memoria se guarda con el día de la conversación (`[30 de oct de 2026] …`); la descripción de `memoria` pide citar entre comillas lo que el paciente dijo con sus palabras («se le salió un pedacito de muela»), y el prompt le indica no dar por hecho lo anterior, decir cuándo lo contó y preguntar si sigue igual. Las notas viejas quedan sin fecha.
 - **Celular del paciente en el teléfono** («desde el celu no me deja poner el número»): el campo estaba al final de «La ficha de la clínica». Ahora hay un botón propio, «Probar como paciente», que abre la hoja con el campo arriba y el teclado listo; después muestra «Paciente: …». El campo usa 16 px para que iOS no haga zoom. Probado en iPhone SE y 13 (emulados).
 - **Precio de la consulta:** es configuración de la clínica, no código. Texto para Panel → Configuración → «Preguntas frecuentes»: «Precio de la consulta: lo mínimo que se cobra es la consulta, $48.000. Si es la primera vez, esos $48.000 corresponden a la consulta de primera vez (fichado, diagnóstico y pedido de radiografías si hace falta). Si en el turno se hace alguna práctica, se cobra aparte el valor de esa práctica. Vale también para las urgencias.»
-- **Sillones:** con los horarios que mandó, cada consultorio lo usa un profesional por vez; alcanza con cargarlos (ver `PENDIENTES.md`). Para la cirugía conjunta se propone «turno con dos profesionales»: en el turno a mano, «También atiende» (opcional); el turno aparece en la agenda de los dos, ocupa el horario de ambos para Sofi y para el panel, y al moverlo o cancelarlo se mueve o cancela para los dos. Sofi no da esos turnos.
+- **Sillones:** con los horarios que mandó, cada consultorio lo usa un profesional por vez; alcanza con cargarlos (ver `PENDIENTES.md`). La cirugía conjunta se resolvió con el turno con dos profesionales (sección de arriba).
 - Auditoría antes del merge: `buscar_paciente` decía «Saludalo por su nombre» al identificar a mitad de charla; ahora «Llamalo por su nombre (sin volver a saludar)».
 - Pruebas actualizadas (316 en total), TypeScript y ESLint. **Hace falta «Crear / actualizar agente»** después del deploy (prompt, descripción de `memoria` y el permiso del saludo).
 

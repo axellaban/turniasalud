@@ -168,6 +168,7 @@ export async function loadDaySlots(form: FormData) {
     profesional_id: uuid(form, "professional_id") ?? "",
     fecha: text(form, "date") ?? "",
     ignorar_turno_id: uuid(form, "ignore_id") ?? undefined,
+    segundo_profesional_id: uuid(form, "second_professional_id") ?? undefined,
   });
 }
 
@@ -219,7 +220,7 @@ export async function createManualAppointment(_prev: FormState | undefined, form
     const r = await bookAppointment(
       ctx,
       { tipo_turno_id: typeId, profesional_id: professionalId, inicio: start.at.toISOString(), notas: text(form, "notes") ?? undefined },
-      { force: form.get("force") === "1" },
+      { force: form.get("force") === "1", secondProfessionalId: uuid(form, "second_professional_id") },
     );
     syncCalendarLater(clinic.id);
     revalidatePath("/panel/agenda");
@@ -563,7 +564,7 @@ export async function addScheduleBlock(_prev: FormState | undefined, form: FormD
     select count(*)::int as affected from appointments
     where clinic_id = ${clinic.id} and status in ('confirmado', 'pendiente')
       and starts_at < ${endsAt} and ends_at > ${startsAt}
-      ${professionalId ? sql`and professional_id = ${professionalId}` : sql``}`;
+      ${professionalId ? sql`and (professional_id = ${professionalId} or second_professional_id = ${professionalId})` : sql``}`;
   await touchClinic(clinic.id, "Feriados y bloqueos");
   revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");
