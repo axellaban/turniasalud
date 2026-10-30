@@ -27,7 +27,7 @@ export default async function DemoPage() {
             specialty: clinic.specialty,
             address: clinic.address,
             professionals: catalog.professionals.map((p) => p.full_name).slice(0, 8),
-            types: catalog.appointmentTypes.map((t) => t.name).slice(0, 8),
+            types: catalog.appointmentTypes.filter((t) => !t.panel_only).map((t) => t.name).slice(0, 8),
           }}
         />
       </div>

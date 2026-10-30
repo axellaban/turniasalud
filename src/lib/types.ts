@@ -56,6 +56,8 @@ export type AppointmentType = {
   /** numeric de Postgres: llega como texto para no perder precisión. */
   price: string | null;
   is_first_visit: boolean;
+  /** Solo la da el consultorio: el agente no la ofrece, no la reserva ni la reprograma. */
+  panel_only: boolean;
   active: boolean;
 };
 

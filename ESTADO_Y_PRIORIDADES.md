@@ -2,6 +2,14 @@
 
 Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Prestaciones que solo da el consultorio — 30/10/2026
+
+- **Pedido (Dr. Mininni):** la endodoncia no la tiene que dar Sofi aunque el paciente traiga la indicación: muchos vienen mal derivados y se perdería un turno de la Dra. Fernández. Siempre primero una consulta con Mininni; si corresponde, el turno lo da el consultorio.
+- **Panel → Configuración → Prestaciones:** casilla «Solo la da el consultorio» (`appointment_types.panel_only`). Con la casilla, el agente no la ofrece (`consultar_disponibilidad`), no la reserva, no la reprograma ni anota en lista de espera; el catálogo que lee la marca. El panel la da y la mueve igual. No aparece en «Turnos que puede dar» de /demo.
+- Antes dependía solo de una instrucción escrita en la ficha (que queda, y dice que ofrezca la consulta con Mininni).
+- **Configurado en Guerra–Mininni por Computer Use (30/10):** prestación «Endodoncia (tratamiento de conducto)», especialidad Endodoncia, 120 min; Lara (Dra. Fernández) con especialidad Endodoncia y jueves de 11 a 17 (11, 13 y 15); Mariano L a J 11–17, Emilia L a X 10–18; limpieza renombrada «Mantenimiento periodontal (limpieza)»; horario de atención; precio de la consulta en Preguntas frecuentes (con OSDE, Swiss Medical o Apsot no se abona); regla de endodoncia en las instrucciones. **Falta marcar la casilla en la endodoncia.**
+- 1 prueba nueva (318 en total), TypeScript y ESLint.
+
 ## Demo en el navegador: el motivo cuando se corta al conectar — 30/10/2026
 
 - **Reporte del usuario:** en `/probar-demo/sesion/…`, desde el celular, la voz pasaba enseguida a «Llamada terminada».

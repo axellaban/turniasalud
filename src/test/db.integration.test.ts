@@ -745,6 +745,47 @@ describe.runIf(url)("integración con Postgres", () => {
     expect((await sosaFree()).map((t) => t.hora)).toContain("10:40");
   });
 
+  it("una prestación que solo da el consultorio: el agente no la ofrece, no la reserva ni la mueve; el panel sí", async () => {
+    const actions = await import("@/app/panel/actions");
+    const form = (data: Record<string, string>) => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(data)) f.append(k, v);
+      return f;
+    };
+    const c = ctx("5491166660051");
+    await service.registerPatient(c, { nombre_completo: "Sergio Conducto" });
+    // Antes de marcarla: el agente reserva un turno (para probar después que no lo puede mover).
+    const { turnos } = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, desde: new Date(Date.now() + 25 * 86400_000).toISOString().slice(0, 10) });
+    const booked = await service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, inicio: turnos[0].inicio });
+
+    await sql`update appointment_types set panel_only = true where id = ${LIMPIEZA}`;
+    try {
+      const catalog = clinicLib.catalogText(await clinicLib.getCatalog(CLINIC));
+      expect(catalog).toMatch(/Limpieza dental .*Solo la da el consultorio: no la ofrezcas ni la reserves/);
+      await expect(service.checkAvailability(c, { tipo_turno_id: LIMPIEZA })).rejects.toThrow("la da solo el consultorio");
+      await expect(service.bookAppointment(c, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, inicio: turnos[1].inicio })).rejects.toThrow("la da solo el consultorio");
+      await expect(service.rescheduleAppointment(c, { turno_id: booked.turno_id, nuevo_inicio: turnos[1].inicio })).rejects.toThrow("la da solo el consultorio");
+      await expect(service.joinWaitlist(c, { tipo_turno_id: LIMPIEZA })).rejects.toThrow("la da solo el consultorio");
+      // El consultorio sí la da y la mueve desde el panel.
+      const local = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+        .format(new Date(turnos[2].inicio)).split(", ");
+      const made = await actions.createManualAppointment(undefined, form({
+        appointment_type_id: LIMPIEZA, professional_id: RUIZ, phone: "11 6666-0052", full_name: "Tere Panel", date: local[0], time: local[1],
+      }));
+      expect(made).toMatchObject({ ok: true });
+      expect((await service.rescheduleClinicAppointment(CLINIC, booked.turno_id, { nuevo_inicio: turnos[1].inicio })).turno_id).toBeTruthy();
+      // La casilla del panel la marca y la desmarca.
+      const [type] = await sql<Array<{ name: string; specialty: string; duration_min: number }>>`select name, specialty, duration_min from appointment_types where id = ${LIMPIEZA}`;
+      const save = (extra: Record<string, string>) => actions.saveAppointmentTypeWithFeedback({}, form({ id: LIMPIEZA, name: type.name, specialty: type.specialty, duration_min: String(type.duration_min), ...extra }));
+      expect(await save({})).toMatchObject({ ok: true });
+      expect((await sql`select panel_only from appointment_types where id = ${LIMPIEZA}`)[0].panel_only).toBe(false);
+      expect(await save({ panel_only: "on" })).toMatchObject({ ok: true });
+      expect((await sql`select panel_only from appointment_types where id = ${LIMPIEZA}`)[0].panel_only).toBe(true);
+    } finally {
+      await sql`update appointment_types set panel_only = false where id = ${LIMPIEZA}`;
+    }
+  });
+
   it("todas las páginas del panel consultan y renderizan con datos reales", async () => {
     const pages: Array<[string, () => Promise<unknown>]> = [
       ["inicio", async () => (await import("@/app/panel/(app)/page")).default()],

@@ -884,3 +884,7 @@ alter table appointments add constraint appointments_second_professional_check
   check (second_professional_id is null or second_professional_id <> professional_id);
 create index if not exists appointments_second_professional_idx on appointments (second_professional_id, starts_at)
   where second_professional_id is not null;
+
+-- Prestaciones que solo da el consultorio (30/10/2026): por ejemplo, una endodoncia que el
+-- profesional tiene que evaluar antes. El agente no la ofrece, no la reserva ni la mueve.
+alter table appointment_types add column if not exists panel_only boolean not null default false;

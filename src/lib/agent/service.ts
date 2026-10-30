@@ -9,7 +9,7 @@ import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
-import type { Appointment, AppointmentSource, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
+import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
 export type ToolContext = {
   clinicId: string;
@@ -226,6 +226,7 @@ export async function checkAvailability(
   const catalog = await getCatalog(clinic.id);
   const type = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
   if (!type) throw new ToolError("No encontré ese tipo de turno. Usá un id del catálogo.");
+  assertAgentCanBook(type);
 
   let professionals = catalog.professionals.filter((p) => p.specialty === type.specialty);
   if (input.profesional_id) professionals = professionals.filter((p) => p.id === input.profesional_id);
@@ -373,6 +374,15 @@ type BookOptions = {
 
 const AGAIN = " Consultá la disponibilidad de nuevo y ofrecé otra opción.";
 
+/** El agente no da, no ofrece ni mueve las prestaciones que la clínica se reserva (por ejemplo, una endodoncia que evalúa el profesional). */
+function assertAgentCanBook(type: Pick<AppointmentType, "name" | "panel_only">) {
+  if (type.panel_only) {
+    throw new ToolError(
+      `«${type.name}» la da solo el consultorio: no la ofrezcas, no la reserves ni la muevas. Seguí las instrucciones de la clínica para este caso (por ejemplo, ofrecé la consulta previa que corresponda).`,
+    );
+  }
+}
+
 async function assertBookable(clinic: Clinic, professionalId: string, typeId: string, startsAt: Date, opts: BookOptions = {}) {
   const catalog = await getCatalog(clinic.id);
   const type = catalog.appointmentTypes.find((t) => t.id === typeId);
@@ -513,6 +523,7 @@ export async function bookAppointment(
   }
 
   const { type, pro, second, endsAt } = await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, opts);
+  if (ctx.channel !== "panel") assertAgentCanBook(type);
   // Una persona no puede estar en dos turnos a la vez.
   const clash = mine.find((a) => new Date(a.starts_at) < endsAt && new Date(a.ends_at) > startsAt);
   if (clash) {
@@ -795,6 +806,8 @@ async function rescheduleLoaded(
 export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id: string; nuevo_inicio: string; profesional_id?: string }) {
   const clinic = await getClinic(ctx.clinicId);
   const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
+  const [type] = await sql<Array<Pick<AppointmentType, "name" | "panel_only">>>`select name, panel_only from appointment_types where id = ${appt.appointment_type_id}`;
+  if (type) assertAgentCanBook(type);
   const r = await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone));
   return { ok: true, ...r };
 }
@@ -863,7 +876,9 @@ export async function createTask(
 export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id: string; profesional_id?: string; preferencias?: string }) {
   const patient = await ensurePatient(ctx);
   const catalog = await getCatalog(ctx.clinicId);
-  if (!catalog.appointmentTypes.some((t) => t.id === input.tipo_turno_id)) throw new ToolError("Tipo de turno inválido.");
+  const waitType = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
+  if (!waitType) throw new ToolError("Tipo de turno inválido.");
+  assertAgentCanBook(waitType);
   const professionalId = input.profesional_id && catalog.professionals.some((p) => p.id === input.profesional_id) ? input.profesional_id : null;
   await sql`
     insert into waitlist ${sql({

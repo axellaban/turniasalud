@@ -31,7 +31,7 @@ export default async function ServicesPage() {
             <li key={x.id} className={`px-5 py-3 ${x.active ? "" : "opacity-60"}`}>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-brand-950">{x.name} {x.is_first_visit && <Badge tone="blue">primera vez</Badge>} {!x.active && <Badge>Inactiva</Badge>}</p>
+                  <p className="font-medium text-brand-950">{x.name} {x.is_first_visit && <Badge tone="blue">primera vez</Badge>} {x.panel_only && <Badge>solo el consultorio</Badge>} {!x.active && <Badge>Inactiva</Badge>}</p>
                   <p className="text-sm text-brand-900/65">
                     {x.specialty} · {x.duration_min} min{x.recall_months ? ` · control cada ${x.recall_months} meses` : ""}
                     {x.active && !staffed.has(x.specialty.toLowerCase()) && <span className="text-sun-700"> · sin profesional de esta especialidad</span>}
@@ -54,6 +54,7 @@ export default async function ServicesPage() {
                   <Field label="Control periódico (meses)" hint="Para las campañas de recall. Vacío si no aplica."><input name="recall_months" type="number" min={1} max={60} defaultValue={x.recall_months ?? ""} className={inputClass} /></Field>
                   <Field label="Indicaciones previas"><textarea name="instructions" rows={2} defaultValue={x.instructions ?? ""} className={inputClass} /></Field>
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_first_visit" defaultChecked={x.is_first_visit} /> Es primera consulta</label>
+                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" defaultChecked={x.panel_only} className="mt-1" /> <span>Solo la da el consultorio <span className="block text-xs text-brand-900/60">Sofi no la ofrece, no la reserva ni la mueve. El turno se da desde la Agenda.</span></span></label>
               </EditDetails>
             </li>
           ))}
@@ -71,6 +72,7 @@ export default async function ServicesPage() {
           <Field label="Control periódico (meses)" hint="Para las campañas de recall. Vacío si no aplica."><input name="recall_months" type="number" min={1} max={60} className={inputClass} /></Field>
           <Field label="Indicaciones previas"><input name="instructions" className={inputClass} /></Field>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_first_visit" /> Es primera consulta</label>
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" className="mt-1" /> <span>Solo la da el consultorio <span className="block text-xs text-brand-900/60">Sofi no la ofrece, no la reserva ni la mueve. El turno se da desde la Agenda.</span></span></label>
           <div className="sm:col-span-2"><button className={buttonClass}>Agregar prestación</button></div>
         </form>
       </Card>
