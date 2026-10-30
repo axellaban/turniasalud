@@ -888,3 +888,24 @@ create index if not exists appointments_second_professional_idx on appointments 
 -- Prestaciones que solo da el consultorio (30/10/2026): por ejemplo, una endodoncia que el
 -- profesional tiene que evaluar antes. El agente no la ofrece, no la reserva ni la mueve.
 alter table appointment_types add column if not exists panel_only boolean not null default false;
+
+-- ---------------------------------------------------------------------------
+-- Fotos y PDF que manda el paciente (30/10/2026): credenciales, órdenes, recetas,
+-- estudios. Claude las lee para el agente y quedan para que el consultorio las vea.
+-- patient_id se completa si el número ya era de una ficha; si no, se busca por teléfono.
+-- ---------------------------------------------------------------------------
+create table if not exists patient_documents (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  patient_id uuid references patients(id) on delete cascade,
+  phone text not null,
+  channel text not null check (channel in ('whatsapp', 'telegram')),
+  kind text not null check (kind in ('credencial', 'orden', 'receta', 'estudio', 'otro', 'ilegible')),
+  summary text,
+  mimetype text not null,
+  file bytea not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists patient_documents_phone_idx on patient_documents (clinic_id, phone, created_at desc);
+create index if not exists patient_documents_patient_idx on patient_documents (patient_id, created_at desc);
+alter table patient_documents enable row level security;

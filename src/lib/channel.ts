@@ -209,7 +209,7 @@ export function toWhatsAppText(text: string): string {
 
 export const AUDIO_FAILED_REPLY = "Perdón, no pude escuchar tu audio. ¿Me lo escribís?";
 export const MEDIA_ONLY_REPLY =
-  "Por este WhatsApp todavía no puedo ver fotos ni archivos. ¿Me contás por escrito qué necesitás? Si es la credencial o una orden médica, traela el día del turno.";
+  "No pude ver esa foto o archivo. ¿Me contás por escrito qué necesitás? Si es la credencial o una orden médica, probá mandar otra foto con buena luz, o traela el día del turno.";
 export const FAILED_REPLY = "Perdón, tuve un problema para responderte. ¿Me lo escribís de nuevo en un ratito?";
 
 export type ReplyOutcome =

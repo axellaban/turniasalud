@@ -45,6 +45,9 @@ const fake = {
   failSendText: false,
   transcript: "quiero sacar un turno para limpieza",
   lidPhone: "5491155550002@c.us" as string | null,
+  /** Una foto real (JPEG chico) para lo que devuelve WAHA, y lo que «lee» Claude. */
+  photo: null as Buffer | null,
+  reading: null as Record<string, unknown> | null,
   reset() {
     this.calls = [];
     this.nextConversation = "conv_wa_1";
@@ -73,7 +76,15 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     if (headers["x-api-key"] !== API_KEY) return json({ error: "unauthorized" }, 401);
     if (url === `${WAHA}/api/sendText`) return fake.failSendText ? json({ error: "session stopped" }, 500) : json({ id: "true_x@c.us_OUT" }, 201);
     if (url.startsWith(`${WAHA}/api/default/lids/`)) return json({ lid: "x@lid", pn: fake.lidPhone });
+    if (url.startsWith(`${WAHA}/api/files/`) && url.endsWith(".jpeg")) return new Response(new Uint8Array(fake.photo!), { headers: { "Content-Type": "image/jpeg" } });
     if (url.startsWith(`${WAHA}/api/files/`)) return new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "Content-Type": "audio/ogg" } });
+  }
+  if (url.startsWith("https://api.anthropic.com/v1/messages")) {
+    return json({
+      id: "msg_foto", type: "message", role: "assistant", model: "claude-opus-5-5",
+      content: [{ type: "text", text: JSON.stringify(fake.reading) }],
+      stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 10, output_tokens: 10 },
+    });
   }
   if (url === "https://api.elevenlabs.io/v1/speech-to-text") {
     const form = init.body as FormData;
@@ -273,7 +284,50 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const photo = textMessage("m9", "", "5491155550003@c.us", { hasMedia: true, media: { url: null, mimetype: "image/jpeg" } });
     await inbound(wahaRequest(photo));
     expect(fake.sent("channel")).toHaveLength(0);
-    expect((fake.sent("sendText")[0].body as { text: string }).text).toContain("no puedo ver fotos");
+    expect((fake.sent("sendText")[0].body as { text: string }).text).toContain("No pude ver esa foto");
+  });
+
+  it("lee la foto de la credencial: el agente recibe lo que dice y queda en la ficha del paciente", async () => {
+    const sharp = (await import("sharp")).default;
+    fake.photo = await sharp({ create: { width: 40, height: 25, channels: 3, background: "#ffffff" } }).jpeg().toBuffer();
+    fake.reading = {
+      tipo: "credencial", legible: true, cobertura: "OSDE", plan: "210", numero_afiliado: "61 234567 8 01", titular: "Lucía Paz",
+      practica: null, profesional: null, fecha: null, diagnostico: null, medicamentos: null, resumen: "Credencial de OSDE",
+    };
+    vi.stubEnv("ANTHROPIC_API_KEY", "clave-falsa");
+    try {
+      const photo = textMessage("m_foto1", "", "5491155550006@c.us", { hasMedia: true, media: { url: "http://localhost:3000/api/files/default/m_foto1.jpeg", mimetype: "image/jpeg" } });
+      expect((await inbound(wahaRequest(photo))).status).toBe(200);
+      const toClaude = fake.calls.find((c) => c.url.startsWith("https://api.anthropic.com/v1/messages"))!.body as { messages: Array<{ content: Array<{ type: string; source?: { media_type: string } }> }> };
+      expect(toClaude.messages[0].content[0]).toMatchObject({ type: "image", source: { media_type: "image/jpeg" } });
+      const text = (fake.sent("channel")[0].body as { data: { text: string } }).data.text;
+      expect(text).toContain("(foto de la credencial) cobertura: «OSDE», plan: «210», número de afiliado: «61 234567 8 01»");
+
+      const [doc] = await sql<Array<{ id: string; kind: string; channel: string; mimetype: string }>>`
+        select id, kind, channel, mimetype from patient_documents where phone = '5491155550006'`;
+      expect(doc).toMatchObject({ kind: "credencial", channel: "whatsapp", mimetype: "image/jpeg" });
+
+      // En el panel: aparece en la ficha y se abre la foto.
+      const [p] = await sql<Array<{ id: string }>>`insert into patients (clinic_id, phone, full_name) values (${CLINIC}, '5491155550006', 'Lucía Paz') returning id`;
+      const page = (await import("@/app/panel/(app)/pacientes/[id]/page")).default;
+      const html = renderToStaticMarkup(await page({ params: Promise.resolve({ id: p.id }), searchParams: Promise.resolve({}) } as never));
+      expect(html).toContain("Fotos y documentos que mandó");
+      expect(html).toContain(`/panel/pacientes/${p.id}/documentos/${doc.id}`);
+      const { GET } = await import("@/app/panel/(app)/pacientes/[id]/documentos/[doc]/route");
+      const res = await GET(new Request("https://turnia.example/x"), { params: Promise.resolve({ id: p.id, doc: doc.id }) } as never);
+      expect(res.headers.get("content-type")).toBe("image/jpeg");
+      expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(100);
+      // De otro paciente, no.
+      const [other] = await sql<Array<{ id: string }>>`insert into patients (clinic_id, phone, full_name) values (${CLINIC}, '5491155550007', 'Otro') returning id`;
+      expect((await GET(new Request("https://turnia.example/x"), { params: Promise.resolve({ id: other.id, doc: doc.id }) } as never)).status).toBe(404);
+
+      // Al borrar la ficha se borra también la foto.
+      const { deletePatients } = await import("@/lib/patients");
+      await deletePatients(CLINIC, [p.id]);
+      expect(await sql`select 1 from patient_documents where id = ${doc.id}`).toHaveLength(0);
+    } finally {
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+    }
   });
 
   it("chats @lid: busca el teléfono en WAHA y responde al mismo chat", async () => {

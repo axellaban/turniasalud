@@ -124,6 +124,7 @@ export async function mergePatientInto(tx: TransactionSql, clinicId: string, kee
   await tx`update conversations set patient_id = ${keepId} where patient_id = ${dropId}`;
   await tx`update tasks set patient_id = ${keepId} where patient_id = ${dropId}`;
   await tx`update waitlist set patient_id = ${keepId} where patient_id = ${dropId}`;
+  await tx`update patient_documents set patient_id = ${keepId} where patient_id = ${dropId}`;
   // Las que chocan con una fila igual de `keep` se van con la ficha repetida.
   await tx`
     update campaign_recipients r set patient_id = ${keepId}
@@ -234,7 +235,7 @@ export async function mergeDuplicates(clinicId: string, keepId: string): Promise
 
 /**
  * Panel: borra fichas de la clínica con todo lo suyo (turnos, conversaciones,
- * pedidos, lista de espera, campañas, visitas y otros números). Antes saca del
+ * pedidos, lista de espera, campañas, visitas, fotos y otros números). Antes saca del
  * calendario los eventos de sus turnos.
  */
 export async function deletePatients(clinicId: string, ids: string[]): Promise<{ borradas: number; eventosSinSacar: number }> {
@@ -246,6 +247,12 @@ export async function deletePatients(clinicId: string, ids: string[]): Promise<{
   const borradas = await sql.begin(async (tx) => {
     await tx`delete from tasks where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])`;
     await tx`delete from conversations where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])`;
+    // Las fotos que mandó, también las que llegaron antes de tener ficha (atadas solo al número).
+    await tx`
+      delete from patient_documents where clinic_id = ${clinicId} and (
+        patient_id = any(${ids}::uuid[])
+        or phone in (select phone from patients where clinic_id = ${clinicId} and id = any(${ids}::uuid[]))
+        or phone in (select phone from patient_phones where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])))`;
     const deleted = await tx`delete from patients where clinic_id = ${clinicId} and id = any(${ids}::uuid[]) returning id`;
     return deleted.length;
   });

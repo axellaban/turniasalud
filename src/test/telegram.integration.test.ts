@@ -17,6 +17,7 @@ const calls: Array<{ url: string; body: Record<string, unknown> | FormData }> = 
 let webhook = "";
 let username = "TurnIA_salud_bot";
 let updateId = 0;
+let photo: Buffer | null = null;
 const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
 async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const url = String(input);
@@ -26,12 +27,19 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (url.includes("/speech-to-text")) return json({ text: "Quiero un turno para mañana" });
   if (url.includes("/text-to-speech/")) return new Response(new Uint8Array([79, 103, 103, 83]), { headers: { "Content-Type": "audio/ogg" } });
   if (url === "https://api.telegram.org/file/bottest-private/voice/test.oga") return new Response(new Uint8Array([1, 2, 3]));
+  if (url === "https://api.telegram.org/file/bottest-private/photos/orden.jpg") return new Response(new Uint8Array(photo!));
+  if (url.startsWith("https://api.anthropic.com/v1/messages")) {
+    const reading = { tipo: "orden", legible: true, cobertura: null, plan: null, numero_afiliado: null, titular: null, practica: "Radiografía panorámica", profesional: "Dra. Ruiz", fecha: "20/10/2026", diagnostico: null, medicamentos: null, resumen: "Orden de radiografía" };
+    return json({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: JSON.stringify(reading) }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
+  }
   if (url.startsWith("https://api.telegram.org/bottest-private/")) {
     const method = url.split("/").at(-1);
     if (method === "getMe") return json({ ok: true, result: { username } });
     if (method === "getWebhookInfo") return json({ ok: true, result: { url: webhook } });
     if (method === "setWebhook") { webhook = (body as { url: string }).url; return json({ ok: true, result: true }); }
-    if (method === "getFile") return json({ ok: true, result: { file_path: "voice/test.oga", file_size: 3 } });
+    if (method === "getFile") return (body as { file_id?: string }).file_id === "photo-big"
+      ? json({ ok: true, result: { file_path: "photos/orden.jpg", file_size: photo!.length } })
+      : json({ ok: true, result: { file_path: "voice/test.oga", file_size: 3 } });
     if (method === "sendMessage" || method === "sendVoice") return json({ ok: true, result: { message_id: 1 } });
   }
   if (url === "https://waha.test/api/sendText") return json({ id: "wa_1" });
@@ -130,6 +138,30 @@ describe.runIf(base)("Telegram y selector de canales", () => {
     expect(form.get("chat_id")).toBe("123");
     expect((form.get("voice") as Blob).type).toBe("audio/ogg");
     expect(calls.some((c) => c.url.startsWith("https://waha.test"))).toBe(false);
+  });
+  it("lee la foto de una orden y el agente recibe lo que dice; sin poder leerla, le pide otra", async () => {
+    await prepare("chat");
+    const sharp = (await import("sharp")).default;
+    photo = await sharp({ create: { width: 30, height: 20, channels: 3, background: "#fff" } }).jpeg().toBuffer();
+    const sendPhoto = () => {
+      updateId++;
+      return inbound(new Request("https://turnia.test/api/telegram/webhook", { method: "POST", headers: { "x-telegram-bot-api-secret-token": telegram.telegramWebhookSecret() }, body: JSON.stringify({ update_id: updateId, message: { message_id: updateId, from: { id: 123, is_bot: false }, chat: { id: 123, type: "private" }, caption: "me pidieron esto", photo: [{ file_id: "photo-small", file_size: 100 }, { file_id: "photo-big", file_size: photo!.length }] } }) }));
+    };
+    // Sin clave de Claude no se puede leer: le pide otra foto o que lo cuente.
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    expect((await sendPhoto()).status).toBe(200);
+    expect(texts().at(-1)).toContain("No pude leer esa foto");
+    calls.length = 0;
+    vi.stubEnv("ANTHROPIC_API_KEY", "clave-falsa");
+    try {
+      expect((await sendPhoto()).status).toBe(200);
+      const sent = calls.find((c) => c.url === CHANNEL)!.body as { data: { text: string } };
+      expect(sent.data.text).toBe("(foto de una orden o derivación) pide: «Radiografía panorámica», firma: «Dra. Ruiz», fecha: «20/10/2026». Seguí las indicaciones de la clínica para órdenes y derivaciones.\nme pidieron esto");
+      // Baja la foto más grande.
+      expect(calls.some((c) => c.url.endsWith("/getFile") && (c.body as { file_id: string }).file_id === "photo-big")).toBe(true);
+    } finally {
+      vi.stubEnv("ANTHROPIC_API_KEY", "");
+    }
   });
   it("reserva un turno simulado con identidad de Telegram y lo muestra con ese origen", async () => {
     await prepare();

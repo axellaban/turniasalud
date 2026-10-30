@@ -1,7 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { messagingSettings, ChannelPausedError } from "@/lib/messaging-settings";
-import { telegramDownloadAudio, telegramSendText, verifyTelegramSecret } from "@/lib/telegram";
+import { telegramDownloadAudio, telegramDownloadFile, telegramSendText, verifyTelegramSecret } from "@/lib/telegram";
+import { MAX_DOCUMENT_BYTES, readPatientDocument, readableMimetype } from "@/lib/documents";
 import { AUDIO_FAILED_REPLY, claimEvent, releaseEvent } from "@/lib/channel";
 import { transcribeAudio } from "@/lib/elevenlabs";
 import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
@@ -22,6 +23,8 @@ const updateSchema = z.object({
     chat: z.object({ id: z.number().int().safe(), type: z.string() }),
     text: z.string().max(8000).optional(), caption: z.string().max(2000).optional(),
     voice: media.optional(), audio: media.optional(),
+    // Fotos (Telegram manda varios tamaños, del más chico al más grande) y archivos (PDF o imagen sin comprimir).
+    photo: z.array(media).max(10).optional(), document: media.optional(),
   }).optional(),
 });
 
@@ -68,8 +71,20 @@ export async function POST(request: Request) {
       }
       text = `(audio) ${heard}${text ? `\n${text}` : ""}`;
     }
+    // Credencial, orden o receta: Claude la lee y el agente recibe lo que dice.
+    const photo = msg.photo?.filter((p) => (p.file_size ?? 0) <= MAX_DOCUMENT_BYTES).at(-1);
+    const file = photo ? { id: photo.file_id, type: "image/jpeg" } : msg.document && readableMimetype(msg.document.mime_type ?? "") ? { id: msg.document.file_id, type: msg.document.mime_type! } : null;
+    if (file) {
+      const read = await telegramDownloadFile(file.id, MAX_DOCUMENT_BYTES, file.type)
+        .then((blob) => readPatientDocument(blob, file.type, text)).catch(() => null);
+      if (!read) {
+        await telegramSendText(chatId, "No pude leer esa foto o archivo. ¿Me mandás otra foto con buena luz, o me contás por escrito qué dice?");
+        return NextResponse.json({ ok: true, media: "sin_lectura" });
+      }
+      text = read.text;
+    }
     if (!text) {
-      await telegramSendText(chatId, "Podés escribirme o mandarme una nota de voz. Por ahora no leo fotos ni archivos.");
+      await telegramSendText(chatId, "Podés escribirme, mandarme una nota de voz o una foto de tu credencial u orden.");
       return NextResponse.json({ ok: true });
     }
     const demo = await handleDemoMessage({ messageId: `telegram:${msg.chat.id}:${msg.message_id}`, chatId, phone, text });

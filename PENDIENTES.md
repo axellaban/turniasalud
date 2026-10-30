@@ -47,6 +47,7 @@ Cuando el usuario elija reactivar WhatsApp desde Panel → Sistema (sin cambiar 
 - [ ] `https://turniasalud.vercel.app/api/health` → `demo.whatsapp: true`, `whatsapp_source: "waha"`.
 - [ ] **Demo con tu web** (`/probar-demo`), con el WhatsApp del usuario y datos ficticios («Prueba Turnia», DNI 11111111, particular): opciones 1/2/3, chat hasta reservar, `MENU` → audio (¿llega nota de voz?), `MENU` → llamada, `SALIR`. Medir cuánto tarda la lectura de la web con Claude. Checklist completa en `PLAN_LEAD_MAGNET.md` (paso 5 y «A verificar en vivo»).
 - [ ] WhatsApp de la clínica: texto, audio entrante (Speech to Text nunca se probó en uso real), turno, cancelación, memoria, receta y derivación a recepción.
+- [ ] **Fotos por WhatsApp** (credencial, orden, receta; hecho el 30/10): comprobar que WAHA entrega las fotos (WAHA Core a veces no descarga archivos; si llegan sin archivo, Sofi contesta «No pude ver esa foto»), que Sofi responde con lo que dice y que la foto aparece en la ficha del paciente. Por Telegram ya se puede probar en la demo.
 - [ ] Una conversación hablada completa con una persona (la llamada web solo se probó hasta el saludo).
 - [ ] Anotar los resultados en `ESTADO_Y_PRIORIDADES.md` y `PLAN_LEAD_MAGNET.md`.
 

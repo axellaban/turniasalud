@@ -7,6 +7,7 @@ import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
 import { parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wahaSendText, type WahaEvent } from "@/lib/waha";
 
 import { messagingSettings } from "@/lib/messaging-settings";
+import { readPatientDocument, type DocumentRead } from "@/lib/documents";
 
 export const dynamic = "force-dynamic";
 // La demo del lead magnet lee la web del interesado después de responder (after).
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
 
   try {
     let text = parsed.text;
+    let document: DocumentRead | null = null;
     if (parsed.audio) {
       const audio = await wahaDownloadMedia(parsed.audio.url);
       const heard = audio ? await transcribeAudio(audio, parsed.audio.mimetype).catch((e) => {
@@ -62,11 +64,14 @@ export async function POST(request: Request) {
       text = `${text ? `${text}\n` : ""}(audio) ${heard}`;
     }
     if (parsed.otherMedia) {
-      if (!text) {
+      // Fotos y PDF (credencial, orden, receta): Claude los lee y el agente recibe lo que dicen.
+      const file = parsed.media ? await wahaDownloadMedia(parsed.media.url) : null;
+      document = file ? await readPatientDocument(file, parsed.media!.mimetype, text) : null;
+      if (document) text = document.text;
+      else if (!text) {
         await wahaSendText(parsed.chatId, MEDIA_ONLY_REPLY);
         return NextResponse.json({ ok: true, media: "no_soportada" });
-      }
-      text += "\n(El paciente mandó además una foto o archivo que no podés ver: pedile que te lo cuente por escrito.)";
+      } else text += "\n(El paciente mandó además una foto o archivo que no podés ver: pedile que te lo cuente por escrito.)";
     }
 
     // Lead magnet: "quiero probar la demo, mi web es…" y lo que siga de esa demo.
@@ -78,6 +83,8 @@ export async function POST(request: Request) {
     }
 
     const clinic = await whatsappClinic();
+    // La foto queda en la ficha del paciente; si no se puede guardar, el agente igual la recibe.
+    await document?.save({ clinicId: clinic.id, phone, channel: "whatsapp" }).catch((e) => console.error("WAHA: no se pudo guardar la foto", e instanceof Error ? e.message : e));
     const res = await forwardToAgent(clinic, { messageId: parsed.id, chatId: parsed.chatId, phone, text });
     return NextResponse.json({ ok: true, conversation_id: res.conversation_id, continued: res.continued });
   } catch (e) {
