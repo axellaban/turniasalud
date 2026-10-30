@@ -38,6 +38,15 @@ describe("mergeMemory", () => {
     expect(mergeMemory("A.", null)).toBe("A.");
     expect(mergeMemory("x".repeat(790), "nuevo dato importante", 800)!.length).toBeLessThanOrEqual(801);
   });
+
+  it("anota el día en que lo contó y no repite lo mismo otro día", () => {
+    expect(mergeMemory(null, "Dice que «se le salió un pedacito de muela».", 800, "30 de oct de 2026")).toBe(
+      "[30 de oct de 2026] Dice que «se le salió un pedacito de muela».",
+    );
+    const previa = "Prefiere mañanas. [2 de mar de 2026] Le duele una muela de abajo.";
+    expect(mergeMemory(previa, "Le duele una muela de abajo.", 800, "30 de oct de 2026")).toBe(previa);
+    expect(mergeMemory(previa, "Pide turno los martes.", 800, "30 de oct de 2026")).toBe(`${previa} [30 de oct de 2026] Pide turno los martes.`);
+  });
 });
 
 describe("canales", () => {

@@ -16,6 +16,7 @@ export function DemoClinica({ clinic, demo }: { clinic: DemoClinic; demo: boolea
         tituloFicha="La ficha de la clínica"
         notaFicha={demo ? "Es una clínica de demo: su agenda es de prueba." : "Usa la ficha y la agenda reales de la clínica."}
         cta={<Link href="/panel/agenda" className="font-medium text-brand-600 hover:underline">Ver los turnos en la Agenda →</Link>}
+        extraBoton={phone.trim() ? `Paciente: ${phone.trim()}` : "Probar como paciente"}
         extraFicha={
           <label className="block text-sm">
             <span className="font-semibold text-brand-950">Probar como paciente (opcional)</span>
@@ -25,7 +26,7 @@ export function DemoClinica({ clinic, demo }: { clinic: DemoClinic; demo: boolea
               inputMode="tel"
               autoComplete="off"
               placeholder="Celular del paciente"
-              className="mt-2 w-full rounded-xl bg-[#f5f7fc] px-3 py-2 text-[15px] text-brand-950 outline-none ring-1 ring-brand-950/10 focus:ring-2 focus:ring-brand-600"
+              className="mt-2 w-full rounded-xl bg-[#f5f7fc] px-3 py-2 text-base text-brand-950 lg:text-[15px] outline-none ring-1 ring-brand-950/10 focus:ring-2 focus:ring-brand-600"
             />
             <span className="mt-1.5 block text-xs leading-relaxed text-tinta">
               {clinic.agentName} reconoce al paciente por su celular: sus turnos, su cobertura y lo que habló antes. Vacío, sos un paciente nuevo.

@@ -61,6 +61,10 @@ async function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   }
   if (url.startsWith("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url")) return json({ signed_url: "wss://chat.test/firmado" });
   if (url.startsWith("https://api.elevenlabs.io/v1/convai/conversation/token")) return json({ token: "tok_voz" });
+  // El agente ya deja arrancar el chat sin su saludo (se tocó «Crear / actualizar agente»).
+  if (url.startsWith("https://api.elevenlabs.io/v1/convai/agents/")) {
+    return json({ platform_settings: { overrides: { conversation_config_override: { agent: { first_message: true } } } } });
+  }
   throw new Error(`fetch inesperado en el test: ${url}`);
 }
 
@@ -152,8 +156,9 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
   it("da la credencial de chat o de voz con la clínica de la demo", async () => {
     const chat = await hablar("chat");
     expect(chat.status).toBe(200);
-    const c = (await chat.json()) as { signedUrl: string; userId: string; dynamicVariables: Record<string, string> };
+    const c = (await chat.json()) as { signedUrl: string; sinSaludo: boolean; userId: string; dynamicVariables: Record<string, string> };
     expect(c.signedUrl).toBe("wss://chat.test/firmado");
+    expect(c.sinSaludo).toBe(true);
     expect(c.userId).toMatch(/^web:/);
     const [s] = await sql`select clinic_id, status, call_attempts from demo_sessions where call_token = ${token}`;
     expect(c.dynamicVariables.clinic_id).toBe(s.clinic_id);

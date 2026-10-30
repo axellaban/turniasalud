@@ -6,13 +6,13 @@ const mocks = vi.hoisted(() => ({
   getClinic: vi.fn(),
   buildDynamicVariables: vi.fn(),
   getConversationToken: vi.fn(),
-  getSignedUrl: vi.fn(),
+  getChatCredential: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: mocks.cookie }) }) }));
 vi.mock("@/lib/panel-clinic", () => ({ getPanelClinic: mocks.getClinic }));
 vi.mock("@/lib/clinic", () => ({ getClinic: mocks.getClinic, buildDynamicVariables: mocks.buildDynamicVariables }));
-vi.mock("@/lib/elevenlabs", () => ({ getConversationToken: mocks.getConversationToken, getSignedUrl: mocks.getSignedUrl }));
+vi.mock("@/lib/elevenlabs", () => ({ getConversationToken: mocks.getConversationToken, getChatCredential: mocks.getChatCredential }));
 
 import { POST } from "./route";
 
@@ -24,7 +24,7 @@ describe("credenciales de la demo", () => {
     mocks.getClinic.mockResolvedValue({ elevenlabs_agent_id: "agent-test", name: "Clínica de prueba" });
     mocks.buildDynamicVariables.mockResolvedValue({ clinic_id: "clinic-test" });
     mocks.getConversationToken.mockResolvedValue("voice-token");
-    mocks.getSignedUrl.mockResolvedValue("https://example.com/signed");
+    mocks.getChatCredential.mockResolvedValue({ signedUrl: "https://example.com/signed", sinSaludo: true });
   });
 
   const request = (mode = "voz") => new Request("https://turnia.example/api/elevenlabs/token", {
@@ -38,7 +38,7 @@ describe("credenciales de la demo", () => {
     expect(response.status).toBe(401);
     expect(mocks.getClinic).not.toHaveBeenCalled();
     expect(mocks.getConversationToken).not.toHaveBeenCalled();
-    expect(mocks.getSignedUrl).not.toHaveBeenCalled();
+    expect(mocks.getChatCredential).not.toHaveBeenCalled();
   });
 
   it.each(["voz", "chat"])("permite %s con sesión válida y evita cachear credenciales", async (mode) => {
@@ -48,11 +48,11 @@ describe("credenciales de la demo", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     if (mode === "chat") {
-      expect(body.signedUrl).toBe("https://example.com/signed");
+      expect(body).toMatchObject({ signedUrl: "https://example.com/signed", sinSaludo: true });
       expect(mocks.getConversationToken).not.toHaveBeenCalled();
     } else {
       expect(body.token).toBe("voice-token");
-      expect(mocks.getSignedUrl).not.toHaveBeenCalled();
+      expect(mocks.getChatCredential).not.toHaveBeenCalled();
     }
   });
 });

@@ -1,6 +1,17 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 29/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Feedback del Dr. Mininni: saludo, prácticas, memoria, precio y sillones — 30/10/2026
+
+- **Doble saludo en el chat** («¡Hola! Soy Sofi…» y enseguida «Hola, Hernán…»): en el chat escribe primero el paciente y el agente mandaba su saludo fijo y además contestaba. Ahora el chat de la demo (panel y `/probar-demo`) arranca sin el saludo fijo (`overrides.agent.firstMessage = ""`) y la primera respuesta saluda, se presenta y contesta en un solo mensaje. ElevenLabs solo lo permite después de «Crear / actualizar agente» (`conversation_config_override.agent.first_message`); hasta entonces `getChatCredential` lo detecta y el chat sigue como antes. La voz no cambia.
+- **Nombre de las prácticas:** el prompt pide usar el nombre del catálogo y, si suma una aclaración simple, ponerla después: «mantenimiento periodontal (limpieza)». Conviene que la prestación se llame así en Prestaciones.
+- **Lo que recuerda del paciente, con fecha y con sus palabras:** cada nota nueva de la memoria se guarda con el día de la conversación (`[30 de oct de 2026] …`); la descripción de `memoria` pide citar entre comillas lo que el paciente dijo con sus palabras («se le salió un pedacito de muela»), y el prompt le indica no dar por hecho lo anterior, decir cuándo lo contó y preguntar si sigue igual. Las notas viejas quedan sin fecha.
+- **Celular del paciente en el teléfono** («desde el celu no me deja poner el número»): el campo estaba al final de «La ficha de la clínica». Ahora hay un botón propio, «Probar como paciente», que abre la hoja con el campo arriba y el teclado listo; después muestra «Paciente: …». El campo usa 16 px para que iOS no haga zoom. Probado en iPhone SE y 13 (emulados).
+- **Precio de la consulta:** es configuración de la clínica, no código. Texto para Panel → Configuración → «Preguntas frecuentes»: «Precio de la consulta: lo mínimo que se cobra es la consulta, $48.000. Si es la primera vez, esos $48.000 corresponden a la consulta de primera vez (fichado, diagnóstico y pedido de radiografías si hace falta). Si en el turno se hace alguna práctica, se cobra aparte el valor de esa práctica. Vale también para las urgencias.»
+- **Sillones:** con los horarios que mandó, cada consultorio lo usa un profesional por vez; alcanza con cargarlos (ver `PENDIENTES.md`). Para la cirugía conjunta se propone «turno con dos profesionales»: en el turno a mano, «También atiende» (opcional); el turno aparece en la agenda de los dos, ocupa el horario de ambos para Sofi y para el panel, y al moverlo o cancelarlo se mueve o cancela para los dos. Sofi no da esos turnos.
+- Auditoría antes del merge: `buscar_paciente` decía «Saludalo por su nombre» al identificar a mitad de charla; ahora «Llamalo por su nombre (sin volver a saludar)».
+- Pruebas actualizadas (316 en total), TypeScript y ESLint. **Hace falta «Crear / actualizar agente»** después del deploy (prompt, descripción de `memoria` y el permiso del saludo).
 
 ## Métricas para el tablero de Chapa Labs — 30/10/2026
 

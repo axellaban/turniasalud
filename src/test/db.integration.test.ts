@@ -343,7 +343,8 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(conversations[0]).toMatchObject({ channel: "whatsapp", direction: "saliente", outcome: "resuelto", analysis: { sentimiento: "positivo" } });
     expect(conversations[0].transcript).toHaveLength(2);
     const lucas = await clinicLib.findPatientByPhone(CLINIC, "5491155550004");
-    expect(lucas?.memory_summary).toContain("Prefiere que le escriban por la tarde.");
+    // Con el día en que lo contó, para que el agente sepa de cuándo es.
+    expect(lucas?.memory_summary).toMatch(/\[\d{1,2} de \S+ de \d{4}\] Prefiere que le escriban por la tarde\./);
     const [recipient] = await sql<Array<{ status: string }>>`
       select r.status from campaign_recipients r join patients p on p.id = r.patient_id
       where r.campaign_id = ${campaign.id} and p.phone = '5491155550004'`;
