@@ -192,7 +192,7 @@ export async function findPatientByDni(
     ok: true,
     encontrado: true,
     mensaje:
-      "Es paciente del consultorio y quedó identificado: esta conversación ya usa su ficha. Saludalo por su nombre, no le vuelvas a pedir los datos cargados y pedí solo los que faltan.",
+      "Es paciente del consultorio y quedó identificado: esta conversación ya usa su ficha. Llamalo por su nombre (sin volver a saludar), no le vuelvas a pedir los datos cargados y pedí solo los que faltan.",
     ficha: await patientContextText(await getClinic(ctx.clinicId), result.patient),
   };
 }
