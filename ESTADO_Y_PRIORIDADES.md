@@ -2,6 +2,15 @@
 
 Actualización: 29/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Métricas para el tablero de Chapa Labs — 30/10/2026
+
+- **Pedido:** que el tablero de seguimiento (chapa-labs) muestre la prospección, las demos, los pedidos de demo y el uso de Turnia, que hasta ahora marcaban 0.
+- **`GET /api/metricas`** (`src/lib/sales/metrics.ts`): totales y series por día, sin nombres, teléfonos ni textos. Pide `Authorization: Bearer $METRICS_SECRET` (32+ caracteres); sin la variable responde 401. Opcional `?desde=&hasta=` (AAAA-MM-DD, Buenos Aires).
+  - `prospeccion`: prospectados (toda la base) y la cohorte de primer contacto en el período: contactados, abrieron y probaron la demo, respondieron, interesados (como el panel), reuniones (incluye clientes), clientes; por canal, por zona y por día (mensajes, aperturas, demos, respuestas, reuniones, clientes, nuevos contactos).
+  - `demos` (`demo_sessions`), `pedidos` (`leads`) y `uso`: turnos que tomó Turnia (no el panel) en clínicas reales (no `is_demo`), últimos 7 días contra los 7 anteriores, conversaciones de Sofi y clínicas activas.
+- En Vercel: `METRICS_SECRET` acá y el mismo valor como `TURNIA_METRICS_SECRET` en chapa-labs.
+- 3 pruebas nuevas de integración (318 en total), TypeScript y ESLint.
+
 ## Miniaturas en JPEG: la de la home también sale en WhatsApp — 29/10/2026
 
 - Las miniaturas con la foto (home y todas las páginas sin una propia, soluciones, organizaciones) pesaban 520 a 540 KB en PNG; WhatsApp no muestra las de más de ~300 KB. Ahora todas salen en JPEG (`src/lib/og.tsx`, con `sharp`): la de la home pasa a 78 KB y las demás quedan entre 60 y 80 KB, sin diferencia visible.
