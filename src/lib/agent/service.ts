@@ -2,7 +2,7 @@ import "server-only";
 import { sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText } from "../clinic";
 import { identifyPatient, normalizeDni, sameCoverage, type Identification } from "../patients";
-import { computeSlots, expandBlocks, isOpenAt, isSlotFree } from "../slots";
+import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval } from "../slots";
 import { env } from "../env";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
@@ -31,6 +31,24 @@ export class ToolError extends Error {
 }
 
 const ACTIVE = ["confirmado", "pendiente"];
+
+/**
+ * Lo que ocupa a estos profesionales: sus turnos activos, también los que atienden
+ * como segundo profesional (por ejemplo, una cirugía conjunta).
+ */
+async function busyOf(proIds: string[], from: Date | string, to: Date | string, ignoreId?: string): Promise<BusyInterval[]> {
+  const rows = await sql<Array<{ professional_id: string; second_professional_id: string | null; starts_at: string; ends_at: string }>>`
+    select professional_id, second_professional_id, starts_at, ends_at from appointments
+    where (professional_id = any(${proIds}::uuid[]) or second_professional_id = any(${proIds}::uuid[]))
+      and status = any(${ACTIVE}::text[])
+      and starts_at < ${to} and ends_at > ${from}
+      ${ignoreId ? sql`and id <> ${ignoreId}` : sql``}`;
+  return rows.flatMap((r) =>
+    [r.professional_id, r.second_professional_id]
+      .filter((id): id is string => Boolean(id) && proIds.includes(id!))
+      .map((id) => ({ professional_id: id, starts_at: r.starts_at, ends_at: r.ends_at })),
+  );
+}
 
 export function sourceFromChannel(channel: string | undefined, phone: string): AppointmentSource {
   if (phone.startsWith("telegram:")) return "telegram";
@@ -225,11 +243,7 @@ export async function checkAvailability(
   const rangeStart = `${addDaysKey(fromKey, -1)}T00:00:00Z`;
   const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
   const [busy, blocks, calendar] = await Promise.all([
-    sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
-      select professional_id, starts_at, ends_at from appointments
-      where professional_id = any(${proIds}::uuid[])
-        and status = any(${ACTIVE}::text[])
-        and ends_at >= ${rangeStart} and starts_at <= ${rangeEnd}`,
+    busyOf(proIds, rangeStart, rangeEnd),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
     // Lo ocupado en el Google Calendar de cada profesional (si la clínica lo conectó).
     googleBusy(clinic.id, proIds, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
@@ -282,7 +296,7 @@ export type DaySlot = { hora: string; inicio: string };
  */
 export async function freeSlotsOnDay(
   clinicId: string,
-  input: { tipo_turno_id: string; profesional_id: string; fecha: string; ignorar_turno_id?: string },
+  input: { tipo_turno_id: string; profesional_id: string; fecha: string; ignorar_turno_id?: string; segundo_profesional_id?: string },
 ): Promise<{ turnos: DaySlot[]; horario: string | null; motivo: string | null }> {
   const clinic = await getClinic(clinicId);
   const catalog = await getCatalog(clinic.id);
@@ -304,20 +318,19 @@ export async function freeSlotsOnDay(
 
   const rangeStart = `${addDaysKey(dayKey, -1)}T00:00:00Z`;
   const rangeEnd = `${addDaysKey(dayKey, 1)}T23:59:59Z`;
+  // Con un segundo profesional, solo sirven los horarios en que los dos están libres.
+  const second = catalog.professionals.find((p) => p.id === input.segundo_profesional_id && p.id !== pro.id);
+  const both = second ? [pro.id, second.id] : [pro.id];
   const [busy, blocks, calendar] = await Promise.all([
-    sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
-      select professional_id, starts_at, ends_at from appointments
-      where professional_id = ${pro.id}
-        and status = any(${ACTIVE}::text[])
-        and ends_at >= ${rangeStart} and starts_at <= ${rangeEnd}
-        ${isUuid(input.ignorar_turno_id) ? sql`and id <> ${input.ignorar_turno_id}` : sql``}`,
+    busyOf(both, rangeStart, rangeEnd, isUuid(input.ignorar_turno_id) ? input.ignorar_turno_id : undefined),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
-    googleBusy(clinic.id, [pro.id], new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+    googleBusy(clinic.id, both, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
   ]);
-  const blocked = expandBlocks(blocks, [pro.id]);
+  const asPro = (b: BusyInterval) => ({ ...b, professional_id: pro.id });
+  const blocked = expandBlocks(blocks, both).map(asPro);
   const query = {
     schedules,
-    busy: [...busy, ...calendar],
+    busy: [...busy, ...calendar].map(asPro),
     durationMin: type.duration_min,
     fromKey: dayKey,
     toKey: dayKey,
@@ -327,7 +340,11 @@ export async function freeSlotsOnDay(
     limit: 500,
     perDayPerProfessional: 500,
   };
-  const slots = computeSlots({ ...query, blocked });
+  // Y dentro del horario de los dos.
+  const secondSchedules = second ? catalog.schedules.filter((s) => s.professional_id === second.id) : [];
+  const slots = computeSlots({ ...query, blocked }).filter(
+    (s) => !second || isSlotFree(secondSchedules, [], new Date(s.starts_at), type.duration_min, clinic.timezone).ok,
+  );
   const turnos = slots.map((s) => {
     const p = zonedParts(new Date(s.starts_at), clinic.timezone);
     return { hora: `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`, inicio: s.starts_at };
@@ -350,6 +367,8 @@ type BookOptions = {
   ignoreAppointmentId?: string;
   /** Desde el panel: darlo aunque sea fuera de horario, en un día bloqueado u ocupado en Google. */
   force?: boolean;
+  /** Desde el panel: otro profesional que atiende el mismo turno (también tiene que estar libre). */
+  secondProfessionalId?: string | null;
 };
 
 const AGAIN = " Consultá la disponibilidad de nuevo y ofrecé otra opción.";
@@ -364,36 +383,44 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   if (Number.isNaN(startsAt.getTime())) throw new ToolError("La fecha de inicio no es válida. Usá el campo 'inicio' de consultar_disponibilidad.");
   if (startsAt.getTime() < Date.now()) throw new ToolError("Ese horario ya pasó.");
 
+  let second = null as (typeof catalog.professionals)[number] | null;
+  if (opts.secondProfessionalId) {
+    second = catalog.professionals.find((p) => p.id === opts.secondProfessionalId) ?? null;
+    if (!second) throw new ToolError("No encontré al otro profesional del turno.");
+    if (second.id === pro.id) throw new ToolError("El otro profesional tiene que ser distinto del que atiende el turno.");
+  }
+
   const endsAt = new Date(startsAt.getTime() + type.duration_min * 60_000);
   const [busy, blocks] = await Promise.all([
-    sql<Array<{ professional_id: string; starts_at: string; ends_at: string }>>`
-      select professional_id, starts_at, ends_at from appointments
-      where professional_id = ${pro.id}
-        and status = any(${ACTIVE}::text[])
-        and starts_at < ${endsAt} and ends_at > ${startsAt}
-        ${opts.ignoreAppointmentId ? sql`and id <> ${opts.ignoreAppointmentId}` : sql``}`,
+    busyOf(second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, opts.ignoreAppointmentId),
     getScheduleBlocks(clinic.id, startsAt, endsAt),
   ]);
   // Otro turno de Turnia en ese horario: nunca se superponen (lo asegura también la base).
-  if (busy.length) throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`);
+  if (busy.some((b) => b.professional_id === pro.id)) throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`);
+  if (second && busy.length) throw new ToolError(`${second.full_name} ya tiene un turno a esa hora.`);
   if (!opts.force) {
-    const check = isSlotFree(
-      catalog.schedules.filter((s) => s.professional_id === pro.id),
-      [],
-      startsAt,
-      type.duration_min,
-      clinic.timezone,
-      expandBlocks(blocks, [pro.id]),
-    );
-    if (!check.ok) throw new ToolError(`${check.reason}${AGAIN}`, true);
+    for (const who of second ? [pro, second] : [pro]) {
+      const check = isSlotFree(
+        catalog.schedules.filter((s) => s.professional_id === who.id),
+        [],
+        startsAt,
+        type.duration_min,
+        clinic.timezone,
+        expandBlocks(blocks, [who.id]),
+      );
+      if (!check.ok) throw new ToolError(`${who === pro ? "" : `${who.full_name}: `}${check.reason}${who === pro ? AGAIN : ""}`, true);
+    }
     // Al reservar se consulta Google en el momento, para ese horario exacto: lo que se
     // anotó recién en el calendario del profesional también cuenta.
-    const calendar = await googleBusy(clinic.id, [pro.id], startsAt, endsAt, { fresh: true, timeZone: clinic.timezone });
+    const calendar = await googleBusy(clinic.id, second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, { fresh: true, timeZone: clinic.timezone });
     const overlapping = calendar.filter((b) => new Date(b.starts_at) < endsAt && new Date(b.ends_at) > startsAt);
     // Al paciente no se le cuenta qué tiene el profesional en su calendario; al consultorio, sí.
-    if (overlapping.length) throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`, true, `Ese horario está ocupado en el Google Calendar de ${pro.full_name}.`);
+    if (overlapping.length) {
+      const who = overlapping.some((b) => b.professional_id === pro.id) ? pro : second!;
+      throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`, true, `Ese horario está ocupado en el Google Calendar de ${who.full_name}.`);
+    }
   }
-  return { type, pro, endsAt };
+  return { type, pro, second, endsAt };
 }
 
 /** «osde», «OSDE » y «Osdé» son la misma cobertura. */
@@ -416,9 +443,10 @@ type PatientAppointment = { id: string; starts_at: string; ends_at: string; prof
 /** Los turnos activos que todavía no terminaron de un paciente. */
 async function upcomingOf(patientId: string): Promise<PatientAppointment[]> {
   return sql<PatientAppointment[]>`
-    select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name as professional, t.name as type_name
+    select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, t.name as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
+    left join professionals p2 on p2.id = a.second_professional_id
     join appointment_types t on t.id = a.appointment_type_id
     where a.patient_id = ${patientId} and a.status = any(${ACTIVE}::text[]) and a.ends_at > now()
     order by a.starts_at`;
@@ -431,7 +459,7 @@ const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
 type NewAppointment = Pick<
   Appointment,
   "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
->;
+> & Partial<Pick<Appointment, "second_professional_id">>;
 
 /**
  * Serializa las reservas de cada profesional dentro de la transacción: si dos
@@ -447,6 +475,15 @@ async function lockProfessionals(tx: TransactionSql, ids: string[]): Promise<voi
 }
 
 async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promise<Appointment> {
+  // La constraint de la base cubre al profesional principal. Que nadie quede en dos
+  // turnos a la vez como segundo profesional se revisa acá, con los locks ya tomados.
+  const ids = [row.professional_id, row.second_professional_id].filter((id): id is string => Boolean(id));
+  const [taken] = await tx`
+    select 1 from appointments
+    where status = any(${ACTIVE}::text[]) and starts_at < ${row.ends_at} and ends_at > ${row.starts_at}
+      and (second_professional_id = any(${ids}::uuid[]) or (${ids.length > 1} and professional_id = any(${ids}::uuid[])))
+    limit 1`;
+  if (taken) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
   const [appt] = await tx<Appointment[]>`insert into appointments ${tx(row)} returning *`;
   return appt;
 }
@@ -454,7 +491,7 @@ async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promi
 export async function bookAppointment(
   ctx: ToolContext,
   input: { tipo_turno_id: string; profesional_id: string; inicio: string; nombre_completo?: string; cobertura?: string; notas?: string },
-  opts: Pick<BookOptions, "force"> = {},
+  opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {},
 ) {
   const clinic = await getClinic(ctx.clinicId);
   const patient = await ensurePatient(ctx, input.nombre_completo);
@@ -475,7 +512,7 @@ export async function bookAppointment(
     };
   }
 
-  const { type, pro, endsAt } = await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, opts);
+  const { type, pro, second, endsAt } = await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, opts);
   // Una persona no puede estar en dos turnos a la vez.
   const clash = mine.find((a) => new Date(a.starts_at) < endsAt && new Date(a.ends_at) > startsAt);
   if (clash) {
@@ -488,11 +525,12 @@ export async function bookAppointment(
   let appt: Appointment;
   try {
     appt = await sql.begin(async (tx) => {
-      await lockProfessionals(tx, [pro.id]);
+      await lockProfessionals(tx, second ? [pro.id, second.id] : [pro.id]);
       return insertAppointment(tx, {
         clinic_id: clinic.id,
         patient_id: patient.id,
         professional_id: pro.id,
+        second_professional_id: second?.id ?? null,
         appointment_type_id: type.id,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
@@ -519,7 +557,7 @@ export async function bookAppointment(
   return {
     ok: true,
     turno_id: appt.id,
-    mensaje: `Turno confirmado: ${type.name} con ${pro.full_name} el ${humanSlot(startsAt, clinic.timezone)}.`,
+    mensaje: `Turno confirmado: ${type.name} con ${pro.full_name}${second ? ` y ${second.full_name}` : ""} el ${humanSlot(startsAt, clinic.timezone)}.`,
     direccion: clinic.address,
     indicaciones: type.instructions,
     ...(other && {
@@ -539,9 +577,10 @@ export async function listPatientAppointments(ctx: ToolContext) {
     Array<{ id: string; starts_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
   >`
     select a.id, a.starts_at, a.status, a.professional_id, a.appointment_type_id,
-           pr.full_name as professional, t.name as type_name
+           pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, t.name as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
+    left join professionals p2 on p2.id = a.second_professional_id
     join appointment_types t on t.id = a.appointment_type_id
     where a.patient_id = ${patient.id} and a.status = any(${ACTIVE}::text[]) and a.starts_at >= now()
     order by a.starts_at`;
@@ -701,7 +740,15 @@ async function rescheduleLoaded(
   assertNotOver(appt);
   const professionalId = input.profesional_id || appt.professional_id;
   const startsAt = new Date(input.nuevo_inicio);
-  const { type, pro, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, { ignoreAppointmentId: appt.id, force });
+  // Un turno con dos profesionales se mueve para los dos.
+  if (appt.second_professional_id && appt.second_professional_id === professionalId) {
+    throw new ToolError("Ese profesional ya atiende este turno como segundo profesional: elegí otro.");
+  }
+  const { type, pro, second, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, {
+    ignoreAppointmentId: appt.id,
+    force,
+    secondProfessionalId: appt.second_professional_id,
+  });
   // Con otro profesional, que atienda la cobertura del turno.
   const coverage = pro.id === appt.professional_id ? appt.coverage : acceptedCoverage(pro, appt.coverage);
   const clash = (await upcomingOf(patient.id)).find((a) => a.id !== appt.id && new Date(a.starts_at) < endsAt && new Date(a.ends_at) > startsAt);
@@ -714,7 +761,7 @@ async function rescheduleLoaded(
   let newAppt: Appointment;
   try {
     newAppt = await sql.begin(async (tx) => {
-      await lockProfessionals(tx, [appt.professional_id, pro.id]);
+      await lockProfessionals(tx, [appt.professional_id, pro.id, ...(second ? [second.id] : [])]);
       const [freed] = await tx`
         update appointments set status = 'reprogramado', cancelled_at = now()
         where id = ${appt.id} and status = any(${ACTIVE}::text[]) returning id`;
@@ -723,6 +770,7 @@ async function rescheduleLoaded(
         clinic_id: clinic.id,
         patient_id: patient.id,
         professional_id: pro.id,
+        second_professional_id: second?.id ?? null,
         appointment_type_id: type.id,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
@@ -738,7 +786,10 @@ async function rescheduleLoaded(
   }
   await notifyN8n("turno.reprogramado", { clinic_id: clinic.id, before: appt, after: newAppt, patient });
   await offerFreedSlot(clinic, appt).catch(() => 0);
-  return { turno_id: newAppt.id, mensaje: `Listo: el turno pasó al ${humanSlot(startsAt, clinic.timezone)} con ${pro.full_name}.` };
+  return {
+    turno_id: newAppt.id,
+    mensaje: `Listo: el turno pasó al ${humanSlot(startsAt, clinic.timezone)} con ${pro.full_name}${second ? ` y ${second.full_name}` : ""}.`,
+  };
 }
 
 export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id: string; nuevo_inicio: string; profesional_id?: string }) {

@@ -871,3 +871,16 @@ alter table patient_phones enable row level security;
 
 -- Buscar al paciente por DNI (agente y unificación de fichas repetidas).
 create index if not exists patients_dni_idx on patients (clinic_id, dni) where dni is not null;
+
+-- ---------------------------------------------------------------------------
+-- Turno con dos profesionales (30/10/2026): por ejemplo, una cirugía que hacen
+-- juntos. El turno queda en la agenda de los dos y ocupa el horario de ambos.
+-- La constraint de superposición cubre al principal; el segundo lo controla la
+-- app dentro de la transacción, con los locks por profesional.
+-- ---------------------------------------------------------------------------
+alter table appointments add column if not exists second_professional_id uuid references professionals(id) on delete restrict;
+alter table appointments drop constraint if exists appointments_second_professional_check;
+alter table appointments add constraint appointments_second_professional_check
+  check (second_professional_id is null or second_professional_id <> professional_id);
+create index if not exists appointments_second_professional_idx on appointments (second_professional_id, starts_at)
+  where second_professional_id is not null;

@@ -123,9 +123,10 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
   const upcoming = await sql<
     Array<Pick<Appointment, "id" | "starts_at" | "status"> & { professional: string; type_name: string }>
   >`
-    select a.id, a.starts_at, a.status, pr.full_name as professional, t.name as type_name
+    select a.id, a.starts_at, a.status, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, t.name as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
+    left join professionals p2 on p2.id = a.second_professional_id
     join appointment_types t on t.id = a.appointment_type_id
     where a.patient_id = ${patient.id} and a.status in ('confirmado', 'pendiente') and a.starts_at >= now()
     order by a.starts_at

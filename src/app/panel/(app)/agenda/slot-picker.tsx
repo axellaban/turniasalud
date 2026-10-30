@@ -42,6 +42,7 @@ export function SlotPicker({
   onCustom,
   reload = 0,
   ignoreId,
+  secondId,
 }: {
   clinicId: string;
   typeId: string;
@@ -57,10 +58,12 @@ export function SlotPicker({
   reload?: number;
   /** El turno que se está moviendo: su horario cuenta como libre. */
   ignoreId?: string;
+  /** Otro profesional que atiende el mismo turno: solo sirven los horarios en que los dos están libres. */
+  secondId?: string;
 }) {
   // Los horarios libres son de una combinación prestación + profesional + día: mientras
   // llega la de la combinación actual, se muestra la anterior atenuada.
-  const key = `${typeId}|${proId}|${date}|${reload}|${ignoreId ?? ""}`;
+  const key = `${typeId}|${proId}|${date}|${reload}|${ignoreId ?? ""}|${secondId ?? ""}`;
   const [loaded, setLoaded] = useState<{ key: string; day: Day } | null>(null);
   const day = loaded?.day ?? null;
   const loading = Boolean(typeId && proId && date) && loaded?.key !== key;
@@ -74,11 +77,12 @@ export function SlotPicker({
     data.set("professional_id", proId);
     data.set("date", date);
     if (ignoreId) data.set("ignore_id", ignoreId);
+    if (secondId) data.set("second_professional_id", secondId);
     loadDaySlots(data)
       .then((r) => { if (current) setLoaded({ key, day: r }); })
       .catch(() => { if (current) setLoaded({ key, day: { turnos: [], horario: null, motivo: "No pude traer los horarios. Probá de nuevo." } }); });
     return () => { current = false; };
-  }, [clinicId, typeId, proId, date, ignoreId, key]);
+  }, [clinicId, typeId, proId, date, ignoreId, secondId, key]);
 
   const goTo = (next: string) => {
     onDate(next);

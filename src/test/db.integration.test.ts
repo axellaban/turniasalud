@@ -670,6 +670,81 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(await actions.lookupPatient(form({ phone: "11 0000-0000" }))).toBeNull();
   });
 
+  it("turno con dos profesionales: ocupa la agenda de los dos, se mueve y se cancela junto", async () => {
+    const actions = await import("@/app/panel/actions");
+    const form = (data: Record<string, string>) => {
+      const f = new FormData();
+      for (const [k, v] of Object.entries(data)) f.append(k, v);
+      return f;
+    };
+    const SOSA = "00000000-0000-4000-8000-0000000000a4";
+    const APTO = "00000000-0000-4000-8000-0000000000b8";
+    // Un día hábil sin los turnos de las otras pruebas: la Dra. Ruiz atiende de 10 a 17 y el Dr. Sosa de 8 a 12.
+    let day = new Date(Date.now() + 20 * 86400_000).toISOString().slice(0, 10);
+    while ([0, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay())) day = new Date(Date.parse(`${day}T12:00:00Z`) + 86400_000).toISOString().slice(0, 10);
+    const ruiz = { appointment_type_id: LIMPIEZA, professional_id: RUIZ };
+    const sosa = { appointment_type_id: APTO, professional_id: SOSA };
+    const sosaFree = async () => (await actions.loadDaySlots(form({ ...sosa, date: day }))).turnos;
+
+    // Un paciente le pide al Dr. Sosa un turno a las 11:40 (por el agente).
+    const at1140 = (await sosaFree()).find((t) => t.hora === "11:40")!;
+    await service.registerPatient(ctx("5491166660042"), { nombre_completo: "Paula Previa" });
+    await service.bookAppointment(ctx("5491166660042"), { tipo_turno_id: APTO, profesional_id: SOSA, inicio: at1140.inicio });
+
+    // Con el Dr. Sosa como segundo profesional, solo se ofrecen horarios en que los dos están libres.
+    const both = (await actions.loadDaySlots(form({ ...ruiz, second_professional_id: SOSA, date: day }))).turnos.map((t) => t.hora);
+    expect(both).toEqual(expect.arrayContaining(["10:00", "10:40"]));
+    expect(both).not.toContain("11:20");
+    expect(both).not.toContain("12:00");
+    expect((await actions.loadDaySlots(form({ ...ruiz, date: day }))).turnos.map((t) => t.hora)).toContain("12:00");
+
+    // Si el segundo está ocupado no se da (ni forzando); fuera de su horario, el panel puede darlo igual.
+    const joint = { ...ruiz, second_professional_id: SOSA, phone: "11 6666-0041", full_name: "Quique Cirugía", date: day };
+    expect(await actions.createManualAppointment(undefined, form({ ...joint, time: "11:20", force: "1" })))
+      .toEqual({ ok: false, message: "Dr. Pablo Sosa ya tiene un turno a esa hora.", forzable: false });
+    expect(await actions.createManualAppointment(undefined, form({ ...joint, time: "14:00" })))
+      .toEqual({ ok: false, message: "Dr. Pablo Sosa: El profesional no atiende en ese horario.", forzable: true });
+    await expect(service.bookAppointment(ctx("5491166660041"), { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, inicio: at1140.inicio }, { secondProfessionalId: RUIZ }))
+      .rejects.toThrow("tiene que ser distinto");
+
+    const made = await actions.createManualAppointment(undefined, form({ ...joint, time: "10:00" }));
+    expect(made).toMatchObject({ ok: true });
+    expect(made.message).toContain("con Dra. Carolina Ruiz y Dr. Pablo Sosa");
+    const [appt] = await sql<Array<{ id: string; second_professional_id: string }>>`
+      select a.id, a.second_professional_id from appointments a join patients p on p.id = a.patient_id where p.phone = '5491166660041' and a.status = 'confirmado'`;
+    expect(appt.second_professional_id).toBe(SOSA);
+
+    // El Dr. Sosa queda ocupado de 10 a 10:40: ni el agente ni el panel le dan ese horario.
+    const free = (await sosaFree()).map((t) => t.hora);
+    expect(free).not.toContain("10:00");
+    expect(free).not.toContain("10:20");
+    expect(free).toContain("10:40");
+    const sosa10 = (await actions.loadDaySlots(form({ ...sosa, date: day, ignore_id: appt.id }))).turnos.find((t) => t.hora === "10:00")!;
+    await service.registerPatient(ctx("5491166660043"), { nombre_completo: "Rita Agente" });
+    await expect(service.bookAppointment(ctx("5491166660043"), { tipo_turno_id: APTO, profesional_id: SOSA, inicio: sosa10.inicio }))
+      .rejects.toThrow("ocupado");
+    const { turnos: offered } = await service.checkAvailability(ctx("5491166660043"), { tipo_turno_id: APTO, desde: day, hasta: day });
+    expect(offered.map((t) => t.inicio)).not.toContain(sosa10.inicio);
+
+    // El paciente y el agente ven a los dos profesionales.
+    const { turnos: mine } = await service.listPatientAppointments(ctx("5491166660041"));
+    expect(mine[0].profesional).toBe("Dra. Carolina Ruiz y Dr. Pablo Sosa");
+
+    // Se mueve para los dos: el Dr. Sosa queda libre a las 10 y ocupado a las 10:40.
+    const slot1040 = (await actions.loadDaySlots(form({ ...ruiz, second_professional_id: SOSA, date: day, ignore_id: appt.id }))).turnos.find((t) => t.hora === "10:40")!;
+    const moved = await service.rescheduleClinicAppointment(CLINIC, appt.id, { nuevo_inicio: slot1040.inicio });
+    expect(moved.mensaje).toContain("y Dr. Pablo Sosa");
+    const [after] = await sql<Array<{ second_professional_id: string }>>`select second_professional_id from appointments where id = ${moved.turno_id}`;
+    expect(after.second_professional_id).toBe(SOSA);
+    const freeAfter = (await sosaFree()).map((t) => t.hora);
+    expect(freeAfter).toContain("10:00");
+    expect(freeAfter).not.toContain("10:40");
+
+    // Cancelado, el horario vuelve a estar libre para el Dr. Sosa.
+    await service.cancelClinicAppointment(CLINIC, moved.turno_id);
+    expect((await sosaFree()).map((t) => t.hora)).toContain("10:40");
+  });
+
   it("todas las páginas del panel consultan y renderizan con datos reales", async () => {
     const pages: Array<[string, () => Promise<unknown>]> = [
       ["inicio", async () => (await import("@/app/panel/(app)/page")).default()],
