@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { FormularioDemo } from "@/components/site/formulario-demo";
 import { Icono } from "@/components/site/iconos";
 
@@ -47,7 +48,7 @@ export default function PediUnaDemoPage() {
                 Escuchá conversaciones de ejemplo
               </Link>{" "}
               o{" "}
-              <Link href="/probar-demo" className="font-medium text-brand-600 hover:underline">
+              <Link href="/probar-demo" {...cta("try_demo", "guided_demo_page", "probar_demo")} className="font-medium text-brand-600 hover:underline">
                 probalo con la web de tu consultorio
               </Link>
               .

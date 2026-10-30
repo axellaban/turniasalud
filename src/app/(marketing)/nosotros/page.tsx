@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { Flecha, Icono } from "@/components/site/iconos";
 import { Titulo } from "@/components/site/secciones";
 
@@ -47,7 +48,7 @@ export default function NosotrosPage() {
           ))}
         </div>
         <div className="mt-14 text-center">
-          <Link href="/pedi-una-demo" className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
+          <Link href="/pedi-una-demo" {...cta("guided_demo", "about", "pedi_una_demo")} className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
             Hablemos <Flecha />
           </Link>
         </div>

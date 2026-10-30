@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { LogoMark } from "@/components/logo";
 import { ESPECIALIDADES } from "@/content/especialidades";
 import { INTEGRACIONES } from "@/content/site";
@@ -65,11 +66,11 @@ export function BandaProbalo() {
           ))}
         </div>
         <h2 className="mt-4 text-2xl font-medium tracking-tight text-brand-950 sm:text-[28px]">Probá a Sofi con tu consultorio, por chat o por voz</h2>
-        <Link href="/probar-demo" className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
+        <Link href="/probar-demo" {...cta("try_demo", "home_section", "probar_demo")} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
           Probalo con tu web <Flecha />
         </Link>
         <p className="mt-4 text-sm font-medium text-brand-950">
-          O <Link href="/escucha-a-nuestros-agentes" className="underline underline-offset-4 hover:text-brand-600">escuchá conversaciones de ejemplo</Link>
+          O <Link href="/escucha-a-nuestros-agentes" {...cta("listen_samples", "home_section", "escucha", "navigation")} className="underline underline-offset-4 hover:text-brand-600">escuchá conversaciones de ejemplo</Link>
         </p>
       </div>
     </section>

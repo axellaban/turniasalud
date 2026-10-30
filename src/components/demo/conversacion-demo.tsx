@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConversation } from "@elevenlabs/react";
 import { Chevron, Icono } from "@/components/site/iconos";
+import { track, trackMilestone } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
 import { OrbeVoz } from "./orbe-voz";
 
 type Line = { id: number; role: "user" | "agent" | "system"; text: string };
+
+/** La hora, para medir cada conversación (PostHog). */
+const ahora = () => Date.now();
 
 const IDEAS = [
   "Quiero sacar un turno para la semana que viene",
@@ -108,12 +112,44 @@ export function ConversacionDemo({
     });
   }, []);
 
+  // PostHog: cada conversación de punta a punta (modo, duración y cuántos mensajes), nunca el texto.
+  const charla = useRef<{ mode: DemoMode; startedAt: number; user: number; agent: number } | null>(null);
+  const terminarCharla = useCallback((reason: string, beacon = false) => {
+    const c = charla.current;
+    if (!c) return;
+    charla.current = null;
+    track(
+      "demo_conversation_ended",
+      { mode: c.mode, duration_ms: Math.min(Date.now() - c.startedAt, 3_600_000), user_messages: c.user, agent_messages: c.agent, end_reason: reason },
+      beacon,
+    );
+  }, []);
+  useEffect(() => {
+    const salir = () => terminarCharla("pagehide", true);
+    window.addEventListener("pagehide", salir);
+    return () => {
+      window.removeEventListener("pagehide", salir);
+      terminarCharla("unmount");
+    };
+  }, [terminarCharla]);
+
   const conversation = useConversation({
     onMessage: (m) => {
-      if (m.message?.trim()) push(m.role === "agent" ? "agent" : "user", m.message);
+      if (!m.message?.trim()) return;
+      const c = charla.current;
+      // En chat, lo que escribe se cuenta al mandarlo: el SDK puede repetirlo acá.
+      if (c && m.role === "agent") c.agent += 1;
+      else if (c && c.mode === "voz") c.user += 1;
+      push(m.role === "agent" ? "agent" : "user", m.message);
     },
-    onError: (message) => setError(typeof message === "string" ? message : "Se cortó la conversación."),
-    onDisconnect: () => push("system", "Conversación terminada."),
+    onError: (message) => {
+      if (charla.current) track("demo_conversation_error", { mode: charla.current.mode });
+      setError(typeof message === "string" ? message : "Se cortó la conversación.");
+    },
+    onDisconnect: () => {
+      terminarCharla("disconnect");
+      push("system", "Conversación terminada.");
+    },
   });
   const connected = conversation.status === "connected";
   const connecting = conversation.status === "connecting" || loading;
@@ -127,6 +163,7 @@ export function ConversacionDemo({
     if (!connected || !pendiente.current) return;
     const text = pendiente.current;
     pendiente.current = null;
+    if (charla.current) charla.current.user += 1;
     conversation.sendUserMessage(text);
     push("user", text);
   }, [connected, conversation, push]);
@@ -151,9 +188,16 @@ export function ConversacionDemo({
         dynamicVariables: info.dynamicVariables,
         userId: info.userId,
       });
+      charla.current = { mode, startedAt: ahora(), user: 0, agent: 0 };
+      track("demo_conversation_started", { mode, with_suggestion: Boolean(first), ...(remaining === undefined ? {} : { remaining: remaining - 1 }) });
+      trackMilestone("first_demo_conversation", { mode });
     } catch (e) {
       pendiente.current = null;
       const microfono = e instanceof DOMException ? e.name : "";
+      track("demo_conversation_failed", {
+        mode,
+        error_kind: microfono === "NotAllowedError" ? "mic_denied" : microfono === "NotFoundError" || microfono === "NotReadableError" ? "mic_missing" : "start_error",
+      });
       setError(
         microfono === "NotAllowedError"
           ? "Necesitamos permiso para usar el micrófono. Si preferís, probala por chat."
@@ -170,8 +214,10 @@ export function ConversacionDemo({
     }
   }
 
-  function decir(text: string) {
+  function decir(text: string, sugerencia?: number) {
+    if (sugerencia !== undefined) track("demo_suggestion_used", { suggestion: sugerencia, mode, connected });
     if (!connected) return void start(text);
+    if (charla.current) charla.current.user += 1;
     conversation.sendUserMessage(text);
     push("user", text);
   }
@@ -247,7 +293,7 @@ export function ConversacionDemo({
                     <button
                       type="button"
                       disabled={connecting}
-                      onClick={() => decir(idea)}
+                      onClick={() => decir(idea, IDEAS.indexOf(idea))}
                       className="w-full rounded-lg bg-brand-50 px-3 py-1.5 text-left text-sm text-brand-800 hover:bg-brand-100 disabled:opacity-60"
                     >
                       «{idea}»
@@ -278,7 +324,10 @@ export function ConversacionDemo({
                   type="button"
                   aria-pressed={mode === m}
                   disabled={connected || connecting}
-                  onClick={() => setMode(m)}
+                  onClick={() => {
+                    if (m !== mode) track("demo_mode_switched", { to: m });
+                    setMode(m);
+                  }}
                   className={`rounded-md px-3 py-1.5 font-medium ${mode === m ? "bg-white text-brand-800 shadow-sm" : "text-brand-700 hover:text-brand-900"}`}
                 >
                   {m === "chat" ? "Chat" : "Voz"}
@@ -357,7 +406,7 @@ export function ConversacionDemo({
                           <button
                             type="button"
                             disabled={connecting}
-                            onClick={() => decir(idea)}
+                            onClick={() => decir(idea, IDEAS.indexOf(idea))}
                             className="rounded-full bg-white px-3 py-1.5 text-left text-[13px] text-brand-800 shadow-sm ring-1 ring-brand-950/10 hover:bg-brand-50 disabled:opacity-60 sm:px-3.5 sm:py-2 sm:text-sm"
                           >
                             {idea}

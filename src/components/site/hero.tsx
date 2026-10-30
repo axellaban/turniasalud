@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Flecha } from "./iconos";
@@ -56,10 +57,10 @@ export function HeroVideo() {
             admisión, deriva lo urgente y le escribe a tus pacientes para que vuelvan.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-2 sm:gap-3">
-            <Link href="/probar-demo" className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50 sm:px-5">
+            <Link href="/probar-demo" {...cta("try_demo", "hero", "probar_demo")} className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-medium text-brand-950 hover:bg-brand-50 sm:px-5">
               Probalo con tu web <Flecha />
             </Link>
-            <Link href="#llamada" className="inline-flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10 sm:px-5">
+            <Link href="#llamada" {...cta("hear_call", "hero", "home_call_sample", "navigation")} className="inline-flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-white ring-1 ring-white/40 hover:bg-white/10 sm:px-5">
               Miralo en acción
             </Link>
           </div>

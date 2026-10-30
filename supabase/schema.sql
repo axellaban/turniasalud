@@ -396,6 +396,9 @@ alter table demo_sessions add column if not exists manual_specialty text;
 alter table demo_sessions add column if not exists manual_professional text;
 -- Y los tratamientos que declara (Doctoralia): suman sus turnos a la demo (implantes, ortodoncia…).
 alter table demo_sessions add column if not exists manual_services text;
+-- La persona de PostHog que empezó la demo en el navegador: los eventos del servidor (preparación,
+-- conversaciones) quedan en su recorrido. Las de WhatsApp o Telegram no la tienen.
+alter table demo_sessions add column if not exists analytics_id text;
 create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
 alter table demo_sessions enable row level security;

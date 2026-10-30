@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { formatearTiempo, type Conversacion } from "@/content/conversaciones";
 import { inicioDeLinea, leerSincronizacion, lineaActiva, type Sincronizacion } from "./reproductor-sync";
 import type { PasoEscena } from "@/content/escena-home";
+import { ListenTracker } from "@/lib/interaction-tracking";
 
 // Reproductor de las demos de audio. Lee /audios/<slug>.mp3 + .json (scripts/generar-audios.mjs)
 // o /api/audios/<slug>.mp3 + .json (generados desde Panel → Configuración). Si todavía no
@@ -114,6 +115,23 @@ function useReproductor(conversacion: Conversacion) {
 
   const duracion = duracionAudio ?? sync?.duracion ?? 0;
 
+  // PostHog: cuánto se escucha de cada muestra (un evento por tramo, nunca por segundo).
+  const escucha = useRef<ListenTracker | null>(null);
+  const conAudio = estado === "listo";
+  useEffect(() => {
+    const t = new ListenTracker({ audio_id: conversacion.slug, with_audio: conAudio });
+    escucha.current = t;
+    return () => {
+      t.dispose();
+      escucha.current = null;
+    };
+  }, [conversacion.slug, conAudio]);
+  useEffect(() => {
+    if (sonando) escucha.current?.play();
+    else escucha.current?.stop("pause");
+  }, [sonando]);
+  useEffect(() => escucha.current?.progress(tiempo, duracion), [tiempo, duracion]);
+
   // timeupdate llega ~4 veces por segundo; con requestAnimationFrame la barra y el
   // resaltado avanzan suaves. En modo texto, el reloj es propio.
   useEffect(() => {
@@ -124,6 +142,7 @@ function useReproductor(conversacion: Conversacion) {
       else {
         const t = reloj.current.base + (performance.now() - reloj.current.desde) / 1000;
         if (t >= duracion) {
+          escucha.current?.stop("ended");
           setSonando(false);
           setTiempo(0);
           return;
@@ -183,6 +202,7 @@ function useReproductor(conversacion: Conversacion) {
         onPlay={() => setSonando(true)}
         onPause={() => setSonando(false)}
         onEnded={() => {
+          escucha.current?.stop("ended");
           setSonando(false);
           setTiempo(0);
         }}

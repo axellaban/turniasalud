@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { notFound } from "next/navigation";
 import { Flecha, Icono } from "@/components/site/iconos";
 import { MockConversacion } from "@/components/site/producto";
@@ -39,7 +40,7 @@ export default async function EspecialidadPage({ params }: PageProps<"/especiali
             <h1 className="mt-3 text-[40px] font-medium leading-[1.06] tracking-tight text-brand-950 sm:text-[54px]">{esp.titulo}</h1>
             <p className="mt-5 max-w-lg text-[17px] leading-relaxed text-tinta">{esp.bajada}</p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/pedi-una-demo" className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
+              <Link href="/pedi-una-demo" {...cta("guided_demo", "specialty_hero", "pedi_una_demo")} className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700">
                 Pedí una demo <Flecha />
               </Link>
               {demo && (

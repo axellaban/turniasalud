@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { cta } from "@/lib/analytics-shared";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/logo";
@@ -185,13 +186,13 @@ export function SiteHeader() {
         </ul>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <Link href="/probar-demo" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:text-brand-900 md:inline-block">
+          <Link href="/probar-demo" {...cta("try_demo", "header", "probar_demo")} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:text-brand-900 md:inline-block">
             Probá con tu web
           </Link>
-          <Link href="/panel" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-950/80 hover:text-brand-700 sm:inline-block">
+          <Link href="/panel" {...cta("panel_login", "header", "panel", "navigation")} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-950/80 hover:text-brand-700 sm:inline-block">
             Ingresar
           </Link>
-          <Link href="/pedi-una-demo" className={`whitespace-nowrap rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 sm:px-4 ${sobreVideo ? "max-lg:hidden" : ""}`}>
+          <Link href="/pedi-una-demo" {...cta("guided_demo", "header", "pedi_una_demo")} className={`whitespace-nowrap rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 sm:px-4 ${sobreVideo ? "max-lg:hidden" : ""}`}>
             Pedí una demo
           </Link>
           <button
@@ -260,17 +261,17 @@ export function SiteHeader() {
               </Link>
             </li>
             <li>
-              <Link href="/probar-demo" className="block py-3 font-medium text-brand-700">
+              <Link href="/probar-demo" {...cta("try_demo", "header_mobile", "probar_demo")} className="block py-3 font-medium text-brand-700">
                 Probá la demo con tu web
               </Link>
             </li>
             <li>
-              <Link href="/pedi-una-demo" className="block py-3 font-medium text-brand-950">
+              <Link href="/pedi-una-demo" {...cta("guided_demo", "header_mobile", "pedi_una_demo")} className="block py-3 font-medium text-brand-950">
                 Pedí una demo
               </Link>
             </li>
             <li>
-              <Link href="/panel" className="block py-3 font-medium text-brand-950">
+              <Link href="/panel" {...cta("panel_login", "header_mobile", "panel", "navigation")} className="block py-3 font-medium text-brand-950">
                 Ingresar al panel
               </Link>
             </li>

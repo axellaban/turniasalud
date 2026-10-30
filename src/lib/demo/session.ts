@@ -11,6 +11,8 @@ import { startPhoneCall } from "../elevenlabs";
 import { syncLeadsToSheet } from "../leads-sheet";
 import { syncTurniaSheet } from "../sheets/turnia-sheet";
 import { notifyN8n } from "../n8n";
+import { captureLater } from "../analytics-server";
+import { demoDistinctId } from "../analytics-shared";
 import { sendChatText } from "../messaging";
 import { channelForChat, chatIsActive, requireActiveChannel } from "../messaging-settings";
 import type { Clinic } from "../types";
@@ -48,12 +50,18 @@ export type DemoSession = {
   manual_specialty: string | null;
   manual_professional: string | null;
   manual_services: string | null;
+  /** La persona de PostHog que la empezó en el navegador (src/lib/analytics-server.ts). */
+  analytics_id: string | null;
   created_at: string;
   updated_at: string;
 };
 
 /** Demo en el navegador (desde /probar-demo): no pasa por Telegram ni WhatsApp. */
 export const isWebChat = (chatId: string) => chatId.startsWith("web:");
+
+/** En PostHog, la demo es de quien la empezó en el navegador; por WhatsApp o Telegram, de la propia demo. */
+const demoPerson = (s: Pick<DemoSession, "id" | "analytics_id">) => s.analytics_id ?? demoDistinctId(s.id);
+const demoVia = (chatId: string) => (isWebChat(chatId) ? "navegador" : channelForChat(chatId));
 
 export type DemoInput = { messageId: string; chatId: string; phone: string; text: string };
 /** handled: el mensaje era de la demo. analyze: id de la demo cuya web hay que leer después de responder. */
@@ -103,6 +111,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
   if (command === "salir") {
     await setStatus(session.id, "terminada");
     await closeAgentConversations(session);
+    captureLater("demo_exited", demoPerson(session), { via: demoVia(input.chatId), from_status: session.status });
     const clinic = session.clinic_id ? await demoClinic(session.clinic_id) : null;
     await sendChatText(input.chatId, DEMO_TEXTS.ended(clinic?.name ?? null));
     return { handled: true, status: "terminada" };
@@ -145,6 +154,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
 
   // chat o audio: el mensaje va al agente, con la clínica de la demo.
   await sql`update demo_sessions set updated_at = now() where id = ${session.id}`;
+  captureLater("demo_message_sent", demoPerson(session), { via: demoVia(input.chatId), mode: session.status, audio: said !== input.text });
   await forwardToAgent(clinic, input, {
     context: demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text }),
     replyWithVoice: session.status === "audio",
@@ -237,6 +247,7 @@ async function startDemo(input: DemoInput, website: string): Promise<DemoOutcome
   // A las planillas de pedidos (si hay alguna conectada); no se espera: la demo sigue.
   if (session.lead_id) void Promise.all([syncLeadsToSheet([session.lead_id]), syncTurniaSheet()]);
   if (session.status !== "analizando") return { handled: true, status: session.status };
+  captureLater("demo_requested", demoPerson(session), { via: demoVia(input.chatId), with_web: true, new_lead: result.createdLead });
   await sendChatText(input.chatId, DEMO_TEXTS.started(website));
   return { handled: true, status: "analizando", analyze: session.id };
 }
@@ -275,6 +286,12 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
     const profile = manual ?? (await buildProfile(site!));
     const clinic = await createDemoClinic(profile, site?.url ?? "", { id: session.id, pages: site?.pages.length ?? 0, site: site ?? undefined });
     if (!clinic) return; // la persona salió o pidió otra demo mientras leíamos
+    captureLater("demo_prepared", demoPerson(session), {
+      via: demoVia(session.chat_id),
+      with_web: !manual,
+      pages_read: site?.pages.length ?? 0,
+      preparation_ms: Date.now() - new Date(session.created_at).getTime(),
+    });
     if (session.lead_id) {
       await sql`
         update leads set organization = ${clinic.name}, specialty = ${clinic.specialty}, updated_at = now()
@@ -287,6 +304,13 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
     const [failed] = await sql`
       update demo_sessions set status = 'error', error = ${e instanceof Error ? e.message.slice(0, 300) : "error"}, updated_at = now()
       where id = ${session.id} and status in ('analizando', 'eligiendo') returning id`;
+    if (failed)
+      captureLater("demo_preparation_failed", demoPerson(session), {
+        via: demoVia(session.chat_id),
+        with_web: !session.manual_name,
+        error_kind: scrapeFailed ? "scrape" : "other",
+        preparation_ms: Date.now() - new Date(session.created_at).getTime(),
+      });
     if (failed && !web) await sendChatText(session.chat_id, scrapeFailed ? DEMO_TEXTS.scrapeFailed(session.website) : DEMO_TEXTS.failed).catch(() => {});
   }
 }
@@ -315,6 +339,7 @@ async function closeAgentConversations(session: DemoSession): Promise<void> {
 async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): Promise<void> {
   await closeAgentConversations(session);
   await sql`update demo_sessions set status = ${mode}, chat_id = ${session.chat_id}, updated_at = now() where id = ${session.id}`;
+  captureLater("demo_mode_chosen", demoPerson(session), { via: demoVia(session.chat_id), mode, from_status: session.status });
   if (session.lead_id) {
     await sql`
       update leads set message = concat_ws(' · ', message, ${`Eligió: ${mode}`}::text), updated_at = now()

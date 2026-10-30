@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { cleanAnalyticsId } from "@/lib/analytics-shared";
 import { isConfigured, missingWahaEnv } from "@/lib/env";
 import { messagingSettings } from "@/lib/messaging-settings";
 import { TELEGRAM_BOT_USERNAME, telegramConfigured } from "@/lib/telegram";
@@ -21,7 +22,7 @@ const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
 export async function POST(request: Request) {
   const raw = await request.text();
   if (raw.length > 4096) return NextResponse.json({ error: "La dirección es demasiado larga." }, { status: 400 });
-  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown; servicios?: unknown; ref?: unknown };
+  let body: { website?: unknown; email?: unknown; via?: unknown; nombre?: unknown; direccion?: unknown; especialidad?: unknown; profesional?: unknown; servicios?: unknown; ref?: unknown; ph?: unknown };
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "Revisá la dirección web." }, { status: 400 }); }
   const website = typeof body?.website === "string" && body.website.length <= 2000 ? normalizeWebsite(body.website) : null;
   // Sin web, alcanza con el nombre del consultorio (la demo se arma con eso).
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
   if (body.via === "navegador" || manual) {
     const ready = isConfigured();
     if (!ready.database || !ready.elevenlabs) return NextResponse.json({ error: "La demo en el navegador no está disponible por el momento." }, { status: 409 });
-    const started = await startWebDemo({ website, manual, email, ip });
+    const started = await startWebDemo({ website, manual, email, ip, analyticsId: cleanAnalyticsId(body.ph) });
     if (!started) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
     after(() => analyzeDemo(started.sessionId));
     after(() => syncLeadsToSheet([started.leadId]));

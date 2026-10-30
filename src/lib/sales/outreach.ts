@@ -1,5 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { captureLater } from "@/lib/analytics-server";
+import { prospectDistinctId } from "@/lib/analytics-shared";
 import { json, sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { DEFAULT_TZ, localDateKey } from "@/lib/time";
@@ -208,18 +210,37 @@ export async function getOutreach(id: string): Promise<Outreach | null> {
 }
 
 /** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. */
-export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website">;
+export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website" | "priority" | "phone_kind" | "status">;
 
 export async function publicOutreach(code: string): Promise<PublicOutreach | null> {
   if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code)) return null;
   const [row] = await sql<PublicOutreach[]>`
-    select code, name, greeting, title, business_name, zone, address, specialty, website from sales_outreach where code = ${code}`;
+    select code, name, greeting, title, business_name, zone, address, specialty, website, priority, phone_kind, status from sales_outreach where code = ${code}`;
   return row ?? null;
 }
 
 export async function outreachEvents(id: string): Promise<OutreachEvent[]> {
   return sql<OutreachEvent[]>`select id, kind, channel, detail, created_at from sales_outreach_events where outreach_id = ${id} order by created_at desc limit 100`;
 }
+
+/**
+ * Lo que PostHog sabe de cada persona de la prospección: sin nombre ni teléfono, solo lo que sirve
+ * para comparar (prioridad, zona, tipo de teléfono, estado). Ver ANALITICA.md.
+ */
+type ProspectFacts = Pick<Outreach, "code" | "priority" | "zone" | "specialty" | "phone_kind" | "status" | "touches">;
+const prospectPerson = (o: ProspectFacts) => ({
+  set: {
+    prospect_priority: o.priority,
+    prospect_zone: o.zone || null,
+    prospect_specialty: o.specialty.slice(0, 80) || null,
+    prospect_phone_kind: o.phone_kind ?? null,
+    prospect_status: o.status,
+    prospect_touches: o.touches,
+  },
+  setOnce: { prospect_code: o.code },
+});
+const prospectEvent = (event: string, o: ProspectFacts, properties: Record<string, string | number | boolean | null> = {}) =>
+  captureLater(event, prospectDistinctId(o.code), { ...properties, prospect_priority: o.priority, prospect_phone_kind: o.phone_kind ?? null }, prospectPerson(o));
 
 const TOUCH_DETAIL = ["primero", "seguimiento", "último"];
 /** El saludo sin link queda en la historia como un mensaje más, pero no es un toque. */
@@ -252,7 +273,7 @@ export async function recordTouch(id: string, channel: OutreachChannel, opts: { 
           next_action_on = ${open ? today : tx`next_action_on`}, updated_at = now()
         where id = ${id} returning id`;
       await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'mensaje', ${channel}, ${GREETING})`;
-      return out;
+      return { id: out.id, event: "prospect_greeting_sent" };
     }
     const touches = message ? row.touches + 1 : row.touches;
     const next = !open ? undefined : message ? nextFollowUp(today, touches) : row.status === "por_contactar" ? nextFollowUp(today, 1) : undefined;
@@ -269,19 +290,28 @@ export async function recordTouch(id: string, channel: OutreachChannel, opts: { 
     const detail = opts.before ? "ya le había escrito" : message ? TOUCH_DETAIL[touches - 1] : "";
     await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail)
              values (${id}, ${message ? "mensaje" : channel === "telefono" ? "llamada" : "visita"}, ${channel}, ${detail})`;
-    return out;
+    // Para PostHog: la presentación con la demo (el primer mensaje), un seguimiento o un contacto sin mensaje.
+    const event = opts.before ? "prospect_prior_contact_logged" : !message ? "prospect_offline_contact_logged" : touches === 1 ? "prospect_pitch_sent" : "prospect_followup_sent";
+    return { id: out.id, event };
   });
-  return (await getOutreach(updated.id))!;
+  const person = (await getOutreach(updated.id))!;
+  prospectEvent(updated.event, person, {
+    channel,
+    touch_number: person.touches,
+    opened_demo: Boolean(person.opened_at),
+    tried_demo: Boolean(person.demo_at),
+  });
+  return person;
 }
 
 export async function setOutreachStatus(id: string, status: OutreachStatus, detail = ""): Promise<void> {
   if (!(OUTREACH_STATUSES as readonly string[]).includes(status)) throw new OutreachError("Estado desconocido.");
   const today = todayKey();
-  await sql.begin(async (tx) => {
-    const [row] = await tx<Array<{ phone: string | null; status: OutreachStatus; touches: number }>>`
-      select phone, status, touches from sales_outreach where id = ${id} for update`;
+  const changed = await sql.begin(async (tx) => {
+    const [row] = await tx<Array<ProspectFacts & { phone: string | null }>>`
+      select code, priority, zone, specialty, phone, phone_kind, status, touches from sales_outreach where id = ${id} for update`;
     if (!row) throw new OutreachError("No encontramos ese contacto.");
-    if (row.status === status) return;
+    if (row.status === status) return null;
     // Al responder, se le contesta hoy; al cerrarse, sale de la cola.
     const next =
       status === "respondio" ? tx`${today}::date`
@@ -294,7 +324,9 @@ export async function setOutreachStatus(id: string, status: OutreachStatus, deta
     if (status === "baja" && row.phone) {
       await tx`insert into sales_suppressions (phone, reason) values (${row.phone}, 'Pidió no recibir más mensajes (prospección)') on conflict (phone) do nothing`;
     }
+    return row;
   });
+  if (changed) prospectEvent("prospect_status_changed", { ...changed, status }, { status_from: changed.status, status_to: status, touch_number: changed.touches });
 }
 
 export type OutreachEdit = Partial<Pick<Outreach, "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "phone" | "phone_kind" | "instagram" | "email" | "website" | "notes" | "next_action_on">> & { priority?: number };
@@ -314,8 +346,8 @@ export async function updateOutreach(id: string, edit: OutreachEdit): Promise<vo
  * y deja de contar para la meta.
  */
 export async function undoLastTouch(id: string): Promise<void> {
-  await sql.begin(async (tx) => {
-    const [row] = await tx<Array<{ status: OutreachStatus; touches: number }>>`select status, touches from sales_outreach where id = ${id} for update`;
+  const undone = await sql.begin(async (tx) => {
+    const [row] = await tx<Array<ProspectFacts>>`select code, priority, zone, specialty, phone_kind, status, touches from sales_outreach where id = ${id} for update`;
     if (!row) throw new OutreachError("No encontramos ese contacto.");
     const contacts = () => tx<Array<{ id: string; kind: string; channel: string | null; detail: string; created_at: string }>>`
       select id, kind, channel, detail, created_at from sales_outreach_events
@@ -344,7 +376,10 @@ export async function undoLastTouch(id: string): Promise<void> {
         where id = ${id}`;
     }
     await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', 'Se deshizo un contacto (prueba o error).')`;
+    return { row: { ...row, touches }, kind: last.kind, greeting: last.detail === GREETING };
   });
+  // PostHog no borra eventos: queda registrado que el anterior fue una prueba o un error.
+  prospectEvent("prospect_contact_undone", undone.row, { contact_kind: undone.greeting ? "saludo" : undone.kind, touch_number: undone.row.touches });
 }
 
 export async function addOutreachNote(id: string, text: string): Promise<void> {

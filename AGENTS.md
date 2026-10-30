@@ -20,4 +20,5 @@ Antes de trabajar en este repo leé, en este orden:
 5. [`PLAN_LEAD_MAGNET.md`](PLAN_LEAD_MAGNET.md): demo instantánea `/probar-demo` (web del interesado → WhatsApp → llamada, audio o chat). **Código hecho**; se prueba en vivo cuando WAHA esté conectado.
 6. [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md): Panel → Campañas e importación de pacientes (versión 1 hecha), decisión sobre el CRM y lo que sigue.
 7. [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md): cómo conseguir clientes (odontólogos de Mar del Plata y Miramar), Panel → Prospección y la demo personal de cada uno (`/p/<código>`).
-8. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
+8. [`ANALITICA.md`](ANALITICA.md): PostHog (eventos del navegador y del servidor, embudos, tableros). Si sumás un botón, un paso o un evento, actualizá el catálogo.
+9. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
