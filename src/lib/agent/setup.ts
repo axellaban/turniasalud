@@ -154,7 +154,8 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
       summary_language: "es",
       overrides: {
         enable_conversation_initiation_client_data_from_webhook: true,
-        conversation_config_override: { conversation: { text_only: true } },
+        // first_message: el chat de la demo arranca sin el saludo fijo (el paciente escribe primero).
+        conversation_config_override: { agent: { first_message: true }, conversation: { text_only: true } },
       },
       workspace_overrides: {
         conversation_initiation_client_data_webhook: {
@@ -183,7 +184,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
         memoria: {
           type: "string",
           description:
-            "Datos útiles para recordar en la próxima conversación con este paciente (preferencias de horario, condiciones mencionadas, pedidos pendientes). Una o dos frases. Vacío si no hay nada.",
+            "Datos útiles para recordar en la próxima conversación con este paciente (preferencias de horario, condiciones mencionadas, pedidos pendientes). Una o dos frases. Si el paciente describió algo con sus palabras y no con el término odontológico, citalas entre comillas (por ejemplo: dice que «se le salió un pedacito de muela»). Vacío si no hay nada.",
         },
       },
       evaluation: {

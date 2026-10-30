@@ -2,6 +2,7 @@ import "server-only";
 import { json, sql } from "./db";
 import { INBOUND_CONTEXT, findPatientByPhone, isUuid, resolveClinic } from "./clinic";
 import { normalizePhone } from "./phone";
+import { formatDate } from "./time";
 import { mergeMemory } from "./memory";
 import { notifyN8n } from "./n8n";
 import type { Conversation, Patient } from "./types";
@@ -76,18 +77,17 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
       on conflict (clinic_id, phone) do update set full_name = coalesce(patients.full_name, excluded.full_name)
       returning *`;
   }
+  const startedAt = data.metadata?.start_time_unix_secs
+    ? new Date(data.metadata.start_time_unix_secs * 1000).toISOString()
+    : new Date().toISOString();
   if (patient) {
     await sql`
       update patients set
         last_contact_at = now(),
-        memory_summary = ${mergeMemory(patient.memory_summary, memory)},
+        memory_summary = ${mergeMemory(patient.memory_summary, memory, undefined, formatDate(startedAt, clinic.timezone))},
         full_name = coalesce(full_name, ${name})
       where id = ${patient.id}`;
   }
-
-  const startedAt = data.metadata?.start_time_unix_secs
-    ? new Date(data.metadata.start_time_unix_secs * 1000).toISOString()
-    : new Date().toISOString();
 
   const row = {
     clinic_id: clinicId,

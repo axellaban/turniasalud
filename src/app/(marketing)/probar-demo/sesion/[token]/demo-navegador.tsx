@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
-import { ConversacionDemo } from "@/components/demo/conversacion-demo";
+import { ConversacionDemo, type DemoCredential } from "@/components/demo/conversacion-demo";
 import { track } from "@/lib/analytics";
 import { cta } from "@/lib/analytics-shared";
 import { startDemoEngagement } from "@/lib/interaction-tracking";
@@ -19,7 +19,7 @@ const GIVE_UP_MS = 5 * 60_000;
 // Cada estado ocupa la pantalla entera debajo del header fijo (4.5rem: 12 px de margen + barra de 60 px),
 // así la demo se ve completa sin scroll en la computadora y en el celular.
 
-type Credential = { token?: string; signedUrl?: string; dynamicVariables: Record<string, string>; userId: string; error?: string };
+type Credential = DemoCredential & { error?: string };
 
 export function DemoNavegador({ token }: { token: string }) {
   const [state, setState] = useState<WebDemoState | null>(null);

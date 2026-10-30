@@ -59,6 +59,22 @@ export async function getSignedUrl(agentId: string): Promise<string> {
   return body.signed_url;
 }
 
+/**
+ * Chat de la demo: URL firmada y si el agente deja arrancar sin su saludo. En el chat
+ * el paciente escribe primero; sin saludo, el agente contesta una sola vez (saludo y
+ * respuesta juntos) en lugar de dos mensajes seguidos. Hasta que se toca «Crear /
+ * actualizar agente» ElevenLabs no lo permite y el chat sigue como antes.
+ */
+export async function getChatCredential(agentId: string): Promise<{ signedUrl: string; sinSaludo: boolean }> {
+  const [signedUrl, agent] = await Promise.all([
+    getSignedUrl(agentId),
+    elevenlabs<{ platform_settings?: { overrides?: { conversation_config_override?: { agent?: { first_message?: boolean } } } } }>(
+      `/v1/convai/agents/${encodeURIComponent(agentId)}`,
+    ).catch(() => null),
+  ]);
+  return { signedUrl, sinSaludo: agent?.platform_settings?.overrides?.conversation_config_override?.agent?.first_message === true };
+}
+
 export type TemplateMessage = {
   phoneNumberId: string;
   userId: string;

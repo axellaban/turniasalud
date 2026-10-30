@@ -23,7 +23,14 @@ const IDEAS = [
 export type DemoClinic = { name: string; agentName: string; specialty: string; address: string | null; professionals: string[]; types: string[] };
 type Clinic = DemoClinic;
 export type DemoMode = "chat" | "voz";
-export type DemoCredential = { token?: string; signedUrl?: string; dynamicVariables: Record<string, string>; userId: string };
+export type DemoCredential = {
+  token?: string;
+  signedUrl?: string;
+  /** El agente puede arrancar sin su saludo: en el chat contesta una vez al primer mensaje. */
+  sinSaludo?: boolean;
+  dynamicVariables: Record<string, string>;
+  userId: string;
+};
 
 function Dato({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
@@ -74,6 +81,7 @@ export function ConversacionDemo({
   pedirCredencial,
   remaining: initialRemaining,
   extraFicha,
+  extraBoton,
   cta,
 }: {
   clinic: DemoClinic;
@@ -87,6 +95,8 @@ export function ConversacionDemo({
   remaining?: number;
   /** Algo más debajo de la ficha (por ejemplo, con qué teléfono probar). */
   extraFicha?: React.ReactNode;
+  /** En el celular, un botón propio que abre la hoja con extraFicha arriba y su campo listo para escribir. */
+  extraBoton?: string;
   /** El llamado al costado del título y al pie de la ficha en el celular. */
   cta?: React.ReactNode;
 }) {
@@ -100,6 +110,7 @@ export function ConversacionDemo({
   const counter = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const fichaRef = useRef<HTMLDialogElement>(null);
+  const extraRef = useRef<HTMLDivElement>(null);
 
   const push = useCallback((role: Line["role"], text: string) => {
     counter.current += 1;
@@ -185,6 +196,8 @@ export function ConversacionDemo({
       pendiente.current = first && mode === "chat" ? first : null;
       await conversation.startSession({
         ...(mode === "chat" ? { signedUrl: info.signedUrl!, textOnly: true } : { conversationToken: info.token! }),
+        // En el chat escribe primero el paciente: sin el saludo fijo, la primera respuesta saluda y contesta.
+        ...(mode === "chat" && first && info.sinSaludo ? { overrides: { agent: { firstMessage: "" } } } : {}),
         dynamicVariables: info.dynamicVariables,
         userId: info.userId,
       });
@@ -264,16 +277,32 @@ export function ConversacionDemo({
           </p>
         </div>
         {cta && <p className="shrink-0 pb-1 text-sm text-tinta max-lg:hidden">{cta}</p>}
-        <button
-          type="button"
-          onClick={() => fichaRef.current?.showModal()}
-          aria-haspopup="dialog"
-          className={`inline-flex max-w-full items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-brand-800 shadow-sm ring-1 ring-brand-950/5 hover:bg-brand-50 lg:hidden [@media(max-height:500px)]:mt-0 ${enCharla ? "sm:mt-2.5" : "mt-2.5"}`}
-        >
-          <Icono nombre="web" className="h-4 w-4 shrink-0 text-brand-600" />
-          <span className="truncate">{tituloFicha}</span>
-          <Chevron className="h-3.5 w-3.5 shrink-0 -rotate-90" />
-        </button>
+        <div className="flex flex-wrap gap-x-2 lg:hidden">
+          <button
+            type="button"
+            onClick={() => fichaRef.current?.showModal()}
+            aria-haspopup="dialog"
+            className={`inline-flex max-w-full items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-brand-800 shadow-sm ring-1 ring-brand-950/5 hover:bg-brand-50 lg:hidden [@media(max-height:500px)]:mt-0 ${enCharla ? "sm:mt-2.5" : "mt-2.5"}`}
+          >
+            <Icono nombre="web" className="h-4 w-4 shrink-0 text-brand-600" />
+            <span className="truncate">{tituloFicha}</span>
+            <Chevron className="h-3.5 w-3.5 shrink-0 -rotate-90" />
+          </button>
+          {extraFicha && extraBoton && (
+            <button
+              type="button"
+              onClick={() => {
+                fichaRef.current?.showModal();
+                extraRef.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+              }}
+              aria-haspopup="dialog"
+              className={`inline-flex max-w-full items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-brand-800 shadow-sm ring-1 ring-brand-950/5 hover:bg-brand-50 lg:hidden [@media(max-height:500px)]:mt-0 ${enCharla ? "sm:mt-2.5" : "mt-2.5"}`}
+            >
+              <span className="truncate">{extraBoton}</span>
+              <Chevron className="h-3.5 w-3.5 shrink-0 -rotate-90" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-3 grid min-h-0 flex-1 gap-5 sm:mt-4 lg:grid-cols-[340px_1fr]">
@@ -531,10 +560,11 @@ export function ConversacionDemo({
               </svg>
             </button>
           </div>
+          {/* Arriba de la ficha: es lo que se completa; la ficha es para leer. */}
+          {extraFicha && <div ref={extraRef} className="mt-3 border-b border-brand-950/5 pb-4">{extraFicha}</div>}
           <div className="mt-2">
             <Ficha clinic={clinic} nota={notaFicha} />
           </div>
-          {extraFicha && <div className="mt-4 border-t border-brand-950/5 pt-4">{extraFicha}</div>}
           {cta && <p className="mt-5 border-t border-brand-950/5 pt-4 text-sm text-tinta">{cta}</p>}
         </div>
       </dialog>

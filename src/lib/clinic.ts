@@ -173,7 +173,8 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
       ? `Ya se atendió en el consultorio. Última visita: ${formatDate(`${last.visited_at}T12:00:00Z`, "UTC")}${last.service ? ` (${last.service})` : ""}${last.visited_at < yearAgo ? ", hace más de un año" : ""}. No le preguntes si ya vino antes.`
       : "Todavía no tiene visitas registradas en el consultorio.",
     patient.preferences && `Preferencias: ${patient.preferences}`,
-    patient.memory_summary && `Lo que sabemos de conversaciones anteriores: ${patient.memory_summary}`,
+    patient.memory_summary &&
+      `Lo que sabemos de conversaciones anteriores (entre corchetes, el día en que lo contó; sin fecha, es una nota vieja): ${patient.memory_summary}`,
     upcoming.length
       ? `Próximos turnos:\n${upcoming
           .map(
