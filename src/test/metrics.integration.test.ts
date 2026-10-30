@@ -81,6 +81,9 @@ describe.runIf(base)("métricas del tablero", () => {
   it("el endpoint pide la clave, valida las fechas y no devuelve datos personales", async () => {
     expect((await get()).status).toBe(401);
     expect((await get("Bearer otra")).status).toBe(401);
+    vi.stubEnv("METRICS_SECRET", ` ${SECRET}\n`);
+    expect((await get(`Bearer ${SECRET}`, "?desde=ayer")).status).toBe(400);
+    vi.stubEnv("METRICS_SECRET", SECRET);
     expect((await get(`Bearer ${SECRET}`, "?desde=ayer")).status).toBe(400);
     const res = await get(`Bearer ${SECRET}`);
     expect(res.status).toBe(200);
