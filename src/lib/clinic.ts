@@ -99,7 +99,7 @@ export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], time
   });
   const typeLines = catalog.appointmentTypes.map(
     (t) =>
-      `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${t.price ? ` | Precio de referencia: $${t.price}` : ""}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}`,
+      `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${t.price ? ` | Precio de referencia: $${t.price}` : ""}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}${t.panel_only ? " | Solo la da el consultorio: no la ofrezcas ni la reserves" : ""}`,
   );
   const names = new Map(catalog.professionals.map((p) => [p.id, p.full_name]));
   const blockLines = blocks.map((b) => {

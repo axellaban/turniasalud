@@ -423,7 +423,8 @@ export async function saveAppointmentTypeWithFeedback(_previous: FormState, form
   if (rawPrice && price === null) return { ok: false, message: "Revisá el precio: usá solo números (por ejemplo, 48000)." };
   const rows = await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${price},
     instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
-    is_first_visit = ${form.get("is_first_visit") === "on"} where id = ${id} and clinic_id = ${clinic.id} returning id`;
+    is_first_visit = ${form.get("is_first_visit") === "on"}, panel_only = ${form.get("panel_only") === "on"}
+    where id = ${id} and clinic_id = ${clinic.id} returning id`;
   if (!rows.length) return { ok: false, message: "Esta prestación no pertenece a la clínica elegida. Recargá la página." };
   await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
@@ -511,6 +512,7 @@ export async function addAppointmentType(form: FormData) {
       instructions: text(form, "instructions"),
       recall_months: Number.isFinite(recall) && recall > 0 ? Math.round(recall) : null,
       is_first_visit: form.get("is_first_visit") === "on",
+      panel_only: form.get("panel_only") === "on",
     })}`;
   await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
