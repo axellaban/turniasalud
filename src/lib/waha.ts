@@ -52,8 +52,10 @@ export type ParsedMessage =
       phone: string | null;
       text: string;
       audio: { url: string | null; mimetype: string } | null;
-      /** Imagen, documento, video o sticker: por este canal el agente no los puede ver. */
+      /** Imagen, documento, video o sticker. Las fotos y los PDF se leen con Claude; lo demás, el agente no lo ve. */
       otherMedia: boolean;
+      /** El archivo de otherMedia (sin url si WAHA no lo descargó). */
+      media: { url: string | null; mimetype: string } | null;
     };
 
 /** Teléfono (solo dígitos) de un ID de WhatsApp "549…@c.us" o "549…@s.whatsapp.net". */
@@ -105,6 +107,7 @@ export function parseWahaEvent(event: WahaEvent, expectedSession?: string): Pars
     text,
     audio: isAudio ? { url: p.media?.url ?? null, mimetype } : null,
     otherMedia,
+    media: otherMedia ? { url: p.media?.url ?? null, mimetype } : null,
   };
 }
 
@@ -149,7 +152,7 @@ export async function wahaPhoneForLid(lid: string): Promise<string | null> {
 }
 
 /**
- * Baja el archivo de un mensaje (audios). WAHA Core puede no descargar media:
+ * Baja el archivo de un mensaje (audios, fotos, PDF). WAHA Core puede no descargar media:
  * en ese caso media.url llega vacío y devolvemos null.
  */
 export async function wahaDownloadMedia(url: string | null): Promise<Blob | null> {
@@ -165,7 +168,7 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
     const res = await waha(media.pathname + media.search);
     return await res.blob();
   } catch (e) {
-    console.error("WAHA: no se pudo bajar el audio", e instanceof Error ? e.message : e);
+    console.error("WAHA: no se pudo bajar el archivo", e instanceof Error ? e.message : e);
     return null;
   }
 }

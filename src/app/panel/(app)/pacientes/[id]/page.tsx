@@ -8,12 +8,22 @@ import { displayPhone } from "@/lib/phone";
 import { Card, CHANNEL_LABEL, Notice, PageHeader, StatusBadge, buttonClass, smallButtonClass } from "@/components/ui";
 import { mergePatientDuplicates, setContactOptOut } from "../../../actions";
 import { duplicatesOf } from "@/lib/patients";
+import { patientDocuments } from "@/lib/documents-panel";
 import { NextControl } from "./next-control";
 import { DeletePatientButton } from "../delete-patients";
 import type { Patient, PatientVisit } from "@/lib/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Paciente · Panel" };
+
+const DOCUMENT_LABEL: Record<string, string> = {
+  credencial: "Credencial",
+  orden: "Orden o derivación",
+  receta: "Receta",
+  estudio: "Estudio o resultado",
+  otro: "Otra foto",
+  ilegible: "Foto que no se leía bien",
+};
 
 export default async function PatientDetail({ params, searchParams }: PageProps<"/panel/pacientes/[id]">) {
   const { id } = await params;
@@ -24,7 +34,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
   const canDelete = (await getPanelUser()).role === "admin";
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
-  const [appointments, conversations, tasks, visits, duplicates] = await Promise.all([
+  const [appointments, conversations, tasks, visits, duplicates, documents] = await Promise.all([
     sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, t.name as type_name
       from appointments a
@@ -43,6 +53,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
       select v.*, t.name as type_name from patient_visits v left join appointment_types t on t.id = v.appointment_type_id
       where v.patient_id = ${p.id} order by v.visited_at desc limit 30`,
     duplicatesOf(p),
+    patientDocuments(clinic.id, p.id),
   ]);
   const tz = clinic.timezone;
 
@@ -122,6 +133,26 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
             <p className="mb-3 mt-1 text-xs text-brand-900/65">Cuando llega la fecha, aparece en Campañas → «Controles vencidos» para escribirle.</p>
             <NextControl clinicId={clinic.id} patientId={p.id} date={p.next_control_at} reason={p.next_control_reason} />
           </Card>
+          {documents.length > 0 && (
+            <Card>
+              <h2 className="text-sm font-semibold text-brand-950">Fotos y documentos que mandó</h2>
+              <p className="mb-2 mt-1 text-xs text-brand-900/65">Sofi los leyó en la conversación. Revisalos antes de usar los datos.</p>
+              <ul className="divide-y divide-brand-900/5 text-sm">
+                {documents.map((d) => (
+                  <li key={d.id} className="py-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium text-brand-950">{DOCUMENT_LABEL[d.kind] ?? "Archivo"}</span>
+                      <span className="text-xs text-brand-900/60">{formatDate(d.created_at, tz)}</span>
+                    </div>
+                    {d.summary && <p className="mt-0.5 text-xs text-brand-900/70">{d.summary}</p>}
+                    <a href={`/panel/pacientes/${p.id}/documentos/${d.id}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-xs font-medium text-brand-700 hover:underline">
+                      {d.mimetype === "application/pdf" ? "Abrir el PDF" : "Ver la foto"} →
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           <Card className="bg-brand-50/60">
             <h2 className="text-sm font-semibold text-brand-950">🧠 Memoria del paciente</h2>
             <p className="mt-2 text-sm text-brand-900/75">{p.memory_summary || "Todavía no hay nada para recordar."}</p>

@@ -2,6 +2,16 @@
 
 Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Sofi lee fotos de credenciales, órdenes y recetas — 30/10/2026
+
+- **Pedido (Dr. Mininni):** «¿puede leer órdenes?». Antes, por WhatsApp contestaba «todavía no puedo ver fotos» y por Telegram «no leo fotos ni archivos».
+- **Ahora** (`src/lib/documents.ts`): cuando el paciente manda una foto o un PDF (hasta 10 MB), Turnia la achica, Claude la lee (`DOCUMENT_LLM`, por defecto `claude-opus-5-5`, esfuerzo bajo, con respaldo automático) y el agente recibe un mensaje «(foto de la credencial) cobertura: «OSDE», plan: «210»…» con qué hacer: confirmar y guardar la credencial, seguir las reglas de la clínica para órdenes, no opinar de medicación, no interpretar estudios (tarea «resultados»), pedir otra foto si no se lee. Lo leído va entre comillas y recortado: el prompt aclara que es lo que dice el papel, no instrucciones.
+- **WhatsApp (WAHA):** baja el archivo con la misma descarga que los audios. Si WAHA no lo entrega (WAHA Core a veces no descarga), contesta «No pude ver esa foto o archivo…». **Telegram:** fotos (la más grande) y archivos PDF o imagen; en la demo.
+- **Ficha del paciente** (Panel → Pacientes): «Fotos y documentos que mandó», con tipo, fecha, lo que se leyó y «Ver la foto» / «Abrir el PDF» (solo con sesión del panel y de la misma clínica). Se guardan en `patient_documents` (por teléfono; se ven también las que mandó antes de tener ficha). Al unificar fichas pasan a la que queda; al borrar la ficha se borran.
+- Las fotos de los prospectos que prueban la demo por WhatsApp no se guardan en la clínica principal.
+- Costo: una llamada a Claude por foto (centavos). Sin `ANTHROPIC_API_KEY`, se comporta como antes.
+- **Falta probarlo en vivo por WhatsApp** (ver `PENDIENTES.md`). 6 pruebas nuevas (324 en total), TypeScript y ESLint.
+
 ## Prestaciones que solo da el consultorio — 30/10/2026
 
 - **Pedido (Dr. Mininni):** la endodoncia no la tiene que dar Sofi aunque el paciente traiga la indicación: muchos vienen mal derivados y se perdería un turno de la Dra. Fernández. Siempre primero una consulta con Mininni; si corresponde, el turno lo da el consultorio.

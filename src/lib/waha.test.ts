@@ -46,6 +46,7 @@ describe("parseWahaEvent", () => {
       text: "Hola",
       audio: null,
       otherMedia: false,
+      media: null,
     });
   });
 
@@ -63,7 +64,7 @@ describe("parseWahaEvent", () => {
     const audio = parseWahaEvent(msg({ body: "", hasMedia: true, media: { url: "http://localhost:3000/api/files/a.oga", mimetype: "audio/ogg; codecs=opus" } }));
     expect(audio).toMatchObject({ kind: "message", text: "", audio: { url: "http://localhost:3000/api/files/a.oga" }, otherMedia: false });
     const photo = parseWahaEvent(msg({ body: "mi credencial", hasMedia: true, media: { url: null, mimetype: "image/jpeg" } }));
-    expect(photo).toMatchObject({ kind: "message", text: "mi credencial", audio: null, otherMedia: true });
+    expect(photo).toMatchObject({ kind: "message", text: "mi credencial", audio: null, otherMedia: true, media: { url: null, mimetype: "image/jpeg" } });
   });
 
   it("chats @lid: usa el teléfono de los datos del motor si viene, si no lo deja para buscarlo", () => {

@@ -70,14 +70,19 @@ export async function telegramSendVoice(chatId: string, audio: Buffer): Promise<
 }
 
 export async function telegramDownloadAudio(fileId: string): Promise<Blob> {
+  return telegramDownloadFile(fileId, MAX_AUDIO_BYTES, "audio/ogg");
+}
+
+/** Baja un archivo que mandó el usuario (audio, foto o PDF), con tope de tamaño. */
+export async function telegramDownloadFile(fileId: string, maxBytes: number, type: string): Promise<Blob> {
   await requireActiveChannel("telegram");
   const file = await telegram<{ file_path?: string; file_size?: number }>("getFile", { file_id: fileId });
-  if (!file.file_path || !/^[a-zA-Z0-9_./-]+$/.test(file.file_path) || file.file_path.includes("..") || (file.file_size ?? 0) > MAX_AUDIO_BYTES) throw new Error("Audio de Telegram inválido o demasiado grande.");
+  if (!file.file_path || !/^[a-zA-Z0-9_./-]+$/.test(file.file_path) || file.file_path.includes("..") || (file.file_size ?? 0) > maxBytes) throw new Error("Archivo de Telegram inválido o demasiado grande.");
   let response: Response;
   try {
     response = await fetch(`https://api.telegram.org/file/bot${env.telegramBotToken()}/${file.file_path}`, { redirect: "error", cache: "no-store", signal: AbortSignal.timeout(25000) });
-  } catch { throw new Error("No se pudo descargar el audio de Telegram."); }
-  if (!response.ok || Number(response.headers.get("content-length")) > MAX_AUDIO_BYTES || !response.body) throw new Error("No se pudo descargar el audio de Telegram.");
+  } catch { throw new Error("No se pudo descargar el archivo de Telegram."); }
+  if (!response.ok || Number(response.headers.get("content-length")) > maxBytes || !response.body) throw new Error("No se pudo descargar el archivo de Telegram.");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -86,9 +91,9 @@ export async function telegramDownloadAudio(fileId: string): Promise<Blob> {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.length;
-      if (size > MAX_AUDIO_BYTES) throw new Error("El audio supera 20 MB.");
+      if (size > maxBytes) throw new Error("El archivo es demasiado grande.");
       chunks.push(value);
     }
   } finally { await reader.cancel().catch(() => {}); }
-  return new Blob(chunks.map((chunk) => new Uint8Array(chunk)), { type: "audio/ogg" });
+  return new Blob(chunks.map((chunk) => new Uint8Array(chunk)), { type });
 }
