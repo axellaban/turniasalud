@@ -94,6 +94,12 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] **Atención humana por chat**: implementar Tomar / Devolver al agente con pausa persistida y descarte de respuestas pendientes; conservar la app WhatsApp Business y WAHA, sin incorporar Chatwoot por rutina.
 - [ ] **Piloto de prospección telefónica**: destinatarios revisados, reglas de contacto/No Llame, baja persistente y probada, autorización manual, límite efectivo de duración/consumo y resultados. Validar que el agente pueda colgar y no afirme registrar una baja sin haberlo hecho. No reutilizar el destino de la prueba que pidió no recibir más llamadas. No activar llamadas en frío ni campañas automáticamente.
 
+- [ ] **Ficha sistémica por chat (pedido de Mininni, 31/10). En espera: falta que Mininni mande una foto de su ficha de papel.** Acordado con el usuario:
+  - **Cuándo:** solo por chat (nunca por voz, recordatorios ni campañas) y sin insistir. Al confirmar un turno de primera vez, Sofi la ofrece en el mismo cierre. A pacientes de siempre, solo cuando terminó lo que vinieron a hacer, si no tienen ficha o la última tiene más de un año (a confirmar con Mininni). Si la completan, no se pregunta hasta el año siguiente; si dicen que no, no se repite por unos meses.
+  - **Formato:** lista numerada («contestá con los números o "ninguna"»), después un detalle solo de lo marcado. Alergias y medicación siempre por separado y explícitas. Sofi no opina sobre las respuestas; si aparece algo urgente, deriva.
+  - **Legal:** antes de la primera pregunta, una línea de consentimiento (datos de salud, Ley 25.326). El sistema arma un PDF con el formato de su ficha de papel («respondido por WhatsApp el …»): el paciente lo revisa, corrige a mano y firma. Lo que cubre sigue siendo el papel firmado. Sugerir que lo valide su abogado o el Colegio.
+  - **Panel:** tarjeta «Ficha de salud» en la ficha del paciente (versiones, fecha, «Imprimir PDF»); «Imprimir fichas de hoy» en la agenda; aviso de alergias o anticoagulantes en el turno; botón «Copiar para Smile Connect». Smile Connect no tiene API pública conocida: la carga automática (Claude en la compu del consultorio) queda para después. Sofi no reutiliza los antecedentes en charlas futuras: solo sabe si la ficha está al día.
+
 ## 6. Técnico menor
 
 - [ ] `npm audit` marca cinco altas en la cadena de desarrollo de ESLint (`braces`). No afecta al servidor publicado; no aplicar `--force`, que baja `eslint-config-next`. Revisar cuando salga una corrección compatible.

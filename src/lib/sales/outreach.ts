@@ -52,6 +52,16 @@ export type Outreach = OutreachPerson & {
 
 export type OutreachEvent = { id: string; kind: string; channel: string | null; detail: string; created_at: string };
 
+/**
+ * Un fijo no sirve para prospectar: no tiene WhatsApp. Sale de la cola, de las cuentas y de las
+ * listas (solo se ve con el filtro «Teléfono fijo»), aunque se le haya intentado escribir. Si igual
+ * respondió o abrió su demo, sigue contando como cualquiera.
+ */
+export const fijoSinRespuesta = () => sql`(o.phone_kind is not distinct from 'fijo' and o.status in ('por_contactar', 'contactado', 'sin_canal') and o.opened_at is null and o.demo_at is null)`;
+
+/** Se le puede escribir por WhatsApp: tiene celular (propio o del consultorio). */
+const conWhatsApp = () => sql`(o.phone is not null and o.phone_kind is distinct from 'fijo')`;
+
 export type OutreachSettings = { templates: Templates; daily_goal: number; weekly_goal: number };
 
 const TZ = DEFAULT_TZ;
@@ -109,8 +119,9 @@ export async function outreachStats(): Promise<OutreachStats> {
     select
       count(*)::int as total,
       count(*) filter (where (first_contact_at at time zone ${TZ})::date = ${today}::date)::int as today_new,
-      (select count(*)::int from sales_outreach_events e where e.kind = 'mensaje' and e.detail in ('seguimiento', 'último')
-         and (e.created_at at time zone ${TZ})::date = ${today}::date) as today_followups,
+      (select count(*)::int from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id
+         where e.kind = 'mensaje' and e.detail in ('seguimiento', 'último') and (e.created_at at time zone ${TZ})::date = ${today}::date
+           and not ${fijoSinRespuesta()}) as today_followups,
       count(*) filter (where (first_contact_at at time zone ${TZ})::date >= ${monday}::date)::int as week_new,
       count(*) filter (where first_contact_at is not null)::int as contacted,
       count(*) filter (where status in ('respondio', 'reunion', 'cliente', 'no_interesa', 'baja'))::int as replied,
@@ -119,9 +130,9 @@ export async function outreachStats(): Promise<OutreachStats> {
       count(*) filter (where status = 'reunion')::int as meetings,
       count(*) filter (where status = 'cliente')::int as clients,
       count(*) filter (where status = 'contactado' and touches < ${MAX_TOUCHES} and next_action_on <= ${today}::date)::int as due_followups,
-      count(*) filter (where status = 'por_contactar')::int as pending,
+      count(*) filter (where status = 'por_contactar' and ${conWhatsApp()})::int as pending,
       count(*) filter (where status in ('respondio', 'reunion') or (status = 'contactado' and (opened_at is not null or demo_at is not null)))::int as interested
-    from sales_outreach`;
+    from sales_outreach o where not ${fijoSinRespuesta()}`;
   return row;
 }
 
@@ -129,9 +140,9 @@ export type OutreachView = "hoy" | "seguimientos" | "interesados" | "todos";
 export type OutreachFilter = { view: OutreachView; zone?: string | null; q?: string | null; channel?: string | null; status?: string | null; page?: number };
 export const PAGE_SIZE = 50;
 
-/** Contactable: con WhatsApp o Instagram, sin baja y sin que otra persona del mismo número ya haya recibido el mensaje. */
+/** Contactable: con WhatsApp (los fijos y los que solo tienen Instagram no entran), sin baja y sin que otra persona del mismo número ya haya recibido el mensaje. */
 const contactable = () => sql`
-  (o.phone is not null or o.instagram is not null)
+  ${conWhatsApp()}
   and not exists (select 1 from sales_suppressions s where s.phone = o.phone)
   and not exists (select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id and (x.touches > 0 or x.status <> 'por_contactar'))`;
 
@@ -161,7 +172,7 @@ export async function outreachQueue(f: Omit<OutreachFilter, "view">, remainingNe
   const today = todayKey();
   const followups = await sql<Outreach[]>`
     select ${withExtras()} from sales_outreach o
-    where o.status = 'contactado' and o.touches < ${MAX_TOUCHES} and o.next_action_on <= ${today}::date
+    where o.status = 'contactado' and o.touches < ${MAX_TOUCHES} and o.next_action_on <= ${today}::date and not ${fijoSinRespuesta()}
       and not exists (select 1 from sales_suppressions s where s.phone = o.phone) ${filters({ ...f, view: "hoy" })}
     order by (o.demo_at is not null) desc, o.next_action_on, o.priority, o.name
     limit 200`;
@@ -186,21 +197,23 @@ export async function listOutreach(f: OutreachFilter): Promise<{ rows: Outreach[
     f.view === "seguimientos" ? sql`and o.status = 'contactado' and (o.next_action_on > ${today}::date or o.touches >= ${MAX_TOUCHES})`
     : f.view === "interesados" ? sql`and (o.status in ('respondio', 'reunion', 'cliente') or (o.status = 'contactado' and (o.opened_at is not null or o.demo_at is not null)))`
     : sql``;
+  // Los fijos sin respuesta solo aparecen si se los busca.
+  const fijos = f.channel === "fijo" ? sql`` : sql`and not ${fijoSinRespuesta()}`;
   const order =
     f.view === "interesados" ? sql`order by greatest(o.last_contact_at, o.opened_at, o.demo_at, o.updated_at) desc nulls last`
     : f.view === "seguimientos" ? sql`order by o.next_action_on nulls last, o.name`
     : sql`order by o.priority, o.status <> 'por_contactar', o.name`;
   const page = Math.max(0, (f.page ?? 1) - 1);
-  const [{ count }] = await sql<Array<{ count: number }>>`select count(*)::int as count from sales_outreach o where true ${view} ${filters(f)}`;
+  const [{ count }] = await sql<Array<{ count: number }>>`select count(*)::int as count from sales_outreach o where true ${view} ${fijos} ${filters(f)}`;
   const rows = await sql<Outreach[]>`
-    select ${withExtras()} from sales_outreach o where true ${view} ${filters(f)}
+    select ${withExtras()} from sales_outreach o where true ${view} ${fijos} ${filters(f)}
     ${order} limit ${PAGE_SIZE} offset ${page * PAGE_SIZE}`;
   return { rows, total: count };
 }
 
 export async function outreachZones(): Promise<Array<{ zone: string; count: number }>> {
   return sql<Array<{ zone: string; count: number }>>`
-    select zone, count(*)::int as count from sales_outreach where zone <> '' group by zone order by count(*) desc`;
+    select zone, count(*)::int as count from sales_outreach o where zone <> '' and not ${fijoSinRespuesta()} group by zone order by count(*) desc`;
 }
 
 export async function getOutreach(id: string): Promise<Outreach | null> {

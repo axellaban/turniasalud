@@ -116,7 +116,7 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
                 <option value="">Cualquier canal</option>
                 <option value="celular">Celular</option>
                 <option value="consultorio">Celular del consultorio</option>
-                <option value="fijo">Teléfono fijo</option>
+                <option value="fijo">Teléfono fijo (no se cuentan)</option>
                 <option value="instagram">Instagram</option>
                 <option value="sin">Sin contacto</option>
               </select>
@@ -171,12 +171,13 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
                   </p>
                 </div>
                 <p className="mt-1 text-sm text-brand-900/70">
-                  De a uno, con un minuto entre mensajes. Primero los celulares propios y los que muestran que invierten en su consultorio.
+                  De a uno, con un minuto entre mensajes. Solo números con WhatsApp: primero los celulares propios y los que muestran que invierten en su consultorio.
+                  Los fijos no entran ni cuentan.
                 </p>
                 {queue.fresh.length > 0 ? (
                   <ul className="mt-2 divide-y divide-brand-900/5">{queue.fresh.map(row)}</ul>
                 ) : stats.pending === 0 ? (
-                  <Empty>No queda nadie por contactar con este filtro. Importá más odontólogos o cargales un contacto en «Todos».</Empty>
+                  <Empty>No queda nadie con celular por contactar con este filtro. Importá más odontólogos o cargale un celular a alguien desde «Todos».</Empty>
                 ) : (
                   <div className="mt-4 rounded-xl bg-brand-50/70 p-4 text-sm text-brand-950">
                     <p className="font-semibold">Meta de hoy cumplida.</p>

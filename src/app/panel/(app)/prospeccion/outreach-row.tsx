@@ -24,6 +24,13 @@ const signals = (p: Outreach) =>
     .filter((s) => s && !s.startsWith("celular ") && !s.startsWith("mismo teléfono") && s !== p.specialty)
     .join(" · ");
 
+/**
+ * Un fijo no tiene WhatsApp: no se le ofrece escribir. Si igual respondió o abrió su demo (era un
+ * WhatsApp Business), se sigue la charla.
+ */
+export const landlineOnly = (p: Outreach) =>
+  p.phone_kind === "fijo" && !p.opened_at && !p.demo_at && (p.status === "por_contactar" || p.status === "contactado" || p.status === "sin_canal");
+
 /** El fijo, el celular del consultorio o un número de varios odontólogos: lo lee la recepción. */
 export const isConsultorioLine = (p: Outreach) => isBusinessLine(p.phone_kind) || p.shared.length >= 2;
 
@@ -33,7 +40,7 @@ export const isConsultorioLine = (p: Outreach) => isBusinessLine(p.phone_kind) |
  */
 export function contactPlan(p: Outreach, templates: Templates, link: string, today: string) {
   const closed = CLOSED.includes(p.status) || p.suppressed;
-  const key = closed || !p.phone ? null : whatsappTemplateKey(p, isConsultorioLine(p));
+  const key = closed || !p.phone || landlineOnly(p) ? null : whatsappTemplateKey(p, isConsultorioLine(p));
   const text = key ? renderTemplate(templates[key], p, link) : "";
   const whatsapp = key && p.phone ? { key, text, ...whatsappLinks(p.phone, text) } : null;
   const instagram = !closed && p.instagram && p.touches < MAX_TOUCHES ? { handle: p.instagram, text: renderTemplate(templates.instagram, p, link) } : null;
@@ -115,8 +122,8 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
             Cargar un contacto
           </Link>
         )}
-        {p.touches === 0 && p.status === "por_contactar" && (p.phone || p.instagram) && (
-          <ActionButton id={p.id} kind="touch" value={p.phone ? "whatsapp" : "instagram"} before className={smallButtonClass}>
+        {p.touches === 0 && p.status === "por_contactar" && (plan.whatsapp || plan.instagram) && (
+          <ActionButton id={p.id} kind="touch" value={plan.whatsapp ? "whatsapp" : "instagram"} before className={smallButtonClass}>
             Ya le había escrito
           </ActionButton>
         )}

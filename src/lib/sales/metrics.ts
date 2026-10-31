@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { DEFAULT_TZ } from "@/lib/time";
+import { fijoSinRespuesta } from "./outreach";
 
 // Métricas agregadas para el tablero de Chapa Labs (/api/metricas): prospección, demos, pedidos de
 // demo y uso del producto, en totales y por día. Sin nombres, teléfonos ni textos. Las cuentas de la
@@ -19,7 +20,9 @@ export async function turniaMetrics({ from, to }: Range) {
     sql`(${from}::date is null or (${sql(column)} at time zone ${TZ})::date >= ${from}::date)
       and (${to}::date is null or (${sql(column)} at time zone ${TZ})::date <= ${to}::date)`;
   const day = (column: string) => sql`to_char((${sql(column)} at time zone ${TZ})::date, 'YYYY-MM-DD')`;
-  const cohort = sql`first_contact_at is not null and ${inRange("first_contact_at")}`;
+  // Los fijos que no respondieron no cuentan (no tienen WhatsApp), igual que en el panel.
+  const cohort = sql`first_contact_at is not null and ${inRange("first_contact_at")} and not ${fijoSinRespuesta()}`;
+  const counted = sql`not ${fijoSinRespuesta()}`;
 
   const [
     [funnel],
@@ -48,20 +51,20 @@ export async function turniaMetrics({ from, to }: Range) {
         count(*) filter (where ${cohort} and status = 'cliente')::int as clientes,
         count(*) filter (where ${cohort} and status = 'no_interesa')::int as no_interesa,
         coalesce(sum(touches) filter (where ${cohort}), 0)::int as toques
-      from sales_outreach`,
+      from sales_outreach o where ${counted}`,
     sql<Array<Record<string, number | string>>>`
       select coalesce(last_channel, 'otro') as canal, count(*)::int as contactados,
         count(*) filter (where status in ${sql(REPLIED)})::int as respondieron,
         count(*) filter (where demo_at is not null)::int as probaron_demo,
         count(*) filter (where status = 'cliente')::int as clientes
-      from sales_outreach where ${cohort} group by 1 order by 2 desc`,
+      from sales_outreach o where ${cohort} group by 1 order by 2 desc`,
     sql<Array<Record<string, number | string>>>`
       select coalesce(nullif(zone, ''), 'Sin zona') as zona, count(*)::int as prospectados,
         count(*) filter (where ${cohort})::int as contactados,
         count(*) filter (where ${cohort} and status in ${sql(REPLIED)})::int as respondieron,
         count(*) filter (where ${cohort} and status = 'cliente')::int as clientes
-      from sales_outreach group by 1 order by 2 desc limit 12`,
-    sql<Array<{ estado: string; cuentas: number }>>`select status as estado, count(*)::int as cuentas from sales_outreach group by 1 order by 2 desc`,
+      from sales_outreach o where ${counted} group by 1 order by 2 desc limit 12`,
+    sql<Array<{ estado: string; cuentas: number }>>`select status as estado, count(*)::int as cuentas from sales_outreach o where ${counted} group by 1 order by 2 desc`,
     sql<Array<Record<string, number | string>>>`
       select ${day("created_at")} as date,
         count(*) filter (where kind = 'mensaje')::int as mensajes,
@@ -71,9 +74,10 @@ export async function turniaMetrics({ from, to }: Range) {
         count(*) filter (where kind = 'estado' and split_part(detail, ':', 1) = 'respondio')::int as respuestas,
         count(*) filter (where kind = 'estado' and split_part(detail, ':', 1) = 'reunion')::int as reuniones,
         count(*) filter (where kind = 'estado' and split_part(detail, ':', 1) = 'cliente')::int as clientes
-      from sales_outreach_events where ${inRange("created_at")} group by 1 order by 1`,
+      from sales_outreach_events where ${inRange("created_at")}
+        and outreach_id not in (select o.id from sales_outreach o where ${fijoSinRespuesta()}) group by 1 order by 1`,
     sql<Array<{ date: string; nuevos: number }>>`
-      select ${day("first_contact_at")} as date, count(*)::int as nuevos from sales_outreach where ${cohort} group by 1 order by 1`,
+      select ${day("first_contact_at")} as date, count(*)::int as nuevos from sales_outreach o where ${cohort} group by 1 order by 1`,
     // Demos de Sofi (web, WhatsApp, llamada): cada sesión es una demo.
     sql<Array<Counts<"iniciadas" | "listas" | "terminadas" | "con_error" | "por_voz">>>`
       select count(*)::int as iniciadas,
