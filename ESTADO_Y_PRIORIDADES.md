@@ -1,6 +1,14 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 30/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 31/10/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Prospección: solo números con WhatsApp — 31/10/2026
+
+- **Pedido del usuario:** la cola de «Para hoy» le mostraba solo fijos, y él prospecta únicamente por WhatsApp. Los fijos a los que tocó «Saludar» sin éxito no tienen que figurar como contactados.
+- **Ahora** (`fijoSinRespuesta` en `src/lib/sales/outreach.ts`): un fijo que no respondió ni abrió su demo queda fuera de todo. No entra en la cola (nuevos ni seguimientos), no cuenta en «Hoy», «Esta semana», «Respondieron» ni en las métricas de Chapa Labs (`/api/metricas`), y no aparece en las listas. Solo se ve con el filtro «Teléfono fijo (no se cuentan)», sin botón de WhatsApp. Los datos no se borran: si un fijo abre su demo o responde, vuelve a contar. Si se le carga un celular en la ficha, vuelve a la lista.
+- Los nuevos de la cola son solo números con WhatsApp (celular propio o del consultorio); los que solo tienen Instagram tampoco entran. «Quedan N por contactar» cuenta solo esos.
+- Cuando no quedan celulares, la cola lo dice. Para seguir hay que conseguir celulares nuevos o sumar zonas (ver `PLAN_PROSPECCION.md`).
+- **Anotado para después:** la ficha sistémica por chat que pidió Mininni (`PENDIENTES.md`, sección 5), a la espera de la foto de su ficha de papel.
 
 ## Sofi lee fotos de credenciales, órdenes y recetas — 30/10/2026
 

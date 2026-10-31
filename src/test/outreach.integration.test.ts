@@ -133,17 +133,18 @@ describe.runIf(base)("prospección a odontólogos", () => {
 
   it("la cola de hoy va por prioridad, respeta la meta y no repite un número compartido", async () => {
     const { fresh } = await outreach.outreachQueue({}, 50);
-    // Sin contacto no entra; los demás, por prioridad (y, a igual prioridad, primero los celulares).
+    // Sin contacto no entra, el fijo (Pirera) tampoco: no tiene WhatsApp. Los demás, por prioridad.
     // Secreti y Jan comparten número: entra solo Secreti, que tiene mejor prioridad.
-    expect(fresh.map((p) => p.code)).toEqual(["moreta-ab3", "secreti-c4d", "lopez-j7k", "pirera-g6h"]);
+    expect(fresh.map((p) => p.code)).toEqual(["moreta-ab3", "secreti-c4d", "lopez-j7k"]);
     const todos = await outreach.listOutreach({ view: "todos", q: "Jan" });
     expect(todos.rows.find((p) => p.code === "jan-e5f")?.shared).toEqual([{ name: "Fernando A. Secreti", touched: false }]);
     expect((await outreach.outreachQueue({}, 2)).fresh).toHaveLength(2);
-    expect((await outreach.outreachQueue({ zone: "Miramar" }, 50)).fresh.map((p) => p.code)).toEqual(["pirera-g6h"]);
+    expect((await outreach.outreachQueue({ zone: "Miramar" }, 50)).fresh).toEqual([]);
+    expect((await outreach.outreachStats()).pending).toBe(4);
 
     // Le escribimos a Secreti: Jan (mismo número) sale de la cola.
     expect(await actions.touchAction(form({ id: await id("secreti-c4d"), channel: "whatsapp" }))).toMatchObject({ ok: true });
-    expect((await outreach.outreachQueue({}, 50)).fresh.map((p) => p.code)).toEqual(["moreta-ab3", "lopez-j7k", "pirera-g6h"]);
+    expect((await outreach.outreachQueue({}, 50)).fresh.map((p) => p.code)).toEqual(["moreta-ab3", "lopez-j7k"]);
   });
 
   it("primero el saludo sin link y, cuando responde, la demo; cada mensaje programa el seguimiento y a los tres toques se frena", async () => {
@@ -183,15 +184,29 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(stats).toMatchObject({ today_new: 2, today_followups: 2 });
 
     // Una llamada queda en la historia sin gastar mensajes; «ya le había escrito» no suma a la meta de hoy.
+    // Pirera es un fijo: aunque se lo haya intentado contactar, no cuenta, no aparece y no se le ofrece WhatsApp.
     const pirera = await id("pirera-g6h");
     await actions.touchAction(form({ id: pirera, channel: "telefono" }));
+    await actions.touchAction(form({ id: pirera, channel: "whatsapp" }));
     [row] = await sql`select status, touches from sales_outreach where id = ${pirera}`;
     expect(row).toEqual({ status: "contactado", touches: 0 });
+    expect((await outreach.outreachStats()).today_new).toBe(2);
+    expect((await outreach.outreachQueue({}, 0)).followups.map((p) => p.code)).not.toContain("pirera-g6h");
+    expect((await outreach.listOutreach({ view: "todos" })).rows.map((p) => p.code)).not.toContain("pirera-g6h");
+    const fijos = await outreach.listOutreach({ view: "todos", channel: "fijo" });
+    expect(fijos.rows.map((p) => p.code)).toEqual(["pirera-g6h"]);
+    // Quien no tiene teléfono sigue en la lista (para cargarle uno).
+    expect((await outreach.listOutreach({ view: "todos", channel: "sin" })).rows.map((p) => p.code)).toEqual(["sinc-m8n"]);
+    expect(contactPlan(fijos.rows[0], settings.templates, "https://turnia.example/p/pirera-g6h", today).whatsapp).toBeNull();
+    // Si un fijo igual abre su demo (tenía WhatsApp Business), vuelve a contar.
+    await sql`update sales_outreach set opened_at = now() where id = ${pirera}`;
+    expect((await outreach.outreachStats()).today_new).toBe(3);
+    await sql`update sales_outreach set opened_at = null where id = ${pirera}`;
     const lopez = await id("lopez-j7k");
     await actions.touchAction(form({ id: lopez, channel: "whatsapp", before: "1" }));
     [row] = await sql`select touches, next_action_on, (first_contact_at < now() - interval '6 days') as before from sales_outreach where id = ${lopez}`;
     expect(row).toEqual({ touches: 1, next_action_on: today, before: true });
-    expect((await outreach.outreachStats()).today_new).toBe(3);
+    expect((await outreach.outreachStats()).today_new).toBe(2);
     const events = await outreach.outreachEvents(moreta);
     expect(events.map((e) => e.detail)).toEqual(["último", "seguimiento", "primero", "saludo"]);
   });

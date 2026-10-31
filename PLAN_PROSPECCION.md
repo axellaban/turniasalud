@@ -20,10 +20,10 @@ Se entrega como `lista-odontologos-mdp-miramar.csv` (fuera del repo) y se import
 |---|---:|---:|---|
 | Celular propio | 139 | 137 | WhatsApp a la persona. Prioridad 1 (7): además muestran que invierten en su consultorio (Doctoralia con agenda u opiniones, implantes, ortodoncia, estética) |
 | Celular de un consultorio con varios odontólogos | 32 | 14 | Un solo mensaje por número, a la recepción y a nombre del que más señales tiene (suele ser el dueño) |
-| Teléfono fijo | 196 | 139 | WhatsApp si el fijo lo tiene; si no, llamar para pedir el WhatsApp del odontólogo, o su Instagram |
+| Teléfono fijo | 196 | 139 | **Fuera de la prospección (31/10, pedido del usuario: solo WhatsApp).** No entran en la cola ni cuentan en los números ni en las métricas, aunque se los haya intentado contactar; se ven solo con el filtro «Teléfono fijo». Si alguno abre su demo o responde, vuelve a contar. Para sumarlos hay que conseguirles un celular y cargarlo en su ficha |
 | Sin teléfono (Doctoralia, con señales) | 40 | — | Buscar su Instagram desde la ficha |
 
-Para los 250 de la semana alcanzan los 151 celulares (propios y de consultorio) más unos 100 entre fijos, Instagram y la visita a Miramar.
+La cola de «Para hoy» solo trae números con WhatsApp: los 151 celulares (propios y de consultorio). Cuando se terminan, hay que conseguir celulares nuevos (de la web, Google o el Instagram de los fijos y de los que no tienen teléfono) o sumar zonas.
 
 - **Fuentes:** [Círculo Odontológico de Mar del Plata](https://comp.org.ar/listado-de-profesionales/) (392 profesionales con dirección y teléfono; se usaron Mar del Plata, Miramar, Batán, Sierra de los Padres, Otamendi y Santa Clara del Mar) y [Doctoralia](https://www.doctoraliar.com/odontologo/mar-del-plata) (425 perfiles: especialidades, opiniones, agenda online y si pagan la plataforma).
 - **Cruce:** apellido y nombre (padres e hijos comparten apellido, dirección y teléfono: cada perfil se asigna a una sola persona) y dirección. De Doctoralia sale cómo se presenta cada uno (Dr. o Dra.); a los demás se los saluda por el nombre, sin adivinar.

@@ -7,7 +7,7 @@ import { formatDateTime } from "@/lib/time";
 import { getOutreach, outreachDemoUrl, outreachEvents, outreachSettings, todayKey, type OutreachEvent } from "@/lib/sales/outreach";
 import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE, displayOutreachPhone, googleSearchUrl, renderTemplate, type OutreachChannel, type OutreachStatus } from "@/lib/sales/outreach-messages";
 import { ActionButton, CallButton, CopyButton, InstagramButton, WhatsAppButton } from "../contact-buttons";
-import { contactPlan, isConsultorioLine } from "../outreach-row";
+import { contactPlan, isConsultorioLine, landlineOnly } from "../outreach-row";
 import { EditOutreachForm, NoteForm } from "./forms";
 
 export const metadata: Metadata = { title: "Prospección · Panel" };
@@ -87,6 +87,10 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
                     : "Lo mandás vos desde tu WhatsApp. Al abrirlo queda registrado y el seguimiento se programa solo (dos días hábiles; después, cuatro)."}
                 </p>
               </div>
+            ) : landlineOnly(p) ? (
+              <p className="mt-3 text-sm text-brand-900/70">
+                Es un teléfono fijo: no tiene WhatsApp, así que no entra en la cola ni cuenta en los números. Si conseguís su celular, cargalo en «Datos» y vuelve a la lista.
+              </p>
             ) : (
               !plan.closed && p.phone && <p className="mt-3 text-sm text-brand-900/70">Ya le escribiste tres veces por WhatsApp. Mejor esperar a que responda.</p>
             )}
