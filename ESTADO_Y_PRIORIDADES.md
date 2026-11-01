@@ -171,6 +171,23 @@ El panel de prospección común de Chapa Labs (repo `facundogregorini-lab/chapa-
 - Producción Ready. Webhook con HMAC correcto → **200**; firma incorrecta → **401**. CI del PR #84: **330 pruebas**, TypeScript, ESLint y build correctos, con Postgres descartable. Se conservaron los horarios, coberturas, precios y protocolos cargados por el consultorio. **Endodoncia ya tiene «Solo la da el consultorio»**, verificado en producción el 02/11.
 - **Alcance del piloto:** la ficha sigue siendo una demo conservada y utiliza su agenda de prueba. La línea propia funciona independientemente del selector de la demo general, que sigue en Telegram; `demo.whatsapp: false` en `/api/health` no señala una falla de esta línea. Gmail, campañas, llamadas y otras líneas quedan fuera de esta configuración. El rechazo de vinculación anterior está superado; no hace falta abrir la terminal de Hostinger para continuar el piloto.
 
+## Embudo comercial semanal — 1/11/2026
+
+- **Pedido del usuario:** fijar el embudo y seguirlo cada semana. Las etapas son saludos enviados, demos enviadas, demos visitadas, demos con interacción (al menos una conversación con Sofi en la demo temporal), cuentas creadas, cuentas activas y clientes pagos.
+- **[`EMBUDO.md`](EMBUDO.md):**
+  - la definición y la fuente de cada etapa;
+  - el criterio de cuenta activa: en la semana, Sofi atendió a 3 pacientes distintos y dio al menos 1 turno, sin contar los que se cargan en el panel;
+  - las reglas de conteo: semanas de lunes a domingo y cada uno cuenta una vez;
+  - la tabla de la semana 1.
+- **`npm run embudo`** (`scripts/embudo.mjs`): arma la tabla. Saca las etapas 1 a 4 de PostHog y las 5 a 7 de la base. Solo lee. Se probó contra PostHog real y contra un Postgres local con datos de prueba: cuentas revocadas, una anterior a la semana 1, un turno del domingo a la noche y un cliente que volvió a otro estado.
+- **Semana 1 (parcial, PostHog mide desde el 30/10):**
+  - 92 saludos, 41 demos enviadas, 2 visitadas y 1 con interacción (`ache-kthmf`, chat).
+  - Clientes pagos: 0.
+  - Cuentas: sin dato, porque esta sesión no tenía acceso a la base.
+- **Hallazgos:**
+  - El proyecto de PostHog 518346 se llama «Default project» y lo comparten Loreado y Copiloto.
+  - `/api/metricas` no ve las cuentas de los consultorios, que son clínicas conservadas con `is_demo`. Quedó en `PENDIENTES.md`.
+
 ## Prospección: solo números con WhatsApp — 31/10/2026
 
 - **Pedido del usuario:** la cola de «Para hoy» le mostraba solo fijos, y él prospecta únicamente por WhatsApp. Los fijos a los que tocó «Saludar» sin éxito no tienen que figurar como contactados.

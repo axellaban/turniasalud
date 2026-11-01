@@ -190,6 +190,8 @@ Para medir un botón nuevo: `{...cta("id", "zona", "destino")}` de `@/lib/analyt
 
 En todos: filtro `app_env` = `production` y tráfico interno excluido (paso 2 de arriba).
 
+**El embudo que se sigue cada semana** (saludos → demos enviadas → visitadas → con interacción → cuentas creadas → activas → clientes pagos) está definido en [`EMBUDO.md`](EMBUDO.md) y sale con `npm run embudo`. El proyecto 518346 («Default project») lo comparten Loreado y Copiloto: sin esos filtros, los gráficos mezclan productos.
+
 ### Prospección (Insights → New → Funnel, conversión por persona, ventana 30 días)
 
 1. `prospect_greeting_sent`
