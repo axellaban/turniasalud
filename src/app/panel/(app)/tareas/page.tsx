@@ -34,7 +34,7 @@ type Row = {
   created_at: string;
   conversation_id: string | null;
   response: string | null;
-  patients: { id: string; full_name: string | null; phone: string } | null;
+  patients: { id: string; full_name: string | null; phone: string | null } | null;
 };
 
 export default async function TasksPage({ searchParams }: PageProps<"/panel/tareas">) {

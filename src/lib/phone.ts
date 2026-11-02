@@ -12,6 +12,8 @@ export function normalizePhone(raw: string | null | undefined): string {
   if (!digits) return "";
 
   if (digits.startsWith("00")) digits = digits.slice(2);
+  // Con «+» y otro código de país (+1 212 555-0100) ya es el número internacional: no es argentino.
+  if (/^\+/.test(trimmed) && !digits.startsWith("54") && digits.length >= 8 && digits.length <= 15) return digits;
 
   if (digits.startsWith("54")) {
     let rest = digits.slice(2);

@@ -666,8 +666,28 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(Object.fromEntries(states.map((s) => [s.id, s.status]))).toEqual({ [past.id]: "atendido", [booked.turno_id]: "confirmado" });
 
     // Al escribir el celular en el turno a mano, el panel reconoce al paciente.
-    expect(await actions.lookupPatient(form({ phone: "11 6666-0031" }))).toMatchObject({ name: "Irene Casos", coverage: "osde " });
-    expect(await actions.lookupPatient(form({ phone: "11 0000-0000" }))).toBeNull();
+    expect(await actions.lookupPatient(form({ phone: "11 6666-0031" }))).toMatchObject([{ name: "Irene Casos", coverage: "osde " }]);
+    expect(await actions.lookupPatient(form({ phone: "11 0000-0000" }))).toEqual([]);
+
+    // Un celular de una familia: el turno a mano es para quien se elige y la ficha del otro no se toca.
+    const lunares = { appointment_type_id: LUNARES, professional_id: first.profesional_id, date: inTwoDays(), force: "1" };
+    const forDaughter = await actions.createManualAppointment(undefined, form({ ...lunares, phone: "11 6666-0031", full_name: "Irene Hija", patient_id: "nueva", time: "23:00" }));
+    expect(forDaughter).toMatchObject({ ok: true });
+    const family = await actions.lookupPatient(form({ phone: "11 6666-0031" }));
+    expect(family.map((f) => f.name).sort()).toEqual(["Irene Casos", "Irene Hija"]);
+    const irene = family.find((f) => f.name === "Irene Casos")!;
+    const forMother = await actions.createManualAppointment(undefined, form({ ...lunares, phone: "11 6666-0031", full_name: "Irene Casos", patient_id: irene.id, time: "23:30" }));
+    expect(forMother).toMatchObject({ ok: true });
+    const late = await sql<Array<{ full_name: string; hour: string }>>`
+      select p.full_name, to_char(a.starts_at at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI') as hour
+      from appointments a join patients p on p.id = a.patient_id
+      where p.phone = '5491166660031' and a.status = 'confirmado' and a.notes is null and to_char(a.starts_at at time zone 'America/Argentina/Buenos_Aires', 'HH24') = '23'
+      order by a.starts_at`;
+    expect(late).toEqual([{ full_name: "Irene Hija", hour: "23:00" }, { full_name: "Irene Casos", hour: "23:30" }]);
+    // Si el turno no se puede dar, la ficha nueva no queda suelta.
+    const taken = await actions.createManualAppointment(undefined, form({ ...lunares, phone: "11 6666-0031", full_name: "Irene Nieta", patient_id: "nueva", time: "23:00" }));
+    expect(taken.ok).toBe(false);
+    expect(await sql`select id from patients where full_name = 'Irene Nieta'`).toHaveLength(0);
   });
 
   it("turno con dos profesionales: ocupa la agenda de los dos, se mueve y se cancela junto", async () => {

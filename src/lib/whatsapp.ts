@@ -1,6 +1,7 @@
 import { requireActiveChannel } from "./messaging-settings";
 import "server-only";
 import { buildDynamicVariables } from "./clinic";
+import { speakAsPatient } from "./patients";
 import { sendWhatsAppTemplate } from "./elevenlabs";
 import { env, missingWahaEnv } from "./env";
 import { registerOutbound } from "./channel";
@@ -73,6 +74,8 @@ export type PatientMessage = {
   campaignId?: string;
   /** Texto propio de la campaña, ya completado (solo WAHA: por Meta va el template aprobado). */
   text?: string;
+  /** La ficha a la que se le escribe: en un celular compartido (una familia), la respuesta va a esa. */
+  patientId?: string | null;
 };
 
 /** Le escribe al paciente. Devuelve el ID de conversación de ElevenLabs si ya existe (Meta). */
@@ -85,6 +88,7 @@ async function sendPatientMessageOnConnection(clinic: Clinic, msg: PatientMessag
   await requireActiveChannel("whatsapp");
   const problem = whatsappReadiness(clinic);
   if (problem) throw new Error(problem);
+  if (msg.patientId) await speakAsPatient(clinic.id, msg.phone, msg.patientId);
 
   if (wahaConnectionForClinic(clinic.id) || clinic.whatsapp_provider === "waha") {
     const text = msg.text ? withOptOutFooter(msg.templateKey, msg.text) : renderTemplate(msg.templateKey, msg.params, { optOutFooter: true });

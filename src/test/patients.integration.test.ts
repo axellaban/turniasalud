@@ -178,7 +178,7 @@ describe.runIf(base)("pacientes que ya existen", () => {
   it("no mezcla la ficha de este número con la de otra persona", async () => {
     // María (seed) escribe desde su número y da el DNI de Jorge (seed, sin fecha de nacimiento).
     const r = await service.findPatientByDni(ctx("5491155550001"), { dni: "20333444", nombre_completo: "Jorge Pérez" });
-    expect(r.mensaje).toContain("ya es la ficha de María González");
+    expect(r.mensaje).toContain("Este número es de la ficha de María González");
     const maria = await clinicLib.findPatientByPhone(CLINIC, "5491155550001");
     expect(maria?.id).toBe(MARIA);
     expect(maria?.dni).toBe("28111222");
@@ -303,6 +303,81 @@ describe.runIf(base)("pacientes que ya existen", () => {
     expect(asClinic).not.toContain('name="ids"');
     const fichaClinic = renderToStaticMarkup(await detail({ params: Promise.resolve({ id: MARIA }), searchParams: Promise.resolve({}) } as never));
     expect(fichaClinic).not.toContain("Borrar ficha");
+  });
+
+  it("una familia con un mismo celular: cada uno con su ficha y se pasa de una a otra con el DNI", async () => {
+    const phone = "5491155550707";
+    const mom = await addPatient({ phone, name: "Valeria Ostini", dni: "27000111", birth: "1981-03-15" });
+    const kid = await addPatient({ phone, name: "Tobías Quiroga", dni: "53000222", birth: "2014-05-09" });
+    // Recién importadas (sin contactos), el número habla por la de más edad: suele ser la dueña del celular.
+    await sql`update patients set last_contact_at = null where phone = ${phone}`;
+    expect((await clinicLib.findPatientByPhone(CLINIC, phone))?.id).toBe(mom);
+    const vars = await clinicLib.buildDynamicVariables(await clinicLib.getClinic(), phone);
+    expect(vars.patient_context).toContain("Este celular también es de: Tobías Quiroga");
+    expect(vars.patient_context).toContain("usá buscar_paciente para pasar a su ficha");
+
+    // La madre pide algo para el hijo: con su DNI y su nombre, la conversación pasa a la ficha de él.
+    const r = await service.findPatientByDni(ctx(phone), { dni: "53000222", nombre_completo: "Tobías Quiroga" });
+    expect(r).toMatchObject({ encontrado: true });
+    expect(r.mensaje).toContain("pasó a la ficha de Tobías Quiroga");
+    expect(r.ficha).toContain("Este celular también es de: Valeria Ostini");
+    expect((await clinicLib.findPatientByPhone(CLINIC, phone))?.id).toBe(kid);
+    const task = await service.createTask(ctx(phone), { tipo: "administrativo", titulo: "Pedido para Tobías" });
+    expect((await sql`select patient_id from tasks where id = ${task.tarea_id}`)[0].patient_id).toBe(kid);
+
+    // Y vuelve a la de ella. Ninguna ficha cambió.
+    await service.findPatientByDni(ctx(phone), { dni: "27000111", nombre_completo: "Valeria Ostini" });
+    expect((await clinicLib.findPatientByPhone(CLINIC, phone))?.id).toBe(mom);
+    expect(await sql`select full_name, dni from patients where phone = ${phone} order by birth_date`).toEqual([
+      { full_name: "Valeria Ostini", dni: "27000111" },
+      { full_name: "Tobías Quiroga", dni: "53000222" },
+    ]);
+    // Antes de un mensaje saliente (campaña, recordatorio) el número pasa a la ficha a la que se le escribe.
+    await patients.speakAsPatient(CLINIC, phone, kid);
+    expect((await clinicLib.findPatientByPhone(CLINIC, phone))?.id).toBe(kid);
+  });
+
+  it("registrar a otra persona desde el mismo celular crea su ficha en lugar de pisar la del dueño", async () => {
+    const phone = "5491170000077";
+    const owner = await addPatient({ phone, name: "Laura Gómez", dni: "25111222" });
+    const r = await service.registerPatient(ctx(phone), { nombre_completo: "Tomás Gómez", dni: "52111333", cobertura: "OSDE" });
+    expect(r.mensaje).toContain("ficha aparte");
+    expect(r.paciente).toMatchObject({ nombre: "Tomás Gómez", dni: "52111333", cobertura: "OSDE" });
+    const fichas = await sql<Array<{ id: string; full_name: string; dni: string; coverage: string | null }>>`
+      select id, full_name, dni, coverage from patients where phone = ${phone} order by created_at`;
+    expect(fichas.map((f) => [f.full_name, f.dni, f.coverage])).toEqual([["Laura Gómez", "25111222", null], ["Tomás Gómez", "52111333", "OSDE"]]);
+    expect(fichas[0].id).toBe(owner);
+    expect((await clinicLib.findPatientByPhone(CLINIC, phone))?.full_name).toBe("Tomás Gómez");
+    // Corregir el DNI propio (mismo nombre) sí cambia la ficha.
+    await service.registerPatient(ctx(phone), { nombre_completo: "Tomás Gómez", dni: "52111334" });
+    expect(await sql`select dni from patients where phone = ${phone} order by created_at`).toEqual([{ dni: "25111222" }, { dni: "52111334" }]);
+  });
+
+  it("dos herramientas a la vez con un número nuevo crean una sola ficha", async () => {
+    const phone = "5491170000088";
+    await Promise.all([
+      service.createTask(ctx(phone), { tipo: "administrativo", titulo: "Uno" }),
+      service.createTask(ctx(phone), { tipo: "administrativo", titulo: "Dos" }),
+      service.joinWaitlist(ctx(phone), { tipo_turno_id: LIMPIEZA }),
+    ]);
+    expect(await sql`select id from patients where clinic_id = ${CLINIC} and phone = ${phone}`).toHaveLength(1);
+  });
+
+  it("al unificar, la ficha sin celular toma el de la repetida y borrar una ficha no borra las fotos de su familia", async () => {
+    const phone = "5491170000099";
+    const imported = await sql<Array<{ id: string }>>`
+      insert into patients (clinic_id, phone, full_name, dni, sex, address) values (${CLINIC}, null, 'Sin Celular Importada', '30999888', 'femenino', 'Calle 1') returning id`;
+    const fromWhatsapp = await addPatient({ phone, name: "Sin Celular Importada", dni: "30999888" });
+    await patients.mergeDuplicates(CLINIC, imported[0].id);
+    const [merged] = await sql`select phone, sex, address from patients where id = ${imported[0].id}`;
+    expect(merged).toEqual({ phone, sex: "femenino", address: "Calle 1" });
+    expect(await sql`select id from patients where id = ${fromWhatsapp}`).toHaveLength(0);
+
+    const sibling = await addPatient({ phone, name: "Hermano Celular", dni: "45111222" });
+    await sql`insert into patient_documents (clinic_id, patient_id, phone, channel, kind, mimetype, file)
+      values (${CLINIC}, ${imported[0].id}, ${phone}, 'whatsapp', 'credencial', 'image/jpeg', '\\x00')`;
+    await patients.deletePatients(CLINIC, [sibling]);
+    expect(await sql`select id from patient_documents where patient_id = ${imported[0].id}`).toHaveLength(1);
   });
 
   it("la herramienta buscar_paciente está publicada por HTTP", async () => {

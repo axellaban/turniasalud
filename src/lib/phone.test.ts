@@ -10,6 +10,8 @@ describe("normalizePhone", () => {
     ["0351 15 555-0001", "5493515550001"],
     ["5491155550001", "5491155550001"],
     ["web-abc123", "web-abc123"],
+    ["+1 212 555-0100", "12125550100"],
+    ["+598 99 123 456", "59899123456"],
   ])("%s → %s", (input, expected) => {
     expect(normalizePhone(input)).toBe(expected);
   });

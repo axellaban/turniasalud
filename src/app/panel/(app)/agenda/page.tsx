@@ -30,7 +30,7 @@ type Row = {
   second_professional_id: string | null;
   appointment_type_id: string;
   patient: string | null;
-  phone: string;
+  phone: string | null;
   type_name: string;
 };
 
@@ -387,7 +387,7 @@ function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey
 }) {
   const when = new Intl.DateTimeFormat("es-AR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(new Date(a.starts_at));
   const time = (iso: string) => new Intl.DateTimeFormat("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso));
-  const wa = /^\d{8,15}$/.test(a.phone) ? `https://wa.me/${a.phone}` : null;
+  const wa = a.phone && /^\d{8,15}$/.test(a.phone) ? `https://wa.me/${a.phone}` : null;
   const facts: Array<[string, string | null]> = [
     ["Prestación", a.type_name],
     [a.second_professional_id ? "Profesionales" : "Profesional", pro],

@@ -5,10 +5,14 @@ import { removeCalendarEvents } from "./calendar/sync";
 import type { Patient } from "./types";
 
 // Identidad del paciente más allá del número desde el que escribe.
-// Una ficha es (clínica, teléfono), pero el mismo paciente puede escribir desde
-// otro número o desde la demo web. Si confirma quién es con su DNI y su nombre
-// y apellido (o su fecha de nacimiento, si el nombre no coincide), ese número
-// queda apuntando a su ficha (patient_phones) en lugar de crear una nueva.
+// El mismo paciente puede escribir desde otro número o desde la demo web: si
+// confirma quién es con su DNI y su nombre y apellido (o su fecha de nacimiento,
+// si el nombre no coincide), ese número queda apuntando a su ficha
+// (patient_phones) en lugar de crear una nueva.
+// Un celular también puede ser de varias fichas (una madre y sus hijos): el
+// número habla por una de ellas por vez, la última que se eligió (patient_phones)
+// o, si nunca se eligió, la de más uso. buscar_paciente con el DNI de otra pasa a
+// esa ficha.
 
 type Db = Sql | TransactionSql;
 
@@ -52,7 +56,7 @@ export function sameCoverage(a: string | null | undefined, b: string | null | un
 }
 
 /** Celulares o ids de Telegram: números por los que se le puede volver a escribir. */
-export const isReachablePhone = (phone: string) => !phone.startsWith("web-");
+export const isReachablePhone = (phone: string | null | undefined): phone is string => Boolean(phone) && !phone!.startsWith("web-");
 
 export type Verification = "ok" | "falta_fecha" | "falta_nombre" | "no_coincide";
 
@@ -74,25 +78,94 @@ export function verifyIdentity(
   return "no_coincide";
 }
 
-/** Ficha de este número: la propia o la de otro número del mismo paciente. */
+/**
+ * Ficha de este número: la que el número eligió (otro número del mismo paciente,
+ * o el familiar con el que se está hablando en un celular compartido) o, si no,
+ * una de las que tienen este celular: la del último contacto y, sin contactos,
+ * la de más edad (suele ser el dueño del celular).
+ */
 export async function patientForPhone(db: Db, clinicId: string, phone: string): Promise<Patient | null> {
   if (!phone) return null;
   const [patient] = await db<Patient[]>`
     select p.* from patients p
-    where p.clinic_id = ${clinicId}
-      and (p.phone = ${phone}
-        or p.id = (select pp.patient_id from patient_phones pp where pp.clinic_id = ${clinicId} and pp.phone = ${phone}))
-    order by (p.phone = ${phone}) desc
+    left join patient_phones pp on pp.clinic_id = p.clinic_id and pp.phone = ${phone} and pp.patient_id = p.id
+    where p.clinic_id = ${clinicId} and (p.phone = ${phone} or pp.id is not null)
+    order by (pp.id is not null) desc, p.last_contact_at desc nulls last, p.birth_date nulls last, p.created_at, p.id
     limit 1`;
   return patient ?? null;
 }
 
-/** Otro número que lleva a la misma ficha. */
-async function linkPhone(db: Db, clinicId: string, phone: string, patient: Pick<Patient, "id" | "phone">) {
-  if (!phone || phone === patient.phone) return;
+/** Las otras fichas que comparten este celular (una familia). */
+export async function householdOf(db: Db, clinicId: string, phone: string | null | undefined, exceptId?: string): Promise<Array<Pick<Patient, "id" | "full_name">>> {
+  if (!phone) return [];
+  const rows = await db<Array<Pick<Patient, "id" | "full_name">>>`
+    select id, full_name from patients
+    where clinic_id = ${clinicId} and phone = ${phone} ${exceptId ? db`and id <> ${exceptId}` : db``}
+    order by birth_date nulls last, created_at, id`;
+  return [...rows];
+}
+
+/** De ahora en más, este número habla por esta ficha (otro número suyo, o un familiar en un celular compartido). */
+export async function choosePatientForPhone(db: Db, clinicId: string, phone: string, patientId: string): Promise<void> {
+  if (!phone) return;
   await db`
-    insert into patient_phones (clinic_id, phone, patient_id) values (${clinicId}, ${phone}, ${patient.id})
+    insert into patient_phones (clinic_id, phone, patient_id) values (${clinicId}, ${phone}, ${patientId})
     on conflict (clinic_id, phone) do update set patient_id = excluded.patient_id`;
+}
+
+/**
+ * Antes de escribirle a un paciente (campaña, recordatorio, respuesta del equipo): si su celular es
+ * de varias fichas, lo que responda va a la suya.
+ */
+export async function speakAsPatient(clinicId: string, phone: string, patientId: string): Promise<void> {
+  const [row] = await sql<Array<{ fichas: number; propia: boolean | null }>>`
+    select count(*)::int as fichas, bool_or(id = ${patientId}) as propia from patients where clinic_id = ${clinicId} and phone = ${phone}`;
+  if (row.fichas > 1 || !row.propia) await choosePatientForPhone(sql, clinicId, phone, patientId);
+}
+
+/** Otro número que lleva a la misma ficha. */
+async function linkPhone(db: Db, clinicId: string, phone: string | null, patient: Pick<Patient, "id" | "phone">) {
+  if (!phone || phone === patient.phone) return;
+  await choosePatientForPhone(db, clinicId, phone, patient.id);
+}
+
+/**
+ * La ficha de este número o, si no tiene, una nueva. Dos herramientas que crean al mismo paciente
+ * en paralelo no generan dos fichas: el número se bloquea mientras se busca y se crea.
+ */
+export async function findOrCreatePatientForPhone(
+  clinicId: string,
+  phone: string,
+  data: { name?: string | null; contacted?: boolean } = {},
+): Promise<{ patient: Patient; created: boolean }> {
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`paciente-tel:${clinicId}:${phone}`}, 0))`;
+    const existing = await patientForPhone(tx, clinicId, phone);
+    if (existing) return { patient: existing, created: false };
+    const [created] = await tx<Patient[]>`
+      insert into patients (clinic_id, phone, full_name, last_contact_at)
+      values (${clinicId}, ${phone}, ${data.name ?? null}, ${data.contacted ? new Date().toISOString() : null})
+      returning *`;
+    return { patient: created, created: true };
+  });
+}
+
+/**
+ * Otra persona que usa el mismo celular (un hijo, la pareja): una ficha aparte con ese número,
+ * que pasa a ser con la que se habla desde ese número.
+ */
+export async function addHouseholdMember(
+  clinicId: string,
+  phone: string,
+  data: Partial<Pick<Patient, "full_name" | "dni" | "birth_date" | "email" | "coverage" | "coverage_plan" | "member_number">>,
+): Promise<Patient> {
+  return sql.begin(async (tx) => {
+    const [created] = await tx<Patient[]>`
+      insert into patients ${tx({ clinic_id: clinicId, phone, last_contact_at: new Date().toISOString(), ...data })}
+      returning *`;
+    await choosePatientForPhone(tx, clinicId, phone, created.id);
+    return created;
+  });
 }
 
 /** Entre fichas repetidas, la que conviene conservar: la que tiene celular, más datos y más uso. */
@@ -145,7 +218,11 @@ export async function mergePatientInto(tx: TransactionSql, clinicId: string, kee
   const [merged] = await tx<Patient[]>`
     update patients set
       full_name = ${keep.full_name ?? drop.full_name},
+      -- Una ficha sin celular (de una importación) toma el de la repetida.
+      phone = ${keep.phone ?? drop.phone},
       dni = ${keep.dni ?? drop.dni},
+      sex = ${keep.sex ?? drop.sex},
+      address = ${keep.address ?? drop.address},
       birth_date = ${keep.birth_date ?? drop.birth_date},
       email = ${keep.email ?? drop.email},
       coverage = ${keep.coverage ?? drop.coverage},
@@ -170,7 +247,8 @@ export type Identification =
   | { estado: "falta_fecha" | "falta_nombre" | "no_coincide" }
   /** Este número ya es la ficha de otra persona (por ejemplo, una madre que saca turno para su hijo). */
   | { estado: "otra_persona"; patient: Patient }
-  | { estado: "vinculado"; patient: Patient; unificada: boolean };
+  /** familiar: es otra ficha del mismo celular (la conversación pasó a la suya). */
+  | { estado: "vinculado"; patient: Patient; unificada: boolean; familiar?: boolean };
 
 /**
  * Busca la ficha con ese DNI y, si quien habla confirma su identidad, la une
@@ -200,7 +278,14 @@ export async function identifyPatient(
 
     if (current) {
       const otherPerson = (current.dni && current.dni !== dni) || (current.full_name && !namesMatch(current.full_name, target.full_name ?? input.name));
-      if (otherPerson) return { estado: "otra_persona", patient: current } as const;
+      if (otherPerson) {
+        // Un familiar con su ficha en este mismo celular: la conversación pasa a la suya.
+        if (target.phone === phone) {
+          await choosePatientForPhone(tx, clinicId, phone, target.id);
+          return { estado: "vinculado", patient: target, unificada: false, familiar: true } as const;
+        }
+        return { estado: "otra_persona", patient: current } as const;
+      }
       const merged = await mergePatientInto(tx, clinicId, target.id, current.id);
       await linkPhone(tx, clinicId, phone, merged);
       return { estado: "vinculado", patient: merged, unificada: true } as const;
@@ -248,11 +333,13 @@ export async function deletePatients(clinicId: string, ids: string[]): Promise<{
     await tx`delete from tasks where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])`;
     await tx`delete from conversations where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])`;
     // Las fotos que mandó, también las que llegaron antes de tener ficha (atadas solo al número).
+    // Las de un familiar con el mismo celular son de su ficha y no se tocan.
     await tx`
       delete from patient_documents where clinic_id = ${clinicId} and (
         patient_id = any(${ids}::uuid[])
-        or phone in (select phone from patients where clinic_id = ${clinicId} and id = any(${ids}::uuid[]))
-        or phone in (select phone from patient_phones where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])))`;
+        or (patient_id is null and (
+          phone in (select phone from patients where clinic_id = ${clinicId} and id = any(${ids}::uuid[]) and phone is not null)
+          or phone in (select phone from patient_phones where clinic_id = ${clinicId} and patient_id = any(${ids}::uuid[])))))`;
     const deleted = await tx`delete from patients where clinic_id = ${clinicId} and id = any(${ids}::uuid[]) returning id`;
     return deleted.length;
   });
