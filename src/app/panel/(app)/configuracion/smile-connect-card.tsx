@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useActionState, useState } from "react";
 import { Badge, Card, Notice, buttonClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import {
@@ -23,7 +22,6 @@ export function SmileConnectCard({
   status: SmileConnectStatus;
   lastSyncFormatted: string | null;
 }) {
-  const router = useRouter();
   const [tokenState, tokenAction, tokenPending] = useActionState(rotateSmileConnectTokenAction, undefined);
 
   const [fileName, setFileName] = useState<string | null>(null);
@@ -34,6 +32,7 @@ export function SmileConnectCard({
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [optimisticAdded, setOptimisticAdded] = useState<{ total: number; future: number; blocks: number } | null>(null);
 
   async function handleFile(file: File | null) {
     setParsed(null);
@@ -108,8 +107,12 @@ export function SmileConnectCard({
         `${fmtNum(totals.blocksCreated)} bloqueos${totals.blocksUpdated ? ` (${fmtNum(totals.blocksUpdated)} actualizados)` : ""}`,
       ];
       setImportResult({ ok: true, message: `Listo: ${parts.join(", ")}.` });
+      setOptimisticAdded((prev) => ({
+        total: (prev?.total ?? status.syncedAppointments) + totals.appointmentsCreated,
+        future: prev ? Math.max(prev.future, parsed.preview.appointmentsFuture) : Math.max(status.syncedFutureAppointments, parsed.preview.appointmentsFuture),
+        blocks: prev ? Math.max(prev.blocks, parsed.preview.blocksFuture) : Math.max(status.syncedBlocks, parsed.preview.blocksFuture),
+      }));
       setParsed(null);
-      router.refresh();
     } catch (e) {
       setImportResult({ ok: false, message: e instanceof Error ? e.message : "No se pudo completar la importación." });
     } finally {
@@ -118,7 +121,10 @@ export function SmileConnectCard({
     }
   }
 
-  const active = status.connected || status.syncedAppointments > 0;
+  const totalAppointments = optimisticAdded?.total ?? status.syncedAppointments;
+  const futureAppointments = optimisticAdded?.future ?? status.syncedFutureAppointments;
+  const futureBlocks = optimisticAdded?.blocks ?? status.syncedBlocks;
+  const active = status.connected || totalAppointments > 0;
   const scriptInstallUrl = `/api/smile-connect/turnia.user.js?clinic_id=${clinicId}`;
   const scriptDownloadUrl = `/api/smile-connect/turnia.user.js?clinic_id=${clinicId}&download=1`;
 
@@ -142,19 +148,19 @@ export function SmileConnectCard({
         <dl className="mt-4 grid gap-3 rounded-xl bg-brand-50/50 p-3.5 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-xs text-brand-900/65">Última sincronización</dt>
-            <dd className="font-medium text-brand-950">{lastSyncFormatted ?? "Importación manual"}</dd>
+            <dd className="font-medium text-brand-950">{optimisticAdded ? "Recién importado" : (lastSyncFormatted ?? "Importación manual")}</dd>
           </div>
           <div>
             <dt className="text-xs text-brand-900/65">Turnos próximos activos</dt>
-            <dd className="font-medium text-brand-950">{fmtNum(status.syncedFutureAppointments)}</dd>
+            <dd className="font-medium text-brand-950">{fmtNum(futureAppointments)}</dd>
           </div>
           <div>
             <dt className="text-xs text-brand-900/65">Turnos históricos y futuros</dt>
-            <dd className="font-medium text-brand-950">{fmtNum(status.syncedAppointments)}</dd>
+            <dd className="font-medium text-brand-950">{fmtNum(totalAppointments)}</dd>
           </div>
           <div>
             <dt className="text-xs text-brand-900/65">Bloqueos próximos</dt>
-            <dd className="font-medium text-brand-950">{fmtNum(status.syncedBlocks)}</dd>
+            <dd className="font-medium text-brand-950">{fmtNum(futureBlocks)}</dd>
           </div>
         </dl>
       )}
