@@ -3,7 +3,7 @@ import { ProfileSaveForm } from "./profile-save";
 import { ProfileTest } from "../clinicas/forms";
 import { retainClinic, revokeAccess } from "../../clinics-actions";
 import { getPanelClinic, getPanelUser, recentClinicChanges } from "@/lib/panel-clinic";
-import { clinicInfoText } from "@/lib/clinic";
+import { clinicInfoText, getClinic } from "@/lib/clinic";
 import { listClinicAccess } from "@/lib/clinic-access";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
@@ -13,6 +13,7 @@ import { AccessCreator } from "./access-manager";
 import { CoverageInput } from "./coverage-input";
 import { CompletenessCard } from "../completeness-card";
 import { profileCompleteness } from "@/lib/profile-completeness";
+import { ClinicAgentSetup } from "./clinic-agent";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Reglas del consultorio · Panel" };
@@ -61,7 +62,7 @@ function timezones(current: string): Array<{ value: string; label: string }> {
 export default async function SettingsPage() {
   const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
   const admin = user.role === "admin";
-  const [accesses, completeness, changes] = await Promise.all([admin ? listClinicAccess(clinic.id) : [], profileCompleteness(clinic), recentClinicChanges(clinic.id)]);
+  const [accesses, completeness, changes, main] = await Promise.all([admin ? listClinicAccess(clinic.id) : [], profileCompleteness(clinic), recentClinicChanges(clinic.id), admin ? getClinic() : null]);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
 
   return (
@@ -86,6 +87,13 @@ export default async function SettingsPage() {
             {admin && <p className="mt-3 text-sm text-brand-900/70">Las llamadas telefónicas nuevas que Turnia inicia por Twilio se solicitan con grabación. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Abrir grabaciones en Twilio</a>. No incluye llamadas de navegador o Telegram. Grabación y almacenamiento tienen cargo por uso.</p>}
             <p className="mt-3 text-xs text-brand-900/65">{!clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la guardás o conservás."}</p>
           </Card>
+          {admin && clinic.id !== main?.id && <Card>
+            <h2 className="font-semibold text-brand-950">Sofi de esta clínica · llamadas</h2>
+            <p className="mt-1 text-sm text-brand-900/60">Un agente propio para atender las llamadas con las reglas y la agenda de {clinic.name}.</p>
+            <p className="mt-3 text-sm text-brand-900/70">{clinic.elevenlabs_agent_id ? <>Agente preparado: <code className="break-all text-xs">{clinic.elevenlabs_agent_id}</code>.</> : "Todavía no tiene un agente propio preparado."}</p>
+            <ClinicAgentSetup key={clinic.id} clinicId={clinic.id} disabled={!process.env.ELEVENLABS_API_KEY} />
+            <p className="mt-3 text-xs text-brand-900/65">Preparar el agente no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante.</p>
+          </Card>}
         </div>
         <div className="min-w-0 xl:col-start-1 xl:row-span-2 xl:row-start-1">
         <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision}>

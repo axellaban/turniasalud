@@ -37,6 +37,8 @@ Actualizado: 02/11/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 ## 2. Prueba en vivo
 
+- [ ] **Llamadas entrantes de Guerra–Mininni (02/11):** el mismo número público +54 9 11 7243-3765 es de Movistar. El usuario quiere una Sofi por clínica y recepción sobre su número, sin otra línea pública de prueba. Preparar su agente exclusivo, ruta de entrada y desvío del operador; verificar una llamada y reserva reales en su clínica. La asignación estricta y el botón de agente por clínica están implementados; el detalle y lo pendiente operativo están al comienzo de `ESTADO_Y_PRIORIDADES.md`. No confundir telefonía saliente ya probada con recepción.
+
 - [x] **Línea propia de Guerra–Mininni (02/11), +54 9 11 7243-3765:** `WORKING` y cuenta correcta verificados. El usuario recibió respuestas reales de texto y audio; conversación en la ficha correcta. Con datos ficticios se comprobaron reserva, cancelación por chat con más de 24 horas, derivación a recepción con menos de 24 horas, lectura de una foto descargada de WAHA y documento guardado en la ficha. Pruebas técnicas de reserva/foto dirigidas al propio número de Sofi, con eventos entrantes firmados; falta observar una foto desde otro teléfono. Datos ficticios retirados. PR #84 publicado, 330 pruebas aprobadas. Mantener la sesión operativa; no repetir la vinculación ni pedir la terminal. La demo general sigue en Telegram y la ficha del consultorio conserva su carácter de prueba.
 
 - [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.

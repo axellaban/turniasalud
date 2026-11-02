@@ -217,6 +217,11 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
   const body = agentBody(clinic, toolIds, voiceId, baseUrl, secret);
 
   let agentId = clinic.elevenlabs_agent_id;
+  if (agentId) {
+    const shared = await sql`select id from clinics where elevenlabs_agent_id = ${agentId} and id <> ${clinic.id} limit 1`;
+    // Una ficha antigua puede haber heredado un ID compartido: crear uno propio sin modificar el de la otra clínica.
+    if (shared.length) agentId = null;
+  }
   let created = false;
   if (agentId) {
     try {

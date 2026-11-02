@@ -2,6 +2,15 @@
 
 Actualización: 02/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Telefonía entrante por clínica — 02/11/2026
+
+- **Objetivo confirmado:** cada clínica conserva su número público para WhatsApp y llamadas. Al llamar al de Mininni debe atender Sofi de Guerra–Mininni, con su agenda y sus reglas; no ofrecer otra línea pública de prueba. El usuario confirmó que el +54 9 11 7243-3765 es de **Movistar**.
+- WhatsApp ya funciona por la instancia propia de WAHA. Eso no enruta las llamadas del operador. Movistar documenta transferencia incondicional desde el móvil; falta preparar y verificar el destino de telefonía entrante antes de activar el desvío. [Fuente oficial](https://ayuda.movistar.com.ar/pregunta/como-funcionan-las-transferencias-de-llamadas-en-mi-linea-movil.html).
+- Se agregó en Configuración una acción de administrador para preparar el agente propio de la clínica seleccionada, conservando el agente general de Sistema. Si una ficha heredó el ID de otra clínica, se crea uno propio sin actualizar el agente ajeno. Preparar el agente **no** activa ni desvía una línea.
+- El inicio entrante ahora exige una asignación inequívoca de agente a clínica. Rechaza agente desconocido, compartido o incompatible con un número reconocido; nunca cae en la clínica predeterminada. Un destino técnico de desvío distinto del público puede usar el agente exclusivo asignado por ElevenLabs. El panel seleccionado no interviene en el webhook.
+- **Pendiente operativo:** publicar y preparar el agente de Guerra–Mininni, revisar recursos telefónicos disponibles en Twilio, asignar la ruta entrante y activar el desvío autorizado de Movistar. Comprobar una llamada desde otro teléfono, conversación y reserva en la ficha correcta. No declarar recepción operativa antes de esa prueba. Los números de otros negocios se conservan.
+- ElevenLabs muestra por ahora solo «Turnia · llamadas salientes», sin agente entrante asignado, sobre el identificador verificado de Turnia. Verificar un Caller ID no incorpora recepción. [Capacidades oficiales](https://elevenlabs.io/docs/eleven-agents/phone-numbers/twilio-integration/native-integration/).
+
 ## WhatsApp propio de Guerra–Mininni: conectado y probado — 02/11/2026
 
 - **Línea del piloto: +54 9 11 7243-3765.** El usuario completó la vinculación y confirmó una respuesta real de Sofi desde su WhatsApp habitual. La API verificó `WORKING`, `me.id=5491172433765@c.us` y el nombre «Sofi de Odontología Guerra ~ Mininni». «Ubuntu» es el dispositivo vinculado del servidor. No reiniciar ni desvincular esta sesión operativa para repetir el diagnóstico anterior.

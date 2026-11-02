@@ -4,6 +4,7 @@ import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
 import { patientForPhone } from "./patients";
+import { wahaConnections } from "./waha-connections";
 import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule, ScheduleBlock, Task } from "./types";
 
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
@@ -34,6 +35,26 @@ export async function resolveClinic(opts: { agentId?: string | null; whatsappPho
     if (clinic) return clinic;
   }
   return getClinic();
+}
+
+export class InboundClinicError extends Error {}
+
+/** La recepción telefónica requiere un agente asignado inequívocamente; nunca usa la clínica predeterminada. */
+export async function resolveInboundClinic(opts: { agentId: string; calledNumber?: string | null }): Promise<Clinic> {
+  const agents = await sql<Clinic[]>`select * from clinics where elevenlabs_agent_id = ${opts.agentId} limit 2`;
+  if (agents.length !== 1) throw new InboundClinicError("El agente entrante no tiene una clínica exclusiva configurada.");
+  const clinic = agents[0];
+  if (opts.calledNumber) {
+    // WhatsApp oficial envía su ID; telefonía envía el número llamado. Un número técnico de desvío
+    // puede ser distinto del público: en ese caso la asignación exclusiva del agente decide la clínica.
+    const numbers = await sql<{ id: string }[]>`select id from clinics where whatsapp_phone_number_id = ${opts.calledNumber} limit 2`;
+    const phone = opts.calledNumber.replace(/\D/g, "").replace(/^00/, "");
+    const own = wahaConnections().filter((c) => c.phone === phone);
+    if ([...numbers.map((c) => c.id), ...own.map((c) => c.clinicId)].some((id) => id !== clinic.id)) {
+      throw new InboundClinicError("El destino y el agente entrante corresponden a clínicas distintas.");
+    }
+  }
+  return clinic;
 }
 
 export type Catalog = {
