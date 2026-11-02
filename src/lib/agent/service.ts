@@ -1,7 +1,7 @@
 import "server-only";
 import { sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText } from "../clinic";
-import { identifyPatient, normalizeDni, sameCoverage, type Identification } from "../patients";
+import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval } from "../slots";
 import { env } from "../env";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
@@ -14,6 +14,8 @@ import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, 
 export type ToolContext = {
   clinicId: string;
   patientPhone: string;
+  /** Panel: la ficha elegida (en un celular compartido, el familiar para el que es el turno). */
+  patientId?: string;
   conversationId?: string;
   channel?: string;
 };
@@ -61,24 +63,36 @@ export function sourceFromChannel(channel: string | undefined, phone: string): A
   return c ? "web" : "whatsapp";
 }
 
-async function ensurePatient(ctx: ToolContext, name?: string): Promise<Patient> {
-  const phone = normalizePhone(ctx.patientPhone);
-  if (!phone || phone === "desconocido") throw new ToolError("No tengo el teléfono del paciente para identificarlo.");
-  const existing = await findPatientByPhone(ctx.clinicId, phone);
-  if (existing) {
-    if (name && !existing.full_name) {
-      const [updated] = await sql<Patient[]>`update patients set full_name = ${name} where id = ${existing.id} returning *`;
-      return updated;
-    }
-    return existing;
+/** La ficha con la que se está hablando: la elegida en el panel o la de este número. */
+async function currentPatient(ctx: ToolContext): Promise<Patient | null> {
+  if (ctx.patientId) {
+    const [chosen] = isUuid(ctx.patientId) ? await sql<Patient[]>`select * from patients where id = ${ctx.patientId} and clinic_id = ${ctx.clinicId}` : [];
+    if (chosen) return chosen;
   }
-  // "on conflict" cubre dos herramientas que crean al mismo paciente en paralelo.
-  const [created] = await sql<Patient[]>`
-    insert into patients (clinic_id, phone, full_name, last_contact_at)
-    values (${ctx.clinicId}, ${phone}, ${name ?? null}, now())
-    on conflict (clinic_id, phone) do update set full_name = coalesce(patients.full_name, excluded.full_name)
-    returning *`;
-  return created;
+  const phone = normalizePhone(ctx.patientPhone);
+  return phone && phone !== "desconocido" ? findPatientByPhone(ctx.clinicId, phone) : null;
+}
+
+async function ensurePatient(ctx: ToolContext, name?: string): Promise<Patient> {
+  const existing = await currentPatient(ctx);
+  const phone = normalizePhone(ctx.patientPhone);
+  if (!existing && (!phone || phone === "desconocido")) throw new ToolError("No tengo el teléfono del paciente para identificarlo.");
+  // Dos herramientas que crean al mismo paciente en paralelo no generan dos fichas.
+  const patient = existing ?? (await findOrCreatePatientForPhone(ctx.clinicId, phone, { name, contacted: true })).patient;
+  if (name && !patient.full_name) {
+    const [updated] = await sql<Patient[]>`update patients set full_name = ${name} where id = ${patient.id} returning *`;
+    return updated;
+  }
+  return patient;
+}
+
+/**
+ * ¿Los datos son de otra persona que usa este mismo celular (un hijo, la pareja)? La ficha ya tiene
+ * otro DNI y el nombre no coincide: en lugar de pisarla, se registra en una ficha aparte.
+ */
+function isAnotherPerson(current: Patient, dni: string, name: string | undefined): boolean {
+  const own = normalizeDni(current.dni);
+  return Boolean(own && own !== dni && name && current.full_name && !namesMatch(name, current.full_name));
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +110,7 @@ function identificationNotice(result: Exclude<Identification, { estado: "vincula
     case "no_coincide":
       return "Los datos no coinciden con la ficha de ese DNI. No le des ningún dato de esa ficha ni le digas qué no coincide. Pedile que revise el DNI y cómo figura su nombre; si siguen sin coincidir, seguí como con un paciente sin ficha o ofrecele comunicarse con recepción.";
     case "otra_persona":
-      return `Este número ya es la ficha de ${result.patient.full_name ?? "otra persona"}, y ese DNI es de otro paciente. Hoy cada número tiene una sola ficha: no cambies los datos de esta. Si quiere un turno para otra persona, creá una tarea de tipo derivacion_humana con sus datos para que recepción lo agende.`;
+      return `Este número es de la ficha de ${result.patient.full_name ?? "otra persona"}, y ese DNI es de otro paciente que tiene otro celular. No cambies los datos de esta ficha ni le des datos de la otra. Si quiere un turno para esa persona, creá una tarea de tipo derivacion_humana con sus datos para que recepción lo agende.`;
   }
 }
 
@@ -127,10 +141,31 @@ export async function registerPatient(
   let saveDni = Boolean(dni);
   let joined = false;
   if (dni && phone && phone !== "desconocido") {
-    const current = await findPatientByPhone(ctx.clinicId, phone);
+    const current = await currentPatient(ctx);
     if (current?.dni !== dni) {
       const [taken] = await sql`
         select 1 from patients where clinic_id = ${ctx.clinicId} and dni = ${dni} ${current ? sql`and id <> ${current.id}` : sql``} limit 1`;
+      if (!taken && current && isAnotherPerson(current, dni, input.nombre_completo)) {
+        const member = await addHouseholdMember(ctx.clinicId, phone, {
+          full_name: input.nombre_completo ?? null,
+          dni,
+          birth_date: birthDate ?? null,
+          email: input.email ?? null,
+          coverage: input.cobertura ?? null,
+          coverage_plan: input.plan ?? null,
+          member_number: input.numero_afiliado ?? null,
+        });
+        const other = current.full_name ?? "la otra persona";
+        return {
+          ok: true,
+          mensaje: [
+            `Registré a ${member.full_name} en una ficha aparte: comparte este celular con ${other}, que tiene la suya. Lo que sigas haciendo en esta conversación (turnos, pedidos) queda a nombre de ${member.full_name}; si después es para ${other}, usá buscar_paciente con su DNI y su nombre.`,
+            ...notices,
+          ].join(" "),
+          paciente: { nombre: member.full_name, dni: member.dni, cobertura: member.coverage, plan: member.coverage_plan, numero_afiliado: member.member_number },
+          ficha: await patientContextText(await getClinic(ctx.clinicId), member, phone),
+        };
+      }
       if (taken) {
         const result = await identifyPatient(ctx.clinicId, phone, {
           dni,
@@ -182,7 +217,7 @@ export async function registerPatient(
       plan: updated.coverage_plan,
       numero_afiliado: updated.member_number,
     },
-    ...(joined ? { ficha: await patientContextText(await getClinic(ctx.clinicId), updated) } : {}),
+    ...(joined ? { ficha: await patientContextText(await getClinic(ctx.clinicId), updated, phone) } : {}),
   };
 }
 
@@ -209,9 +244,10 @@ export async function findPatientByDni(
   return {
     ok: true,
     encontrado: true,
-    mensaje:
-      "Es paciente del consultorio y quedó identificado: esta conversación ya usa su ficha. Llamalo por su nombre (sin volver a saludar), no le vuelvas a pedir los datos cargados y pedí solo los que faltan.",
-    ficha: await patientContextText(await getClinic(ctx.clinicId), result.patient),
+    mensaje: result.familiar
+      ? `Es paciente del consultorio y comparte este celular con la ficha anterior: esta conversación pasó a la ficha de ${result.patient.full_name ?? "esa persona"}. Lo que hagas ahora (turnos, pedidos) queda a su nombre. No le vuelvas a pedir los datos cargados y pedí solo los que faltan.`
+      : "Es paciente del consultorio y quedó identificado: esta conversación ya usa su ficha. Llamalo por su nombre (sin volver a saludar), no le vuelvas a pedir los datos cargados y pedí solo los que faltan.",
+    ficha: await patientContextText(await getClinic(ctx.clinicId), result.patient, phone),
   };
 }
 
@@ -582,7 +618,7 @@ export async function bookAppointment(
 // ---------------------------------------------------------------------------
 export async function listPatientAppointments(ctx: ToolContext) {
   const clinic = await getClinic(ctx.clinicId);
-  const patient = await findPatientByPhone(clinic.id, normalizePhone(ctx.patientPhone));
+  const patient = await currentPatient(ctx);
   if (!patient) return { ok: true, turnos: [], mensaje: "El paciente no tiene turnos registrados." };
   const rows = await sql<
     Array<{ id: string; starts_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
@@ -611,7 +647,7 @@ export async function listPatientAppointments(ctx: ToolContext) {
 }
 
 async function getOwnAppointment(ctx: ToolContext, appointmentId: string) {
-  const patient = await findPatientByPhone(ctx.clinicId, normalizePhone(ctx.patientPhone));
+  const patient = await currentPatient(ctx);
   if (!patient) throw new ToolError("No encontré al paciente.");
   const [appt] = isUuid(appointmentId)
     ? await sql<Appointment[]>`select * from appointments where id = ${appointmentId} and patient_id = ${patient.id}`
@@ -702,7 +738,7 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
   const template = clinic.templates?.lista_espera ?? (clinic.whatsapp_provider === "waha" ? "lista_espera" : null);
   if (!template || whatsappReadiness(clinic)) return 0;
 
-  const entries = await sql<Array<{ id: string; patient_id: string; professional_id: string | null; full_name: string | null; phone: string }>>`
+  const entries = await sql<Array<{ id: string; patient_id: string; professional_id: string | null; full_name: string | null; phone: string | null }>>`
     select w.id, w.patient_id, w.professional_id, p.full_name, p.phone
     from waitlist w join patients p on p.id = w.patient_id
     where w.clinic_id = ${clinic.id} and w.status = 'activa' and w.appointment_type_id = ${appt.appointment_type_id}
@@ -712,7 +748,7 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
 
   const candidates = entries
     .filter((e) => !e.professional_id || e.professional_id === appt.professional_id)
-    .filter((e) => /^\d+$/.test(e.phone))
+    .filter((e): e is typeof e & { phone: string } => /^\d+$/.test(e.phone ?? ""))
     .slice(0, 3);
 
   const when = humanSlot(new Date(appt.starts_at), clinic.timezone);
@@ -727,6 +763,7 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
         templateName: template,
         params: [entry.full_name?.split(" ")[0] || "hola", when],
         context,
+        patientId: entry.patient_id,
       });
       await sql`update waitlist set status = 'ofrecida', offered_at = now() where id = ${entry.id}`;
       sent++;

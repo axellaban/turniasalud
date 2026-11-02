@@ -22,14 +22,20 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
   const eventsLeft = typeof eventos === "string" ? Number(eventos) : 0;
   const search = typeof q === "string" ? q.trim() : "";
   const pattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const rows = await sql<Array<Patient & { same_dni: number }>>`
+  // «11 5555-0001» encuentra el 5491155550001.
+  const digits = search.replace(/\D/g, "");
+  const LIMIT = 200;
+  const rows = await sql<Array<Patient & { same_dni: number; same_phone: number; total: number }>>`
     select p.*,
-      (select count(*) from patients d where d.clinic_id = p.clinic_id and d.dni = p.dni)::int as same_dni
+      (select count(*) from patients d where d.clinic_id = p.clinic_id and d.dni = p.dni)::int as same_dni,
+      (select count(*) from patients f where f.clinic_id = p.clinic_id and f.phone = p.phone)::int as same_phone,
+      count(*) over ()::int as total
     from patients p
     where clinic_id = ${clinic.id}
-      ${search ? sql`and (full_name ilike ${pattern} or phone ilike ${pattern} or dni ilike ${pattern})` : sql``}
-    order by last_contact_at desc nulls last, created_at desc
-    limit 200`;
+      ${search ? sql`and (full_name ilike ${pattern} or phone ilike ${pattern} or dni ilike ${pattern} ${digits.length >= 6 ? sql`or phone like ${`%${digits}%`}` : sql``})` : sql``}
+    order by last_contact_at desc nulls last, created_at desc, full_name, id
+    limit ${LIMIT}`;
+  const total = rows[0]?.total ?? 0;
 
   return (
     <>
@@ -55,6 +61,11 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
         </form>
         {canDelete && rows.length > 0 && <DeleteSelectedPatients formId={DELETE_FORM} />}
       </div>
+      {total > rows.length && (
+        <p className="mb-3 text-xs text-brand-900/65">
+          Se muestran {rows.length} de {total.toLocaleString("es-AR")} pacientes. Buscá por nombre, celular o DNI para encontrar a los demás.
+        </p>
+      )}
       {canDelete && (
         <form id={DELETE_FORM} action={deletePatientsAction}>
           <input type="hidden" name="clinic_id" value={clinic.id} />
@@ -103,7 +114,10 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
                       </p>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-brand-900/70">{displayPhone(p.phone)}</td>
+                  <td className="px-5 py-3 text-brand-900/70">
+                    {p.phone ? displayPhone(p.phone) : <span className="text-brand-900/50">Sin celular</span>}
+                    {p.same_phone > 1 && <p className="text-xs text-brand-900/65">Celular compartido · {p.same_phone} fichas</p>}
+                  </td>
                   <td className="px-5 py-3 text-brand-900/70">
                     {p.coverage ?? "—"} {p.coverage_plan && <span className="text-brand-900/65">{p.coverage_plan}</span>}
                   </td>

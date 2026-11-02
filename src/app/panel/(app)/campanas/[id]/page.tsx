@@ -29,7 +29,7 @@ type Group = keyof typeof GROUPS;
 type Row = Pick<CampaignRecipient, "id" | "status" | "error" | "sent_at" | "detail" | "manual"> & {
   patient_id: string;
   full_name: string | null;
-  phone: string;
+  phone: string | null;
   booked: boolean;
 };
 
@@ -56,7 +56,7 @@ export default async function CampaignDetail({ params, searchParams }: PageProps
     // El próximo al que hay que escribirle desde el WhatsApp de la clínica (en el orden de la lista).
     sql<Array<{ id: string; full_name: string | null; phone: string; detail: string | null }>>`
       select r.id, p.full_name, p.phone, r.detail from campaign_recipients r join patients p on p.id = r.patient_id
-      where r.campaign_id = ${campaign.id} and r.status = 'pendiente'
+      where r.campaign_id = ${campaign.id} and r.status = 'pendiente' and p.phone is not null
       order by p.full_name nulls last, r.id limit 1`,
     sql<Array<{ full_name: string | null; detail: string | null }>>`
       select p.full_name, r.detail from campaign_recipients r join patients p on p.id = r.patient_id
@@ -174,7 +174,7 @@ export default async function CampaignDetail({ params, searchParams }: PageProps
             <ul className="divide-y divide-brand-900/5">
               {rows.map((r) => {
                 const shown = r.booked && r.status !== "agendo" ? RECIPIENT_STATUS.agendo : RECIPIENT_STATUS[r.status];
-                const links = whatsappLinks(r.phone, manualMessage(campaign, r.full_name, r.detail ?? clinic.name));
+                const links = r.phone ? whatsappLinks(r.phone, manualMessage(campaign, r.full_name, r.detail ?? clinic.name)) : null;
                 const sendable = r.status === "pendiente" || r.status === "error";
                 return (
                   <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-5">
@@ -192,9 +192,11 @@ export default async function CampaignDetail({ params, searchParams }: PageProps
                     {r.status !== "pendiente" && <Badge tone={shown.tone}>{shown.label}</Badge>}
                     {sendable && (
                       <>
-                        <WhatsAppButton clinicId={clinic.id} recipientId={r.id} web={links.web} app={links.app} className={WA_BUTTON}>
-                          <WhatsAppIcon className="h-3.5 w-3.5" /> Abrir chat
-                        </WhatsAppButton>
+                        {links && (
+                          <WhatsAppButton clinicId={clinic.id} recipientId={r.id} web={links.web} app={links.app} className={WA_BUTTON}>
+                            <WhatsAppIcon className="h-3.5 w-3.5" /> Abrir chat
+                          </WhatsAppButton>
+                        )}
                         <form action={toggleRecipientAction}>
                           <input type="hidden" name="clinic_id" value={clinic.id} />
                           <input type="hidden" name="campaign_id" value={campaign.id} />

@@ -9,9 +9,9 @@ import { findPatientByPhone, getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { resolveTask } from "@/lib/tasks";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
-import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError } from "@/lib/agent/service";
+import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError, type ToolContext } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
-import { deletePatients, mergeDuplicates } from "@/lib/patients";
+import { addHouseholdMember, deletePatients, mergeDuplicates } from "@/lib/patients";
 import { addDaysKey, humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
@@ -172,21 +172,36 @@ export async function loadDaySlots(form: FormData) {
   });
 }
 
-export type KnownPatient = { name: string | null; coverage: string | null; upcoming: string[] };
+export type KnownPatient = { id: string; name: string | null; coverage: string | null; upcoming: string[] };
 
-/** Al escribir el celular en el turno a mano: si ya es paciente, su nombre, su cobertura y sus próximos turnos. */
-export async function lookupPatient(form: FormData): Promise<KnownPatient | null> {
+/**
+ * Al escribir el celular en el turno a mano: las fichas de ese celular, con su nombre, su cobertura y
+ * sus próximos turnos. Una familia puede tener varias: primero la que usa hoy ese número.
+ */
+export async function lookupPatient(form: FormData): Promise<KnownPatient[]> {
   await requireSession();
   const clinic = await getPanelClinic(form);
   const phone = normalizePhone(text(form, "phone"));
-  if (!/^\d{10,15}$/.test(phone)) return null;
-  const patient = await findPatientByPhone(clinic.id, phone);
-  if (!patient) return null;
-  const next = await sql<Array<{ starts_at: string; type_name: string }>>`
-    select a.starts_at, t.name as type_name from appointments a join appointment_types t on t.id = a.appointment_type_id
-    where a.patient_id = ${patient.id} and a.status in ('confirmado', 'pendiente') and a.ends_at > now()
-    order by a.starts_at limit 3`;
-  return { name: patient.full_name, coverage: patient.coverage, upcoming: next.map((n) => `${n.type_name}, ${humanSlot(new Date(n.starts_at), clinic.timezone)}`) };
+  if (!/^\d{10,15}$/.test(phone)) return [];
+  const main = await findPatientByPhone(clinic.id, phone);
+  if (!main) return [];
+  const patients = await sql<Array<{ id: string; full_name: string | null; coverage: string | null }>>`
+    select id, full_name, coverage from patients
+    where clinic_id = ${clinic.id} and (id = ${main.id} or phone = ${phone})
+    order by (id = ${main.id}) desc, birth_date nulls last, created_at, id`;
+  const next = await sql<Array<{ patient_id: string; starts_at: string; type_name: string }>>`
+    select a.patient_id, a.starts_at, t.name as type_name from appointments a join appointment_types t on t.id = a.appointment_type_id
+    where a.patient_id = any(${patients.map((p) => p.id)}::uuid[]) and a.status in ('confirmado', 'pendiente') and a.ends_at > now()
+    order by a.starts_at`;
+  return patients.map((p) => ({
+    id: p.id,
+    name: p.full_name,
+    coverage: p.coverage,
+    upcoming: next
+      .filter((n) => n.patient_id === p.id)
+      .slice(0, 3)
+      .map((n) => `${n.type_name}, ${humanSlot(new Date(n.starts_at), clinic.timezone)}`),
+  }));
 }
 
 /** Fecha (YYYY-MM-DD) + hora escrita → instante, en la zona de la clínica. */
@@ -214,14 +229,32 @@ export async function createManualAppointment(_prev: FormState | undefined, form
   if (!phone) return { ok: false, message: "Escribí el celular del paciente." };
   // Con código de área: así le llegan los recordatorios por WhatsApp.
   if (!/^\d{10,15}$/.test(phone)) return { ok: false, message: "Revisá el celular: va con código de área, por ejemplo 11 5555-0001." };
-  const ctx = { clinicId: clinic.id, patientPhone: phone, channel: "panel" };
+  const ctx: ToolContext = { clinicId: clinic.id, patientPhone: phone, channel: "panel" };
+  // En un celular compartido (una familia), para quién es el turno: una de sus fichas u otra persona.
+  const choice = text(form, "patient_id");
+  let created: string | null = null;
+  if (choice === "nueva") {
+    const name = text(form, "full_name");
+    if (!name) return { ok: false, message: "Escribí el nombre y apellido de la persona nueva." };
+    created = (await addHouseholdMember(clinic.id, phone, { full_name: name, coverage: text(form, "coverage") })).id;
+    ctx.patientId = created;
+  } else if (isUuid(choice)) {
+    const [chosen] = await sql<Array<{ id: string }>>`
+      select p.id from patients p where p.id = ${choice} and p.clinic_id = ${clinic.id}
+        and (p.phone = ${phone} or exists (select 1 from patient_phones pp where pp.clinic_id = p.clinic_id and pp.phone = ${phone} and pp.patient_id = p.id))`;
+    if (chosen) ctx.patientId = chosen.id;
+  }
   try {
     await registerPatient(ctx, { nombre_completo: text(form, "full_name") ?? undefined, cobertura: text(form, "coverage") ?? undefined });
     const r = await bookAppointment(
       ctx,
       { tipo_turno_id: typeId, profesional_id: professionalId, inicio: start.at.toISOString(), notas: text(form, "notes") ?? undefined },
       { force: form.get("force") === "1", secondProfessionalId: uuid(form, "second_professional_id") },
-    );
+    ).catch(async (e) => {
+      // Si el turno no se pudo dar, la ficha nueva no queda suelta (se vuelve a crear al reintentar).
+      if (created) await sql`delete from patients p where p.id = ${created} and not exists (select 1 from appointments a where a.patient_id = p.id)`;
+      throw e;
+    });
     syncCalendarLater(clinic.id);
     revalidatePath("/panel/agenda");
     const aviso = "aviso" in r && r.aviso ? ` ${r.aviso.replace(" Preguntale si quiere mantener los dos o cancelar el otro.", "")}` : "";

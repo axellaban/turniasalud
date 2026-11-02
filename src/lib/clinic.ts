@@ -3,7 +3,7 @@ import { sql } from "./db";
 import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
-import { patientForPhone } from "./patients";
+import { householdOf, patientForPhone } from "./patients";
 import { wahaConnections } from "./waha-connections";
 import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule, ScheduleBlock, Task } from "./types";
 
@@ -139,8 +139,13 @@ export const NO_PATIENT_CONTEXT =
 
 const loaded = (value: unknown, label = "cargado") => (value ? label : "sin dato");
 
-export async function patientContextText(clinic: Clinic, patient: Patient | null): Promise<string> {
+/**
+ * Lo que el agente sabe de la ficha con la que habla. `phone`: el número desde el que escribe, para
+ * avisarle si ese celular también es de otras fichas (una familia).
+ */
+export async function patientContextText(clinic: Clinic, patient: Patient | null, phone?: string | null): Promise<string> {
   if (!patient) return NO_PATIENT_CONTEXT;
+  const household = await householdOf(sql, clinic.id, phone || patient.phone, patient.id);
   const upcoming = await sql<
     Array<Pick<Appointment, "id" | "starts_at" | "status"> & { professional: string; type_name: string }>
   >`
@@ -180,7 +185,10 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
     patient.coverage && !particular && !patient.member_number && "número de afiliado",
   ].filter(Boolean);
   const yearAgo = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 10);
+  const others = household.map((h) => h.full_name ?? "una persona sin nombre cargado").join(", ");
   const lines = [
+    household.length > 0 &&
+      `Este celular también es de: ${others} (cada uno con su ficha). Esta es la ficha de ${patient.full_name ?? "una persona sin nombre cargado"}. No des por hecho quién escribe ni para quién es: preguntalo antes de dar datos o agendar. Si es para otra de esas personas, pedí su DNI y su nombre y apellido y usá buscar_paciente para pasar a su ficha. Si es para alguien que no tiene ficha, registralo con registrar_paciente con su nombre y su DNI: queda en una ficha aparte.`,
     patient.dni
       ? "Ya tiene ficha: no le vuelvas a pedir los datos que están cargados."
       : "Hay una ficha incompleta para este número (sin DNI). Si dice que ya es paciente, usá buscar_paciente con su DNI y su nombre y apellido; si no, pedí los datos que faltan.",
@@ -251,7 +259,7 @@ export async function buildDynamicVariables(
       : urgency,
     patient_phone: phone || "desconocido",
     patient_name: patient?.full_name || "desconocido",
-    patient_context: await patientContextText(clinic, patient),
+    patient_context: await patientContextText(clinic, patient, phone),
     conversation_context: opts.context ?? INBOUND_CONTEXT,
     campaign_id: opts.campaignId ?? "ninguna",
   };

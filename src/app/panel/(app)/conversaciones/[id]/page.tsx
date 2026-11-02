@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Conversación · Panel" };
 export default async function ConversationDetail({ params }: PageProps<"/panel/conversaciones/[id]">) {
   const { id } = await params;
   const clinic = await getPanelClinic();
-  type Detail = Conversation & { patients: { id: string; full_name: string | null; phone: string; coverage: string | null } | null };
+  type Detail = Conversation & { patients: { id: string; full_name: string | null; phone: string | null; coverage: string | null } | null };
   const [c] = isUuid(id)
     ? await sql<Detail[]>`
         select c.*,

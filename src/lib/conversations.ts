@@ -1,6 +1,7 @@
 import "server-only";
 import { json, sql } from "./db";
 import { INBOUND_CONTEXT, findPatientByPhone, isUuid, resolveClinic } from "./clinic";
+import { findOrCreatePatientForPhone } from "./patients";
 import { normalizePhone } from "./phone";
 import { formatDate } from "./time";
 import { mergeMemory } from "./memory";
@@ -71,12 +72,7 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
   let patient: Patient | null = await findPatientByPhone(clinicId, phone);
   const name = collected(data, "nombre_paciente");
   const memory = collected(data, "memoria");
-  if (!patient && phone && name) {
-    [patient] = await sql<Patient[]>`
-      insert into patients (clinic_id, phone, full_name) values (${clinicId}, ${phone}, ${name})
-      on conflict (clinic_id, phone) do update set full_name = coalesce(patients.full_name, excluded.full_name)
-      returning *`;
-  }
+  if (!patient && phone && name) patient = (await findOrCreatePatientForPhone(clinicId, phone, { name })).patient;
   const startedAt = data.metadata?.start_time_unix_secs
     ? new Date(data.metadata.start_time_unix_secs * 1000).toISOString()
     : new Date().toISOString();

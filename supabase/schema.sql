@@ -87,7 +87,9 @@ create table if not exists patients (
   id uuid primary key default gen_random_uuid(),
   clinic_id uuid not null references clinics(id) on delete cascade,
   full_name text,
-  phone text not null,
+  -- Celular (id de WhatsApp o de Telegram). Puede faltar y lo pueden compartir varias
+  -- fichas (una familia): ver «Familias con un mismo celular» más abajo.
+  phone text,
   dni text,
   birth_date date,
   email text,
@@ -99,8 +101,7 @@ create table if not exists patients (
   notes text,
   contact_opt_out boolean not null default false,
   last_contact_at timestamptz,
-  created_at timestamptz not null default now(),
-  unique (clinic_id, phone)
+  created_at timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------------------
@@ -913,3 +914,33 @@ alter table patient_documents enable row level security;
 -- Línea WAHA propia de una clínica. El callback conserva su origen aunque el
 -- administrador cambie el canal de la demo; una línea eliminada nunca cae en la general.
 alter table channel_conversations add column if not exists waha_connection_id text;
+
+-- ---------------------------------------------------------------------------
+-- Familias con un mismo celular y pacientes sin celular (02/11/2026). La base que
+-- trae el consultorio tiene a una madre y sus hijos con el celular de ella, y
+-- pacientes sin celular o con un número que no sirve: todos tienen su ficha.
+-- - El celular deja de identificar a una sola ficha y puede faltar.
+-- - patient_phones pasa a ser «por quién habla este número»: un número de otra
+--   ficha del mismo paciente o, en un celular compartido, el familiar con el que
+--   se está hablando (lo elige buscar_paciente con el DNI, o el panel).
+-- - Sexo y dirección, que trae la ficha del sistema anterior.
+-- ---------------------------------------------------------------------------
+alter table patients alter column phone drop not null;
+do $$
+declare
+  con text;
+begin
+  for con in
+    select c.conname from pg_constraint c
+    where c.conrelid = 'patients'::regclass and c.contype = 'u'
+      and (select array_agg(a.attname::text order by a.attname) from pg_attribute a
+           where a.attrelid = c.conrelid and a.attnum = any(c.conkey)) = array['clinic_id', 'phone']
+  loop
+    execute format('alter table patients drop constraint %I', con);
+  end loop;
+end $$;
+create index if not exists patients_phone_idx on patients (clinic_id, phone) where phone is not null;
+alter table patients add column if not exists sex text;
+alter table patients drop constraint if exists patients_sex_check;
+alter table patients add constraint patients_sex_check check (sex is null or sex in ('femenino', 'masculino', 'otro'));
+alter table patients add column if not exists address text;

@@ -2,11 +2,23 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { sql } from "@/lib/db";
+import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
 import { getPanelClinic, logClinicChange, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
-import { IMPORT_FIELDS, buildImport, detectMapping, matchService, parseTable, type ColumnMapping, type ImportField } from "@/lib/patient-import";
+import { randomUUID } from "node:crypto";
+import {
+  IMPORT_FIELDS,
+  buildImport,
+  detectMapping,
+  matchExisting,
+  matchService,
+  parseTable,
+  type ColumnMapping,
+  type ExistingPatient,
+  type ImportField,
+  type ImportPatient,
+} from "@/lib/patient-import";
 import { parseDateKey } from "@/lib/time";
 import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 
@@ -180,8 +192,30 @@ export async function setNextControlAction(_prev: CampaignFormState | undefined,
 export type ImportState = {
   ok?: boolean;
   message?: string;
-  summary?: { created: number; existing: number; visits: number; skipped: number; unmatched: string[] };
+  summary?: {
+    created: number;
+    existing: number;
+    visits: number;
+    skipped: number;
+    /** Fichas sin celular que sirva para WhatsApp. */
+    withoutPhone: number;
+    /** Celulares que quedaron con más de una ficha (familias). */
+    sharedPhones: number;
+    unmatched: string[];
+  };
 };
+
+/** Lo que manda el formulario sobre a quién se junta cada fila de un celular compartido. */
+function postedSameAs(form: FormData): Record<number, number> | undefined {
+  try {
+    const posted = JSON.parse(String(form.get("same_as") ?? "null")) as unknown;
+    if (!posted || typeof posted !== "object" || Array.isArray(posted)) return undefined;
+    const entries = Object.entries(posted).filter(([line, target]) => /^\d+$/.test(line) && Number.isInteger(target) && (target as number) >= 0);
+    return Object.fromEntries(entries.map(([line, target]) => [Number(line), target as number]));
+  } catch {
+    return undefined;
+  }
+}
 
 export async function importPatientsAction(_prev: ImportState | undefined, form: FormData): Promise<ImportState> {
   const user = await requirePanelSession();
@@ -199,10 +233,9 @@ export async function importPatientsAction(_prev: ImportState | undefined, form:
   } catch {
     mapping = detectMapping(table.headers);
   }
-  if (!mapping.includes("phone")) return { ok: false, message: "Elegí qué columna tiene el celular." };
   if (!mapping.includes("full_name") && !mapping.includes("first_name")) return { ok: false, message: "Elegí qué columna tiene el nombre." };
-  const preview = buildImport(table, mapping);
-  if (!preview.patients.length) return { ok: false, message: "No encontramos filas con un celular válido." };
+  const preview = buildImport(table, mapping, { areaCode: text(form, "area_code"), sameAs: postedSameAs(form) });
+  if (!preview.patients.length) return { ok: false, message: "No encontramos pacientes en la planilla." };
 
   const types = await sql<Array<{ id: string; name: string }>>`select id, name from appointment_types where clinic_id = ${clinic.id}`;
   const unmatched = new Set<string>();
@@ -220,77 +253,108 @@ export async function importPatientsAction(_prev: ImportState | undefined, form:
   const source = text(form, "source")?.slice(0, 120) ?? "Planilla pegada";
 
   const counts = await sql.begin(async (tx) => {
+    // Una importación por clínica a la vez: dos pestañas no crean las mismas fichas dos veces.
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`importar-pacientes:${clinic.id}`}, 0))`;
     const [record] = await tx<Array<{ id: string }>>`
       insert into patient_imports (clinic_id, source, actor, rows_total, skipped)
-      values (${clinic.id}, ${source}, ${actor}, ${preview.rows}, ${preview.problems.length})
+      values (${clinic.id}, ${source}, ${actor}, ${preview.rows}, ${preview.skipped})
       returning id`;
-    let created = 0;
-    let existing = 0;
-    let visits = 0;
-    for (let i = 0; i < preview.patients.length; i += 500) {
-      const chunk = preview.patients.slice(i, i + 500);
-      const rows = chunk.map((p) => ({
-        clinic_id: clinic.id,
-        full_name: p.full_name,
-        phone: p.phone,
-        dni: p.dni,
-        email: p.email,
-        birth_date: p.birth_date,
-        coverage: p.coverage,
-        coverage_plan: p.coverage_plan,
-        member_number: p.member_number,
-        notes: p.notes,
-        next_control_at: p.next_control_at,
-        next_control_reason: p.next_control_reason,
-        import_id: record.id,
-      }));
-      // Las fichas que ya existían solo completan lo que les faltaba; el control importado manda.
-      const saved = await tx<Array<{ id: string; phone: string; inserted: boolean }>>`
-        insert into patients ${tx(rows)}
-        on conflict (clinic_id, phone) do update set
-          full_name = coalesce(patients.full_name, excluded.full_name),
-          dni = coalesce(patients.dni, excluded.dni),
-          email = coalesce(patients.email, excluded.email),
-          birth_date = coalesce(patients.birth_date, excluded.birth_date),
-          coverage = coalesce(patients.coverage, excluded.coverage),
-          coverage_plan = coalesce(patients.coverage_plan, excluded.coverage_plan),
-          member_number = coalesce(patients.member_number, excluded.member_number),
-          notes = coalesce(patients.notes, excluded.notes),
-          next_control_at = coalesce(excluded.next_control_at, patients.next_control_at),
-          next_control_reason = case when excluded.next_control_at is not null then excluded.next_control_reason else patients.next_control_reason end
-        returning id, phone, (xmax = 0) as inserted`;
-      created += saved.filter((s) => s.inserted).length;
-      existing += saved.filter((s) => !s.inserted).length;
-      const ids = new Map(saved.map((s) => [s.phone, s.id]));
-      const visitRows = chunk.flatMap((p) =>
-        p.visits.map((v) => ({
-          clinic_id: clinic.id,
-          patient_id: ids.get(p.phone)!,
-          appointment_type_id: typeFor(v.service),
-          service: v.service,
-          professional: v.professional,
-          visited_at: v.visited_at,
-          import_id: record.id,
-        })),
-      );
-      for (let j = 0; j < visitRows.length; j += 1000) {
-        const inserted = await tx`
-          insert into patient_visits ${tx(visitRows.slice(j, j + 1000))}
-          on conflict (patient_id, visited_at, service) do nothing
-          returning id`;
-        visits += inserted.length;
-      }
+    // Las fichas que ya están (por DNI, o por celular y nombre) solo completan lo que les faltaba.
+    const current = await tx<ExistingPatient[]>`
+      select id, phone, full_name, dni, birth_date::text as birth_date, sex from patients where clinic_id = ${clinic.id}`;
+    const phoneOf = new Map(current.map((p) => [p.id, p.phone]));
+    const matches = matchExisting(preview.patients, [...current]);
+    const ids = matches.map((id) => id ?? randomUUID());
+    const fields = (p: ImportPatient) => ({
+      full_name: p.full_name,
+      phone: p.phone,
+      dni: p.dni,
+      email: p.email,
+      birth_date: p.birth_date,
+      sex: p.sex,
+      address: p.address,
+      coverage: p.coverage,
+      coverage_plan: p.coverage_plan,
+      member_number: p.member_number,
+      notes: p.notes,
+      next_control_at: p.next_control_at,
+      next_control_reason: p.next_control_reason,
+    });
+    const fresh = preview.patients.flatMap((p, i) => (matches[i] ? [] : [{ id: ids[i], clinic_id: clinic.id, import_id: record.id, ...fields(p) }]));
+    const known = preview.patients.flatMap((p, i) => (matches[i] ? [{ id: ids[i], ...fields(p) }] : []));
+    for (let i = 0; i < fresh.length; i += 500) await tx`insert into patients ${tx(fresh.slice(i, i + 500))}`;
+    for (let i = 0; i < known.length; i += 500) {
+      // Las notas de la planilla se suman a las que había (si no estaban ya); el control importado manda.
+      await tx`
+        update patients p set
+          full_name = coalesce(p.full_name, x.full_name),
+          phone = coalesce(p.phone, x.phone),
+          dni = coalesce(p.dni, x.dni),
+          email = coalesce(p.email, x.email),
+          birth_date = coalesce(p.birth_date, x.birth_date),
+          sex = coalesce(p.sex, x.sex),
+          address = coalesce(p.address, x.address),
+          coverage = coalesce(p.coverage, x.coverage),
+          coverage_plan = coalesce(p.coverage_plan, x.coverage_plan),
+          member_number = coalesce(p.member_number, x.member_number),
+          notes = case
+            when x.notes is null or strpos(coalesce(p.notes, ''), x.notes) > 0 then p.notes
+            when p.notes is null then x.notes
+            else p.notes || E'\n' || x.notes end,
+          next_control_at = coalesce(x.next_control_at, p.next_control_at),
+          next_control_reason = case when x.next_control_at is not null then x.next_control_reason else p.next_control_reason end
+        from json_to_recordset(${json(known.slice(i, i + 500))}::json) as x(
+          id uuid, full_name text, phone text, dni text, email text, birth_date date, sex text, address text, coverage text,
+          coverage_plan text, member_number text, notes text, next_control_at date, next_control_reason text)
+        where p.id = x.id and p.clinic_id = ${clinic.id}`;
     }
+
+    // Otros celulares de la misma persona: llevan a su ficha (sin cambiar a quién lleva un número que ya se usa).
+    const links = preview.patients.flatMap((p, i) => {
+      const own = matches[i] ? (phoneOf.get(matches[i]!) ?? p.phone) : p.phone;
+      return [p.phone, ...p.other_phones]
+        .filter((phone): phone is string => Boolean(phone) && phone !== own)
+        .map((phone) => ({ clinic_id: clinic.id, phone, patient_id: ids[i] }));
+    });
+    for (let i = 0; i < links.length; i += 500) {
+      await tx`insert into patient_phones ${tx(links.slice(i, i + 500))} on conflict (clinic_id, phone) do nothing`;
+    }
+
+    let visits = 0;
+    const visitRows = preview.patients.flatMap((p, i) =>
+      p.visits.map((v) => ({
+        clinic_id: clinic.id,
+        patient_id: ids[i],
+        appointment_type_id: typeFor(v.service),
+        service: v.service,
+        professional: v.professional,
+        visited_at: v.visited_at,
+        import_id: record.id,
+      })),
+    );
+    for (let j = 0; j < visitRows.length; j += 1000) {
+      const inserted = await tx`
+        insert into patient_visits ${tx(visitRows.slice(j, j + 1000))}
+        on conflict (patient_id, visited_at, service) do nothing
+        returning id`;
+      visits += inserted.length;
+    }
+    const created = fresh.length;
+    const existing = known.length;
     await tx`update patient_imports set created_patients = ${created}, updated_patients = ${existing}, visits = ${visits} where id = ${record.id}`;
     return { created, existing, visits };
   });
+
+  const perPhone = new Map<string, number>();
+  for (const p of preview.patients) if (p.phone) perPhone.set(p.phone, (perPhone.get(p.phone) ?? 0) + 1);
+  const sharedPhones = [...perPhone.values()].filter((n) => n > 1).length;
 
   revalidatePath("/panel/pacientes");
   refresh();
   return {
     ok: true,
     message: `Listo: ${counts.created} pacientes nuevos y ${counts.existing} que ya estaban, con ${counts.visits} visitas.`,
-    summary: { ...counts, skipped: preview.problems.length, unmatched: [...unmatched].slice(0, 20) },
+    summary: { ...counts, skipped: preview.skipped, withoutPhone: preview.withoutPhone, sharedPhones, unmatched: [...unmatched].slice(0, 20) },
   };
 }
 
