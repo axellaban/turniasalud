@@ -909,3 +909,7 @@ create table if not exists patient_documents (
 create index if not exists patient_documents_phone_idx on patient_documents (clinic_id, phone, created_at desc);
 create index if not exists patient_documents_patient_idx on patient_documents (patient_id, created_at desc);
 alter table patient_documents enable row level security;
+
+-- Línea WAHA propia de una clínica. El callback conserva su origen aunque el
+-- administrador cambie el canal de la demo; una línea eliminada nunca cae en la general.
+alter table channel_conversations add column if not exists waha_connection_id text;
