@@ -1,6 +1,6 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 30/10/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 02/11/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
@@ -14,7 +14,7 @@ Actualizado: 30/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 ## Reglas que no se rompen
 
 - **No contratar planes ni cargar saldo** (Vercel está en Hobby, así que Skew Protection no se activa).
-- **WAHA queda exactamente como está**. El otro servicio WAHA del VPS es de otro flujo: no tocarlo.
+- **Conservar las instancias WAHA anteriores.** El 02/11 el usuario autorizó crear y configurar una nueva, `n8n/turnia-guerra-mininni-waha`, para el piloto de Guerra–Mininni. No modificar `n8n/waha` ni `n8n/turnia-waha`. La nueva copia usa la imagen exacta de las anteriores; no actualizarla al copiar una etiqueta mutable. Estado y bloqueo de vinculación en `ESTADO_Y_PRIORIDADES.md`.
 - **HolaVeggie y las líneas existentes de Twilio están operativas:** no modificar sus números, agentes, webhooks ni credenciales. Turnia usa la misma cuenta por decisión expresa del usuario; el saldo es compartido.
 - No pegar credenciales en chat, repo ni documentos.
 - No regenerar los audios de la web ni cambiar permisos de ElevenLabs sin que el usuario lo pida.
@@ -36,6 +36,8 @@ Actualizado: 30/10/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 - [ ] Opcional: un video propio para el hero, si no quiere los clips de stock (ver 4).
 
 ## 2. Prueba en vivo
+
+- [ ] **Línea propia de Guerra–Mininni (02/11):** instancia y asignación a la ficha ya configuradas; PR #84 publicado y 330 pruebas aprobadas. Falta resolver el rechazo de vinculación, confirmar `WORKING` y probar el intercambio real con Sofi. Se pidió abrir la terminal de Hostinger para leer los registros; no seguir pidiendo QR viejos ni dar por conectado el número. Telegram general y los WAHA anteriores se conservan.
 
 - [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.
 - [x] La demo en el navegador entra en una pantalla, en la computadora y en el celular (24/10; detalle en `ESTADO_Y_PRIORIDADES.md`).
