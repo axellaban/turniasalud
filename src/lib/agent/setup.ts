@@ -1,7 +1,8 @@
 import "server-only";
 import { sql } from "../db";
 import { env } from "../env";
-import { elevenlabs } from "../elevenlabs";
+import { agentVoiceId, elevenlabs } from "../elevenlabs";
+import { getClinic } from "../clinic";
 import { CONTEXT_PARAMS, TOOL_DEFINITIONS, type ToolDefinition } from "./tools";
 import { FIRST_MESSAGE, SYSTEM_PROMPT } from "./prompt";
 import type { Clinic } from "../types";
@@ -213,7 +214,14 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
   const baseUrl = env.appUrl().replace(/\/$/, "");
   const secret = env.agentToolsSecret();
   const toolIds = await upsertTools(baseUrl, secret);
-  const voiceId = clinic.elevenlabs_voice_id || process.env.ELEVENLABS_VOICE_ID || (await pickArgentineVoice());
+  let voiceId = clinic.elevenlabs_voice_id;
+  if (!voiceId) {
+    const main = await getClinic();
+    // La voz de generación de audios puede no admitir agentes en vivo. Para una clínica nueva,
+    // heredar primero la voz que realmente usa Sofi, sin cambiar la del agente general.
+    if (main.id !== clinic.id && main.elevenlabs_agent_id) voiceId = await agentVoiceId(main.elevenlabs_agent_id);
+    voiceId ||= process.env.ELEVENLABS_VOICE_ID || (await pickArgentineVoice());
+  }
   const body = agentBody(clinic, toolIds, voiceId, baseUrl, secret);
 
   let agentId = clinic.elevenlabs_agent_id;
