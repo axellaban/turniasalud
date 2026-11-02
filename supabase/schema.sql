@@ -421,7 +421,7 @@ alter table conversations drop constraint if exists conversations_channel_check;
 alter table conversations add constraint conversations_channel_check check (channel in ('whatsapp', 'telegram', 'telefono', 'web'));
 
 alter table appointments drop constraint if exists appointments_source_check;
-alter table appointments add constraint appointments_source_check check (source in ('whatsapp', 'telegram', 'telefono', 'web', 'panel', 'campana'));
+alter table appointments add constraint appointments_source_check check (source in ('whatsapp', 'telegram', 'telefono', 'web', 'panel', 'campana', 'smile_connect'));
 
 -- Perfiles editables: conservar una demo mantiene su agenda simulada.
 alter table clinics add column if not exists retained_at timestamptz;
