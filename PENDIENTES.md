@@ -28,6 +28,7 @@ Actualizado: 02/11/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 - [ ] **Consultorios con web:** importar `consultorios-con-web-mdp-miramar.csv` (entregado por chat) en Panel → Prospección → Importar lista, con «Reemplazar los datos de los que ya están por los del archivo» marcado. Suma 13 personas y les carga la web y el WhatsApp del consultorio a 12 que ya estaban.
 - [ ] **Prospección de la semana (26 al 30/10):** importar `lista-odontologos-mdp-miramar.csv` en Panel → Prospección → Importar lista (el archivo se entregó por chat; no va al repo), poner el perfil de Turnia en su WhatsApp Business y seguir «Para hoy». Plan en [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md).
+- [ ] **Lista 2 de prospección (02/11):** importar `lista-odontologos-bahia-laplata-costa.csv` (entregado por chat; no va al repo) en Panel → Prospección → Importar lista, sin marcar «Reemplazar». 847 personas: 116 con celular (sobre todo Bahía Blanca y La Plata) y 731 con fijo. Detalle en [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md#lista-2-bahía-blanca-la-plata-la-costa-y-el-sudeste-847-personas-0211).
 
 - [ ] **PostHog (analítica):** una vez publicado, en el proyecto «Turnia Salud» activar Session replay, filtrar el tráfico interno (`is_internal`) y autorizar el dominio; después, armar los tableros y hacer la validación. Pasos en [`ANALITICA.md`](ANALITICA.md) (6, 7 y 8).
 - [ ] **Rotar las credenciales** que quedaron expuestas durante el diagnóstico de WAHA (ver la sección «Diagnóstico histórico de vinculación WAHA» en `ESTADO_Y_PRIORIDADES.md`).
