@@ -31,17 +31,40 @@ La cola de «Para hoy» solo trae números con WhatsApp: los 151 celulares (prop
 - **Consultorios con web** (`consultorios-con-web-mdp-miramar.csv`, 26/10, fuera del repo): los del tablero viejo rearmados desde cada web y Páginas Amarillas. Suma 5 dueños de consultorios con web y 8 odontólogos con fijo (5 de Miramar). A 12 que ya estaban les carga la web (su demo pasa a leerla), el nombre real del consultorio y el WhatsApp que publica. Se importa con «Reemplazar los datos de los que ya están por los del archivo» marcado. Afuera: redes y prepagas (siempre decide una administración), webs que ya no existen y un consultorio de 7 odontólogos sin dueño identificable (ProDent: preguntar por WhatsApp quién lo dirige y cargarlo a mano).
 - **Los primeros 50 del tablero viejo** (el artefacto de la otra cuenta, con números de consultorios): al abrir el chat, WhatsApp muestra si ya había una conversación. En ese caso, «Ya le había escrito» en vez de mandar: pasa directo al seguimiento.
 
-## Lista 2: Bahía Blanca, Tucumán, La Rioja, La Plata y la costa (1.306 personas, 02/11)
+## Lista 3: Mar del Plata, Miramar y alrededores, sin la lista 1 (268 personas, 02/11)
 
-Para cuando se termina la primera. Se entrega como `lista-odontologos-2-sin-repetidos.csv` (fuera del repo; reemplaza a `lista-odontologos-bahia-laplata-costa.csv`, que no hay que importar) y se importa sin marcar «Reemplazar». Vienen ordenados: primero los celulares.
+La que sigue a la lista 1, en la misma zona. Se entrega como `lista-mdp-miramar-nuevos.csv` (fuera del repo) y se importa sin marcar «Reemplazar». Vienen ordenados: primero los celulares, empezando por Mar del Plata.
+
+| Grupo | Personas | Dónde |
+|---|---:|---|
+| Celular (propio o del consultorio) | 111 | Mar del Plata 64, Necochea 22, Balcarce 8, Pinamar 6 y la Costa. Prioridad 1 (21): celular y señales (atiende por WhatsApp, implantes, ortodoncia o estética, opiniones en Doctoralia) |
+| Fijo | 157 | Mar del Plata 97, Balcarce 12, Ayacucho 10, Necochea 9, Pinamar 7, Villa Gesell 7, Miramar 3 |
+
+- **Por qué hay gente nueva en la misma zona:** la lista 1 salió del Círculo Odontológico de Mar del Plata y de Doctoralia. Esta sale de las cartillas de las prepagas, donde están también los que no son socios del Círculo.
+- **Fuentes:**
+  - Cartillas de OSDE de la filial Mar del Plata (18 planes, PDF públicos en osde.com.ar, vigentes a 2026): 529 odontólogos de la zona, con celular en muchos casos y varios «Solo WhatsApp».
+  - [Cartilla de verano 2022 de Swiss Medical](https://www.swissmedical.com.ar/smgnewsite/pdf/prepaga/cartilla_de_verano/2022/cartilla_de_verano_2022.pdf): 133 de la zona. Es vieja: los que solo salen de ahí llevan una nota.
+  - [Plantel de odontología del HPC](https://www.hpc.org.ar/odontologia/odontologia/) y [Páginas Amarillas](https://www.paginasamarillas.com.ar) (solo personas, no marcas).
+  - Doctoralia de Mar del Plata, Miramar, Santa Clara, Pinamar, Villa Gesell, Necochea y Balcarce, para cruzar.
+- **Sin la lista 1:**
+  - Afuera los 340 que están en el Círculo de Mar del Plata, por nombre o por número.
+  - Afuera los 42 que tienen señales en Doctoralia y no están en el Círculo (los «sin teléfono» de la lista 1).
+  - Un número, una fila; cada persona una sola vez aunque esté en varias cartillas (queda dicho en «señales»).
+  - No se cruza con los «consultorios con web» ni con los primeros 50 del tablero viejo: si aparece alguno, el panel avisa que el número ya tiene contacto.
+- **Miramar casi no suma** (3): sus odontólogos ya estaban todos en el Círculo.
+- **Zona:** Mar del Plata, Batán, Sierra de los Padres, Miramar y Otamendi, Mar Chiquita (Santa Clara, Coronel Vidal), Balcarce, Necochea y Quequén, Lobería, Villa Gesell, Pinamar, Madariaga, Maipú, Ayacucho y la Costa. Tandil y Dolores quedaron afuera.
+
+## Lista 2: otras ciudades (Tucumán, La Rioja, Bahía Blanca, La Plata; 1.247 personas, 02/11)
+
+Para cuando se termine la zona de Mar del Plata (lista 3). Se entrega como `lista-odontologos-2-sin-repetidos.csv` (fuera del repo; reemplaza a `lista-odontologos-bahia-laplata-costa.csv`, que no hay que importar) y se importa sin marcar «Reemplazar». Vienen ordenados: primero los celulares.
 
 | Grupo | Personas | Canal |
 |---|---:|---|
-| Celular (propio o del consultorio) | 522 | WhatsApp. San Miguel de Tucumán 210, La Rioja 121, Bahía Blanca 55, Yerba Buena 28, La Plata 19 y pueblos de las cuatro zonas. Prioridad 1 (27): celular y señales (Doctoralia con opiniones, implantes, ortodoncia o estética, o su WhatsApp publicado) |
-| Fijo | 784 | WhatsApp si el fijo lo tiene; si no, llamada o Instagram. Prioridad 3 |
+| Celular (propio o del consultorio) | 518 | WhatsApp. San Miguel de Tucumán 210, La Rioja 121, Bahía Blanca 55, Yerba Buena 28, La Plata 18 y pueblos de esas zonas. Prioridad 1 (27): celular y señales (Doctoralia con opiniones, implantes, ortodoncia o estética, o su WhatsApp publicado) |
+| Fijo | 729 | WhatsApp si el fijo lo tiene; si no, llamada o Instagram. Prioridad 3 |
 
 - **Sin repetir:**
-  - Afuera todo lo de las zonas de la lista 1 (Mar del Plata, Miramar, Santa Clara, Batán, Sierra de los Padres, Otamendi, Mar de Cobo), y en el resto cualquiera que coincida con el Círculo de Mar del Plata por número o por nombre: 177 en total.
+  - Afuera todo lo de la zona de Mar del Plata y alrededores (listas 1 y 3), y en el resto cualquiera que coincida con el Círculo de Mar del Plata por número o por nombre: 236 en total. Con la lista 3 no comparte ni números ni nombres.
   - Un número, una fila: cuando varios comparten número (padres e hijos, socios de un consultorio) queda uno solo, y los demás van en las notas. Unidos: 50.
   - La misma persona en dos fuentes (Bahía Blanca: Círculo y guía) queda una vez, con el otro teléfono en «otros teléfonos».
 - **Fuentes:**
@@ -53,7 +76,7 @@ Para cuando se termina la primera. Se entrega como `lista-odontologos-2-sin-repe
 - **Afuera:** prepagas, hospitales, policlínicos, mecánicos dentales, asociaciones, consultorios sin nombre propio con fijo y apellidos sueltos con fijo.
 - **Celular o fijo:** con 15 o con 9, o publicado como «Móvil», celular. Si no, por el número local: los fijos empiezan con 4 desde la renumeración. A 331 (casi todos de Tucumán, que escriben 381-5… o 381-6… sin 15) se los marcó celular por el número, con una nota en la ficha. El área sale de cómo está escrito o de la ciudad, porque 298 (General Roca) y 2983 (Tres Arroyos) no se distinguen por los dígitos.
 - **Saludo:** el nombre de pila sale de los padrones (con coma entre apellido y nombre) o de Doctoralia; en Tucumán y en la guía, de los nombres conocidos («María del Valle» queda junto). Si no se pudo saber (76, casi todos consultorios; 24 con celular), queda vacío y el panel usa la primera palabra: revisalo antes de mandar.
-- **La táctica no cambia**, salvo el gancho de la temporada: vale para Villa Gesell, Pinamar, Necochea, Monte Hermoso y la Costa. En Tucumán, La Rioja, Bahía Blanca y La Plata el gancho es el WhatsApp fuera de horario.
+- **La táctica no cambia**, pero el gancho es el WhatsApp fuera de horario (la temporada solo vale para Monte Hermoso).
 - **Quedan por probar:**
   - Santa Fe (1.ª circunscripción) publica [el padrón con los consultorios y su teléfono](https://www.colodont1.org.ar/padron-de-colegiados/) (1.290 colegiados), pero el sitio empezó a devolver error y no se pudo bajar: probar de nuevo, despacio.
   - Salta publica socios con teléfono detrás de una verificación anti-robots.
@@ -130,4 +153,4 @@ Se editan en Panel → Prospección → Mensajes y metas. Los de fábrica:
 - Recordatorio diario («hoy te tocan 12 seguimientos») por el canal que elija Axel.
 - Encontrar el Instagram de los fijos y de los que no tienen teléfono (hoy es un botón de búsqueda por persona).
 - Cuando haya saldo y autorización: Sofi llama a los que abrieron la demo y no respondieron (Panel → Comercial).
-- Otras ciudades: misma lista y mismo proceso. Hecha la lista 2 (Bahía Blanca, Tucumán, La Rioja, La Plata y la costa, 02/11).
+- Otras ciudades: misma lista y mismo proceso. Hecha la lista 2 (Tucumán, La Rioja, Bahía Blanca, La Plata, 02/11). La zona de Mar del Plata siguió con la lista 3 (cartillas de prepagas).
