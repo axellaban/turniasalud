@@ -118,7 +118,7 @@ create table if not exists appointments (
   status text not null default 'confirmado'
     check (status in ('confirmado', 'pendiente', 'cancelado', 'ausente', 'atendido', 'reprogramado')),
   source text not null default 'panel'
-    check (source in ('whatsapp', 'telefono', 'web', 'panel', 'campana')),
+    check (source in ('whatsapp', 'telegram', 'telefono', 'web', 'panel', 'campana', 'smile_connect')),
   coverage text,
   notes text,
   reminder_sent_at timestamptz,
@@ -128,18 +128,6 @@ create table if not exists appointments (
   created_at timestamptz not null default now(),
   check (ends_at > starts_at)
 );
-
--- Nunca dos turnos activos superpuestos para el mismo profesional.
-do $$
-begin
-  if not exists (select 1 from pg_constraint where conname = 'appointments_no_overlap') then
-    alter table appointments add constraint appointments_no_overlap
-      exclude using gist (
-        professional_id with =,
-        tstzrange(starts_at, ends_at, '[)') with &&
-      ) where (status in ('confirmado', 'pendiente'));
-  end if;
-end $$;
 
 create index if not exists appointments_clinic_starts_idx on appointments (clinic_id, starts_at);
 create index if not exists appointments_patient_idx on appointments (patient_id, starts_at);
@@ -550,8 +538,13 @@ create index if not exists appointments_calendar_pending_idx on appointments (cl
 
 -- Cualquier alta o cambio de un turno (agente, panel, campañas) deja su evento pendiente
 -- de sincronizar, sin depender de que cada camino del código se acuerde de avisar.
+-- Los turnos históricos o ya cancelados que entran de una importación no se mandan a Google.
 create or replace function turnia_calendar_mark() returns trigger language plpgsql as $$
 begin
+  if tg_op = 'INSERT' and new.calendar_event_id is null
+     and (new.ends_at <= now() - interval '1 day' or new.status not in ('confirmado', 'pendiente', 'atendido', 'ausente')) then
+    return new;
+  end if;
   if tg_op = 'INSERT' or new.status is distinct from old.status or new.starts_at is distinct from old.starts_at
      or new.ends_at is distinct from old.ends_at or new.professional_id is distinct from old.professional_id then
     if new.calendar_event_id is not null or exists (
@@ -944,3 +937,54 @@ alter table patients add column if not exists sex text;
 alter table patients drop constraint if exists patients_sex_check;
 alter table patients add constraint patients_sex_check check (sex is null or sex in ('femenino', 'masculino', 'otro'));
 alter table patients add column if not exists address text;
+
+-- ---------------------------------------------------------------------------
+-- Integración con Smile Connect y sobreturnos del consultorio (02/11/2026).
+-- - Los consultorios que usan otro sistema en recepción (Smile Connect) pueden
+--   importar su agenda histórica y sincronizarla en vivo con el userscript.
+-- - La base permite guardar los sobreturnos reales que trae el consultorio (la
+--   grilla de la Agenda ya los dibuja en paralelo); el agente sigue sin poder
+--   superponer dos turnos porque `insertAppointment` bloquea por profesional y
+--   verifica que ninguno de los dos profesionales esté ocupado.
+-- ---------------------------------------------------------------------------
+alter table appointments drop constraint if exists appointments_no_overlap;
+create index if not exists appointments_active_pro_idx
+  on appointments (professional_id, starts_at, ends_at)
+  where status in ('confirmado', 'pendiente');
+
+alter table appointments drop constraint if exists appointments_source_check;
+alter table appointments add constraint appointments_source_check
+  check (source in ('whatsapp', 'telegram', 'telefono', 'web', 'panel', 'campana', 'smile_connect'));
+
+alter table appointments add column if not exists external_id text;
+alter table appointments add column if not exists external_status text;
+create unique index if not exists appointments_external_idx
+  on appointments (clinic_id, external_id) where external_id is not null;
+
+alter table schedule_blocks add column if not exists external_id text;
+create unique index if not exists schedule_blocks_external_idx
+  on schedule_blocks (clinic_id, external_id) where external_id is not null;
+
+-- Un paciente puede venir con más de un ID externo si tenía fichas duplicadas en
+-- el sistema anterior y se unificaron en una sola ficha de Turnia.
+create table if not exists patient_external_ids (
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  external_id text not null,
+  patient_id uuid not null references patients(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (clinic_id, external_id)
+);
+create index if not exists patient_external_ids_patient_idx on patient_external_ids (patient_id);
+alter table patient_external_ids enable row level security;
+
+create table if not exists smile_connect_connections (
+  clinic_id uuid primary key references clinics(id) on delete cascade,
+  token_hash text not null unique,
+  token_hint text not null,
+  encrypted_token text not null,
+  last_sync_at timestamptz,
+  last_sync_summary jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table smile_connect_connections enable row level security;

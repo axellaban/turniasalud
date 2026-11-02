@@ -6,6 +6,7 @@ import { isUuid } from "@/lib/clinic";
 import { disconnect, getConnection, listCalendars } from "@/lib/calendar/google";
 import { resyncProfessional, syncCalendarLater, syncPendingCalendar } from "@/lib/calendar/sync";
 import { getPanelClinic, logClinicChange } from "@/lib/panel-clinic";
+import { ensureSmileConnectToken } from "@/lib/smile-connect";
 
 // Configuración → Calendario: elegir el calendario de cada profesional, sincronizar y desconectar.
 
@@ -53,4 +54,22 @@ export async function disconnectCalendar(form: FormData): Promise<void> {
   await disconnect(clinic.id);
   await logClinicChange(clinic.id, "Calendario");
   revalidatePath("/panel/configuracion/calendario");
+}
+
+export async function rotateSmileConnectTokenAction(_prev: CalendarFormState | undefined, form: FormData): Promise<CalendarFormState> {
+  try {
+    const clinic = await getPanelClinic(form);
+    const rotate = form.get("rotate") === "1";
+    const { tokenHint } = await ensureSmileConnectToken(clinic.id, { rotate });
+    await logClinicChange(clinic.id, "Calendario");
+    revalidatePath("/panel/configuracion/calendario");
+    return {
+      ok: true,
+      message: rotate
+        ? `Clave renovada (termina en …${tokenHint}). Volvé a instalar el script en Tampermonkey para usar la clave nueva.`
+        : `Conexión habilitada (clave …${tokenHint}). Ya podés instalar el script en Tampermonkey.`,
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "No se pudo generar la clave." };
+  }
 }

@@ -406,6 +406,8 @@ type BookOptions = {
   force?: boolean;
   /** Desde el panel: otro profesional que atiende el mismo turno (también tiene que estar libre). */
   secondProfessionalId?: string | null;
+  /** Al mover un turno con duración propia (por ejemplo, traído de Smile Connect), conservarla. */
+  durationMin?: number;
 };
 
 const AGAIN = " Consultá la disponibilidad de nuevo y ofrecé otra opción.";
@@ -436,12 +438,13 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
     if (second.id === pro.id) throw new ToolError("El otro profesional tiene que ser distinto del que atiende el turno.");
   }
 
-  const endsAt = new Date(startsAt.getTime() + type.duration_min * 60_000);
+  const durationMin = opts.durationMin ?? type.duration_min;
+  const endsAt = new Date(startsAt.getTime() + durationMin * 60_000);
   const [busy, blocks] = await Promise.all([
     busyOf(second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, opts.ignoreAppointmentId),
     getScheduleBlocks(clinic.id, startsAt, endsAt),
   ]);
-  // Otro turno de Turnia en ese horario: nunca se superponen (lo asegura también la base).
+  // Otro turno de Turnia en ese horario: ni el agente ni el turno normal se superponen.
   if (busy.some((b) => b.professional_id === pro.id)) throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`);
   if (second && busy.length) throw new ToolError(`${second.full_name} ya tiene un turno a esa hora.`);
   if (!opts.force) {
@@ -450,7 +453,7 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
         catalog.schedules.filter((s) => s.professional_id === who.id),
         [],
         startsAt,
-        type.duration_min,
+        durationMin,
         clinic.timezone,
         expandBlocks(blocks, [who.id]),
       );
@@ -521,13 +524,13 @@ async function lockProfessionals(tx: TransactionSql, ids: string[]): Promise<voi
 }
 
 async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promise<Appointment> {
-  // La constraint de la base cubre al profesional principal. Que nadie quede en dos
-  // turnos a la vez como segundo profesional se revisa acá, con los locks ya tomados.
+  // Con los locks por profesional ya tomados, verificamos que ni el principal ni el
+  // segundo profesional queden en dos turnos activos superpuestos.
   const ids = [row.professional_id, row.second_professional_id].filter((id): id is string => Boolean(id));
   const [taken] = await tx`
     select 1 from appointments
     where status = any(${ACTIVE}::text[]) and starts_at < ${row.ends_at} and ends_at > ${row.starts_at}
-      and (second_professional_id = any(${ids}::uuid[]) or (${ids.length > 1} and professional_id = any(${ids}::uuid[])))
+      and (professional_id = any(${ids}::uuid[]) or second_professional_id = any(${ids}::uuid[]))
     limit 1`;
   if (taken) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
   const [appt] = await tx<Appointment[]>`insert into appointments ${tx(row)} returning *`;
@@ -792,10 +795,13 @@ async function rescheduleLoaded(
   if (appt.second_professional_id && appt.second_professional_id === professionalId) {
     throw new ToolError("Ese profesional ya atiende este turno como segundo profesional: elegí otro.");
   }
+  const rawMinutes = Math.round((new Date(appt.ends_at).getTime() - new Date(appt.starts_at).getTime()) / 60_000);
+  const customDuration = appt.source === "smile_connect" && rawMinutes >= 5 && rawMinutes <= 480 ? rawMinutes : undefined;
   const { type, pro, second, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, {
     ignoreAppointmentId: appt.id,
     force,
     secondProfessionalId: appt.second_professional_id,
+    durationMin: customDuration,
   });
   // Con otro profesional, que atienda la cobertura del turno.
   const coverage = pro.id === appt.professional_id ? appt.coverage : acceptedCoverage(pro, appt.coverage);

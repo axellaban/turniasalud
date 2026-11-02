@@ -210,6 +210,9 @@ export async function mergePatientInto(tx: TransactionSql, clinicId: string, kee
   await tx`
     update patient_phones set patient_id = ${keepId}
     where patient_id = ${dropId} and phone <> ${keep.phone}`;
+  await tx`
+    update patient_external_ids set patient_id = ${keepId}
+    where clinic_id = ${clinicId} and patient_id = ${dropId}`;
 
   const latest = [keep.last_contact_at, drop.last_contact_at].filter(Boolean).sort().at(-1) ?? null;
   // El plan y el afiliado solo se completan si son de la misma cobertura.
