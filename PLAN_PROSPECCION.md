@@ -31,25 +31,33 @@ La cola de «Para hoy» solo trae números con WhatsApp: los 151 celulares (prop
 - **Consultorios con web** (`consultorios-con-web-mdp-miramar.csv`, 26/10, fuera del repo): los del tablero viejo rearmados desde cada web y Páginas Amarillas. Suma 5 dueños de consultorios con web y 8 odontólogos con fijo (5 de Miramar). A 12 que ya estaban les carga la web (su demo pasa a leerla), el nombre real del consultorio y el WhatsApp que publica. Se importa con «Reemplazar los datos de los que ya están por los del archivo» marcado. Afuera: redes y prepagas (siempre decide una administración), webs que ya no existen y un consultorio de 7 odontólogos sin dueño identificable (ProDent: preguntar por WhatsApp quién lo dirige y cargarlo a mano).
 - **Los primeros 50 del tablero viejo** (el artefacto de la otra cuenta, con números de consultorios): al abrir el chat, WhatsApp muestra si ya había una conversación. En ese caso, «Ya le había escrito» en vez de mandar: pasa directo al seguimiento.
 
-## Lista 2: Bahía Blanca, La Plata, la costa y el sudeste (847 personas, 02/11)
+## Lista 2: Bahía Blanca, Tucumán, La Rioja, La Plata y la costa (1.306 personas, 02/11)
 
-Para cuando se termina la primera. Se entrega como `lista-odontologos-bahia-laplata-costa.csv` (fuera del repo) y se importa igual, sin marcar «Reemplazar».
+Para cuando se termina la primera. Se entrega como `lista-odontologos-2-sin-repetidos.csv` (fuera del repo; reemplaza a `lista-odontologos-bahia-laplata-costa.csv`, que no hay que importar) y se importa sin marcar «Reemplazar». Vienen ordenados: primero los celulares.
 
 | Grupo | Personas | Canal |
 |---|---:|---|
-| Celular (propio o del consultorio) | 116 (112 números) | WhatsApp. 58 de Bahía Blanca, 19 de La Plata. Prioridad 1 (12): celular y señales (Doctoralia con opiniones, implantes, ortodoncia o estética, o su WhatsApp publicado) |
-| Fijo | 731 | WhatsApp si el fijo lo tiene; si no, llamada o Instagram. Prioridad 3 |
+| Celular (propio o del consultorio) | 522 | WhatsApp. San Miguel de Tucumán 210, La Rioja 121, Bahía Blanca 55, Yerba Buena 28, La Plata 19 y pueblos de las cuatro zonas. Prioridad 1 (27): celular y señales (Doctoralia con opiniones, implantes, ortodoncia o estética, o su WhatsApp publicado) |
+| Fijo | 784 | WhatsApp si el fijo lo tiene; si no, llamada o Instagram. Prioridad 3 |
 
+- **Sin repetir:**
+  - Afuera todo lo de las zonas de la lista 1 (Mar del Plata, Miramar, Santa Clara, Batán, Sierra de los Padres, Otamendi, Mar de Cobo), y en el resto cualquiera que coincida con el Círculo de Mar del Plata por número o por nombre: 177 en total.
+  - Un número, una fila: cuando varios comparten número (padres e hijos, socios de un consultorio) queda uno solo, y los demás van en las notas. Unidos: 50.
+  - La misma persona en dos fuentes (Bahía Blanca: Círculo y guía) queda una vez, con el otro teléfono en «otros teléfonos».
 - **Fuentes:**
-  - [Círculo Odontológico del Sur](https://www.circuloodontologicodelsur.com.ar/listado-de-nuestros-socios/), de Bahía Blanca: 283 socios con matrícula, dirección y teléfono, en Bahía Blanca, Punta Alta, Coronel Suárez, Pringles, Pigüé, Tres Arroyos y otros pueblos de la zona. Es la mejor fuente: el teléfono es el que cada odontólogo publica y muchos son su celular.
-  - [Páginas Amarillas](https://www.paginasamarillas.com.ar/buscar/la-plata-buenos-aires/q/odontologos/): «odontólogos» en 26 localidades, de la costa al sudeste y La Plata (733 avisos). Casi todos son fijos de avisos gratuitos viejos; los pocos avisos pagos traen celular o WhatsApp.
-  - [Doctoralia](https://www.doctoraliar.com/odontologo/bahia-blanca): solo para cruzar (Dr. o Dra., tratamientos, opiniones, nombre del consultorio). Coinciden 325.
-- **Sin repetir:** los de Mar del Plata, Miramar, Santa Clara y Balcarce se cruzaron con el listado del Círculo de Mar del Plata, por número y por nombre (quedaron afuera 55). Si igual se repite alguien de la lista 1, el panel avisa que el número ya tiene contacto.
+  - [Círculo Odontológico del Sur](https://www.circuloodontologicodelsur.com.ar/listado-de-nuestros-socios/), de Bahía Blanca: 283 socios con matrícula, dirección y teléfono (Bahía Blanca, Punta Alta, Coronel Suárez, Pringles, Pigüé, Tres Arroyos y pueblos de la zona).
+  - [Círculo Odontológico de La Rioja](https://circuloodontologicolr.com.ar/index.php?link=4&ti=1): 207 socios con dirección, mail, y celular («Móvil») en 127.
+  - [Padrón odontológico del IPSST](https://ipsst.gov.ar/prestaciones-de-salud/prestaciones-basicas/practicas-ambulatorias/autorizacion-en-linea/odontologia/padron-odontologico/) (obra social provincial de Tucumán): 496 odontólogos con localidad, dirección, teléfono y mail.
+  - [Páginas Amarillas](https://www.paginasamarillas.com.ar/buscar/la-plata-buenos-aires/q/odontologos/): «odontólogos» en 26 localidades de la provincia de Buenos Aires. Casi todos son fijos de avisos gratuitos viejos.
+  - [Doctoralia](https://www.doctoraliar.com/odontologo/bahia-blanca): solo para cruzar (Dr. o Dra., tratamientos, opiniones, nombre del consultorio). Coinciden 474.
 - **Afuera:** prepagas, hospitales, policlínicos, mecánicos dentales, asociaciones, consultorios sin nombre propio con fijo y apellidos sueltos con fijo.
-- **Celular o fijo:** con 15 o con 9, celular. Si no, por el número local: los fijos empiezan con 4 desde la renumeración. A 37 sin 15 se los marcó celular por el número, con una nota en la ficha. El área sale de cómo está escrito o de la ciudad, porque 298 (General Roca) y 2983 (Tres Arroyos) no se distinguen por los dígitos.
-- **Saludo:** el nombre de pila sale del padrón del Círculo del Sur o de Doctoralia; en los avisos de la guía, de los nombres conocidos. Si no se pudo saber (102, casi todos consultorios), queda vacío y el panel usa la primera palabra: revisalo antes de mandar.
-- **La táctica no cambia**, salvo el gancho de la temporada: vale para Villa Gesell, Pinamar, Necochea, Monte Hermoso y la Costa, no para Bahía Blanca ni La Plata. Ahí el gancho es el WhatsApp fuera de horario.
-- **Quedan por probar:** los círculos de Tandil, Necochea, Balcarce, la Costa y La Plata no publican listado (tienen mail en [FOPBA](https://fopba.org.ar/circulos-y-asociaciones/)). Pedirlo, o seguir con Doctoralia + Instagram.
+- **Celular o fijo:** con 15 o con 9, o publicado como «Móvil», celular. Si no, por el número local: los fijos empiezan con 4 desde la renumeración. A 331 (casi todos de Tucumán, que escriben 381-5… o 381-6… sin 15) se los marcó celular por el número, con una nota en la ficha. El área sale de cómo está escrito o de la ciudad, porque 298 (General Roca) y 2983 (Tres Arroyos) no se distinguen por los dígitos.
+- **Saludo:** el nombre de pila sale de los padrones (con coma entre apellido y nombre) o de Doctoralia; en Tucumán y en la guía, de los nombres conocidos («María del Valle» queda junto). Si no se pudo saber (76, casi todos consultorios; 24 con celular), queda vacío y el panel usa la primera palabra: revisalo antes de mandar.
+- **La táctica no cambia**, salvo el gancho de la temporada: vale para Villa Gesell, Pinamar, Necochea, Monte Hermoso y la Costa. En Tucumán, La Rioja, Bahía Blanca y La Plata el gancho es el WhatsApp fuera de horario.
+- **Quedan por probar:**
+  - Santa Fe (1.ª circunscripción) publica [el padrón con los consultorios y su teléfono](https://www.colodont1.org.ar/padron-de-colegiados/) (1.290 colegiados), pero el sitio empezó a devolver error y no se pudo bajar: probar de nuevo, despacio.
+  - Salta publica socios con teléfono detrás de una verificación anti-robots.
+  - Los círculos de Tandil, Necochea, Balcarce, la Costa y La Plata no publican listado (tienen mail en [FOPBA](https://fopba.org.ar/circulos-y-asociaciones/)).
 
 ## La semana (26 al 30/10)
 
@@ -122,4 +130,4 @@ Se editan en Panel → Prospección → Mensajes y metas. Los de fábrica:
 - Recordatorio diario («hoy te tocan 12 seguimientos») por el canal que elija Axel.
 - Encontrar el Instagram de los fijos y de los que no tienen teléfono (hoy es un botón de búsqueda por persona).
 - Cuando haya saldo y autorización: Sofi llama a los que abrieron la demo y no respondieron (Panel → Comercial).
-- Otras ciudades: misma lista y mismo proceso. Hecha la lista 2 (Bahía Blanca, La Plata, la costa y el sudeste, 02/11).
+- Otras ciudades: misma lista y mismo proceso. Hecha la lista 2 (Bahía Blanca, Tucumán, La Rioja, La Plata y la costa, 02/11).
