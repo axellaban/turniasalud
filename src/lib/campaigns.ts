@@ -95,6 +95,41 @@ export const NO_LONGER_ELIGIBLE = "Ya no corresponde: sacó turno, pidió la baj
 
 type PatientRow = { id: string; full_name: string | null; phone: string | null };
 
+type VisitRow = { id: string; starts_at: string; ends_at: string; professional_id: string; professional: string; type_name: string; patient: PatientRow };
+
+const sumPrices = (values: Array<number | null>) => {
+  const known = values.filter((v): v is number => v !== null);
+  return known.length ? known.reduce((a, b) => a + b, 0) : null;
+};
+
+/**
+ * Junta en una visita los turnos seguidos del mismo paciente con el mismo profesional (control y
+ * limpieza): uno empieza cuando termina el anterior. Las filas tienen que venir ordenadas por inicio.
+ */
+export function groupVisits<T extends Pick<VisitRow, "starts_at" | "ends_at" | "professional_id"> & { patient: { id: string } }>(rows: T[]): T[][] {
+  const visits: T[][] = [];
+  for (const row of rows) {
+    const visit = visits.find((v) => {
+      const last = v[v.length - 1];
+      return last.patient.id === row.patient.id && last.professional_id === row.professional_id && new Date(last.ends_at).getTime() === new Date(row.starts_at).getTime();
+    });
+    if (visit) visit.push(row);
+    else visits.push([row]);
+  }
+  return visits;
+}
+
+/** Los turnos que nombra el contexto de un mensaje (una visita puede tener dos). */
+export const appointmentIdsIn = (context: string | null | undefined) => [...(context ?? "").matchAll(/turno_id=([0-9a-f-]{36})/g)].map((m) => m[1]);
+
+/** Recordatorio o encuesta enviados: no se repiten para ninguno de los turnos de la visita. */
+async function markAppointmentsSent(type: CampaignType, context: string | null | undefined) {
+  const ids = appointmentIdsIn(context);
+  if (!ids.length) return;
+  if (type === "recordatorio") await sql`update appointments set reminder_sent_at = now() where id = any(${ids}::uuid[])`;
+  if (type === "encuesta") await sql`update appointments set survey_sent_at = now() where id = any(${ids}::uuid[])`;
+}
+
 /** Suma meses a una fecha AAAA-MM-DD (el 31 pasa al último día del mes si hace falta). */
 export function addMonthsKey(key: string, months: number): string {
   const [y, m, d] = key.split("-").map(Number);
@@ -151,8 +186,8 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
   if (type === "recordatorio") {
     const from = new Date(now + 12 * 3600_000);
     const to = new Date(now + 36 * 3600_000);
-    const rows = await sql<Array<{ id: string; starts_at: string; appointment_type_id: string; patient: PatientRow; professional: string; type_name: string; price: string | null }>>`
-      select a.id, a.starts_at, a.appointment_type_id, pr.full_name as professional, t.name as type_name, t.price,
+    const rows = await sql<Array<VisitRow & { appointment_type_id: string; price: string | null }>>`
+      select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name as professional, t.name as type_name, t.price,
              json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) as patient
       from appointments a
       join patients p on p.id = a.patient_id
@@ -161,15 +196,20 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
       where a.clinic_id = ${clinic.id} and a.status in ('confirmado', 'pendiente') and a.reminder_sent_at is null
         and a.starts_at >= ${from} and a.starts_at <= ${to}
       order by a.starts_at`;
-    return rows.map((r) => {
+    // Dos prácticas seguidas en la misma visita (control y limpieza): un solo recordatorio.
+    return groupVisits(rows).map(([r, ...rest]) => {
       const when = humanSlot(new Date(r.starts_at), tz);
+      const visit = [r, ...rest];
+      const ids = visit.map((v) => `turno_id=${v.id}`).join(", ");
       return member({
         patient_id: r.patient.id,
         phone: r.patient.phone,
         name: r.patient.full_name,
         detail: `${when} con ${r.professional}`,
-        context: `Recordatorio del turno de ${r.type_name} el ${when} con ${r.professional} (turno_id=${r.id}). Pedile que confirme si viene: si dice que sí, usá confirmar_turno; si no puede, ofrecé reprogramar o cancelar.`,
-        value: price(r.price),
+        context: rest.length
+          ? `Recordatorio de la visita del ${when} con ${r.professional}: ${visit.map((v) => v.type_name).join(" y, a continuación, ")} (${ids}). Pedile que confirme si viene: si dice que sí, usá confirmar_turno con cada turno_id; si no puede, ofrecé reprogramar o cancelar.`
+          : `Recordatorio del turno de ${r.type_name} el ${when} con ${r.professional} (${ids}). Pedile que confirme si viene: si dice que sí, usá confirmar_turno; si no puede, ofrecé reprogramar o cancelar.`,
+        value: sumPrices(visit.map((v) => price(v.price))),
         appointment_type_id: r.appointment_type_id,
       });
     });
@@ -318,23 +358,20 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
       where a.clinic_id = ${clinic.id} and a.status = 'atendido' and a.survey_sent_at is null and not p.contact_opt_out
         and a.starts_at >= ${new Date(now - 48 * 3600_000)} and a.starts_at <= ${new Date(now)}
       order by a.starts_at`;
-    const seen = new Set<string>();
-    const members: AudienceMember[] = [];
-    for (const r of rows) {
-      if (seen.has(r.patient.id)) continue;
-      seen.add(r.patient.id);
-      members.push(
-        member({
-          patient_id: r.patient.id,
-          phone: r.patient.phone,
-          name: r.patient.full_name,
-          detail: `tu ${r.type_name.toLowerCase()} con ${r.professional}`,
-          context: `Encuesta post-consulta: se atendió de "${r.type_name}" con ${r.professional} (turno_id=${r.id}). Preguntá del 0 al 10 qué tan probable es que recomiende la clínica y si quiere contar algo más.`,
-          value: null,
-        }),
-      );
-    }
-    return members;
+    // Una sola encuesta por paciente, aunque haya tenido dos turnos (por ejemplo, control y limpieza
+    // seguidos): el contexto nombra todos para que ninguno la vuelva a pedir.
+    const byPatient = new Map<string, Array<(typeof rows)[number]>>();
+    for (const r of rows) byPatient.set(r.patient.id, [...(byPatient.get(r.patient.id) ?? []), r]);
+    return [...byPatient.values()].map(([r, ...rest]) =>
+      member({
+        patient_id: r.patient.id,
+        phone: r.patient.phone,
+        name: r.patient.full_name,
+        detail: `tu ${r.type_name.toLowerCase()} con ${r.professional}`,
+        context: `Encuesta post-consulta: se atendió de "${r.type_name}" con ${r.professional} (${[r, ...rest].map((v) => `turno_id=${v.id}`).join(", ")}). Preguntá del 0 al 10 qué tan probable es que recomiende la clínica y si quiere contar algo más.`,
+        value: null,
+      }),
+    );
   }
 
   if (type === "lista_espera") {
@@ -562,9 +599,7 @@ export async function markManualSent(clinicId: string, recipientId: string): Pro
     where r.id = ${recipientId} and c.id = r.campaign_id and c.clinic_id = ${clinicId} and r.status in ('pendiente', 'error')
     returning r.campaign_id, c.type, r.context`;
   if (!row) return null;
-  const appointmentId = /turno_id=([0-9a-f-]{36})/.exec(row.context ?? "")?.[1];
-  if (appointmentId && row.type === "recordatorio") await sql`update appointments set reminder_sent_at = now() where id = ${appointmentId}`;
-  if (appointmentId && row.type === "encuesta") await sql`update appointments set survey_sent_at = now() where id = ${appointmentId}`;
+  await markAppointmentsSent(row.type, row.context);
   await sql`
     update campaigns c set sent_at = now(), status = case
       when exists (select 1 from campaign_recipients r where r.campaign_id = c.id and r.status in ('pendiente', 'error')) then 'enviando' else 'finalizada' end
@@ -625,9 +660,7 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
         update campaign_recipients set status = 'enviado', elevenlabs_conversation_id = ${res.conversation_id ?? null}, sent_at = now(),
           error = null, detail = ${member.detail}, context = ${member.context}, value = ${member.value}
         where id = ${row.id}`;
-      const appointmentId = /turno_id=([0-9a-f-]{36})/.exec(member.context)?.[1];
-      if (appointmentId && campaign.type === "recordatorio") await sql`update appointments set reminder_sent_at = now() where id = ${appointmentId}`;
-      if (appointmentId && campaign.type === "encuesta") await sql`update appointments set survey_sent_at = now() where id = ${appointmentId}`;
+      await markAppointmentsSent(campaign.type, member.context);
       result.sent++;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

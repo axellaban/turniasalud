@@ -46,6 +46,24 @@ describe("computeSlots", () => {
     expect(slots).toHaveLength(3);
   });
 
+  it("dos prácticas seguidas: entra la visita entera, con la grilla de la primera", () => {
+    // Control de 30 min + limpieza de 40: la visita dura 70 y puede empezar cada 30.
+    const slots = computeSlots({
+      schedules,
+      busy: [],
+      durationMin: 70,
+      stepMin: 30,
+      fromKey: "2025-10-27",
+      toKey: "2025-10-27",
+      timeZone: TZ,
+      now,
+      perDayPerProfessional: 10,
+    });
+    // De 9 a 11: a las 9:00 y a las 9:30 (termina 10:40); a las 10:00 ya no entra.
+    expect(slots.map((s) => s.starts_at)).toEqual(["2025-10-27T12:00:00.000Z", "2025-10-27T12:30:00.000Z"]);
+    expect(slots[1].ends_at).toBe("2025-10-27T13:40:00.000Z");
+  });
+
   it("respeta la anticipación mínima", () => {
     const slots = computeSlots({
       schedules,
