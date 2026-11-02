@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "./env";
 import { requireActiveChannel } from "./messaging-settings";
+import { currentWahaConnection } from "./waha-connections";
 
 // WAHA (WhatsApp HTTP API): WhatsApp Web con un chip común, en el VPS del
 // dueño. Es una API no oficial: el número puede quedar bloqueado si se mandan
@@ -26,6 +27,7 @@ export function verifyWahaHmac(rawBody: string, signature: string | null, algori
 export type WahaEvent = {
   event?: string;
   session?: string;
+  me?: { id?: string };
   payload?: WahaMessagePayload;
 };
 
@@ -115,9 +117,10 @@ export function parseWahaEvent(event: WahaEvent, expectedSession?: string): Pars
 export const chatIdForPhone = (phone: string) => `${phone}@c.us`;
 
 async function waha(path: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(`${env.wahaUrl()}${path}`, {
+  const connection = currentWahaConnection();
+  const res = await fetch(`${connection?.url.replace(/\/$/, "") ?? env.wahaUrl()}${path}`, {
     ...init,
-    headers: { "X-Api-Key": env.wahaApiKey(), Accept: "application/json", ...(init.headers ?? {}) },
+    headers: { "X-Api-Key": connection?.apiKey ?? env.wahaApiKey(), Accept: "application/json", ...(init.headers ?? {}) },
     cache: "no-store",
     signal: init.signal ?? AbortSignal.timeout(15000),
   });
@@ -133,7 +136,7 @@ export async function wahaSendText(chatId: string, text: string): Promise<{ id?:
   const res = await waha("/api/sendText", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: env.wahaSession(), chatId, text }),
+    body: JSON.stringify({ session: currentWahaConnection()?.session ?? env.wahaSession(), chatId, text }),
   });
   const body = (await res.json().catch(() => ({}))) as { id?: string | { _serialized?: string } };
   return { id: typeof body.id === "string" ? body.id : body.id?._serialized };
@@ -142,7 +145,7 @@ export async function wahaSendText(chatId: string, text: string): Promise<{ id?:
 /** Busca el teléfono de un chat @lid (WhatsApp oculta el número en algunos chats). */
 export async function wahaPhoneForLid(lid: string): Promise<string | null> {
   try {
-    const res = await waha(`/api/${encodeURIComponent(env.wahaSession())}/lids/${encodeURIComponent(lid)}`);
+    const res = await waha(`/api/${encodeURIComponent(currentWahaConnection()?.session ?? env.wahaSession())}/lids/${encodeURIComponent(lid)}`);
     const body = (await res.json()) as { pn?: string | null };
     return phoneFromJid(body.pn);
   } catch (e) {
@@ -160,7 +163,7 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
   try {
     // La URL apunta al mismo WAHA; si viene con localhost la pasamos a la URL pública.
     const media = new URL(url);
-    const base = new URL(env.wahaUrl());
+    const base = new URL(currentWahaConnection()?.url ?? env.wahaUrl());
     if (media.host !== base.host) {
       media.protocol = base.protocol;
       media.host = base.host;
@@ -180,7 +183,7 @@ export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      session: env.wahaSession(),
+      session: currentWahaConnection()?.session ?? env.wahaSession(),
       chatId,
       file: { mimetype: "audio/ogg; codecs=opus", filename: "respuesta.ogg", data: audio.toString("base64") },
       convert: true,
@@ -188,23 +191,26 @@ export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void
   });
 }
 
-let ownNumber: { value: string | null; at: number } | null = null;
+const ownNumbers = new Map<string, { value: string | null; at: number }>();
 
 /**
  * Número del chip conectado a la sesión de WAHA (solo dígitos, ej. 5491122223333).
  * Se guarda 10 minutos; si WAHA no responde, se reintenta al minuto.
  */
 export async function wahaOwnNumber(): Promise<string | null> {
+  const connection = currentWahaConnection();
+  const key = connection ? `${connection.id}:${connection.revision}` : "general";
+  const ownNumber = ownNumbers.get(key);
   const ttl = ownNumber?.value ? 10 * 60_000 : 60_000;
   if (ownNumber && Date.now() - ownNumber.at < ttl) return ownNumber.value;
   let value: string | null = null;
   try {
-    const res = await waha(`/api/sessions/${encodeURIComponent(env.wahaSession())}`, { signal: AbortSignal.timeout(3000) });
+    const res = await waha(`/api/sessions/${encodeURIComponent(connection?.session ?? env.wahaSession())}`, { signal: AbortSignal.timeout(3000) });
     const body = (await res.json()) as { status?: string; me?: { id?: string } | null };
     value = body.status === "WORKING" || body.status === undefined ? phoneFromJid(body.me?.id) : null;
   } catch (e) {
     console.error("WAHA: no se pudo leer el número de la sesión", e instanceof Error ? e.message : e);
   }
-  ownNumber = { value, at: Date.now() };
+  ownNumbers.set(key, { value, at: Date.now() });
   return value;
 }

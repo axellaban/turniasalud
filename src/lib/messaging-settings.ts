@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "./db";
+import { currentWahaConnection } from "./waha-connections";
 
 export type MessagingChannel = "pausado" | "telegram" | "whatsapp";
 export type MessagingSettings = {
@@ -23,12 +24,19 @@ export function channelForChat(chatId: string): "telegram" | "whatsapp" {
 }
 
 export async function requireActiveChannel(channel: "telegram" | "whatsapp"): Promise<MessagingSettings> {
+  const own = channel === "whatsapp" ? currentWahaConnection() : undefined;
+  if (own) {
+    if (!own.enabled) throw new ChannelPausedError();
+    return { active_channel: "whatsapp", revision: own.revision, telegram_ready: false, demo_daily_limit: null };
+  }
   const settings = await messagingSettings();
   if (settings.active_channel !== channel) throw new ChannelPausedError();
   return settings;
 }
 
 export async function chatIsActive(chatId: string, revision?: number): Promise<boolean> {
+  const own = channelForChat(chatId) === "whatsapp" ? currentWahaConnection() : undefined;
+  if (own) return own.enabled && (revision === undefined || revision === own.revision);
   const settings = await messagingSettings();
   return settings.active_channel === channelForChat(chatId) && (revision === undefined || revision === settings.revision);
 }
@@ -39,7 +47,7 @@ export async function selectMessagingChannel(channel: MessagingChannel): Promise
     const [previous] = await tx<MessagingSettings[]>`select * from messaging_settings where id for update`;
     if (previous?.active_channel === channel) return;
     await tx`update messaging_settings set active_channel = ${channel}, revision = revision + 1, updated_at = now() where id`;
-    await tx`update channel_conversations set closed_at = now() where closed_at is null`;
+    await tx`update channel_conversations set closed_at = now() where closed_at is null and waha_connection_id is null`;
     // Las demos del navegador no dependen del canal de mensajería.
     await tx`update demo_sessions set status = 'terminada', updated_at = now() where status not in ('terminada', 'error') and chat_id not like 'web:%'`;
   });

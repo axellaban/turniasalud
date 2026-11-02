@@ -35,6 +35,12 @@ const CHANNEL = "https://api.elevenlabs.io/v1/convai/api-integrations/custom_cha
 const HMAC_KEY = "clave-hmac-waha";
 const SIGNING = "firma-canal";
 const API_KEY = "waha-api-key-super-secreta";
+const OWN_WAHA = "https://consultorio.test";
+const OWN_CLINIC = "11111111-1111-4111-8111-111111111111";
+const ownConnection = {
+  id: "consultorio-prueba", clinicId: OWN_CLINIC, phone: "5491155559999", url: OWN_WAHA,
+  apiKey: "api-key-consultorio-prueba", webhookHmac: "hmac-consultorio-prueba", session: "default", enabled: true, revision: 1,
+};
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
@@ -78,6 +84,10 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     if (url.startsWith(`${WAHA}/api/default/lids/`)) return json({ lid: "x@lid", pn: fake.lidPhone });
     if (url.startsWith(`${WAHA}/api/files/`) && url.endsWith(".jpeg")) return new Response(new Uint8Array(fake.photo!), { headers: { "Content-Type": "image/jpeg" } });
     if (url.startsWith(`${WAHA}/api/files/`)) return new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "Content-Type": "audio/ogg" } });
+  }
+  if (url === `${OWN_WAHA}/api/sendText`) {
+    expect(headers["x-api-key"]).toBe(ownConnection.apiKey);
+    return json({ id: "sent_from_own_line" }, 201);
   }
   if (url.startsWith("https://api.anthropic.com/v1/messages")) {
     return json({
@@ -163,9 +173,11 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     vi.unstubAllGlobals();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fake.reset();
     mocks.notifyN8n.mockClear();
+    vi.stubEnv("WAHA_CONNECTIONS", "");
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
   });
 
   it("rechaza webhooks sin firma válida y avisa si falta la clave", async () => {
@@ -401,6 +413,50 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
       chatId: "5491155550003@c.us",
       text: "Hola Ana, te escribimos por tu pedido: Ya está lista, la retirás en recepción. Si necesitás algo más, respondé este mensaje.",
     });
+  });
+
+  it("una línea propia usa su clínica y devuelve la respuesta por su instancia con Telegram general activo", async () => {
+    await sql`insert into clinics (id, name, is_demo, retained_at) values (${OWN_CLINIC}, 'Consultorio de prueba', true, now())`;
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+    await sql`update messaging_settings set active_channel = 'telegram' where id`;
+    const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
+    const context = { params: Promise.resolve({ connection: ownConnection.id }) };
+    const event = { ...textMessage("own1", "Quiero probar la demo"), me: { id: `${ownConnection.phone}@c.us` } };
+    fake.nextConversation = "conv_own";
+    const res = await ownInbound(wahaRequest(event, { key: ownConnection.webhookHmac }), context);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ conversation_id: "conv_own" });
+    const vars = (fake.sent("channel")[0].body as { dynamic_variables: Record<string, string> }).dynamic_variables;
+    expect(vars.clinic_id).toBe(OWN_CLINIC);
+    expect(JSON.stringify(vars)).toContain("Consultorio de prueba");
+    const [conv] = await sql`select clinic_id, waha_connection_id from channel_conversations where elevenlabs_conversation_id = 'conv_own'`;
+    expect(conv).toMatchObject({ clinic_id: OWN_CLINIC, waha_connection_id: ownConnection.id });
+    await reply(replyRequest(agentSays("conv_own", ["own1"], "¿En qué puedo ayudar?")));
+    expect(fake.calls.filter((c) => c.url === `${OWN_WAHA}/api/sendText`)).toHaveLength(1);
+    expect(fake.sent("sendText")).toHaveLength(0);
+    const { selectMessagingChannel } = await import("@/lib/messaging-settings");
+    await selectMessagingChannel("pausado");
+    const [stillOpen] = await sql`select closed_at from channel_conversations where elevenlabs_conversation_id = 'conv_own'`;
+    expect(stillOpen.closed_at).toBeNull();
+    // Una configuración eliminada o reasignada no cae en el número general.
+    for (const config of [[], [{ ...ownConnection, clinicId: CLINIC }], [{ ...ownConnection, enabled: false }], [{ ...ownConnection, revision: 2 }]]) {
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify(config));
+      const out = await reply(replyRequest(agentSays("conv_own", ["own2"], "No debe enviarse")));
+      expect(await out.json()).toMatchObject({ status: "inactive" });
+    }
+    expect(fake.calls.filter((c) => c.url.endsWith("/api/sendText"))).toHaveLength(1);
+  });
+
+  it("la firma de otra instancia, otro número o sesión no alcanzan al agente", async () => {
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+    const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
+    const context = { params: Promise.resolve({ connection: ownConnection.id }) };
+    const event = { ...textMessage("wrong-own", "Hola"), me: { id: "5491155558888@c.us" } };
+    expect((await ownInbound(wahaRequest(event), context)).status).toBe(401);
+    expect(await (await ownInbound(wahaRequest(event, { key: ownConnection.webhookHmac }), context)).json()).toMatchObject({ ignored: "otro número" });
+    expect(await (await ownInbound(wahaRequest({ ...event, session: "otra" }, { key: ownConnection.webhookHmac }), context)).json()).toMatchObject({ ignored: "otra sesión" });
+    expect((await ownInbound(wahaRequest(event), { params: Promise.resolve({ connection: "desconocida" }) })).status).toBe(404);
+    expect(fake.sent("channel")).toHaveLength(0);
   });
 
   it("Sistema muestra el proveedor y qué variables faltan, sin mostrar valores", async () => {

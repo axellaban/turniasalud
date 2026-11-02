@@ -6,6 +6,7 @@ import { env, missingWahaEnv } from "./env";
 import { registerOutbound } from "./channel";
 import { chatIdForPhone, wahaSendText } from "./waha";
 import type { Clinic } from "./types";
+import { wahaConnectionForClinic, withClinicWaha } from "./waha-connections";
 
 // Un solo punto para escribirle a un paciente por WhatsApp, sea cual sea el
 // proveedor de la clínica:
@@ -48,6 +49,8 @@ export function withOptOutFooter(key: TemplateKey, text: string, footer = true):
 
 /** Por qué no se puede escribir por WhatsApp todavía (null = listo). */
 export function whatsappReadiness(clinic: Clinic): string | null {
+  const own = wahaConnectionForClinic(clinic.id);
+  if (own) return own.enabled ? null : "El WhatsApp de este consultorio está pausado.";
   if (clinic.whatsapp_provider === "waha") {
     const missing = missingWahaEnv();
     return missing.length ? `Faltan variables de WAHA en Vercel: ${missing.join(", ")}.` : null;
@@ -74,12 +77,16 @@ export type PatientMessage = {
 
 /** Le escribe al paciente. Devuelve el ID de conversación de ElevenLabs si ya existe (Meta). */
 export async function sendPatientMessage(clinic: Clinic, msg: PatientMessage): Promise<{ conversation_id: string | null }> {
+  return withClinicWaha(clinic.id, () => sendPatientMessageOnConnection(clinic, msg));
+}
+
+async function sendPatientMessageOnConnection(clinic: Clinic, msg: PatientMessage): Promise<{ conversation_id: string | null }> {
   if (clinic.is_demo) throw new Error("Modo demo: no se envían avisos ni campañas a pacientes.");
   await requireActiveChannel("whatsapp");
   const problem = whatsappReadiness(clinic);
   if (problem) throw new Error(problem);
 
-  if (clinic.whatsapp_provider === "waha") {
+  if (wahaConnectionForClinic(clinic.id) || clinic.whatsapp_provider === "waha") {
     const text = msg.text ? withOptOutFooter(msg.templateKey, msg.text) : renderTemplate(msg.templateKey, msg.params, { optOutFooter: true });
     const chatId = chatIdForPhone(msg.phone);
     await wahaSendText(chatId, text);

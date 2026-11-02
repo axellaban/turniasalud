@@ -8,6 +8,9 @@ import { parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wah
 
 import { messagingSettings } from "@/lib/messaging-settings";
 import { readPatientDocument, type DocumentRead } from "@/lib/documents";
+import { currentWahaConnection } from "@/lib/waha-connections";
+import { getClinic } from "@/lib/clinic";
+import { phoneFromJid } from "@/lib/waha";
 
 export const dynamic = "force-dynamic";
 // La demo del lead magnet lee la web del interesado después de responder (after).
@@ -18,7 +21,8 @@ export const maxDuration = 300;
 // /api/elevenlabs/canal. Configuralo en WAHA con el evento "message" y la clave HMAC.
 export async function POST(request: Request) {
   const raw = await request.text();
-  const secret = env.wahaWebhookHmac();
+  const own = currentWahaConnection();
+  const secret = own?.webhookHmac ?? env.wahaWebhookHmac();
   if (!secret) {
     console.error("Falta WAHA_WEBHOOK_HMAC: no se pueden validar los webhooks de WAHA.");
     return NextResponse.json({ error: "Webhook sin configurar" }, { status: 500 });
@@ -27,7 +31,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
-  if ((await messagingSettings()).active_channel !== "whatsapp") return NextResponse.json({ ignored: "canal pausado" });
+  if (own ? !own.enabled : (await messagingSettings()).active_channel !== "whatsapp") return NextResponse.json({ ignored: "canal pausado" });
 
   let event: WahaEvent;
   try {
@@ -35,7 +39,9 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
-  const parsed = parseWahaEvent(event, env.wahaSession());
+  if (own && event.session !== own.session) return NextResponse.json({ ignored: "otra sesión" });
+  if (own && event.me?.id && normalizePhone(phoneFromJid(event.me.id)) !== normalizePhone(own.phone)) return NextResponse.json({ ignored: "otro número" });
+  const parsed = parseWahaEvent(event, own?.session ?? env.wahaSession());
   if (parsed.kind === "ignore") return NextResponse.json({ ignored: parsed.reason });
 
   const rawPhone = parsed.phone ?? (parsed.chatId.endsWith("@lid") ? await wahaPhoneForLid(parsed.chatId) : null);
@@ -45,7 +51,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ignored: "sin teléfono" });
   }
 
-  const key = `in:${parsed.id}`;
+  const key = own ? `in:${own.id}:${parsed.id}` : `in:${parsed.id}`;
   if (!(await claimEvent(key))) return NextResponse.json({ duplicate: true });
 
   try {
@@ -75,14 +81,14 @@ export async function POST(request: Request) {
     }
 
     // Lead magnet: "quiero probar la demo, mi web es…" y lo que siga de esa demo.
-    const demo = await handleDemoMessage({ messageId: parsed.id, chatId: parsed.chatId, phone, text });
+    const demo = own ? null : await handleDemoMessage({ messageId: parsed.id, chatId: parsed.chatId, phone, text });
     if (demo) {
       const sessionId = demo.analyze;
       if (sessionId) after(() => analyzeDemo(sessionId));
       return NextResponse.json({ ok: true, demo: demo.status });
     }
 
-    const clinic = await whatsappClinic();
+    const clinic = own ? await getClinic(own.clinicId) : await whatsappClinic();
     // La foto queda en la ficha del paciente; si no se puede guardar, el agente igual la recibe.
     await document?.save({ clinicId: clinic.id, phone, channel: "whatsapp" }).catch((e) => console.error("WAHA: no se pudo guardar la foto", e instanceof Error ? e.message : e));
     const res = await forwardToAgent(clinic, { messageId: parsed.id, chatId: parsed.chatId, phone, text });
