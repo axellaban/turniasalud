@@ -14,7 +14,7 @@ Actualizado: 02/11/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 ## Reglas que no se rompen
 
 - **No contratar planes ni cargar saldo** (Vercel está en Hobby, así que Skew Protection no se activa).
-- **Conservar las instancias WAHA anteriores.** El 02/11 el usuario autorizó crear y configurar una nueva, `n8n/turnia-guerra-mininni-waha`, para el piloto de Guerra–Mininni. No modificar `n8n/waha` ni `n8n/turnia-waha`. La nueva copia usa la imagen exacta de las anteriores; no actualizarla al copiar una etiqueta mutable. Estado y bloqueo de vinculación en `ESTADO_Y_PRIORIDADES.md`.
+- **Conservar las instancias WAHA anteriores.** El 02/11 el usuario autorizó crear y configurar una nueva, `n8n/turnia-guerra-mininni-waha`, para el piloto de Guerra–Mininni. No modificar `n8n/waha` ni `n8n/turnia-waha`. La nueva copia usa la imagen exacta de las anteriores; no actualizarla al copiar una etiqueta mutable. Estado operativo y pruebas en `ESTADO_Y_PRIORIDADES.md`.
 - **HolaVeggie y las líneas existentes de Twilio están operativas:** no modificar sus números, agentes, webhooks ni credenciales. Turnia usa la misma cuenta por decisión expresa del usuario; el saldo es compartido.
 - No pegar credenciales en chat, repo ni documentos.
 - No regenerar los audios de la web ni cambiar permisos de ElevenLabs sin que el usuario lo pida.
@@ -37,7 +37,7 @@ Actualizado: 02/11/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 ## 2. Prueba en vivo
 
-- [ ] **Línea propia de Guerra–Mininni (02/11):** instancia y asignación a la ficha ya configuradas; PR #84 publicado y 330 pruebas aprobadas. Falta resolver el rechazo de vinculación, confirmar `WORKING` y probar el intercambio real con Sofi. Se pidió abrir la terminal de Hostinger para leer los registros; no seguir pidiendo QR viejos ni dar por conectado el número. Telegram general y los WAHA anteriores se conservan.
+- [x] **Línea propia de Guerra–Mininni (02/11), +54 9 11 7243-3765:** `WORKING` y cuenta correcta verificados. El usuario recibió respuestas reales de texto y audio; conversación en la ficha correcta. Con datos ficticios se comprobaron reserva, cancelación por chat con más de 24 horas, derivación a recepción con menos de 24 horas, lectura de una foto descargada de WAHA y documento guardado en la ficha. Pruebas técnicas de reserva/foto dirigidas al propio número de Sofi, con eventos entrantes firmados; falta observar una foto desde otro teléfono. Datos ficticios retirados. PR #84 publicado, 330 pruebas aprobadas. Mantener la sesión operativa; no repetir la vinculación ni pedir la terminal. La demo general sigue en Telegram y la ficha del consultorio conserva su carácter de prueba.
 
 - [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.
 - [x] La demo en el navegador entra en una pantalla, en la computadora y en el celular (24/10; detalle en `ESTADO_Y_PRIORIDADES.md`).
@@ -48,8 +48,8 @@ Cuando el usuario elija reactivar WhatsApp desde Panel → Sistema (sin cambiar 
 
 - [ ] `https://turniasalud.vercel.app/api/health` → `demo.whatsapp: true`, `whatsapp_source: "waha"`.
 - [ ] **Demo con tu web** (`/probar-demo`), con el WhatsApp del usuario y datos ficticios («Prueba Turnia», DNI 11111111, particular): opciones 1/2/3, chat hasta reservar, `MENU` → audio (¿llega nota de voz?), `MENU` → llamada, `SALIR`. Medir cuánto tarda la lectura de la web con Claude. Checklist completa en `PLAN_LEAD_MAGNET.md` (paso 5 y «A verificar en vivo»).
-- [ ] WhatsApp de la clínica: texto, audio entrante (Speech to Text nunca se probó en uso real), turno, cancelación, memoria, receta y derivación a recepción.
-- [ ] **Fotos por WhatsApp** (credencial, orden, receta; hecho el 30/10): comprobar que WAHA entrega las fotos (WAHA Core a veces no descarga archivos; si llegan sin archivo, Sofi contesta «No pude ver esa foto»), que Sofi responde con lo que dice y que la foto aparece en la ficha del paciente. Por Telegram ya se puede probar en la demo.
+- [ ] WhatsApp general de la demo: completar memoria y receta. **La línea propia de Guerra–Mininni ya probó texto y audio reales, y reserva, cancelación y derivación en la prueba técnica del 02/11.**
+- [ ] **Fotos por WhatsApp:** en Guerra–Mininni ya se probó descarga de WAHA, lectura de una credencial ficticia, respuesta y foto guardada en la ficha (02/11; evento entrante técnico y entrega al propio número). Completar desde otro teléfono y con los tipos orden/receta. Por Telegram ya se puede probar en la demo.
 - [ ] Una conversación hablada completa con una persona (la llamada web solo se probó hasta el saludo).
 - [ ] Anotar los resultados en `ESTADO_Y_PRIORIDADES.md` y `PLAN_LEAD_MAGNET.md`.
 
