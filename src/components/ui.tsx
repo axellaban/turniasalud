@@ -116,6 +116,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   web: "Web",
   panel: "Panel",
   campana: "Campaña",
+  smile_connect: "Smile Connect",
 };
 
 export const STATUS_TONE: Record<string, keyof typeof TONES> = {

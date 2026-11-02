@@ -113,7 +113,7 @@ export type PatientVisit = {
 };
 
 export type AppointmentStatus = "confirmado" | "pendiente" | "cancelado" | "ausente" | "atendido" | "reprogramado";
-export type AppointmentSource = "whatsapp" | "telegram" | "telefono" | "web" | "panel" | "campana";
+export type AppointmentSource = "whatsapp" | "telegram" | "telefono" | "web" | "panel" | "campana" | "smile_connect";
 
 export type Appointment = {
   id: string;
@@ -133,6 +133,8 @@ export type Appointment = {
   confirmed_at: string | null;
   survey_sent_at: string | null;
   cancelled_at: string | null;
+  external_id?: string | null;
+  external_status?: string | null;
   created_at: string;
 };
 

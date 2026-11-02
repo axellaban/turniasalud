@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { sql } from "@/lib/db";
 import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import { getConnection, googleConfigured, listCalendars, redirectUri, type GoogleCalendar } from "@/lib/calendar/google";
+import { getSmileConnectStatus } from "@/lib/smile-connect";
 import { formatDateTime } from "@/lib/time";
 import { Badge, Card, Empty, Notice, buttonClass, secondaryButtonClass } from "@/components/ui";
 import { disconnectCalendar, syncCalendarNow } from "../../../calendar-actions";
 import { ProfessionalCalendarForm } from "../calendario-form";
 import { ConfigHeader } from "../header";
+import { SmileConnectCard } from "../smile-connect-card";
 
 export const metadata: Metadata = { title: "Calendario · Panel" };
 
@@ -27,13 +29,14 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
   const result = typeof params.google === "string" ? RESULT[params.google] : undefined;
   const configured = googleConfigured();
   const conn = configured ? await getConnection(clinic.id) : null;
-  const [professionals, [counts]] = await Promise.all([
+  const [professionals, [counts], smileStatus] = await Promise.all([
     sql<Pro[]>`select id, full_name, specialty, active, google_calendar_id, google_calendar_name from professionals where clinic_id = ${clinic.id} order by active desc, full_name`,
     sql<{ pendientes: number; errores: number; sincronizados: number }[]>`
       select count(*) filter (where calendar_sync = 'pendiente')::int as pendientes,
              count(*) filter (where calendar_sync = 'error')::int as errores,
              count(*) filter (where calendar_sync = 'ok' and calendar_event_id is not null and ends_at > now())::int as sincronizados
       from appointments where clinic_id = ${clinic.id}`,
+    getSmileConnectStatus(clinic.id),
   ]);
   let calendars: GoogleCalendar[] | null = null;
   if (conn && conn.status === "conectado") calendars = await listCalendars(conn).catch(() => null);
@@ -130,6 +133,12 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
           )}
         </Card>
       </div>
+
+      <SmileConnectCard
+        clinicId={clinic.id}
+        status={smileStatus}
+        lastSyncFormatted={smileStatus.lastSyncAt ? formatDateTime(smileStatus.lastSyncAt, clinic.timezone) : null}
+      />
     </>
   );
 }
