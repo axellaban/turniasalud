@@ -653,6 +653,24 @@ export async function runAgentSetup(): Promise<AgentSetupState> {
   }
 }
 
+/** Prepara el agente propio del consultorio elegido; no cambia el agente general ni activa una línea. */
+export async function runClinicAgentSetup(_previous: AgentSetupState | undefined, form: FormData): Promise<AgentSetupState> {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const main = await getClinic();
+  if (clinic.id === main.id) return { ok: false, message: "El agente general se administra desde Sistema." };
+  try {
+    const result = await setupAgent(clinic);
+    revalidatePath("/panel/configuracion", "layout");
+    return {
+      ok: true,
+      message: `Sofi de ${clinic.name}: agente ${result.created ? "creado" : "actualizado"} (${result.agentId}). Falta asignarle la línea entrante en el proveedor telefónico y comprobar una llamada real.`,
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "No se pudo preparar el agente de esta clínica." };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Audios de las demos de la web pública
 // ---------------------------------------------------------------------------

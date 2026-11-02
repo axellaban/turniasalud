@@ -2,13 +2,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
-const mocks = vi.hoisted(() => ({ cookies: new Map<string, string>(), after: [] as Array<() => unknown>, sent: vi.fn(), agent: vi.fn(async () => ({ conversation_id: "profile-conv" })) }));
+const mocks = vi.hoisted(() => ({ cookies: new Map<string, string>(), after: [] as Array<() => unknown>, sent: vi.fn(), agent: vi.fn(async () => ({ conversation_id: "profile-conv" })), setup: vi.fn(async () => ({ agentId: "agent-clinic", created: true, voiceId: "voice-sofi", toolIds: [] })) }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: (name: string) => mocks.cookies.has(name) ? { value: mocks.cookies.get(name) } : undefined, set: (name: string, value: string) => mocks.cookies.set(name, value), delete: (name: string) => mocks.cookies.delete(name) }) }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); }, notFound: () => { throw new Error("notFound"); }, usePathname: () => "/panel/clinicas", useRouter: () => ({ refresh: () => {} }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (fn: () => unknown) => mocks.after.push(fn) }));
 vi.mock("@/lib/messaging", () => ({ sendChatText: mocks.sent, sendChatVoice: vi.fn() }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn() }));
+vi.mock("@/lib/agent/setup", () => ({ setupAgent: mocks.setup }));
 vi.mock("@/lib/elevenlabs", async (original) => ({ ...(await original<typeof import("@/lib/elevenlabs")>()), sendChannelMessage: mocks.agent, getConversationToken: vi.fn(async () => "test-token"), getSignedUrl: vi.fn(async () => "wss://test.invalid") }));
 vi.mock("@/lib/demo/scraper", async (original) => ({ ...(await original<typeof import("@/lib/demo/scraper")>()), scrapeSite: vi.fn(async () => ({ url: "https://clinica.example/", text: "Texto original leído", pages: [{ url: "https://clinica.example/", title: "Fuente original", text: "Texto original leído <script>inofensivo</script>" }] })) }));
 vi.mock("@/lib/demo/profile", async (original) => ({ ...(await original<typeof import("@/lib/demo/profile")>()), buildProfile: vi.fn(async () => PROFILE) }));
@@ -39,7 +40,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await sql`update clinics set elevenlabs_agent_id = 'agent_test', whatsapp_provider = 'waha', whatsapp_phone_number_id = 'keep-number', templates = '{"recordatorio":"keep-template"}' where id = ${MAIN}`;
   }, 60000);
   beforeEach(async () => {
-    mocks.cookies.clear(); mocks.after.length = 0; mocks.sent.mockClear(); mocks.agent.mockClear();
+    mocks.cookies.clear(); mocks.after.length = 0; mocks.sent.mockClear(); mocks.agent.mockClear(); mocks.setup.mockClear();
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
     await sql`delete from demo_sessions`; await sql`delete from demo_handoffs`; await sql`delete from clinic_access`; await sql`delete from clinics where is_demo`;
     await sql`update messaging_settings set active_channel = 'telegram', revision = 0, telegram_ready = true where id`;
@@ -74,6 +75,17 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     choose(b);
     await expect(actions.saveClinic(form({ clinic_id: a, name: "No debe guardarse" }))).rejects.toThrow("seleccionada cambió");
     expect((await clinic(a)).name).toBe("Clínica Alfa"); expect((await clinic(b)).name).toBe("Clínica Beta");
+  });
+  it("prepara el agente de la clínica elegida y rechaza el formulario de otra clínica", async () => {
+    expect(await actions.runClinicAgentSetup(undefined, form({ clinic_id: a }))).toMatchObject({ ok: true });
+    expect(mocks.setup).toHaveBeenCalledWith(expect.objectContaining({ id: a, name: "Clínica Alfa" }));
+    mocks.setup.mockClear();
+    choose(b);
+    await expect(actions.runClinicAgentSetup(undefined, form({ clinic_id: a }))).rejects.toThrow("seleccionada cambió");
+    expect(mocks.setup).not.toHaveBeenCalled();
+    choose(MAIN);
+    expect(await actions.runClinicAgentSetup(undefined, form({ clinic_id: MAIN }))).toMatchObject({ ok: false });
+    expect(mocks.setup).not.toHaveBeenCalled();
   });
   it("edita profesionales y prestaciones con pertenencia a la clínica", async () => {
     const [pro] = await sql`select * from professionals where clinic_id = ${a}`;
@@ -248,6 +260,8 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await expect(clinics.createAccess({}, form({ clinic_id: a }))).rejects.toThrow(denied);
     await expect(actions.saveMessagingChannel({}, form({ channel: "pausado" }))).rejects.toThrow(denied);
     await expect(actions.saveDemoLimit({}, form({ demo_daily_limit: "1" }))).rejects.toThrow(denied);
+    await expect(actions.runClinicAgentSetup(undefined, form({ clinic_id: a }))).rejects.toThrow(denied);
+    expect(mocks.setup).not.toHaveBeenCalled();
     for (const path of ["clinicas", "sistema", "demos"]) await expect((async () => (await import(`@/app/panel/(app)/${path}/page`)).default({ searchParams: Promise.resolve({}) }))()).rejects.toThrow(denied);
     expect(await sql`select id from clinics where id = ${b}`).toHaveLength(1);
     expect((await sql`select active_channel from messaging_settings`)[0].active_channel).toBe("telegram");
