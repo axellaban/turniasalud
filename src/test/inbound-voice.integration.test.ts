@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
-const mocks = vi.hoisted(() => ({ calls: [] as Array<{ path: string; method: string; body: Record<string, unknown> }>, nextAgent: 0, nextTool: 0 }));
+const mocks = vi.hoisted(() => ({ calls: [] as Array<{ path: string; method: string; body: Record<string, unknown> }>, nextAgent: 0, nextTool: 0, voiceAgents: [] as string[] }));
 vi.mock("@/lib/elevenlabs", () => ({
+  agentVoiceId: async (agentId: string) => { mocks.voiceAgents.push(agentId); return "voice-sofi"; },
   elevenlabs: async (path: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     const body = init.body ? JSON.parse(String(init.body)) : {};
@@ -26,13 +27,13 @@ describe.runIf(base)("agentes y llamadas exclusivos de cada clínica", () => {
   beforeAll(async () => {
     const url = await scratchDatabase(base!, "turnia_test_inbound_voice");
     await resetTestDatabase(url);
-    for (const [key, value] of Object.entries({ DATABASE_URL: url, APP_URL: "https://turnia.test", AGENT_TOOLS_SECRET: "test-tools", ELEVENLABS_API_KEY: "fake", ELEVENLABS_VOICE_ID: "voice-sofi" })) vi.stubEnv(key, value);
+    for (const [key, value] of Object.entries({ DATABASE_URL: url, APP_URL: "https://turnia.test", AGENT_TOOLS_SECRET: "test-tools", ELEVENLABS_API_KEY: "fake", ELEVENLABS_VOICE_ID: "voice-static-moderated" })) vi.stubEnv(key, value);
     ({ sql } = await import("@/lib/db"));
     lib = await import("@/lib/clinic");
     ({ setupAgent: setup } = await import("@/lib/agent/setup"));
   }, 60000);
   beforeEach(async () => {
-    mocks.calls = []; mocks.nextAgent = 0; mocks.nextTool = 0;
+    mocks.calls = []; mocks.nextAgent = 0; mocks.nextTool = 0; mocks.voiceAgents = [];
     vi.stubEnv("WAHA_CONNECTIONS", "[]");
     await sql`delete from clinics where is_demo`;
     await sql`update clinics set elevenlabs_agent_id = 'agent-main' where id = ${MAIN}`;
@@ -72,9 +73,18 @@ describe.runIf(base)("agentes y llamadas exclusivos de cada clínica", () => {
     expect(mocks.calls.some((r) => r.path === "/v1/convai/agents/agent-main")).toBe(false);
     const created = mocks.calls.find((r) => r.path === "/v1/convai/agents/create")!;
     expect(created.body.name).toBe("Turnia · Guerra–Mininni");
+    expect(created.body.conversation_config).toMatchObject({ tts: { voice_id: "voice-sofi" } });
+    expect(mocks.voiceAgents).toEqual(["agent-main"]);
     const second = await setup((await sql`select * from clinics where id = ${a}`)[0] as never);
     expect(second).toMatchObject({ agentId: first.agentId, created: false });
     expect(mocks.calls.filter((r) => r.path === "/v1/convai/agents/create")).toHaveLength(1);
     expect((await sql`select elevenlabs_agent_id from clinics where id = ${b}`)[0].elevenlabs_agent_id).toBe("agent-beta");
+  });
+  it("conserva la voz propia de una clínica y no consulta ni cambia la del agente general", async () => {
+    await sql`update clinics set elevenlabs_voice_id = 'voice-clinic' where id = ${a}`;
+    const result = await setup((await sql`select * from clinics where id = ${a}`)[0] as never);
+    expect(result.voiceId).toBe("voice-clinic");
+    expect(mocks.voiceAgents).toEqual([]);
+    expect(mocks.calls.find((r) => r.path === "/v1/convai/agents/agent-mininni")?.body.conversation_config).toMatchObject({ tts: { voice_id: "voice-clinic" } });
   });
 });
