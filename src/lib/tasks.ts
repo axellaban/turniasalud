@@ -58,6 +58,7 @@ export async function resolveTask(clinicId: string, taskId: string, rawResponse:
       templateName: template,
       params: [task.full_name?.split(" ")[0] || "hola", response],
       context,
+      patientId: task.patient_id,
     });
     return { ok: true, message: "Tarea resuelta y respuesta enviada por WhatsApp.", notified: true };
   } catch (e) {

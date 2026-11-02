@@ -47,7 +47,11 @@ Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el 
   - Se pegan celdas de Excel o Google Sheets, o se sube un CSV (UTF-8 o Windows-1252).
   - Las columnas se reconocen por su título y se pueden corregir. Hay vista previa y una lista de las filas con problemas.
   - Sirve con una fila por paciente o una fila por visita.
-  - Une cada prestación con las de la clínica. Las fichas que ya existían solo completan los datos que les faltan.
+  - **Todo lo de la ficha del sistema anterior** (02/11/2026, probado con la exportación completa de Smile Connect de Guerra–Mininni): nombre, celular, DNI, mail, nacimiento, **sexo**, **dirección**, cobertura, plan, afiliado, visitas con prestación y profesional, próximo control y notas. La edad no se importa porque sale de la fecha de nacimiento (la ficha la muestra). Lo que no tiene un lugar propio queda en las notas de la ficha: un mail mal escrito, el celular que no sirve, otro nombre con el que figura, otro mail, o el profesional y la prestación de una fila sin fecha.
+  - **Familias:** varias personas con el mismo celular quedan en fichas aparte (otro DNI, otra fecha de nacimiento u otro sexo, o nombres distintos). La misma persona escrita de dos maneras («Ricci» / «Riccis», «Enrique» / «Henrique», un error de tipeo) se junta en una ficha. La vista previa lista los celulares que aparecen en más de una fila y deja corregirlo fila por fila.
+  - **Sin celular que sirva:** la ficha entra igual (sin celular, con el número de la planilla en las notas). En campañas figura como «No tiene un celular que sirva para WhatsApp».
+  - **Código de área:** los números locales («4555-0123», «15 4555-0123») se completan con el código que se elige (sugerido 11 cuando casi toda la planilla es del AMBA). Un `+` con otro código de país (+1, +598) se respeta.
+  - Une cada prestación con las de la clínica. Las fichas que ya existían (mismo DNI; o mismo celular y nombre; o, sin celular, mismo nombre) solo completan los datos que les faltan. Reimportar el mismo archivo no duplica fichas ni visitas.
   - Pide confirmar que se puede escribir a esos pacientes y se puede deshacer.
   - Hay una planilla de ejemplo en `public/plantilla-pacientes.csv`.
 - En la ficha del paciente: «Próximo control» (fecha y motivo), indicado por el profesional, y las visitas importadas.
@@ -62,7 +66,7 @@ Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el 
   - `clinics.reactivation_months` y `contact_cooldown_days`;
   - `campaigns.message`;
   - `campaign_recipients.detail`, `context`, `value`, `manual` y `created_at`, más el estado `excluido`.
-- Pruebas: `src/lib/patient-import.test.ts` y `src/test/campaigns.integration.test.ts`.
+- Pruebas: `src/lib/patient-import.test.ts` y `src/test/campaigns.integration.test.ts`; familias en `src/test/patients.integration.test.ts`.
 
 **Perfiles de demo:** se puede importar y armar campañas para mostrar la lista y el mensaje. Sofi no envía nada. Abrir el chat desde el panel sí funciona, porque lo manda una persona desde su WhatsApp.
 
@@ -71,7 +75,7 @@ Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el 
 1. **Secuencias:** si no responde en unos días, un segundo mensaje y después una llamada de Sofi. Twilio ya está configurado; las llamadas se hacen solo con autorización.
 2. **Respuestas de lo enviado a mano:** marcar «Respondió», «No le interesa» o «Pidió la baja» desde la lista, porque esas respuestas llegan al WhatsApp de la clínica y no a Sofi.
 3. **Automáticas por clínica:** un interruptor en el panel por tipo de campaña. Hoy las programa un workflow de n8n global y desactivado.
-4. **Segmentos preventivos por edad y sexo** (mamografía anual, antigripal, chequeo por edad). Falta el sexo en la ficha.
+4. **Segmentos preventivos por edad y sexo** (mamografía anual, antigripal, chequeo por edad). El sexo y la fecha de nacimiento ya están en la ficha (02/11/2026); falta armar los segmentos.
 5. **Órdenes y derivaciones pendientes:** las tareas `orden_medica` sin turno, como campaña.
 6. Ventanas horarias de envío y prueba A/B del mensaje.
 7. Versión 3: conectores con sistemas de gestión y cobranzas (saldos con link de pago).

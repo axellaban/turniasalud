@@ -69,14 +69,19 @@ export type Schedule = {
   end_time: string;
 };
 
+export type PatientSex = "femenino" | "masculino" | "otro";
+
 export type Patient = {
   id: string;
   clinic_id: string;
   full_name: string | null;
-  phone: string;
+  /** Celular (id de WhatsApp o Telegram). Puede faltar y lo pueden compartir varias fichas (una familia). */
+  phone: string | null;
   dni: string | null;
   birth_date: string | null;
   email: string | null;
+  sex: PatientSex | null;
+  address: string | null;
   coverage: string | null;
   coverage_plan: string | null;
   member_number: string | null;

@@ -72,7 +72,8 @@ export const ACTIVATION_TYPES: readonly CampaignType[] = ["recall", "reactivacio
 
 export type AudienceMember = {
   patient_id: string;
-  phone: string;
+  /** null: la ficha no tiene celular (figura en la lista, pero no se le puede escribir). */
+  phone: string | null;
   name: string | null;
   detail: string;
   context: string;
@@ -85,14 +86,14 @@ export type AudienceMember = {
 };
 
 const MAX_PER_RUN = 50;
-const isWhatsAppId = (phone: string) => /^\d{8,15}$/.test(phone);
+const isWhatsAppId = (phone: string | null): phone is string => Boolean(phone) && /^\d{8,15}$/.test(phone!);
 const price = (value: string | number | null | undefined) => (value === null || value === undefined || value === "" ? null : Number(value));
 
 /** Motivos por los que un destinatario guardado no se envía (quedan a la vista en la campaña). */
-export const NOT_REACHABLE = "El celular no sirve para WhatsApp.";
+export const NOT_REACHABLE = "No tiene un celular que sirva para WhatsApp.";
 export const NO_LONGER_ELIGIBLE = "Ya no corresponde: sacó turno, pidió la baja o recibió otra campaña hace poco.";
 
-type PatientRow = { id: string; full_name: string | null; phone: string };
+type PatientRow = { id: string; full_name: string | null; phone: string | null };
 
 /** Suma meses a una fecha AAAA-MM-DD (el 31 pasa al último día del mes si hace falta). */
 export function addMonthsKey(key: string, months: number): string {
@@ -177,7 +178,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
   if (type === "recall") {
     // Último turno atendido (o visita importada) de cada paciente y prestación con control periódico.
     const [byType, indicated] = await Promise.all([
-      sql<Array<{ patient_id: string; appointment_type_id: string; last_day: string; type_name: string; recall_months: number; price: string | null; full_name: string | null; phone: string }>>`
+      sql<Array<{ patient_id: string; appointment_type_id: string; last_day: string; type_name: string; recall_months: number; price: string | null; full_name: string | null; phone: string | null }>>`
         with history as (
           select a.patient_id, a.appointment_type_id, (a.starts_at at time zone ${tz})::date as day
           from appointments a where a.clinic_id = ${clinic.id} and a.status = 'atendido'
@@ -193,7 +194,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
         where not p.contact_opt_out and t.active and t.recall_months is not null
         order by h.patient_id, h.appointment_type_id, h.day desc`,
       // Controles indicados a un paciente puntual: cuentan como hechos si vino desde 30 días antes de la fecha.
-      sql<Array<{ id: string; full_name: string | null; phone: string; next_control_at: string; next_control_reason: string | null }>>`
+      sql<Array<{ id: string; full_name: string | null; phone: string | null; next_control_at: string; next_control_reason: string | null }>>`
         select p.id, p.full_name, p.phone, p.next_control_at::text as next_control_at, p.next_control_reason
         from patients p
         where p.clinic_id = ${clinic.id} and not p.contact_opt_out and p.next_control_at <= ${today}::date
@@ -248,7 +249,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
   }
 
   if (type === "reactivacion") {
-    const rows = await sql<Array<{ patient_id: string; last_day: string; type_name: string | null; price: string | null; full_name: string | null; phone: string }>>`
+    const rows = await sql<Array<{ patient_id: string; last_day: string; type_name: string | null; price: string | null; full_name: string | null; phone: string | null }>>`
       with history as (
         select a.patient_id, (a.starts_at at time zone ${tz})::date as day, a.appointment_type_id, null::text as service
         from appointments a where a.clinic_id = ${clinic.id} and a.status = 'atendido'
@@ -278,7 +279,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
   }
 
   if (type === "no_show") {
-    const rows = await sql<Array<{ patient_id: string; appointment_type_id: string; type_name: string; price: string | null; full_name: string | null; phone: string }>>`
+    const rows = await sql<Array<{ patient_id: string; appointment_type_id: string; type_name: string; price: string | null; full_name: string | null; phone: string | null }>>`
       select a.patient_id, a.appointment_type_id, t.name as type_name, t.price, p.full_name, p.phone
       from appointments a
       join patients p on p.id = a.patient_id
@@ -338,7 +339,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
 
   if (type === "lista_espera") {
     const rows = await sql<
-      Array<{ patient_id: string; appointment_type_id: string | null; preferences: string | null; type_name: string | null; price: string | null; full_name: string | null; phone: string }>
+      Array<{ patient_id: string; appointment_type_id: string | null; preferences: string | null; type_name: string | null; price: string | null; full_name: string | null; phone: string | null }>
     >`
       select distinct on (w.patient_id) w.patient_id, w.appointment_type_id, w.preferences, t.name as type_name, t.price, p.full_name, p.phone
       from waitlist w
@@ -359,8 +360,13 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
     );
   }
 
+  // Un aviso por celular: una familia con un mismo número lo recibe una vez (a nombre del mayor).
   const rows = await sql<PatientRow[]>`
-    select id, full_name, phone from patients where clinic_id = ${clinic.id} and not contact_opt_out order by created_at`;
+    select * from (
+      select distinct on (phone) id, full_name, phone, created_at from patients
+      where clinic_id = ${clinic.id} and not contact_opt_out and phone is not null
+      order by phone, birth_date nulls last, created_at, id
+    ) p order by created_at, id`;
   return rows.map((r) => member({ patient_id: r.id, phone: r.phone, name: r.full_name, detail: clinic.name, context: "Aviso general de la clínica.", value: null }));
 }
 
@@ -592,7 +598,7 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
   let attempts = 0;
   for (const row of queue) {
     const member = current.get(row.patient_id);
-    if (!member || !member.reachable) {
+    if (!member || !member.reachable || !member.phone) {
       await sql`update campaign_recipients set status = 'excluido', error = ${member ? NOT_REACHABLE : NO_LONGER_ELIGIBLE} where id = ${row.id}`;
       result.skipped++;
       continue;
@@ -613,6 +619,7 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
         context,
         campaignId: campaign.id,
         text: campaign.message?.trim() ? campaignMessage(campaign, member.name, member.detail) : undefined,
+        patientId: member.patient_id,
       });
       await sql`
         update campaign_recipients set status = 'enviado', elevenlabs_conversation_id = ${res.conversation_id ?? null}, sent_at = now(),

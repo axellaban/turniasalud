@@ -50,7 +50,9 @@ export function ManualAppointmentForm({
   const [time, setTime] = useState(initialTime ?? "");
   const [custom, setCustom] = useState(false);
   const [reload, setReload] = useState(0);
-  const [known, setKnown] = useState<KnownPatient | null>(null);
+  // Fichas de ese celular (una familia puede tener varias) y para quién es el turno: una de ellas o «nueva».
+  const [known, setKnown] = useState<KnownPatient[]>([]);
+  const [patientId, setPatientId] = useState("");
   // «Darlo igual» vale para el horario que se rechazó: si se elige otro, desaparece.
   const slotKey = `${proId}|${secondId}|${date}|${time}`;
   const [forceKey, setForceKey] = useState<string | null>(null);
@@ -64,7 +66,8 @@ export function ManualAppointmentForm({
       setTime("");
       setSecondId("");
       setCustom(false);
-      setKnown(null);
+      setKnown([]);
+      setPatientId("");
       setReload((n) => n + 1);
     }
   }
@@ -75,11 +78,22 @@ export function ManualAppointmentForm({
     const data = new FormData();
     data.set("clinic_id", clinicId);
     data.set("phone", phone);
-    const found = await lookupPatient(data).catch(() => null);
+    const found = await lookupPatient(data).catch(() => []);
     setKnown(found);
-    if (!found) return;
-    if (nameRef.current && !nameRef.current.value && found.name) nameRef.current.value = found.name;
-    if (coverageRef.current && !coverageRef.current.value && found.coverage) coverageRef.current.value = found.coverage;
+    setPatientId(found[0]?.id ?? "");
+    const first = found[0];
+    if (!first) return;
+    if (nameRef.current && !nameRef.current.value && first.name) nameRef.current.value = first.name;
+    if (coverageRef.current && !coverageRef.current.value && first.coverage) coverageRef.current.value = first.coverage;
+  }
+
+  // Al elegir para quién es, se completan sus datos; para una persona nueva, el nombre queda para escribir.
+  function choose(id: string) {
+    setPatientId(id);
+    const chosen = known.find((k) => k.id === id);
+    if (nameRef.current) nameRef.current.value = chosen?.name ?? "";
+    if (coverageRef.current) coverageRef.current.value = chosen?.coverage ?? "";
+    if (!chosen) nameRef.current?.focus();
   }
 
   const pick = (next: Partial<{ typeId: string; proId: string; secondId: string }>) => {
@@ -152,15 +166,32 @@ export function ManualAppointmentForm({
             autoComplete="off"
             placeholder="11 5555-0001"
             onBlur={(e) => e.target.value.trim() && recognize(e.target.value)}
-            onChange={() => known && setKnown(null)}
+            onChange={() => {
+              if (known.length) setKnown([]);
+              setPatientId("");
+            }}
             className={inputClass}
           />
         </Field>
-        {known && (
-          <div role="status" className="rounded-xl bg-brand-50/70 px-3 py-2 text-xs leading-relaxed text-brand-900">
-            <p className="font-medium">Ya es paciente{known.name ? `: ${known.name}` : ""}.</p>
-            {known.upcoming.length > 0 && <p className="mt-0.5 text-brand-900/70">Próximos turnos: {known.upcoming.join(" · ")}.</p>}
-          </div>
+        <input type="hidden" name="patient_id" value={patientId} />
+        {known.length > 0 && (
+          <fieldset className="rounded-xl bg-brand-50/70 px-3 py-2 text-xs leading-relaxed text-brand-900">
+            <legend className="sr-only">Para quién es el turno</legend>
+            <p role="status" className="font-medium">
+              {known.length === 1 ? "Este celular ya tiene una ficha. ¿Para quién es el turno?" : `Este celular tiene ${known.length} fichas (una familia). ¿Para quién es el turno?`}
+            </p>
+            <div className="mt-1.5 space-y-1">
+              {[...known, { id: "nueva", name: null, coverage: null, upcoming: [] }].map((k) => (
+                <label key={k.id} className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="patient_choice" checked={patientId === k.id} onChange={() => choose(k.id)} className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">{k.id === "nueva" ? "Otra persona (ficha nueva con este celular)" : (k.name ?? "Paciente sin nombre")}</span>
+                    {k.upcoming.length > 0 && <span className="block text-brand-900/70">Próximos turnos: {k.upcoming.join(" · ")}.</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         )}
         <Field label="Nombre y apellido">
           <input ref={nameRef} name="full_name" required autoComplete="off" className={inputClass} />

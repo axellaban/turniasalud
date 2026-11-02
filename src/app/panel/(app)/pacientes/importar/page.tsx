@@ -10,11 +10,12 @@ import type { Metadata } from "next";
 export const metadata: Metadata = { title: "Importar pacientes · Panel" };
 
 const COLUMNS: Array<[string, string]> = [
-  ["Nombre y celular", "Obligatorios. El celular con código de área (11, 351…)."],
+  ["Nombre y celular", "El nombre es obligatorio. El celular, con código de área (11, 351…); si vienen sin él, elegís cuál completar. Sin celular la ficha entra igual."],
+  ["Familias", "Si varias personas tienen el mismo celular, cada una queda con su ficha. Si es la misma persona escrita de dos maneras, se junta: lo revisás antes de importar."],
   ["Fecha de la última visita", "Con esto encontramos a los inactivos. Si pegás una fila por visita, se guardan todas."],
   ["Prestación o tratamiento", "Si coincide con una prestación tuya que tiene control periódico, entra en «Controles vencidos»."],
   ["Próximo control", "Una fecha indicada por el profesional: ese día el paciente aparece para escribirle."],
-  ["Opcionales", "DNI, email, obra social, plan, afiliado, nacimiento, profesional y notas."],
+  ["Opcionales", "DNI, email, obra social, plan, afiliado, nacimiento, sexo, dirección, profesional y notas. Lo que no tiene un lugar propio (un mail mal escrito, otro nombre) queda en las notas."],
 ];
 
 export default async function ImportPatientsPage() {
@@ -34,7 +35,7 @@ export default async function ImportPatientsPage() {
         title="Importar pacientes"
         description="Traé la base que tenés en tu sistema de turnos o en una planilla. Con las fechas de visita, Campañas te muestra a quiénes les toca volver."
       />
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="min-w-0">
           <ImportForm clinicId={clinic.id} />
         </Card>

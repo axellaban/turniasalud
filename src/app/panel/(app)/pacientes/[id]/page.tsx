@@ -3,18 +3,29 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
-import { formatDate, formatDateTime } from "@/lib/time";
+import { formatDate, formatDateTime, localDateKey } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { Card, CHANNEL_LABEL, Notice, PageHeader, StatusBadge, buttonClass, smallButtonClass } from "@/components/ui";
 import { mergePatientDuplicates, setContactOptOut } from "../../../actions";
-import { duplicatesOf } from "@/lib/patients";
+import { duplicatesOf, householdOf } from "@/lib/patients";
 import { patientDocuments } from "@/lib/documents-panel";
 import { NextControl } from "./next-control";
 import { DeletePatientButton } from "../delete-patients";
-import type { Patient, PatientVisit } from "@/lib/types";
+import type { Patient, PatientSex, PatientVisit } from "@/lib/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Paciente · Panel" };
+
+const SEX_LABEL: Record<PatientSex, string> = { femenino: "Femenino", masculino: "Masculino", otro: "Otro" };
+
+/** Años cumplidos a una fecha (AAAA-MM-DD). */
+function ageOn(birth: string | null, today: string): number | null {
+  if (!birth) return null;
+  const [by, bm, bd] = birth.split("-").map(Number);
+  const [ty, tm, td] = today.split("-").map(Number);
+  const age = ty - by - (tm < bm || (tm === bm && td < bd) ? 1 : 0);
+  return age >= 0 && age < 130 ? age : null;
+}
 
 const DOCUMENT_LABEL: Record<string, string> = {
   credencial: "Credencial",
@@ -34,7 +45,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
   const canDelete = (await getPanelUser()).role === "admin";
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
-  const [appointments, conversations, tasks, visits, duplicates, documents] = await Promise.all([
+  const [appointments, conversations, tasks, visits, duplicates, documents, household] = await Promise.all([
     sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, t.name as type_name
       from appointments a
@@ -54,14 +65,19 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
       where v.patient_id = ${p.id} order by v.visited_at desc limit 30`,
     duplicatesOf(p),
     patientDocuments(clinic.id, p.id),
+    // Familia: otras fichas con el mismo celular.
+    householdOf(sql, clinic.id, p.phone, p.id),
   ]);
   const tz = clinic.timezone;
 
+  const age = ageOn(p.birth_date, localDateKey(new Date(), tz));
   const facts = [
-    ["Celular", displayPhone(p.phone)],
+    ["Celular", p.phone ? displayPhone(p.phone) : "Sin celular"],
     ["DNI", p.dni],
-    ["Nacimiento", p.birth_date ? formatDate(`${p.birth_date}T12:00:00Z`, "UTC") : null],
+    ["Nacimiento", p.birth_date ? `${formatDate(`${p.birth_date}T12:00:00Z`, "UTC")}${age !== null ? ` (${age} años)` : ""}` : null],
+    ["Sexo", p.sex ? SEX_LABEL[p.sex] : null],
     ["Email", p.email],
+    ["Dirección", p.address],
     ["Cobertura", [p.coverage, p.coverage_plan].filter(Boolean).join(" ")],
     ["N° afiliado", p.member_number],
     ["Preferencias", p.preferences],
@@ -119,6 +135,27 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
                 </div>
               ))}
             </dl>
+            {household.length > 0 && (
+              <div className="mt-3 border-t border-brand-900/5 pt-3 text-sm">
+                <p className="text-brand-900/65">Comparte el celular con</p>
+                <ul className="mt-1 space-y-0.5">
+                  {household.map((h) => (
+                    <li key={h.id}>
+                      <Link href={`/panel/pacientes/${h.id}`} className="font-medium text-brand-800 hover:underline">
+                        {h.full_name ?? "Paciente sin nombre"}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-brand-900/60">Cada uno tiene su ficha. Sofi pregunta para quién es antes de dar datos o agendar.</p>
+              </div>
+            )}
+            {p.notes && (
+              <div className="mt-3 border-t border-brand-900/5 pt-3 text-sm">
+                <p className="text-brand-900/65">Notas</p>
+                <p className="mt-1 whitespace-pre-line text-brand-950">{p.notes}</p>
+              </div>
+            )}
             <form action={setContactOptOut} className="mt-4 flex items-center justify-between gap-2 border-t border-brand-900/5 pt-3 text-sm">
               <input type="hidden" name="id" value={p.id} />
               <input type="hidden" name="opt_out" value={String(!p.contact_opt_out)} />

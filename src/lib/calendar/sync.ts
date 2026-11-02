@@ -151,7 +151,7 @@ type SyncRow = {
   google_calendar_id: string | null;
   type_name: string;
   patient_name: string | null;
-  patient_phone: string;
+  patient_phone: string | null;
   clinic_address: string | null;
   timezone: string;
 };
@@ -167,7 +167,7 @@ export function shortName(full: string | null): string {
 }
 
 function eventBody(row: SyncRow) {
-  const phone = /^\d{8,15}$/.test(row.patient_phone) ? `+${row.patient_phone}` : null;
+  const phone = row.patient_phone && /^\d{8,15}$/.test(row.patient_phone) ? `+${row.patient_phone}` : null;
   return {
     summary: `Turno: ${row.type_name} · ${shortName(row.patient_name)}`,
     description: [

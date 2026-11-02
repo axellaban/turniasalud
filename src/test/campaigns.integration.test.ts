@@ -83,14 +83,16 @@ describe.runIf(base)("campañas para activar la base", () => {
       "Paciente;Celular;DNI;Email;Última visita;Prestación;Próximo control",
       `Carla Vega;11 5555-0101;31222333;;${ago(14)};LIMPIEZA DENTAL;`,
       `Carla Vega;1155550101;;;${ago(20)};Limpieza dental;`,
-      `María González;011 15 5555-0001;99999999;maria@example.com;${ago(7)};Limpieza dental;`,
+      `María González;011 15 5555-0001;28.111.222;maria@example.com;${ago(7)};Limpieza dental;`,
       `Pedro Luna;351 555-0102;;;${ago(2)};Ortodoncia;${ago(0, 3)}`,
       `Sin Celular;;;;${ago(3)};Consulta;`,
     ].join("\n");
     expect(await actions.importPatientsAction(undefined, form({ clinic_id: CLINIC, text }))).toMatchObject({ ok: false, message: expect.stringContaining("Confirmá") });
 
     const result = await actions.importPatientsAction(undefined, form({ clinic_id: CLINIC, text, consent: "on", source: "pacientes.csv" }));
-    expect(result).toMatchObject({ ok: true, summary: { created: 2, existing: 1, visits: 4, skipped: 1, unmatched: ["Ortodoncia"] } });
+    // «Sin Celular» entra igual, sin celular (no se le puede escribir hasta cargarlo).
+    expect(result).toMatchObject({ ok: true, summary: { created: 3, existing: 1, visits: 5, skipped: 0, withoutPhone: 1, sharedPhones: 0, unmatched: ["Ortodoncia", "Consulta"] } });
+    expect(await sql`select phone from patients where full_name = 'Sin Celular'`).toEqual([{ phone: null }]);
 
     const [carla] = await sql`select * from patients where phone = '5491155550101'`;
     expect(carla).toMatchObject({ full_name: "Carla Vega", dni: "31222333" });
@@ -106,7 +108,7 @@ describe.runIf(base)("campañas para activar la base", () => {
 
     // Importar lo mismo otra vez no duplica visitas.
     const again = await actions.importPatientsAction(undefined, form({ clinic_id: CLINIC, text, consent: "on" }));
-    expect(again.summary).toMatchObject({ created: 0, existing: 3, visits: 0 });
+    expect(again.summary).toMatchObject({ created: 0, existing: 4, visits: 0 });
   });
 
   it("las audiencias suman visitas importadas, controles indicados y respetan las reglas de la clínica", async () => {
