@@ -6,7 +6,7 @@ Actualizado: 26/10/2026. **Código hecho y probado con Google simulado** (`src/t
 
 - **Se conecta con un botón.** Panel → Prospección → **Google Sheets** → «Conectar con Google». Se elige la cuenta, se acepta el permiso y listo: no hay que pegar código ni armar nada en la planilla.
 - **Turnia crea la planilla** «Turnia · Prospección y pedidos de demo» en el Drive de esa cuenta, con dos pestañas:
-  - **Prospección:** cada odontólogo con su consultorio, teléfono (y de quién es), estado, mensajes, próximo paso, si abrió o probó su demo, el link de su demo, señales y notas.
+  - **Prospección:** cada odontólogo con su consultorio, teléfono (y de quién es), estado, mensajes, próximo paso, si abrió o probó su demo, cuándo se armó la clínica de su demo y si conversó con Sofi en ella, el link de su demo, señales y notas. El panel de Chapa Labs (`/prospecting/turnia`) lee esta pestaña y opera por `POST /api/prospeccion` (ver `ESTADO_Y_PRIORIDADES.md`).
   - **Pedidos de demo:** los del formulario «Pedí una demo» y los de quienes probaron la demo (navegador, WhatsApp o Telegram), con su estado y las notas del panel.
 - **Se actualiza sola.** Cada cambio la copia después de responder (`after()`): un contacto, un estado, una edición, una importación, una demo abierta o probada, un pedido nuevo, editado o borrado. También hay «Copiar ahora».
 - **Es un espejo.** Cada copia reescribe las dos pestañas completas (los datos desde A1 y borra lo que sobraba abajo): lo que se escriba a mano en ellas se pisa. Para cuentas o filtros propios, otra pestaña. Si alguien borra una de las dos, vuelve en la próxima copia.

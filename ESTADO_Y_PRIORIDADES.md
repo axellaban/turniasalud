@@ -2,6 +2,15 @@
 
 Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Prospección operada desde Chapa Labs (`/prospecting`) — 03/11/2026
+
+El panel de prospección común de Chapa Labs (repo `facundogregorini-lab/chapa-labs`, ruta `/prospecting/turnia`) lee la pestaña «Prospección» de la planilla de Google que escribe Turnia y ahora también **opera** la prospección de Turnia.
+
+- **`POST /api/prospeccion`** (nuevo): recibe `{ code, action }` con `Authorization: Bearer $PROSPECTING_API_SECRET` (o `$METRICS_SECRET`, la misma clave que ya usa `/api/metricas`). Acciones: contacto confirmado por WhatsApp, Instagram o email (`recordTouch`: el primer WhatsApp es el saludo), llamada, visita, estado (respondió, interesado → respondió con su detalle, reunión, cliente, no le interesa, sin WhatsApp, baja), reabrir, deshacer el último contacto, nota, próximo paso y edición de datos. Usa las mismas funciones y reglas que Panel → Prospección (tres mensajes, la baja para siempre, PostHog) y vuelve a copiar la planilla. Devuelve la fila de esa persona con las columnas de la pestaña.
+- **Planilla:** la pestaña «Prospección» suma «Clínica de la demo» (cuándo se armó la clínica de su demo) y «Conversó en la demo» (cuándo conversó con Sofi en ella), por `lead_id` → `demo_sessions` → `conversations`. El embudo con metas de Chapa Labs las usa (visitadas y con interacción).
+- **Configuración:** nada nuevo si `METRICS_SECRET` ya está en Vercel y en Chapa Labs como `TURNIA_METRICS_SECRET`. Si no, una clave de 32 caracteres o más en los dos lados (acá `PROSPECTING_API_SECRET` o `METRICS_SECRET`; en Chapa Labs `TURNIA_PROSPECTING_SECRET` o `TURNIA_METRICS_SECRET`).
+- **Pruebas:** `src/test/prospeccion-api.integration.test.ts` (clave, saludo y demo, estados, notas, deshacer, baja, edición y las columnas nuevas). Suite completa: 380 tests.
+
 ## Panel del consultorio: «Probar a Sofi» a mano, en el navegador, WhatsApp y Telegram — 03/11/2026
 
 - **Pedido del usuario:** revisar el panel como lo ve el doctor y que probar el bot esté mucho más a mano, por web, Telegram y WhatsApp.
