@@ -187,7 +187,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
     const from = new Date(now + 12 * 3600_000);
     const to = new Date(now + 36 * 3600_000);
     const rows = await sql<Array<VisitRow & { appointment_type_id: string; price: string | null }>>`
-      select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name as professional, t.name as type_name, t.price,
+      select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name as professional, coalesce(a.title, t.name) as type_name, t.price,
              json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) as patient
       from appointments a
       join patients p on p.id = a.patient_id
@@ -320,7 +320,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
 
   if (type === "no_show") {
     const rows = await sql<Array<{ patient_id: string; appointment_type_id: string; type_name: string; price: string | null; full_name: string | null; phone: string | null }>>`
-      select a.patient_id, a.appointment_type_id, t.name as type_name, t.price, p.full_name, p.phone
+      select a.patient_id, a.appointment_type_id, coalesce(a.title, t.name) as type_name, t.price, p.full_name, p.phone
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
@@ -349,7 +349,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
 
   if (type === "encuesta") {
     const rows = await sql<Array<{ id: string; patient: PatientRow; professional: string; type_name: string }>>`
-      select a.id, pr.full_name as professional, t.name as type_name,
+      select a.id, pr.full_name as professional, coalesce(a.title, t.name) as type_name,
              json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) as patient
       from appointments a
       join patients p on p.id = a.patient_id

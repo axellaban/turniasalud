@@ -67,7 +67,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [rows, blocks, google] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.professional_id, a.second_professional_id, a.appointment_type_id, p.full_name as patient, p.phone, t.name as type_name
+             a.calendar_sync, a.professional_id, a.second_professional_id, a.appointment_type_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id

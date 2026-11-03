@@ -208,7 +208,7 @@ async function syncOne(conn: CalendarConnection | null, id: string): Promise<"ok
     // El lock evita que dos procesos escriban el mismo evento a la vez.
     const [row] = await tx<SyncRow[]>`
       select a.id, a.clinic_id, a.status, a.starts_at, a.ends_at, a.source, a.calendar_event_id, a.calendar_event_calendar,
-             p.google_calendar_id, t.name as type_name, pa.full_name as patient_name, pa.phone as patient_phone,
+             p.google_calendar_id, coalesce(a.title, t.name) as type_name, pa.full_name as patient_name, pa.phone as patient_phone,
              c.address as clinic_address, c.timezone
       from appointments a
         join professionals p on p.id = a.professional_id

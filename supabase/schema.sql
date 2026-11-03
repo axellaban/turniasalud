@@ -988,3 +988,8 @@ create table if not exists smile_connect_connections (
   updated_at timestamptz not null default now()
 );
 alter table smile_connect_connections enable row level security;
+
+-- Nombre propio del turno cuando dice más que su prestación: el paciente pidió una «Consulta de
+-- implantes» y se reservó la prestación de consulta. Lo muestran la agenda, la ficha, los
+-- recordatorios y Google Calendar; vacío, el turno se llama como su prestación.
+alter table appointments add column if not exists title text;

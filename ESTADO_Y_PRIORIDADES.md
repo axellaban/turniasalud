@@ -1,6 +1,24 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 02/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## «Consulta de implantes» (o de lo que sea) es un turno — 03/11/2026
+
+- **Pedido del Dr. Mininni:** si alguien pide un turno para una «consulta de…» (implantes, prótesis, blanqueamiento o lo que sea), Sofi tiene que darle el turno. Tiene que ser un turno de 30 minutos que diga «Consulta de implantes».
+- **Causa:** el prompt mandaba las «consultas clínicas» a una tarea para el equipo, y Sofi tomaba «una consulta de implantes» como una de esas. Además, si el tratamiento estaba marcado «Solo la da el consultorio» o no figuraba en el catálogo, no tenía qué reservar. El turno tampoco tenía dónde decir de qué era la consulta.
+- **Prompt:** una consulta sobre un tratamiento es un turno, no una tarea. Sofi reserva la prestación de consulta del catálogo, aunque el tratamiento lo dé solo el consultorio o no figure en el catálogo, y le pone nombre al turno. Las preguntas clínicas por mensaje siguen yendo a una tarea.
+- **Nombre del turno:** `reservar_turno` acepta `titulo` («Consulta de implantes»), que se guarda en la columna nueva `appointments.title`. Lo muestran:
+  - la agenda, el inicio del panel y la ficha del paciente;
+  - los recordatorios y las encuestas;
+  - el evento de Google Calendar;
+  - lo que Sofi sabe de los turnos del paciente.
+
+  Vacío, el turno se llama como su prestación. Al reprogramarlo, conserva el nombre.
+- **A revisar en el consultorio:** en Panel → Configuración → Prestaciones tiene que haber una consulta de **30 minutos**, sin «Solo la da el consultorio» y con la especialidad de quien la atiende. La duración sale de esa prestación.
+- **Después del deploy, actualizar los dos agentes**, para que ElevenLabs tome el prompt y el parámetro nuevo:
+  - el general, en Panel → Sistema → «Crear / actualizar agente»;
+  - el de Guerra–Mininni, en Panel → Configuración → «Crear / actualizar Sofi de esta clínica».
+- 1 prueba de integración nueva (370 en total), con TypeScript y ESLint.
 
 ## Control y limpieza en la misma visita, y una confirmación sin ambigüedad — 02/11/2026
 

@@ -129,6 +129,8 @@ export type Appointment = {
   source: AppointmentSource;
   coverage: string | null;
   notes: string | null;
+  /** Nombre propio del turno («Consulta de implantes»); vacío, se llama como su prestación. */
+  title?: string | null;
   reminder_sent_at: string | null;
   confirmed_at: string | null;
   survey_sent_at: string | null;

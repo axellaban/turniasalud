@@ -190,7 +190,7 @@ export async function lookupPatient(form: FormData): Promise<KnownPatient[]> {
     where clinic_id = ${clinic.id} and (id = ${main.id} or phone = ${phone})
     order by (id = ${main.id}) desc, birth_date nulls last, created_at, id`;
   const next = await sql<Array<{ patient_id: string; starts_at: string; type_name: string }>>`
-    select a.patient_id, a.starts_at, t.name as type_name from appointments a join appointment_types t on t.id = a.appointment_type_id
+    select a.patient_id, a.starts_at, coalesce(a.title, t.name) as type_name from appointments a join appointment_types t on t.id = a.appointment_type_id
     where a.patient_id = any(${patients.map((p) => p.id)}::uuid[]) and a.status in ('confirmado', 'pendiente') and a.ends_at > now()
     order by a.starts_at`;
   return patients.map((p) => ({
