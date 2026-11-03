@@ -25,6 +25,8 @@ export type SlotQuery = {
   /** Feriados, vacaciones y bloqueos de agenda, ya expandidos por profesional. */
   blocked?: BusyInterval[];
   durationMin: number;
+  /** Cada cuántos minutos puede empezar un turno. Por defecto, la duración. */
+  stepMin?: number;
   fromKey: string; // YYYY-MM-DD local
   toKey: string; // YYYY-MM-DD local, inclusive
   timeZone: string;
@@ -42,7 +44,7 @@ export function computeSlots(q: SlotQuery): Slot[] {
   const limit = q.limit ?? 8;
   const perDay = q.perDayPerProfessional ?? 3;
   const earliest = q.now.getTime() + lead * 60_000;
-  const step = q.durationMin;
+  const step = q.stepMin ?? q.durationMin;
 
   const busyByProfessional = new Map<string, Array<[number, number]>>();
   for (const b of [...q.busy, ...(q.blocked ?? [])]) {

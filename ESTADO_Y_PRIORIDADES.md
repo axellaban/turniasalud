@@ -2,6 +2,32 @@
 
 Actualización: 02/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Control y limpieza en la misma visita, y una confirmación sin ambigüedad — 02/11/2026
+
+- **Reporte del usuario (WhatsApp de Guerra–Mininni):** Sofi confirmó «Control con la Dra. María Emilia Coldeira, martes 3/11 a las 13:00» y en el mismo mensaje agregó «Dejé aviso al equipo para coordinar la limpieza (mantenimiento periodontal), porque no puedo agendarla yo. Lo van a contactar… si se hace en el mismo turno o en otro». No quedaba claro qué estaba confirmado. Además, nombró la práctica al revés del catálogo.
+- **Causa:** cada turno tiene una sola prestación y `consultar_disponibilidad` busca de a una: no había forma de ofrecer la limpieza a continuación del control, así que Sofi la pasó al equipo. Y el prompt no decía cómo confirmar cuando una parte del pedido queda pendiente; ni siquiera se lo anticipó al paciente antes del «¿Lo confirmo?».
+- **Dos prácticas en la misma visita:**
+  - `consultar_disponibilidad` y `reservar_turno` aceptan `segundo_tipo_turno_id`.
+  - La búsqueda devuelve horarios donde entran las dos seguidas con el mismo profesional, con la hora a la que termina. Usa la grilla de la primera práctica (`stepMin` en `computeSlots`).
+  - La reserva crea dos turnos, uno detrás del otro, en una sola transacción. Si ya tenía la primera, suma la segunda a continuación.
+  - Si ningún profesional hace las dos, la herramienta pide ofrecerlas por separado. Las que «Solo la da el consultorio» siguen afuera.
+- **Mover y cancelar:**
+  - Reprogramar por el agente mueve juntas las dos prácticas, también si el horario nuevo pisa el de antes. Una práctica que solo da el consultorio no se arrastra.
+  - Cancelar la primera avisa que la segunda sigue reservada.
+  - En el panel, cada turno se mueve por separado, como antes.
+- **Recordatorios y encuestas:** la visita recibe un solo recordatorio, con las dos prácticas, y quedan recordados los dos turnos. La encuesta se manda una vez por paciente y marca todos sus turnos. Antes, el segundo turno podía generar otro mensaje en el envío siguiente.
+- **Prompt:**
+  - Con dos prácticas, Sofi las busca juntas, salvo que el paciente prefiera días distintos.
+  - Lo que no va a reservar lo dice en el resumen, antes del «sí».
+  - Al confirmar, «confirmado» es solo lo que reservó. Lo pendiente va en una línea aparte: que todavía no tiene turno y quién lo contacta. Nunca dice «no puedo agendarlo» al lado de un turno confirmado. El prompt trae un ejemplo.
+  - El nombre del catálogo también se usa al confirmar y en las tareas.
+- Al reprogramar, un turno que vino de Smile Connect conserva su duración, también si es la segunda práctica de la visita.
+- 2 pruebas nuevas, una de integración y una de `computeSlots` (365 en total, sobre main con Smile Connect), con TypeScript y ESLint.
+- **Hace falta actualizar los dos agentes después del deploy**, para que ElevenLabs tome el prompt y los parámetros nuevos:
+  - el general, en Panel → Sistema → «Crear / actualizar agente», que atiende el WhatsApp de Guerra–Mininni por el Custom Channel;
+  - el propio de Guerra–Mininni, para las llamadas, en Panel → Configuración con la clínica elegida → «Crear / actualizar Sofi de esta clínica».
+- **A revisar en el consultorio:** para buscarlas juntas, «Control» y «Mantenimiento periodontal (limpieza)» tienen que tener la misma especialidad que la Dra. Coldeira (Panel → Configuración → Prestaciones y Profesionales). Si la limpieza la hace otra persona, Sofi va a ofrecer dos turnos.
+
 ## Integración completa de calendario con Smile Connect (importación liviana + sincronización continua) — 02/11/2026
 
 - **Pedido del usuario:** integrar la agenda pesada de Smile Connect (`app.smileconnect.pro`, ~887 MB en exportación completa local) al calendario de Guerra–Mininni en Turnia, con carga inicial del histórico completo + sincronización continua por Tampermonkey cada 10 minutos, respetando sobreturnos reales del consultorio sin que Sofi pueda superponer turnos, y sin tocar los horarios semanales configurados para Sofi. Los archivos reales de pacientes quedan fuera del repositorio público.

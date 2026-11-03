@@ -38,13 +38,14 @@ const ACTIVE = ["confirmado", "pendiente"];
  * Lo que ocupa a estos profesionales: sus turnos activos, también los que atienden
  * como segundo profesional (por ejemplo, una cirugía conjunta).
  */
-async function busyOf(proIds: string[], from: Date | string, to: Date | string, ignoreId?: string): Promise<BusyInterval[]> {
+async function busyOf(proIds: string[], from: Date | string, to: Date | string, ignore?: string | string[]): Promise<BusyInterval[]> {
+  const ignoreIds = (Array.isArray(ignore) ? ignore : [ignore]).filter((id): id is string => Boolean(id));
   const rows = await sql<Array<{ professional_id: string; second_professional_id: string | null; starts_at: string; ends_at: string }>>`
     select professional_id, second_professional_id, starts_at, ends_at from appointments
     where (professional_id = any(${proIds}::uuid[]) or second_professional_id = any(${proIds}::uuid[]))
       and status = any(${ACTIVE}::text[])
       and starts_at < ${to} and ends_at > ${from}
-      ${ignoreId ? sql`and id <> ${ignoreId}` : sql``}`;
+      ${ignoreIds.length ? sql`and id <> all(${ignoreIds}::uuid[])` : sql``}`;
   return rows.flatMap((r) =>
     [r.professional_id, r.second_professional_id]
       .filter((id): id is string => Boolean(id) && proIds.includes(id!))
@@ -256,17 +257,32 @@ export async function findPatientByDni(
 // ---------------------------------------------------------------------------
 export async function checkAvailability(
   ctx: ToolContext,
-  input: { tipo_turno_id: string; profesional_id?: string; desde?: string; hasta?: string; franja?: "manana" | "tarde" | "cualquiera" },
+  input: {
+    tipo_turno_id: string;
+    segundo_tipo_turno_id?: string;
+    profesional_id?: string;
+    desde?: string;
+    hasta?: string;
+    franja?: "manana" | "tarde" | "cualquiera";
+  },
 ) {
   const clinic = await getClinic(ctx.clinicId);
   const catalog = await getCatalog(clinic.id);
   const type = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
   if (!type) throw new ToolError("No encontré ese tipo de turno. Usá un id del catálogo.");
   assertAgentCanBook(type);
+  const next = secondTypeOf(catalog.appointmentTypes, type, input.segundo_tipo_turno_id);
+  if (next) assertAgentCanBook(next);
 
-  let professionals = catalog.professionals.filter((p) => p.specialty === type.specialty);
+  let professionals = catalog.professionals.filter((p) => p.specialty === type.specialty && (!next || p.specialty === next.specialty));
   if (input.profesional_id) professionals = professionals.filter((p) => p.id === input.profesional_id);
-  if (!professionals.length) throw new ToolError("No hay profesionales que hagan ese tipo de turno.");
+  if (!professionals.length) {
+    throw new ToolError(
+      next
+        ? `No hay un profesional que haga ${type.name} y ${next.name} en la misma visita. Buscá cada una por separado y ofrecé dos turnos.`
+        : "No hay profesionales que hagan ese tipo de turno.",
+    );
+  }
 
   const now = new Date();
   const today = localDateKey(now, clinic.timezone);
@@ -290,7 +306,9 @@ export async function checkAvailability(
     schedules: catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
     busy: [...busy, ...calendar],
     blocked: expandBlocks(blocks, proIds),
-    durationMin: type.duration_min,
+    // Dos prácticas en la misma visita: tienen que entrar las dos, una detrás de la otra.
+    durationMin: type.duration_min + (next?.duration_min ?? 0),
+    stepMin: type.duration_min,
     fromKey,
     toKey,
     timeZone: clinic.timezone,
@@ -305,7 +323,26 @@ export async function checkAvailability(
     return {
       ok: true,
       turnos: [],
-      mensaje: `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`,
+      mensaje: next
+        ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
+        : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`,
+    };
+  }
+  const turnos = slots.map((s) => ({
+    profesional_id: s.professional_id,
+    profesional: names.get(s.professional_id),
+    inicio: s.starts_at,
+    cuando: s.label,
+    ...(next && { termina: clockTime(new Date(s.ends_at), clinic.timezone) }),
+  }));
+  if (next) {
+    return {
+      ok: true,
+      tipo_turno: `${type.name} y, a continuación, ${next.name}`,
+      duracion_min: type.duration_min + next.duration_min,
+      indicaciones: joinInstructions(type, next),
+      turnos,
+      mensaje: `Cada horario es una sola visita con el mismo profesional: ${type.name} (${type.duration_min} min) y enseguida ${next.name} (${next.duration_min} min), hasta la hora de 'termina'. Ofrecé 2 o 3 opciones leyendo 'cuando'. Para reservar usá reservar_turno con los dos ids, y 'inicio' y 'profesional_id' tal cual.`,
     };
   }
   return {
@@ -313,15 +350,26 @@ export async function checkAvailability(
     tipo_turno: type.name,
     duracion_min: type.duration_min,
     indicaciones: type.instructions,
-    turnos: slots.map((s) => ({
-      profesional_id: s.professional_id,
-      profesional: names.get(s.professional_id),
-      inicio: s.starts_at,
-      cuando: s.label,
-    })),
+    turnos,
     mensaje: "Ofrecé 2 o 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual.",
   };
 }
+
+/** La segunda práctica de una visita (control y limpieza, por ejemplo). */
+function secondTypeOf<T extends Pick<AppointmentType, "id" | "name" | "panel_only">>(types: T[], first: T, id: string | undefined): T | null {
+  if (!id) return null;
+  const next = types.find((t) => t.id === id);
+  if (!next) throw new ToolError("No encontré la segunda práctica. Usá un id del catálogo.");
+  if (next.id === first.id) throw new ToolError("Las dos prácticas son la misma: buscá una sola.");
+  return next;
+}
+
+const joinInstructions = (...types: Array<Pick<AppointmentType, "instructions">>) =>
+  types.map((t) => t.instructions).filter(Boolean).join(" ") || null;
+
+/** «13:40», en la hora de la clínica. */
+const clockTime = (date: Date, timeZone: string) =>
+  new Intl.DateTimeFormat("es-AR", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
 
 /** Un horario libre del día, para elegirlo en el panel. */
 export type DaySlot = { hora: string; inicio: string };
@@ -400,8 +448,8 @@ export async function freeSlotsOnDay(
 // reservar_turno
 // ---------------------------------------------------------------------------
 type BookOptions = {
-  /** El turno que se está moviendo: no cuenta como ocupado. */
-  ignoreAppointmentId?: string;
+  /** Los turnos que se están moviendo: no cuentan como ocupados. */
+  ignoreAppointmentId?: string | string[];
   /** Desde el panel: darlo aunque sea fuera de horario, en un día bloqueado u ocupado en Google. */
   force?: boolean;
   /** Desde el panel: otro profesional que atiende el mismo turno (también tiene que estar libre). */
@@ -537,79 +585,130 @@ async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promi
   return appt;
 }
 
-export async function bookAppointment(
-  ctx: ToolContext,
-  input: { tipo_turno_id: string; profesional_id: string; inicio: string; nombre_completo?: string; cobertura?: string; notas?: string },
-  opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {},
-) {
+type BookInput = {
+  tipo_turno_id: string;
+  /** Otra práctica en la misma visita, a continuación y con el mismo profesional. */
+  segundo_tipo_turno_id?: string;
+  profesional_id: string;
+  inicio: string;
+  nombre_completo?: string;
+  cobertura?: string;
+  notas?: string;
+};
+
+export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {}) {
   const clinic = await getClinic(ctx.clinicId);
   const patient = await ensurePatient(ctx, input.nombre_completo);
   if (!patient.full_name) throw new ToolError("Antes de reservar necesito el nombre y apellido del paciente (registrar_paciente).");
 
   const startsAt = new Date(input.inicio);
   const mine = await upcomingOf(patient.id);
+  const bookedAt = (typeId: string, at: Date) =>
+    mine.find((a) => a.professional_id === input.profesional_id && a.appointment_type_id === typeId && new Date(a.starts_at).getTime() === at.getTime());
   // El mismo turno ya reservado (el agente reintentó la herramienta, o un doble clic): no es un error.
-  const same = mine.find(
-    (a) => a.professional_id === input.profesional_id && a.appointment_type_id === input.tipo_turno_id && new Date(a.starts_at).getTime() === startsAt.getTime(),
-  );
-  if (same) {
+  // Si ya tiene la primera práctica y pide la segunda, se suma la segunda a continuación.
+  const same = bookedAt(input.tipo_turno_id, startsAt);
+  const sameNext = same && input.segundo_tipo_turno_id ? bookedAt(input.segundo_tipo_turno_id, new Date(same.ends_at)) : undefined;
+  if (same && (!input.segundo_tipo_turno_id || sameNext)) {
     return {
       ok: true,
       turno_id: same.id,
-      mensaje: `Ese turno ya estaba reservado: ${same.type_name} con ${same.professional} el ${humanSlot(startsAt, clinic.timezone)}.`,
+      ...(sameNext && { segundo_turno_id: sameNext.id }),
+      mensaje: `Ese turno ya estaba reservado: ${same.type_name}${sameNext ? ` y, a continuación, ${sameNext.type_name}` : ""} con ${same.professional} el ${humanSlot(startsAt, clinic.timezone)}.`,
       direccion: clinic.address,
     };
   }
 
-  const { type, pro, second, endsAt } = await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, opts);
-  if (ctx.channel !== "panel") assertAgentCanBook(type);
-  // Una persona no puede estar en dos turnos a la vez.
-  const clash = mine.find((a) => new Date(a.starts_at) < endsAt && new Date(a.ends_at) > startsAt);
-  if (clash) {
-    throw new ToolError(
-      `El paciente ya tiene un turno a esa hora: ${clash.type_name} con ${clash.professional} el ${humanSlot(new Date(clash.starts_at), clinic.timezone)}. Si lo quiere cambiar, usá reprogramar_turno.`,
-    );
+  type Part = Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date };
+  const parts: Part[] = [];
+  if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, opts)), startsAt });
+  if (input.segundo_tipo_turno_id) {
+    const { appointmentTypes } = await getCatalog(clinic.id);
+    const first = appointmentTypes.find((t) => t.id === input.tipo_turno_id);
+    if (!first) throw new ToolError("Tipo de turno inválido.");
+    const next = secondTypeOf(appointmentTypes, first, input.segundo_tipo_turno_id)!;
+    const nextStart = same ? new Date(same.ends_at) : parts[0].endsAt;
+    try {
+      parts.push({ ...(await assertBookable(clinic, input.profesional_id, next.id, nextStart, { force: opts.force })), startsAt: nextStart });
+    } catch (e) {
+      if (!(e instanceof ToolError)) throw e;
+      const reason = e.message.replace(AGAIN, "");
+      throw new ToolError(
+        same
+          ? `Después de su turno de ${first.name} no queda lugar para ${next.name} (${reason}) Ofrecé buscarla en otro horario, con consultar_disponibilidad solo para ${next.name}.`
+          : `A continuación de ${first.name} no entra ${next.name} (${reason}) Consultá la disponibilidad con las dos prácticas (segundo_tipo_turno_id) y ofrecé otra opción.`,
+        e.forzable,
+        e.panelMessage,
+      );
+    }
   }
+  if (ctx.channel !== "panel") for (const p of parts) assertAgentCanBook(p.type);
+  // Una persona no puede estar en dos turnos a la vez.
+  for (const p of parts) {
+    const clash = mine.find((a) => a.id !== same?.id && new Date(a.starts_at) < p.endsAt && new Date(a.ends_at) > p.startsAt);
+    if (clash) {
+      throw new ToolError(
+        `El paciente ya tiene un turno a esa hora: ${clash.type_name} con ${clash.professional} el ${humanSlot(new Date(clash.starts_at), clinic.timezone)}. Si lo quiere cambiar, usá reprogramar_turno.`,
+      );
+    }
+  }
+  const { pro, second } = parts[0];
   const coverage = acceptedCoverage(pro, input.cobertura || patient.coverage);
 
-  let appt: Appointment;
+  let created: Appointment[];
   try {
-    appt = await sql.begin(async (tx) => {
+    created = await sql.begin(async (tx) => {
       await lockProfessionals(tx, second ? [pro.id, second.id] : [pro.id]);
-      return insertAppointment(tx, {
-        clinic_id: clinic.id,
-        patient_id: patient.id,
-        professional_id: pro.id,
-        second_professional_id: second?.id ?? null,
-        appointment_type_id: type.id,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        status: "confirmado",
-        source: sourceFromChannel(ctx.channel, ctx.patientPhone),
-        coverage,
-        notes: input.notas ?? null,
-      });
+      const rows: Appointment[] = [];
+      for (const [i, p] of parts.entries()) {
+        rows.push(
+          await insertAppointment(tx, {
+            clinic_id: clinic.id,
+            patient_id: patient.id,
+            professional_id: p.pro.id,
+            second_professional_id: p.second?.id ?? null,
+            appointment_type_id: p.type.id,
+            starts_at: p.startsAt.toISOString(),
+            ends_at: p.endsAt.toISOString(),
+            status: "confirmado",
+            source: sourceFromChannel(ctx.channel, ctx.patientPhone),
+            coverage,
+            notes: i === 0 ? (input.notas ?? null) : null,
+          }),
+        );
+      }
+      return rows;
     });
   } catch (e) {
     if (isOverlapError(e)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
     throw e;
   }
 
-  // Si el paciente estaba en lista de espera para esto, la damos por resuelta.
-  await sql`
-    update waitlist set status = 'resuelta'
-    where patient_id = ${patient.id} and appointment_type_id = ${type.id} and status in ('activa', 'ofrecida')`;
+  for (const [i, p] of parts.entries()) {
+    // Si el paciente estaba en lista de espera para esto, la damos por resuelta.
+    await sql`
+      update waitlist set status = 'resuelta'
+      where patient_id = ${patient.id} and appointment_type_id = ${p.type.id} and status in ('activa', 'ofrecida')`;
+    await notifyN8n("turno.reservado", { clinic_id: clinic.id, appointment: created[i], patient, professional: p.pro.full_name, type: p.type.name });
+  }
 
-  await notifyN8n("turno.reservado", { clinic_id: clinic.id, appointment: appt, patient, professional: pro.full_name, type: type.name });
-
+  const names = `${pro.full_name}${second ? ` y ${second.full_name}` : ""}`;
+  const last = parts[parts.length - 1];
+  const until = clockTime(last.endsAt, clinic.timezone);
+  const mensaje = same
+    ? `Listo: se sumó ${last.type.name} a continuación de su turno de ${same.type_name} del ${humanSlot(startsAt, clinic.timezone)} con ${names}. La visita termina a las ${until}.`
+    : parts.length > 1
+      ? `Turno confirmado, una sola visita con ${names}: ${parts[0].type.name} el ${humanSlot(startsAt, clinic.timezone)} y, a continuación, ${last.type.name}. Termina a las ${until}.`
+      : `Turno confirmado: ${parts[0].type.name} con ${names} el ${humanSlot(startsAt, clinic.timezone)}.`;
   // ¿Ya tenía otro turno de lo mismo? Puede ser a propósito (dos sesiones), o que quería cambiarlo.
-  const other = mine.find((a) => a.appointment_type_id === type.id);
+  const other = !same && mine.find((a) => a.appointment_type_id === parts[0].type.id);
   return {
     ok: true,
-    turno_id: appt.id,
-    mensaje: `Turno confirmado: ${type.name} con ${pro.full_name}${second ? ` y ${second.full_name}` : ""} el ${humanSlot(startsAt, clinic.timezone)}.`,
+    turno_id: same?.id ?? created[0].id,
+    ...((same || parts.length > 1) && { segundo_turno_id: created[created.length - 1].id }),
+    mensaje,
     direccion: clinic.address,
-    indicaciones: type.instructions,
+    indicaciones: joinInstructions(...parts.map((p) => p.type)),
     ...(other && {
       aviso: `Ya tenía otro turno de ${other.type_name} el ${humanSlot(new Date(other.starts_at), clinic.timezone)}. Preguntale si quiere mantener los dos o cancelar el otro.`,
     }),
@@ -716,11 +815,16 @@ async function cancelLoaded(clinic: Clinic, patient: Patient, appt: Appointment,
 export async function cancelAppointment(ctx: ToolContext, input: { turno_id: string; motivo?: string }) {
   const clinic = await getClinic(ctx.clinicId);
   const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
+  const follower = await followerOf(appt);
   const { when, offered } = await cancelLoaded(clinic, patient, appt, input.motivo, "paciente");
+  const [next] = follower ? await sql<Array<{ name: string }>>`select name from appointment_types where id = ${follower.appointment_type_id}` : [];
   return {
     ok: true,
     mensaje: `Turno del ${when} cancelado. Ofrecé reprogramarlo.`,
     avisados_lista_espera: offered,
+    ...(follower && {
+      aviso: `En la misma visita, a continuación, tiene ${next?.name ?? "otra práctica"} (turno_id=${follower.id}), que sigue reservada. Preguntale si también la cancela.`,
+    }),
   };
 }
 
@@ -787,6 +891,8 @@ async function rescheduleLoaded(
   input: { nuevo_inicio: string; profesional_id?: string },
   source: AppointmentSource,
   force = false,
+  /** La práctica que sigue en la misma visita: se mueve junto con este turno. */
+  follower?: Appointment,
 ) {
   assertNotOver(appt);
   const professionalId = input.profesional_id || appt.professional_id;
@@ -795,17 +901,36 @@ async function rescheduleLoaded(
   if (appt.second_professional_id && appt.second_professional_id === professionalId) {
     throw new ToolError("Ese profesional ya atiende este turno como segundo profesional: elegí otro.");
   }
-  const rawMinutes = Math.round((new Date(appt.ends_at).getTime() - new Date(appt.starts_at).getTime()) / 60_000);
-  const customDuration = appt.source === "smile_connect" && rawMinutes >= 5 && rawMinutes <= 480 ? rawMinutes : undefined;
+  const customDuration = keptDuration(appt);
+  const moving = follower ? [appt.id, follower.id] : appt.id;
   const { type, pro, second, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, {
-    ignoreAppointmentId: appt.id,
+    ignoreAppointmentId: moving,
     force,
     secondProfessionalId: appt.second_professional_id,
     durationMin: customDuration,
   });
+  let next: (Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date }) | null = null;
+  if (follower) {
+    try {
+      next = {
+        ...(await assertBookable(clinic, pro.id, follower.appointment_type_id, endsAt, { ignoreAppointmentId: moving, force, durationMin: keptDuration(follower) })),
+        startsAt: endsAt,
+      };
+    } catch (e) {
+      if (!(e instanceof ToolError)) throw e;
+      throw new ToolError(
+        `En la misma visita sigue otra práctica y a continuación no entra (${e.message.replace(AGAIN, "")}) Consultá la disponibilidad con las dos prácticas (segundo_tipo_turno_id) y ofrecé otra opción.`,
+        e.forzable,
+        e.panelMessage,
+      );
+    }
+  }
+  const visitEnd = next?.endsAt ?? endsAt;
   // Con otro profesional, que atienda la cobertura del turno.
   const coverage = pro.id === appt.professional_id ? appt.coverage : acceptedCoverage(pro, appt.coverage);
-  const clash = (await upcomingOf(patient.id)).find((a) => a.id !== appt.id && new Date(a.starts_at) < endsAt && new Date(a.ends_at) > startsAt);
+  const clash = (await upcomingOf(patient.id)).find(
+    (a) => a.id !== appt.id && a.id !== follower?.id && new Date(a.starts_at) < visitEnd && new Date(a.ends_at) > startsAt,
+  );
   if (clash) {
     throw new ToolError(`El paciente ya tiene otro turno a esa hora: ${clash.type_name} con ${clash.professional} el ${humanSlot(new Date(clash.starts_at), clinic.timezone)}.`);
   }
@@ -813,37 +938,66 @@ async function rescheduleLoaded(
   // En una transacción: liberamos el turno viejo (puede superponerse con el
   // nuevo) y reservamos el nuevo. Si algo falla, el viejo queda como estaba.
   let newAppt: Appointment;
+  let newNext: Appointment | null = null;
   try {
-    newAppt = await sql.begin(async (tx) => {
+    [newAppt, newNext] = await sql.begin(async (tx) => {
       await lockProfessionals(tx, [appt.professional_id, pro.id, ...(second ? [second.id] : [])]);
-      const [freed] = await tx`
+      const ids = follower ? [appt.id, follower.id] : [appt.id];
+      const freed = await tx`
         update appointments set status = 'reprogramado', cancelled_at = now()
-        where id = ${appt.id} and status = any(${ACTIVE}::text[]) returning id`;
-      if (!freed) throw new ToolError("Ese turno ya no está activo: se canceló o se reprogramó recién.");
-      return insertAppointment(tx, {
+        where id = any(${ids}::uuid[]) and status = any(${ACTIVE}::text[]) returning id`;
+      if (freed.length < ids.length) throw new ToolError("Ese turno ya no está activo: se canceló o se reprogramó recién.");
+      const row = (t: Appointment, p: { pro: { id: string }; second: { id: string } | null; type: { id: string }; endsAt: Date }, at: Date) => ({
         clinic_id: clinic.id,
         patient_id: patient.id,
-        professional_id: pro.id,
-        second_professional_id: second?.id ?? null,
-        appointment_type_id: type.id,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        status: "confirmado",
+        professional_id: p.pro.id,
+        second_professional_id: p.second?.id ?? null,
+        appointment_type_id: p.type.id,
+        starts_at: at.toISOString(),
+        ends_at: p.endsAt.toISOString(),
+        status: "confirmado" as const,
         source,
         coverage,
-        notes: appt.notes,
+        notes: t.notes,
       });
+      const moved = await insertAppointment(tx, row(appt, { pro, second, type, endsAt }, startsAt));
+      return [moved, follower && next ? await insertAppointment(tx, row(follower, next, next.startsAt)) : null] as const;
     });
   } catch (e) {
     if (isOverlapError(e)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
     throw e;
   }
   await notifyN8n("turno.reprogramado", { clinic_id: clinic.id, before: appt, after: newAppt, patient });
-  await offerFreedSlot(clinic, appt).catch(() => 0);
+  if (follower && newNext) await notifyN8n("turno.reprogramado", { clinic_id: clinic.id, before: follower, after: newNext, patient });
+  for (const freed of follower ? [appt, follower] : [appt]) await offerFreedSlot(clinic, freed).catch(() => 0);
   return {
     turno_id: newAppt.id,
-    mensaje: `Listo: el turno pasó al ${humanSlot(startsAt, clinic.timezone)} con ${pro.full_name}${second ? ` y ${second.full_name}` : ""}.`,
+    ...(newNext && { segundo_turno_id: newNext.id }),
+    mensaje: `Listo: el turno pasó al ${humanSlot(startsAt, clinic.timezone)} con ${pro.full_name}${second ? ` y ${second.full_name}` : ""}${
+      next ? `, y ${next.type.name} sigue a continuación, hasta las ${clockTime(next.endsAt, clinic.timezone)}` : ""
+    }.`,
   };
+}
+
+/** Un turno que vino de Smile Connect conserva su duración al moverse. */
+function keptDuration(appt: Appointment): number | undefined {
+  const minutes = Math.round((new Date(appt.ends_at).getTime() - new Date(appt.starts_at).getTime()) / 60_000);
+  return appt.source === "smile_connect" && minutes >= 5 && minutes <= 480 ? minutes : undefined;
+}
+
+/**
+ * La práctica que sigue en la misma visita: mismo paciente y profesional, empieza cuando termina este
+ * turno. Para moverla junto con el turno, solo si el agente la puede mover (no la da solo el consultorio).
+ */
+async function followerOf(appt: Appointment, opts: { movable?: boolean } = {}): Promise<Appointment | undefined> {
+  if (appt.second_professional_id) return undefined;
+  const [row] = await sql<Appointment[]>`
+    select a.* from appointments a join appointment_types t on t.id = a.appointment_type_id
+    where a.patient_id = ${appt.patient_id} and a.professional_id = ${appt.professional_id} and a.id <> ${appt.id}
+      and a.second_professional_id is null and a.status = any(${ACTIVE}::text[]) and a.starts_at = ${appt.ends_at}
+      ${opts.movable ? sql`and not t.panel_only` : sql``}
+    limit 1`;
+  return row;
 }
 
 export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id: string; nuevo_inicio: string; profesional_id?: string }) {
@@ -851,7 +1005,7 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
   const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
   const [type] = await sql<Array<Pick<AppointmentType, "name" | "panel_only">>>`select name, panel_only from appointment_types where id = ${appt.appointment_type_id}`;
   if (type) assertAgentCanBook(type);
-  const r = await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone));
+  const r = await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, await followerOf(appt, { movable: true }));
   return { ok: true, ...r };
 }
 

@@ -806,6 +806,73 @@ describe.runIf(url)("integración con Postgres", () => {
     }
   });
 
+  it("dos prácticas en la misma visita: se ofrecen, se reservan, se mueven y se recuerdan juntas", async () => {
+    const CONSULTA_ODONTO = "00000000-0000-4000-8000-0000000000b6";
+    const c = ctx("5491166660061");
+    await service.registerPatient(c, { nombre_completo: "Valeria Visita", cobertura: "Particular" });
+    const desde = new Date(Date.now() + 32 * 86400_000).toISOString().slice(0, 10);
+
+    // Sin un profesional que haga las dos, pide buscarlas por separado.
+    await expect(service.checkAvailability(c, { tipo_turno_id: CONSULTA_ODONTO, segundo_tipo_turno_id: LUNARES })).rejects.toThrow("por separado");
+    await expect(service.checkAvailability(c, { tipo_turno_id: LIMPIEZA, segundo_tipo_turno_id: LIMPIEZA })).rejects.toThrow("son la misma");
+
+    const both = await service.checkAvailability(c, { tipo_turno_id: CONSULTA_ODONTO, segundo_tipo_turno_id: LIMPIEZA, desde });
+    expect(both).toMatchObject({ tipo_turno: "Consulta odontológica y, a continuación, Limpieza dental", duracion_min: 70 });
+    const [slot, later] = both.turnos;
+    expect(slot).toMatchObject({ profesional_id: RUIZ, termina: expect.stringMatching(/^\d{2}:\d{2}$/) });
+
+    const input = { tipo_turno_id: CONSULTA_ODONTO, segundo_tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, inicio: slot.inicio };
+    const booked = await service.bookAppointment(c, input);
+    expect(booked.mensaje).toMatch(/^Turno confirmado, una sola visita con Dra\. Carolina Ruiz: Consulta odontológica el .+ y, a continuación, Limpieza dental\. Termina a las \d{2}:\d{2}\.$/);
+    expect(booked.segundo_turno_id).toBeTruthy();
+    const visit = async () => (await service.listPatientAppointments(c)).turnos;
+    const [first, second] = await visit();
+    expect([first.tipo_turno, second.tipo_turno]).toEqual(["Consulta odontológica", "Limpieza dental"]);
+    expect(Date.parse(second.inicio) - Date.parse(first.inicio)).toBe(30 * 60_000);
+    // Reintentar no duplica.
+    expect((await service.bookAppointment(c, input)).mensaje).toContain("ya estaba reservado: Consulta odontológica y, a continuación, Limpieza dental");
+    expect(await visit()).toHaveLength(2);
+
+    // Se mueven juntas, aunque el horario nuevo pise el de antes.
+    const moved = await service.rescheduleAppointment(c, { turno_id: booked.turno_id, nuevo_inicio: later.inicio });
+    expect(moved.mensaje).toContain("y Limpieza dental sigue a continuación");
+    const [m1, m2] = await visit();
+    expect(m1.inicio).toBe(later.inicio);
+    expect(m2.tipo_turno).toBe("Limpieza dental");
+    expect(Date.parse(m2.inicio) - Date.parse(m1.inicio)).toBe(30 * 60_000);
+
+    // Al cancelar la primera, avisa que la segunda sigue reservada.
+    const cancelled = await service.cancelAppointment(c, { turno_id: m1.turno_id });
+    expect(cancelled.aviso).toContain("tiene Limpieza dental");
+    await service.cancelAppointment(c, { turno_id: m2.turno_id });
+
+    // Ya tenía la consulta y pide sumar la limpieza: va a continuación.
+    const alone = await service.bookAppointment(c, { tipo_turno_id: CONSULTA_ODONTO, profesional_id: RUIZ, inicio: slot.inicio });
+    const added = await service.bookAppointment(c, input);
+    expect(added.turno_id).toBe(alone.turno_id);
+    expect(added.mensaje).toContain("se sumó Limpieza dental a continuación de su turno de Consulta odontológica");
+    expect((await visit()).map((t) => t.tipo_turno)).toEqual(["Consulta odontológica", "Limpieza dental"]);
+
+    // Mañana: un solo recordatorio para la visita, y quedan recordados los dos turnos.
+    const { computeAudience, createCampaign, sendCampaign } = await import("@/lib/campaigns");
+    const [{ id: patientId }] = await sql<Array<{ id: string }>>`select id from patients where phone = '5491166660061'`;
+    const start = new Date(Date.now() + 20 * 3600_000);
+    start.setUTCMinutes(0, 0, 0);
+    const at = (min: number) => new Date(start.getTime() + min * 60_000);
+    const ids = await sql<Array<{ id: string }>>`
+      insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source) values
+        (${CLINIC}, ${patientId}, ${RUIZ}, ${CONSULTA_ODONTO}, ${at(0)}, ${at(30)}, 'confirmado', 'whatsapp'),
+        (${CLINIC}, ${patientId}, ${RUIZ}, ${LIMPIEZA}, ${at(30)}, ${at(70)}, 'confirmado', 'whatsapp')
+      returning id`;
+    const reminders = (await computeAudience(await clinicLib.getClinic(), "recordatorio")).filter((m) => m.patient_id === patientId);
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0].context).toContain("Consulta odontológica y, a continuación, Limpieza dental");
+    for (const { id } of ids) expect(reminders[0].context).toContain(`turno_id=${id}`);
+    await sendCampaign((await createCampaign({ clinicId: CLINIC, name: "Recordatorio de la visita", type: "recordatorio", templateName: "recordatorio_turno" })).id);
+    const sent = await sql<Array<{ reminder_sent_at: string | null }>>`select reminder_sent_at from appointments where id = any(${ids.map((r) => r.id)}::uuid[])`;
+    expect(sent.every((r) => r.reminder_sent_at !== null)).toBe(true);
+  });
+
   it("todas las páginas del panel consultan y renderizan con datos reales", async () => {
     const pages: Array<[string, () => Promise<unknown>]> = [
       ["inicio", async () => (await import("@/app/panel/(app)/page")).default()],

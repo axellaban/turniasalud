@@ -19,6 +19,8 @@ export type ToolDefinition = {
 };
 
 const isoDate = "Fecha en formato AAAA-MM-DD (hora de Argentina).";
+const SECOND_TYPE =
+  "Si el paciente quiere otra práctica en la misma visita (por ejemplo, control y limpieza): el id de esa segunda práctica, copiado del catálogo. Devuelve horarios en los que entran las dos, seguidas y con el mismo profesional.";
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -72,6 +74,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       "Busca turnos libres reales para un tipo de turno. Usala SIEMPRE antes de ofrecer horarios; nunca inventes horarios.",
     params: {
       tipo_turno_id: { type: "string", description: "id del tipo de turno, copiado del catálogo.", required: true },
+      segundo_tipo_turno_id: { type: "string", description: SECOND_TYPE },
       profesional_id: { type: "string", description: "id del profesional si el paciente pidió uno en particular." },
       desde: { type: "string", description: `Primer día a buscar. ${isoDate} Por defecto, hoy.` },
       hasta: { type: "string", description: `Último día a buscar. ${isoDate} Por defecto, dos semanas después de 'desde'.` },
@@ -79,6 +82,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     schema: z.object({
       tipo_turno_id: z.string().min(1),
+      segundo_tipo_turno_id: z.string().optional(),
       profesional_id: z.string().optional(),
       desde: z.string().optional(),
       hasta: z.string().optional(),
@@ -88,9 +92,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "reservar_turno",
     description:
-      "Reserva un turno. Solo después de que el paciente confirmó explícitamente día, hora y profesional. Usá 'inicio' y 'profesional_id' exactamente como los devolvió consultar_disponibilidad.",
+      "Reserva un turno (o dos prácticas seguidas en la misma visita). Solo después de que el paciente confirmó explícitamente día, hora y profesional. Usá 'inicio' y 'profesional_id' exactamente como los devolvió consultar_disponibilidad. Para sumar una práctica a continuación de un turno que ya tiene, mandá el tipo_turno_id, el profesional_id y el inicio de ese turno y la práctica nueva en segundo_tipo_turno_id.",
     params: {
       tipo_turno_id: { type: "string", description: "id del tipo de turno.", required: true },
+      segundo_tipo_turno_id: { type: "string", description: "id de la segunda práctica de la misma visita, el mismo que usaste en consultar_disponibilidad: se reserva a continuación, con el mismo profesional." },
       profesional_id: { type: "string", description: "id del profesional.", required: true },
       inicio: { type: "string", description: "Fecha y hora de inicio en ISO 8601, tal cual vino en consultar_disponibilidad.", required: true },
       nombre_completo: { type: "string", description: "Nombre y apellido del paciente, si todavía no lo registraste." },
@@ -99,6 +104,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     schema: z.object({
       tipo_turno_id: z.string().min(1),
+      segundo_tipo_turno_id: z.string().optional(),
       profesional_id: z.string().min(1),
       inicio: z.string().min(1),
       nombre_completo: z.string().optional(),
@@ -133,7 +139,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "reprogramar_turno",
     description:
-      "Mueve un turno existente a un nuevo horario. Primero consultá disponibilidad para el mismo tipo de turno y confirmá el nuevo horario con el paciente.",
+      "Mueve un turno existente a un nuevo horario. Primero consultá disponibilidad para el mismo tipo de turno y confirmá el nuevo horario con el paciente. Si el turno tiene otra práctica a continuación en la misma visita, se mueven juntas: consultá la disponibilidad con las dos (segundo_tipo_turno_id) y mové solo la primera.",
     params: {
       turno_id: { type: "string", description: "turno_id del turno a mover.", required: true },
       nuevo_inicio: { type: "string", description: "Nuevo inicio en ISO 8601, tal cual vino en consultar_disponibilidad.", required: true },
