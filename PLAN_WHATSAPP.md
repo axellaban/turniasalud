@@ -28,6 +28,7 @@ Hecho y verificado contra un Postgres 16 local, con WAHA y ElevenLabs simulados 
 - `POST /api/elevenlabs/canal`: verifica la firma con `ELEVENLABS_CHANNEL_SIGNING_SECRET`, une los `agent_response`, pasa `**negrita**` a `*negrita*`, manda por WAHA al mismo chat, cierra con `end_call` y deduplica los reintentos. Si WAHA falla devuelve 502 (ElevenLabs reintenta); si la conversación todavía no está guardada, 409. Si el agente falla (`status: failed`) le pide al paciente que repita.
 - La conversación se guarda en `conversations` mientras ocurre (canal WhatsApp, transcripción, campaña), se actualiza el destinatario de la campaña y al cerrar se avisa `conversacion.finalizada` a n8n. Si llega el post-call, ese la completa con resumen y no se pisa.
 - `system__channel` con "custom" cuenta como WhatsApp (`sourceFromChannel`, `detectChannel`).
+- **Seguimiento de turnos ofrecidos** (03/11, `src/lib/followups.ts`): si Sofi pasó horarios y el paciente no contestó nada, se le vuelve a escribir desde la misma línea. Son 0, 1 o 2 veces, según Configuración → «Si el paciente no contesta», solo de 9 a 20. El mensaje lleva los horarios libres en ese momento y se guarda como saliente (`registerOutbound`): si contesta, el agente recibe el contexto. Corre con `/api/automations/calendario` cada 10 minutos. Detalle en `ESTADO_Y_PRIORIDADES.md`.
 
 ### A verificar con los servicios reales
 1. Que el Custom Channel acepte las 11 `dynamic_variables` en cada turno y qué valor trae `system__channel` (se asumió que contiene "custom").

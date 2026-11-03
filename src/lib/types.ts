@@ -32,6 +32,10 @@ export type Clinic = {
   reactivation_months: number;
   /** Días mínimos entre dos campañas para volver a sacar turno al mismo paciente (0 = sin tope). */
   contact_cooldown_days: number;
+  /** Veces que se le vuelve a escribir a quien no contestó los horarios que le ofreció el agente (0 a 2). */
+  followup_attempts: number;
+  /** Horas que se espera antes del primer seguimiento. */
+  followup_delay_hours: number;
   created_at: string;
 };
 

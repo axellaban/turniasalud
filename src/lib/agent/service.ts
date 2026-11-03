@@ -1,5 +1,5 @@
 import "server-only";
-import { sql, pgErrorCode, type TransactionSql } from "../db";
+import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval } from "../slots";
@@ -335,6 +335,7 @@ export async function checkAvailability(
     cuando: s.label,
     ...(next && { termina: clockTime(new Date(s.ends_at), clinic.timezone) }),
   }));
+  await recordOffer(ctx, input, next ? `${type.name} y ${next.name}` : type.name);
   if (next) {
     return {
       ok: true,
@@ -353,6 +354,25 @@ export async function checkAvailability(
     turnos,
     mensaje: "Ofrecé 2 o 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual.",
   };
+}
+
+/**
+ * Guarda lo que el agente le ofreció al paciente en esta conversación, para volver a escribirle si no
+ * contesta (followups.ts). Solo la última búsqueda de cada paciente queda abierta. Nunca corta la
+ * búsqueda: si falla, el paciente igual recibe sus horarios.
+ */
+async function recordOffer(ctx: ToolContext, query: Record<string, unknown>, typeName: string): Promise<void> {
+  if (!ctx.conversationId || ctx.channel === "panel" || !ctx.patientPhone) return;
+  try {
+    await sql.begin(async (tx) => {
+      await tx`update agent_offers set closed_at = now() where clinic_id = ${ctx.clinicId} and patient_phone = ${ctx.patientPhone} and closed_at is null`;
+      await tx`
+        insert into agent_offers (clinic_id, conversation_id, patient_phone, query, type_name)
+        values (${ctx.clinicId}, ${ctx.conversationId!}, ${ctx.patientPhone}, ${json(query)}, ${typeName})`;
+    });
+  } catch (e) {
+    console.error("No se pudo guardar el turno ofrecido para el seguimiento", e instanceof Error ? e.message : e);
+  }
 }
 
 /** La segunda práctica de una visita (control y limpieza, por ejemplo). */
