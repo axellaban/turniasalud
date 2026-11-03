@@ -145,9 +145,37 @@ export const STATUS_TONE: Record<string, keyof typeof TONES> = {
   finalizada: "green",
 };
 
+/** Cómo se lee cada estado: con mayúscula, tildes y la prioridad dicha como tal. */
+export const STATUS_LABEL: Record<string, string> = {
+  confirmado: "Confirmado",
+  pendiente: "Pendiente",
+  cancelado: "Cancelado",
+  reprogramado: "Reprogramado",
+  ausente: "Ausente",
+  atendido: "Atendido",
+  abierta: "Abierta",
+  en_curso: "En curso",
+  resuelta: "Resuelta",
+  resuelto: "Resuelto",
+  derivado: "Derivado",
+  sin_resolver: "Sin resolver",
+  urgente: "Urgente",
+  alta: "Prioridad alta",
+  normal: "Prioridad normal",
+  baja: "Prioridad baja",
+  enviado: "Enviado",
+  respondio: "Respondió",
+  agendo: "Agendó",
+  error: "Error",
+  borrador: "Borrador",
+  enviando: "Enviando",
+  finalizada: "Finalizada",
+};
+
 export function StatusBadge({ value }: { value: string | null | undefined }) {
   if (!value) return null;
-  return <Badge tone={STATUS_TONE[value] ?? "gray"}>{value.replace(/_/g, " ")}</Badge>;
+  const label = STATUS_LABEL[value] ?? value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, " ");
+  return <Badge tone={STATUS_TONE[value] ?? "gray"}>{label}</Badge>;
 }
 
 /** Listo / falta / opcional, con ícono y texto para lectores de pantalla. */

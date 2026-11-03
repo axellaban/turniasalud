@@ -2,6 +2,33 @@
 
 Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Panel del consultorio: «Probar a Sofi» a mano, en el navegador, WhatsApp y Telegram — 03/11/2026
+
+- **Pedido del usuario:** revisar el panel como lo ve el doctor y que probar el bot esté mucho más a mano, por web, Telegram y WhatsApp.
+- **Lo que se vio:** entrando con el código de un consultorio, en computadora y celular, con datos de prueba locales.
+  - Probar a Sofi solo estaba en una tarjeta de Configuración.
+  - Su link abría `/demo` con el menú y el pie de la web comercial («Pedí una demo», «¿Listo para transformar…?»), fuera del panel.
+  - No había forma de probar por WhatsApp o Telegram para un consultorio de verdad: `launchProfile` solo aceptaba demos.
+  - El Inicio saludaba con el nombre de la clínica y decía «1 abiertas».
+  - Las etiquetas de estado salían como el valor interno: «normal», «respondio», «agendo».
+- **Nueva sección `Panel → Probar a Sofi`** (`/panel/probar`; lleva el nombre del agente de la clínica):
+  - **En esta pantalla:** voz o chat (`/demo`).
+  - **WhatsApp:** el número de la línea propia del consultorio, o el de la línea general si es la clínica que atiende. Tiene botón que abre WhatsApp con «¡Hola! Quiero sacar un turno.» ya escrito, y un QR en la computadora. Si no, un enlace de la ficha por la línea general. Si no está activo, lo dice.
+  - **Telegram:** «Preparar el enlace» arma el enlace al bot con la ficha (chat, audios o llamada), con QR. Vale 7 días.
+  - **Qué probar:** seis pedidos típicos, con datos de la ficha (su primera prestación, su primera cobertura; implantes y muela solo en odontología).
+  - **Después de probar:** links a Conversaciones, Agenda y Configuración.
+- **A mano desde todas las pantallas:** ítem en la navegación (debajo de Inicio; en el celular, en «Más») y botón fijo «Probar a Sofi» arriba a la derecha («Probar» en el celular). La tarjeta de Configuración y el Inicio sin conversaciones llevan a la sección.
+- **`/demo` sin la web comercial:** pasó al grupo `src/app/(prueba)`, con una barra que solo tiene «Volver al panel». Misma URL y mismo componente.
+- **Probar el consultorio real por chat:**
+  - `prepareTestLink` (`clinics-actions.ts`) acepta cualquier clínica del panel y el canal pedido. Con un consultorio no toca su ficha: no conserva ni sube `context_revision`.
+  - `startSavedProfile` y `demoClinic` aceptan la clínica real solo en sesiones abiertas con un perfil del panel (`reused_profile`).
+  - Sofi recibe `clinicTestContext`: «la agenda es la real», en lugar de «la agenda es de prueba» de las demos. Vale para chat, audios y llamada.
+  - `launchProfile` queda como atajo al canal activo.
+- **Inicio:** saluda con el nombre del acceso («Hola, Dr. Mininni»). «1 abierta», o «Al día» si no queda ninguna.
+- **Estados:** `STATUS_LABEL` en `components/ui.tsx`: «Prioridad normal», «Respondió», «Agendó», «En curso».
+- **QR:** librería `qrcode` (1.5.4), SVG armado en el servidor, solo con enlaces de Turnia.
+- Una prueba de integración nueva (374 en total): el consultorio real se prueba por Telegram con su agenda, sin cambiar su ficha. También pasan TypeScript, ESLint y build.
+
 ## Si el paciente no contesta los horarios, Sofi le vuelve a escribir — 03/11/2026
 
 - **Pedido del Dr. Mininni:** Sofi ofrece un turno, el paciente no contesta y no le vuelve a hablar. Tiene que volver a escribirle para cerrar el turno, porque si el paciente contesta al otro día el horario puede ya no estar. Una o dos veces, no más, y que se elija desde el panel.

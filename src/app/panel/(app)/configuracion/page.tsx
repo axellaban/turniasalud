@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ProfileSaveForm } from "./profile-save";
-import { ProfileTest } from "../clinicas/forms";
 import { retainClinic, revokeAccess } from "../../clinics-actions";
 import { getPanelClinic, getPanelUser, recentClinicChanges } from "@/lib/panel-clinic";
 import { clinicInfoText, getClinic } from "@/lib/clinic";
@@ -70,20 +69,17 @@ export default async function SettingsPage() {
       <ConfigHeader clinic={clinic} current="/panel/configuracion" />
       {!admin && <Notice tone="info" className="mb-6">
         <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio: datos, horarios, coberturas y lo que tiene que responder el agente.
-        Cambiá lo que necesites, tocá <strong>Guardar cambios</strong> y probalo desde <strong>Probar el agente</strong>: el agente usa la ficha nueva desde el próximo mensaje.
+        Cambiá lo que necesites, tocá <strong>Guardar cambios</strong> y probalo desde <Link href="/panel/probar" className="font-semibold underline">Probar a {clinic.agent_name || "Sofi"}</Link>: el agente usa la ficha nueva desde el próximo mensaje.
       </Notice>}
       {/* En el celular primero va qué falta y cómo probar; en la compu, a la derecha del formulario. */}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[auto_1fr]">
         <div className="space-y-6 xl:col-start-2 xl:row-start-1">
           <CompletenessCard {...completeness} compact />
           <Card id="probar" className="scroll-mt-20">
-            <h2 className="font-semibold text-brand-950">Probar el agente</h2>
-            <p className="mt-1 text-sm text-brand-900/60">Guardá los cambios y escribile: el agente usa la ficha nueva desde el próximo mensaje.</p>
-            {clinic.is_demo && <div className="mt-4 space-y-3">
-              <ProfileTest key={clinic.id} clinicId={clinic.id} />
-              {!clinic.retained_at && <form action={retainClinic}><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
-            </div>}
-            <Link href="/demo" className={`${clinic.is_demo ? "mt-3" : "mt-4"} inline-flex text-sm font-medium text-brand-700 hover:underline`}>Probar por voz o texto en el navegador →</Link>
+            <h2 className="font-semibold text-brand-950">Probar a {clinic.agent_name || "Sofi"}</h2>
+            <p className="mt-1 text-sm text-brand-900/60">Guardá los cambios y escribile: usa la ficha nueva desde el próximo mensaje.</p>
+            <Link href="/panel/probar" className={`${buttonClass} mt-4`}>En el navegador, WhatsApp o Telegram</Link>
+            {clinic.is_demo && !clinic.retained_at && <form action={retainClinic} className="mt-3"><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
             {admin && <p className="mt-3 text-sm text-brand-900/70">Las llamadas telefónicas nuevas que Turnia inicia por Twilio se solicitan con grabación. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Abrir grabaciones en Twilio</a>. No incluye llamadas de navegador o Telegram. Grabación y almacenamiento tienen cargo por uso.</p>}
             <p className="mt-3 text-xs text-brand-900/65">{!clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la guardás o conservás."}</p>
           </Card>

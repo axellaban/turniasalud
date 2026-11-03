@@ -115,7 +115,10 @@ export default async function PanelHome() {
 
   return (
     <>
-      <PageHeader title={`Hola, ${clinic.name}`} description="Lo de hoy primero; abajo, cómo viene la atención." />
+      <PageHeader
+        title={`Hola, ${user.role !== "admin" && user.label ? user.label : clinic.name}`}
+        description="Lo de hoy primero; abajo, cómo viene la atención."
+      />
 
       {pending.length > 0 && (
         <Card className="mb-6 border-sun-300 bg-sun-100/50">
@@ -165,7 +168,7 @@ export default async function PanelHome() {
           <Card>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-brand-950">Para el equipo</h2>
-              <Badge tone={stats.open_tasks > 0 ? "yellow" : "green"}>{stats.open_tasks} abiertas</Badge>
+              <Badge tone={stats.open_tasks > 0 ? "yellow" : "green"}>{stats.open_tasks === 0 ? "Al día" : stats.open_tasks === 1 ? "1 abierta" : `${stats.open_tasks} abiertas`}</Badge>
             </div>
             {urgentTasks.length ? (
               <ul className="space-y-2 text-sm">
@@ -208,7 +211,11 @@ export default async function PanelHome() {
                 ))}
               </ul>
             ) : (
-              <Empty>Todavía no hay conversaciones. Probá la demo o escribile al WhatsApp de la clínica.</Empty>
+              <Empty>
+                Todavía no hay conversaciones.{" "}
+                <Link href="/panel/probar" className="font-medium text-brand-700 hover:underline">Probá a {clinic.agent_name || "Sofi"}</Link>{" "}
+                como si fueras un paciente: la charla aparece acá.
+              </Empty>
             )}
           </Card>
         </div>

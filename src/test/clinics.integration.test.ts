@@ -166,6 +166,31 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const [{ days }] = await sql`select extract(epoch from expires_at - created_at) / 86400 as days from demo_handoffs where token = ${token}`;
     expect(Number(days)).toBeCloseTo(7, 1);
   });
+  it("el consultorio de verdad también se prueba por Telegram, con su agenda real y sin tocar su ficha", async () => {
+    const selected = mocks.cookies.get("turnia_clinic");
+    choose(MAIN);
+    const before = (await sql`select context_revision, retained_at from clinics where id = ${MAIN}`)[0];
+    const link = await clinics.prepareTestLink({}, form({ clinic_id: MAIN, channel: "telegram" }));
+    expect(link).toMatchObject({ ok: true, url: expect.stringMatching(/^https:\/\/t\.me\/TurnIA_salud_bot\?start=p_/), qr: expect.stringContaining("<svg") });
+    // Probar no conserva ni reinicia nada de la ficha del consultorio.
+    expect((await sql`select context_revision, retained_at from clinics where id = ${MAIN}`)[0]).toEqual(before);
+    // WhatsApp general apagado: lo dice, sin armar un enlace que no anda.
+    expect(await clinics.prepareTestLink({}, form({ clinic_id: MAIN, channel: "whatsapp" }))).toMatchObject({ ok: false, message: expect.stringContaining("no está activo") });
+
+    const token = new URL(link.url!).searchParams.get("start")!;
+    const input = { messageId: "real-start", chatId: "telegram:777", phone: "telegram:777", text: `Probar perfil de Turnia: ${token}` };
+    expect(await session.handleDemoMessage(input)).toEqual({ handled: true, status: "eligiendo" });
+    await session.handleDemoMessage({ ...input, messageId: "real-chat", text: "chat" });
+    mocks.agent.mockClear();
+    await session.handleDemoMessage({ ...input, messageId: "real-ask", text: "Quiero un turno" });
+    const vars = (mocks.agent.mock.calls as unknown as Array<[{ dynamicVariables: Record<string, string> }]>).at(-1)![0].dynamicVariables;
+    expect(vars.clinic_id).toBe(MAIN);
+    expect(vars.conversation_context).toContain("PRUEBA DEL CONSULTORIO");
+    expect(vars.conversation_context).toContain("La agenda es la real");
+    expect(vars.conversation_context).not.toContain("La agenda es de prueba");
+    if (selected) choose(selected); else mocks.cookies.delete("turnia_clinic");
+  });
+
   it("borra una ficha de demo o todas las temporales y nunca la principal", async () => {
     await sql`update clinics set retained_at = now() where id = ${a}`;
     const temporal = (await session.createDemoClinic({ ...PROFILE, nombre: "Clínica Gamma" }, "https://gamma.example/")).id;
@@ -218,7 +243,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const render = async (path: string) => renderToStaticMarkup(await (await import(`@/app/panel/(app)/${path}/page`)).default());
     const pages = await Promise.all(["configuracion", "configuracion/equipo", "configuracion/prestaciones", "configuracion/bloqueos", "configuracion/web"].map(render));
     const html = pages.join("");
-    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Protocolo de urgencias", "Instrucciones adicionales", "Formas de pago", "Editar profesional", "Editar prestación", "Probar este perfil", "Lecturas de la web", "Bloquear agenda", "Acceso del consultorio"]) expect(html).toContain(label);
+    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Protocolo de urgencias", "Instrucciones adicionales", "Formas de pago", "Editar profesional", "Editar prestación", "En el navegador, WhatsApp o Telegram", "Lecturas de la web", "Bloquear agenda", "Acceso del consultorio"]) expect(html).toContain(label);
     // Las conexiones generales viven solo en Sistema.
     expect(html).not.toContain("Conectar bot de Telegram"); expect(html).not.toContain("Regenerar"); expect(html).not.toContain("WhatsApp por WAHA");
     expect(renderToStaticMarkup(await (await import("@/app/panel/(app)/sistema/page")).default())).toContain("Conectar bot de Telegram");
@@ -266,7 +291,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(await sql`select id from clinics where id = ${b}`).toHaveLength(1);
     expect((await sql`select active_channel from messaging_settings`)[0].active_channel).toBe("telegram");
     const home = renderToStaticMarkup(await (await import("@/app/panel/(app)/page")).default());
-    expect(home).toContain("Alfa por el consultorio"); expect(home).not.toContain("Terminá la puesta en marcha");
+    expect(home).toContain("Hola, Dr. Alfa"); expect(home).not.toContain("Terminá la puesta en marcha");
     const config = renderToStaticMarkup(await (await import("@/app/panel/(app)/configuracion/page")).default());
     expect(config).not.toContain("Acceso del consultorio"); expect(config).not.toContain("/panel/sistema");
 
