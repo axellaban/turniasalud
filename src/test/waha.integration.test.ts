@@ -63,8 +63,8 @@ const fake = {
     this.transcript = "quiero sacar un turno para limpieza";
     this.lidPhone = "5491155550002@c.us";
   },
-  sent(kind: "channel" | "sendText") {
-    return this.calls.filter((c) => (kind === "channel" ? c.url === CHANNEL : c.url === `${WAHA}/api/sendText`));
+  sent(kind: "channel" | "sendText" | "sendVoice") {
+    return this.calls.filter((c) => (kind === "channel" ? c.url === CHANNEL : c.url === `${WAHA}/api/${kind}`));
   },
 };
 
@@ -83,6 +83,7 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (url.startsWith(WAHA)) {
     if (headers["x-api-key"] !== API_KEY) return json({ error: "unauthorized" }, 401);
     if (url === `${WAHA}/api/sendText`) return fake.failSendText ? json({ error: "session stopped" }, 500) : json({ id: "true_x@c.us_OUT" }, 201);
+    if (url === `${WAHA}/api/sendVoice`) return json({ id: "true_x@c.us_VOICE" }, 201);
     if (url.startsWith(`${WAHA}/api/default/lids/`)) return json({ lid: "x@lid", pn: fake.lidPhone });
     if (url.startsWith(`${WAHA}/api/files/`) && url.endsWith(".jpeg")) return new Response(new Uint8Array(fake.photo!), { headers: { "Content-Type": "image/jpeg" } });
     if (url.startsWith(`${WAHA}/api/files/`)) return new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "Content-Type": "audio/ogg" } });
@@ -158,6 +159,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     vi.stubEnv("AGENT_TOOLS_SECRET", "secreto-de-prueba");
     vi.stubEnv("SESSION_SECRET", "sesion-de-prueba");
     vi.stubEnv("ELEVENLABS_API_KEY", "clave-falsa");
+    vi.stubEnv("ELEVENLABS_VOICE_ID", "voz-de-sofi");
     vi.stubEnv("WAHA_URL", `${WAHA}/`);
     vi.stubEnv("WAHA_API_KEY", API_KEY);
     vi.stubEnv("WAHA_SESSION", "default");
@@ -293,7 +295,10 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const audio = textMessage("m7", "", "5491155550003@c.us", { hasMedia: true, media: { url: "http://localhost:3000/api/files/default/m7.oga", mimetype: "audio/ogg; codecs=opus" } });
     expect((await inbound(wahaRequest(audio))).status).toBe(200);
     expect(fake.calls.some((c) => c.url === `${WAHA}/api/files/default/m7.oga`)).toBe(true);
-    expect((fake.sent("channel")[0].body as { data: { text: string } }).data.text).toBe("(audio) quiero sacar un turno para limpieza");
+    // Lo transcripto llega al agente, con el aviso de que su respuesta va a salir como nota de voz.
+    expect((fake.sent("channel")[0].body as { data: { text: string } }).data.text).toBe(
+      "(audio) quiero sacar un turno para limpieza\n[Canal: esta respuesta se enviará como nota de voz. Respondé a lo que pide con frases breves para escuchar.]",
+    );
 
     fake.reset();
     const noMedia = textMessage("m8", "", "5491155550003@c.us", { hasMedia: true, media: { url: null, mimetype: "audio/ogg" } });
@@ -306,6 +311,30 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     await inbound(wahaRequest(photo));
     expect(fake.sent("channel")).toHaveLength(0);
     expect((fake.sent("sendText")[0].body as { text: string }).text).toContain("No pude ver esa foto");
+  });
+
+  it("a quien le habla por audio, Sofi le contesta con nota de voz; al texto, con texto", async () => {
+    fake.nextConversation = "conv_voz";
+    const audio = textMessage("v1", "", "5491155550004@c.us", { hasMedia: true, media: { url: "http://localhost:3000/api/files/default/v1.oga", mimetype: "audio/ogg; codecs=opus" } });
+    expect((await inbound(wahaRequest(audio))).status).toBe(200);
+    // El agente sabe que su respuesta se va a escuchar.
+    expect((fake.sent("channel")[0].body as { data: { text: string } }).data.text).toContain("se enviará como nota de voz");
+
+    // La respuesta al audio sale como nota de voz (Ogg Opus sin convertir); el link va además por escrito.
+    expect((await reply(replyRequest(agentSays("conv_voz", ["v1"], "Te reservé el **martes 10:00**. Confirmá acá: https://turnia.example/c/1")))).status).toBe(200);
+    const [voice] = fake.sent("sendVoice");
+    expect(voice.body).toMatchObject({ session: "default", chatId: "5491155550004@c.us", convert: false, file: { mimetype: "audio/ogg; codecs=opus" } });
+    const tts = fake.calls.find((c) => c.url.includes("/text-to-speech/"))!;
+    expect(tts.url).toContain("/text-to-speech/voz-de-sofi?");
+    expect((tts.body as { text: string }).text).toBe("Te reservé el martes 10:00. Confirmá acá: el enlace del mensaje escrito");
+    expect((fake.sent("sendText")[0].body as { text: string }).text).toContain("https://turnia.example/c/1");
+
+    // Si después escribe, la respuesta vuelve a ser texto.
+    fake.reset();
+    await inbound(wahaRequest(textMessage("v2", "Gracias", "5491155550004@c.us")));
+    await reply(replyRequest(agentSays("conv_voz", ["v2"], "¡De nada!")));
+    expect(fake.sent("sendVoice")).toHaveLength(0);
+    expect((fake.sent("sendText")[0].body as { text: string }).text).toBe("¡De nada!");
   });
 
   it("lee la foto de la credencial: el agente recibe lo que dice y queda en la ficha del paciente", async () => {
