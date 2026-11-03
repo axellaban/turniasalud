@@ -289,6 +289,7 @@ Con un celular marcado con `?turnia_interno=1`, los eventos llegan igual pero ma
 
 ## 9. Lo que no se mide (todavía)
 
+- **Plegar o desplegar los bloques de Panel → Prospección → Para hoy.** Es una preferencia de vista del administrador (queda en la cookie `prospeccion_secciones`), no un paso del embudo.
 - **Duración de la llamada por teléfono de la demo de WhatsApp** (ElevenLabs llama al celular). Está en el webhook post-llamada de ElevenLabs y no se manda a PostHog.
 - **Las respuestas del agente en la demo por WhatsApp.** Solo se cuentan los mensajes del interesado.
 - **El origen de cada link de prospección.** WhatsApp, Instagram o email llegan al mismo `/p/<código>` sin UTM. El canal se lee de `prospect_pitch_sent.channel`.
