@@ -149,7 +149,7 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
   const upcoming = await sql<
     Array<Pick<Appointment, "id" | "starts_at" | "status"> & { professional: string; type_name: string }>
   >`
-    select a.id, a.starts_at, a.status, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, t.name as type_name
+    select a.id, a.starts_at, a.status, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, coalesce(a.title, t.name) as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
     left join professionals p2 on p2.id = a.second_professional_id
@@ -165,7 +165,7 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
   // Última vez que vino: turnos atendidos en Turnia o visitas traídas de la importación.
   const [last] = await sql<Array<{ visited_at: string; service: string | null }>>`
     select visited_at, service from (
-      select (a.starts_at at time zone ${clinic.timezone})::date::text as visited_at, t.name as service
+      select (a.starts_at at time zone ${clinic.timezone})::date::text as visited_at, coalesce(a.title, t.name) as service
       from appointments a join appointment_types t on t.id = a.appointment_type_id
       where a.patient_id = ${patient.id} and (a.status = 'atendido' or (a.status = 'confirmado' and a.ends_at < now()))
       union all

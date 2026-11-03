@@ -540,7 +540,7 @@ type PatientAppointment = { id: string; starts_at: string; ends_at: string; prof
 /** Los turnos activos que todavía no terminaron de un paciente. */
 async function upcomingOf(patientId: string): Promise<PatientAppointment[]> {
   return sql<PatientAppointment[]>`
-    select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, t.name as type_name
+    select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, coalesce(a.title, t.name) as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
     left join professionals p2 on p2.id = a.second_professional_id
@@ -556,7 +556,7 @@ const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
 type NewAppointment = Pick<
   Appointment,
   "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
-> & Partial<Pick<Appointment, "second_professional_id">>;
+> & Partial<Pick<Appointment, "second_professional_id" | "title">>;
 
 /**
  * Serializa las reservas de cada profesional dentro de la transacción: si dos
@@ -594,7 +594,16 @@ type BookInput = {
   nombre_completo?: string;
   cobertura?: string;
   notas?: string;
+  /** Nombre propio del turno: pidió una «Consulta de implantes» y se reserva la prestación de consulta. */
+  titulo?: string;
 };
+
+/** «consulta de implantes» → «Consulta de implantes»; vacío o igual a la prestación, sin nombre propio. */
+export function appointmentTitle(raw: string | undefined, typeName: string): string | null {
+  const title = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!title || title.toLowerCase() === typeName.trim().toLowerCase()) return null;
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
 
 export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {}) {
   const clinic = await getClinic(ctx.clinicId);
@@ -654,6 +663,9 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   }
   const { pro, second } = parts[0];
   const coverage = acceptedCoverage(pro, input.cobertura || patient.coverage);
+  // El nombre propio es de la primera práctica (la que se está reservando ahora).
+  const title = same ? null : appointmentTitle(input.titulo, parts[0].type.name);
+  const nameOf = (p: Part, i: number) => (i === 0 && title) || p.type.name;
 
   let created: Appointment[];
   try {
@@ -674,6 +686,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
             source: sourceFromChannel(ctx.channel, ctx.patientPhone),
             coverage,
             notes: i === 0 ? (input.notas ?? null) : null,
+            ...(i === 0 && title && { title }),
           }),
         );
       }
@@ -689,7 +702,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
     await sql`
       update waitlist set status = 'resuelta'
       where patient_id = ${patient.id} and appointment_type_id = ${p.type.id} and status in ('activa', 'ofrecida')`;
-    await notifyN8n("turno.reservado", { clinic_id: clinic.id, appointment: created[i], patient, professional: p.pro.full_name, type: p.type.name });
+    await notifyN8n("turno.reservado", { clinic_id: clinic.id, appointment: created[i], patient, professional: p.pro.full_name, type: nameOf(p, i) });
   }
 
   const names = `${pro.full_name}${second ? ` y ${second.full_name}` : ""}`;
@@ -698,8 +711,8 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   const mensaje = same
     ? `Listo: se sumó ${last.type.name} a continuación de su turno de ${same.type_name} del ${humanSlot(startsAt, clinic.timezone)} con ${names}. La visita termina a las ${until}.`
     : parts.length > 1
-      ? `Turno confirmado, una sola visita con ${names}: ${parts[0].type.name} el ${humanSlot(startsAt, clinic.timezone)} y, a continuación, ${last.type.name}. Termina a las ${until}.`
-      : `Turno confirmado: ${parts[0].type.name} con ${names} el ${humanSlot(startsAt, clinic.timezone)}.`;
+      ? `Turno confirmado, una sola visita con ${names}: ${nameOf(parts[0], 0)} el ${humanSlot(startsAt, clinic.timezone)} y, a continuación, ${last.type.name}. Termina a las ${until}.`
+      : `Turno confirmado: ${nameOf(parts[0], 0)} con ${names} el ${humanSlot(startsAt, clinic.timezone)}.`;
   // ¿Ya tenía otro turno de lo mismo? Puede ser a propósito (dos sesiones), o que quería cambiarlo.
   const other = !same && mine.find((a) => a.appointment_type_id === parts[0].type.id);
   return {
@@ -726,7 +739,7 @@ export async function listPatientAppointments(ctx: ToolContext) {
     Array<{ id: string; starts_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
   >`
     select a.id, a.starts_at, a.status, a.professional_id, a.appointment_type_id,
-           pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, t.name as type_name
+           pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, coalesce(a.title, t.name) as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
     left join professionals p2 on p2.id = a.second_professional_id
@@ -959,6 +972,7 @@ async function rescheduleLoaded(
         source,
         coverage,
         notes: t.notes,
+        title: t.title ?? null,
       });
       const moved = await insertAppointment(tx, row(appt, { pro, second, type, endsAt }, startsAt));
       return [moved, follower && next ? await insertAppointment(tx, row(follower, next, next.startsAt)) : null] as const;

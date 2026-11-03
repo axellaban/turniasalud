@@ -806,6 +806,32 @@ describe.runIf(url)("integración con Postgres", () => {
     }
   });
 
+  it("una consulta de un tratamiento se reserva como consulta y el turno lleva su nombre («Consulta de implantes»)", async () => {
+    const CONSULTA_ODONTO = "00000000-0000-4000-8000-0000000000b6";
+    const c = ctx("5491166660071");
+    await service.registerPatient(c, { nombre_completo: "Ignacio Implante", cobertura: "Particular" });
+    const { turnos } = await service.checkAvailability(c, { tipo_turno_id: CONSULTA_ODONTO, desde: new Date(Date.now() + 40 * 86400_000).toISOString().slice(0, 10) });
+
+    const booked = await service.bookAppointment(c, { tipo_turno_id: CONSULTA_ODONTO, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio, titulo: "  consulta de   implantes " });
+    expect(booked.mensaje).toMatch(/^Turno confirmado: Consulta de implantes con /);
+    expect(mocks.notifyN8n).toHaveBeenCalledWith("turno.reservado", expect.objectContaining({ type: "Consulta de implantes" }));
+    const [row] = await sql<Array<{ title: string | null; appointment_type_id: string }>>`select title, appointment_type_id from appointments where id = ${booked.turno_id}`;
+    expect(row).toEqual({ title: "Consulta de implantes", appointment_type_id: CONSULTA_ODONTO });
+    expect((await service.listPatientAppointments(c)).turnos[0].tipo_turno).toBe("Consulta de implantes");
+    const patient = await clinicLib.findPatientByPhone(CLINIC, "5491166660071");
+    expect(await clinicLib.patientContextText(await clinicLib.getClinic(CLINIC), patient)).toContain("Consulta de implantes");
+
+    // Al reprogramarla conserva el nombre.
+    const moved = await service.rescheduleAppointment(c, { turno_id: booked.turno_id, nuevo_inicio: turnos[1].inicio });
+    const [after] = await sql<Array<{ title: string | null }>>`select title from appointments where id = ${moved.turno_id}`;
+    expect(after.title).toBe("Consulta de implantes");
+    await service.cancelAppointment(c, { turno_id: moved.turno_id });
+
+    // Sin título, o con el mismo nombre de la prestación, el turno se llama como la prestación.
+    expect(service.appointmentTitle(undefined, "Consulta odontológica")).toBeNull();
+    expect(service.appointmentTitle(" consulta odontológica ", "Consulta odontológica")).toBeNull();
+  });
+
   it("dos prácticas en la misma visita: se ofrecen, se reservan, se mueven y se recuerdan juntas", async () => {
     const CONSULTA_ODONTO = "00000000-0000-4000-8000-0000000000b6";
     const c = ctx("5491166660061");

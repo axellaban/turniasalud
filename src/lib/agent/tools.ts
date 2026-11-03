@@ -101,6 +101,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       nombre_completo: { type: "string", description: "Nombre y apellido del paciente, si todavía no lo registraste." },
       cobertura: { type: "string", description: "Cobertura con la que se atiende en este turno." },
       notas: { type: "string", description: "Motivo de consulta u observaciones breves para el profesional." },
+      titulo: {
+        type: "string",
+        description:
+          "Solo si pidió una consulta sobre un tratamiento (implantes, prótesis, blanqueamiento, ortodoncia…) y reservás la prestación de consulta: cómo se llama el turno, por ejemplo «Consulta de implantes». Así figura en la agenda, en la ficha y en el recordatorio.",
+      },
     },
     schema: z.object({
       tipo_turno_id: z.string().min(1),
@@ -110,6 +115,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       nombre_completo: z.string().optional(),
       cobertura: z.string().optional(),
       notas: z.string().optional(),
+      titulo: z.string().optional(),
     }),
   },
   {

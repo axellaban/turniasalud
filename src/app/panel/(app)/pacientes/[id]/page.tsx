@@ -47,7 +47,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
   if (!p) notFound();
   const [appointments, conversations, tasks, visits, duplicates, documents, household] = await Promise.all([
     sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
-      select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, t.name as type_name
+      select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, coalesce(a.title, t.name) as type_name
       from appointments a
       join professionals pr on pr.id = a.professional_id
       join appointment_types t on t.id = a.appointment_type_id

@@ -72,7 +72,7 @@ export default async function PanelHome() {
       join appointment_types t on t.id = booked.appointment_type_id
       where c.clinic_id = ${clinic.id} and r.sent_at >= ${quarter}`,
     sql<Array<{ id: string; starts_at: string; status: string; patient: string | null; professional: string; type_name: string }>>`
-      select a.id, a.starts_at, a.status, p.full_name as patient, pr.full_name as professional, t.name as type_name
+      select a.id, a.starts_at, a.status, p.full_name as patient, pr.full_name as professional, coalesce(a.title, t.name) as type_name
       from appointments a
       join patients p on p.id = a.patient_id
       join professionals pr on pr.id = a.professional_id
