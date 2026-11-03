@@ -147,7 +147,8 @@ export async function forwardToAgent(
     if (channelForChat(input.chatId) === "telegram") vars.conversation_context += " Canal actual: Telegram. Respondé en texto breve sin Markdown; cuando el usuario elige audio, Turnia convierte tu respuesta con tu voz de ElevenLabs. No pidas un teléfono para identificarlo: patient_phone es su identidad de Telegram.";
     if (stale && open?.transcript.length) vars.conversation_context += ` La información de la clínica se actualizó durante esta charla: usá la de ahora. Lo último que se habló: ${recapTranscript(open.transcript)}`;
     vars.campaign_id = open?.campaign_id ?? "ninguna";
-    const voiceForMessage = opts.voiceForMessage && Boolean(currentWahaConnection());
+    // El webhook decide: un audio del paciente, o un pedido de audio en una línea propia con voz.
+    const voiceForMessage = Boolean(opts.voiceForMessage) && channelForChat(input.chatId) === "whatsapp";
     const text = voiceForMessage
       ? `${input.text}\n[Canal: esta respuesta se enviará como nota de voz. Respondé a lo que pide con frases breves para escuchar.]`
       : input.text;
@@ -269,7 +270,7 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
 
   if (text) {
     try {
-      const requestedVoice = Boolean(conv.waha_connection_id) && conv.transcript.some((t) => t.voiceReplyFor && ids.includes(t.voiceReplyFor));
+      const requestedVoice = conv.transcript.some((t) => t.voiceReplyFor && ids.includes(t.voiceReplyFor));
       if ((conv.reply_with_voice || requestedVoice) && !failed) await sendVoiceReply(conv, text, requestedVoice);
       else await sendChatText(conv.chat_id, text);
     } catch (e) {
@@ -290,18 +291,36 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
   return { status: text ? "sent" : "empty", ended };
 }
 
-let cachedVoice: { agentId: string; voiceId: string | null } | null = null;
+const agentVoices = new Map<string, string | null>();
 
-/** Voz del agente de la clínica principal (la de la demo no tiene agente propio). */
-async function replyVoiceId(): Promise<string | null> {
+async function voiceOfAgent(agentId: string): Promise<string | null> {
+  if (agentVoices.has(agentId)) return agentVoices.get(agentId) ?? null;
+  try {
+    const voice = await agentVoiceId(agentId);
+    agentVoices.set(agentId, voice);
+    return voice;
+  } catch (e) {
+    // Sin guardar: si ElevenLabs falló un momento, la próxima nota lo vuelve a intentar.
+    console.error("Canal: no se pudo leer la voz del agente", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * Voz de la nota: la de la clínica que atiende (su voz guardada o la de su agente), así un consultorio
+ * suena igual que en sus llamadas. Las clínicas que arma la demo no tienen agente: usan la general.
+ */
+async function replyVoiceId(clinicId: string): Promise<string | null> {
+  const clinic = await getClinic(clinicId).catch(() => null);
+  if (clinic?.elevenlabs_voice_id) return clinic.elevenlabs_voice_id;
+  if (clinic?.elevenlabs_agent_id) {
+    const voice = await voiceOfAgent(clinic.elevenlabs_agent_id);
+    if (voice) return voice;
+  }
   if (process.env.ELEVENLABS_VOICE_ID) return process.env.ELEVENLABS_VOICE_ID;
   const main = await getClinic();
   if (main.elevenlabs_voice_id) return main.elevenlabs_voice_id;
-  if (!main.elevenlabs_agent_id) return null;
-  if (cachedVoice?.agentId !== main.elevenlabs_agent_id) {
-    cachedVoice = { agentId: main.elevenlabs_agent_id, voiceId: await agentVoiceId(main.elevenlabs_agent_id) };
-  }
-  return cachedVoice.voiceId;
+  return main.elevenlabs_agent_id ? voiceOfAgent(main.elevenlabs_agent_id) : null;
 }
 
 /** Contesta con una nota de voz; si no se puede (sin voz, TTS o WAHA sin envío de audio), manda el texto. */
@@ -310,7 +329,7 @@ async function sendVoiceReply(conv: ChannelConversation, text: string, requested
   // El paciente tiene el enlace incluso si después falla la nota de voz.
   if (hasLink) await sendChatText(conv.chat_id, text);
   try {
-    const voiceId = requestedVoice ? (await getClinic(conv.clinic_id)).elevenlabs_voice_id : await replyVoiceId();
+    const voiceId = await replyVoiceId(conv.clinic_id);
     if (!voiceId) throw new Error("no hay voz configurada");
     const spoken = text.replace(/[*_~`]/g, "").replace(/https?:\/\/\S+/g, "el enlace del mensaje escrito");
     const audio = await textToSpeech(spoken, voiceId);

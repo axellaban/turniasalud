@@ -92,7 +92,8 @@ export async function POST(request: Request) {
     // La foto queda en la ficha del paciente; si no se puede guardar, el agente igual la recibe.
     await document?.save({ clinicId: clinic.id, phone, channel: "whatsapp" }).catch((e) => console.error("WAHA: no se pudo guardar la foto", e instanceof Error ? e.message : e));
     const res = await forwardToAgent(clinic, { messageId: parsed.id, chatId: parsed.chatId, phone, text }, {
-      voiceForMessage: Boolean(own && clinic.elevenlabs_voice_id && !parsed.otherMedia && requestsVoiceReply(text)),
+      // Nota de voz si habló por audio, o si la pidió en una línea propia con voz configurada.
+      voiceForMessage: Boolean(parsed.audio) || Boolean(own && clinic.elevenlabs_voice_id && !parsed.otherMedia && requestsVoiceReply(text)),
     });
     return NextResponse.json({ ok: true, conversation_id: res.conversation_id, continued: res.continued });
   } catch (e) {
