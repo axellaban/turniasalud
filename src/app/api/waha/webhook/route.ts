@@ -2,7 +2,7 @@ import { NextResponse, after } from "next/server";
 import { env } from "@/lib/env";
 import { normalizePhone } from "@/lib/phone";
 import { transcribeAudio } from "@/lib/elevenlabs";
-import { AUDIO_FAILED_REPLY, MEDIA_ONLY_REPLY, claimEvent, forwardToAgent, releaseEvent, whatsappClinic } from "@/lib/channel";
+import { AUDIO_FAILED_REPLY, MEDIA_ONLY_REPLY, claimEvent, forwardToAgent, releaseEvent, requestsVoiceReply, whatsappClinic } from "@/lib/channel";
 import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
 import { parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wahaSendText, type WahaEvent } from "@/lib/waha";
 
@@ -91,7 +91,9 @@ export async function POST(request: Request) {
     const clinic = own ? await getClinic(own.clinicId) : await whatsappClinic();
     // La foto queda en la ficha del paciente; si no se puede guardar, el agente igual la recibe.
     await document?.save({ clinicId: clinic.id, phone, channel: "whatsapp" }).catch((e) => console.error("WAHA: no se pudo guardar la foto", e instanceof Error ? e.message : e));
-    const res = await forwardToAgent(clinic, { messageId: parsed.id, chatId: parsed.chatId, phone, text });
+    const res = await forwardToAgent(clinic, { messageId: parsed.id, chatId: parsed.chatId, phone, text }, {
+      voiceForMessage: Boolean(own && clinic.elevenlabs_voice_id && !parsed.otherMedia && requestsVoiceReply(text)),
+    });
     return NextResponse.json({ ok: true, conversation_id: res.conversation_id, continued: res.continued });
   } catch (e) {
     // Sin marcar como procesado: si WAHA reintenta, se vuelve a intentar.

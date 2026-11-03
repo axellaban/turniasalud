@@ -49,6 +49,7 @@ const fake = {
   calls: [] as Call[],
   nextConversation: "conv_wa_1",
   failSendText: false,
+  failSendVoice: false,
   transcript: "quiero sacar un turno para limpieza",
   lidPhone: "5491155550002@c.us" as string | null,
   /** Una foto real (JPEG chico) para lo que devuelve WAHA, y lo que «lee» Claude. */
@@ -58,6 +59,7 @@ const fake = {
     this.calls = [];
     this.nextConversation = "conv_wa_1";
     this.failSendText = false;
+    this.failSendVoice = false;
     this.transcript = "quiero sacar un turno para limpieza";
     this.lidPhone = "5491155550002@c.us";
   },
@@ -88,6 +90,13 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (url === `${OWN_WAHA}/api/sendText`) {
     expect(headers["x-api-key"]).toBe(ownConnection.apiKey);
     return json({ id: "sent_from_own_line" }, 201);
+  }
+  if (url === `${OWN_WAHA}/api/sendVoice`) {
+    expect(headers["x-api-key"]).toBe(ownConnection.apiKey);
+    return fake.failSendVoice ? json({ error: "voice unavailable" }, 500) : json({ id: "voice_from_own_line" }, 201);
+  }
+  if (url.startsWith("https://api.elevenlabs.io/v1/text-to-speech/")) {
+    return new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "Content-Type": "audio/ogg" } });
   }
   if (url.startsWith("https://api.anthropic.com/v1/messages")) {
     return json({
@@ -445,6 +454,41 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
       expect(await out.json()).toMatchObject({ status: "inactive" });
     }
     expect(fake.calls.filter((c) => c.url.endsWith("/api/sendText"))).toHaveLength(1);
+  });
+
+  it("envía audio con la voz del consultorio solo para el mensaje que lo pidió, y usa texto si falla", async () => {
+    await sql`
+      insert into clinics (id, name, elevenlabs_voice_id) values (${OWN_CLINIC}, 'Consultorio de prueba', 'voz-propia')
+      on conflict (id) do update set elevenlabs_voice_id = excluded.elevenlabs_voice_id`;
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+    await sql`update messaging_settings set active_channel = 'telegram' where id`;
+    const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
+    const send = (id: string, text: string) => ownInbound(
+      wahaRequest(textMessage(id, text, "5491155550040@c.us"), { key: ownConnection.webhookHmac }),
+      { params: Promise.resolve({ connection: ownConnection.id }) },
+    );
+    fake.nextConversation = "conv_own_voice";
+    expect((await send("voice1", "¿Me podés recordar el turno pero en audio?")).status).toBe(200);
+    expect((await send("text2", "No tengo audio, prefiero por escrito")).status).toBe(200);
+    expect(fake.sent("channel")[0].body).toMatchObject({ data: { text: expect.stringContaining("se enviará como nota de voz") } });
+    await reply(replyRequest(agentSays("conv_own_voice", ["text2"], "Este va por escrito.")));
+    await reply(replyRequest(agentSays("conv_own_voice", ["voice1"], "Su turno es el miércoles.")));
+
+    const voices = () => fake.calls.filter((c) => c.url === `${OWN_WAHA}/api/sendVoice`);
+    const texts = () => fake.calls.filter((c) => c.url === `${OWN_WAHA}/api/sendText`);
+    expect(voices()).toHaveLength(1);
+    expect(voices()[0].body).toMatchObject({ chatId: "5491155550040@c.us", convert: false });
+    expect(texts()).toHaveLength(1);
+    expect(fake.calls.some((c) => c.url.includes("/text-to-speech/voz-propia?"))).toBe(true);
+
+    fake.failSendVoice = true;
+    expect((await send("voice3", "Pero envíamelo en audio")).status).toBe(200);
+    await reply(replyRequest(agentSays("conv_own_voice", ["voice3"], "Atendemos de lunes a jueves.")));
+    expect(voices()).toHaveLength(2);
+    expect(texts().map((c) => c.body)).toEqual([
+      expect.objectContaining({ text: "Este va por escrito." }),
+      expect.objectContaining({ text: "Atendemos de lunes a jueves." }),
+    ]);
   });
 
   it("la firma de otra instancia, otro número o sesión no alcanzan al agente", async () => {
