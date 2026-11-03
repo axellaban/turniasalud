@@ -8,7 +8,7 @@ export async function sendChatText(chatId: string, text: string): Promise<void> 
   else await wahaSendText(chatId, text);
 }
 
-export async function sendChatVoice(chatId: string, audio: Buffer): Promise<void> {
+export async function sendChatVoice(chatId: string, audio: Buffer, opts?: { convert: boolean }): Promise<void> {
   if (channelForChat(chatId) === "telegram") await telegramSendVoice(chatId, audio);
-  else await wahaSendVoice(chatId, audio);
+  else await wahaSendVoice(chatId, audio, opts);
 }

@@ -18,7 +18,7 @@ export const IDLE_MINUTES = 15;
 /** Un mensaje de campaña espera la respuesta del paciente hasta 3 días. */
 const CAMPAIGN_REPLY_HOURS = 72;
 
-export type TranscriptLine = { role: "user" | "agent"; message: string; at: string };
+export type TranscriptLine = { role: "user" | "agent"; message: string; at: string; voiceReplyFor?: string };
 
 /** Lo último que se habló, para que el agente siga el hilo al arrancar una conversación nueva. */
 export function recapTranscript(lines: TranscriptLine[], max = 1200): string {
@@ -65,6 +65,15 @@ export async function releaseEvent(key: string): Promise<void> {
 }
 
 const line = (role: TranscriptLine["role"], message: string): TranscriptLine => ({ role, message, at: new Date().toISOString() });
+
+/** Solo cuando la persona pide una respuesta en audio, aunque ella haya escrito. */
+export function requestsVoiceReply(text: string): boolean {
+  const request = text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/^\(audio\)\s*/, "").trim();
+  const format = /\b(?:en audio|(?:por|un|una) (?:audio|nota de voz|mensaje de voz))\b/;
+  if (!format.test(request) || /\b(?:no|sin|nunca) (?:\w+ ){0,4}(?:audio|nota de voz|mensaje de voz)\b/.test(request)) return false;
+  return /^(?:en audio|por audio|una nota de voz|un audio)[\s,.!?¡¿]*$/.test(request)
+    || /\b(?:manda\w*|envia\w*|deci\w*|respon\w*|contesta\w*|pasa\w*|recorda\w*|prefiero|quiero|pod\w*)\b/.test(request);
+}
 
 async function findOpen(db: Sql | TransactionSql, clinicId: string, phone: string): Promise<ChannelConversation | null> {
   const [conv] = await db<ChannelConversation[]>`
@@ -114,7 +123,7 @@ export async function registerOutbound(
 export async function forwardToAgent(
   clinic: Clinic,
   input: { messageId: string; chatId: string; phone: string; text: string },
-  opts: { context?: string; replyWithVoice?: boolean } = {},
+  opts: { context?: string; replyWithVoice?: boolean; voiceForMessage?: boolean } = {},
 ): Promise<{ conversation_id: string; continued: boolean }> {
   if (currentWahaConnection() && currentWahaConnection()!.clinicId !== clinic.id) throw new Error("La línea de WhatsApp no corresponde a esta clínica.");
   const settings = await requireActiveChannel(channelForChat(input.chatId));
@@ -138,15 +147,19 @@ export async function forwardToAgent(
     if (channelForChat(input.chatId) === "telegram") vars.conversation_context += " Canal actual: Telegram. Respondé en texto breve sin Markdown; cuando el usuario elige audio, Turnia convierte tu respuesta con tu voz de ElevenLabs. No pidas un teléfono para identificarlo: patient_phone es su identidad de Telegram.";
     if (stale && open?.transcript.length) vars.conversation_context += ` La información de la clínica se actualizó durante esta charla: usá la de ahora. Lo último que se habló: ${recapTranscript(open.transcript)}`;
     vars.campaign_id = open?.campaign_id ?? "ninguna";
+    const voiceForMessage = opts.voiceForMessage && Boolean(currentWahaConnection());
+    const text = voiceForMessage
+      ? `${input.text}\n[Canal: esta respuesta se enviará como nota de voz. Respondé a lo que pide con frases breves para escuchar.]`
+      : input.text;
     const res = await sendChannelMessage({
       messageId: input.messageId,
-      text: input.text,
+      text,
       userIdentifier: input.phone,
       conversationId: stale ? undefined : open?.elevenlabs_conversation_id,
       dynamicVariables: vars,
     });
 
-    const userLine = json([line("user", input.text)]);
+    const userLine = json([{ ...line("user", input.text), ...(voiceForMessage && { voiceReplyFor: input.messageId }) }]);
     if (open) {
       await tx`
         update channel_conversations set
@@ -256,7 +269,8 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
 
   if (text) {
     try {
-      if (conv.reply_with_voice && !failed) await sendVoiceReply(conv, text);
+      const requestedVoice = Boolean(conv.waha_connection_id) && conv.transcript.some((t) => t.voiceReplyFor && ids.includes(t.voiceReplyFor));
+      if ((conv.reply_with_voice || requestedVoice) && !failed) await sendVoiceReply(conv, text, requestedVoice);
       else await sendChatText(conv.chat_id, text);
     } catch (e) {
       if (e instanceof ChannelPausedError) return { status: "inactive" };
@@ -291,19 +305,21 @@ async function replyVoiceId(): Promise<string | null> {
 }
 
 /** Contesta con una nota de voz; si no se puede (sin voz, TTS o WAHA sin envío de audio), manda el texto. */
-async function sendVoiceReply(conv: ChannelConversation, text: string): Promise<void> {
+async function sendVoiceReply(conv: ChannelConversation, text: string, requestedVoice: boolean): Promise<void> {
+  const hasLink = /https?:\/\//.test(text);
+  // El paciente tiene el enlace incluso si después falla la nota de voz.
+  if (hasLink) await sendChatText(conv.chat_id, text);
   try {
-    const voiceId = await replyVoiceId();
+    const voiceId = requestedVoice ? (await getClinic(conv.clinic_id)).elevenlabs_voice_id : await replyVoiceId();
     if (!voiceId) throw new Error("no hay voz configurada");
-    const spoken = text.replace(/[*_~`]/g, "").replace(/https?:\/\/\S+/g, "el link que te escribo");
+    const spoken = text.replace(/[*_~`]/g, "").replace(/https?:\/\/\S+/g, "el enlace del mensaje escrito");
     const audio = await textToSpeech(spoken, voiceId);
     if (!(await chatIsActive(conv.chat_id, conv.channel_revision))) throw new ChannelPausedError();
-    await sendChatVoice(conv.chat_id, audio);
-    if (/https?:\/\//.test(text)) await sendChatText(conv.chat_id, text);
+    await sendChatVoice(conv.chat_id, audio, { convert: !requestedVoice });
   } catch (e) {
     if (e instanceof ChannelPausedError) throw e;
-    console.error("Demo: no se pudo mandar la nota de voz; va como texto", e instanceof Error ? e.message : e);
-    await sendChatText(conv.chat_id, text);
+    console.error("No se pudo mandar la nota de voz; se entrega el texto", e instanceof Error ? e.message : e);
+    if (!hasLink) await sendChatText(conv.chat_id, text);
   }
 }
 

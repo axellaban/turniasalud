@@ -176,8 +176,8 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
   }
 }
 
-/** Nota de voz. Con convert: true WAHA la deja en el formato exacto de WhatsApp (puede requerir WAHA Plus). */
-export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void> {
+/** Nota de voz. Un archivo Ogg Opus listo se puede enviar sin conversión en WAHA Core. */
+export async function wahaSendVoice(chatId: string, audio: Buffer, { convert = true }: { convert?: boolean } = {}): Promise<void> {
   await requireActiveChannel("whatsapp");
   await waha("/api/sendVoice", {
     method: "POST",
@@ -186,7 +186,7 @@ export async function wahaSendVoice(chatId: string, audio: Buffer): Promise<void
       session: currentWahaConnection()?.session ?? env.wahaSession(),
       chatId,
       file: { mimetype: "audio/ogg; codecs=opus", filename: "respuesta.ogg", data: audio.toString("base64") },
-      convert: true,
+      convert,
     }),
   });
 }
