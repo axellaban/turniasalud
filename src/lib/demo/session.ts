@@ -16,7 +16,7 @@ import { demoDistinctId } from "../analytics-shared";
 import { sendChatText } from "../messaging";
 import { channelForChat, chatIsActive, requireActiveChannel } from "../messaging-settings";
 import type { Clinic } from "../types";
-import { DEMO_TEXTS, demoAgentContext, hostOf, parseCommand, parseDemoRequest, parseModeChoice, type DemoMode, type DemoStatus } from "./flow";
+import { DEMO_TEXTS, clinicTestContext, demoAgentContext, hostOf, parseCommand, parseDemoRequest, parseModeChoice, type DemoMode, type DemoStatus } from "./flow";
 import { buildProfile, manualProfile, type DemoProfile } from "./profile";
 import { ScrapeError, scrapeSite } from "./scraper";
 
@@ -50,6 +50,8 @@ export type DemoSession = {
   manual_specialty: string | null;
   manual_professional: string | null;
   manual_services: string | null;
+  /** Abierta con un perfil guardado desde el panel (puede ser el consultorio de verdad). */
+  reused_profile?: boolean;
   /** La persona de PostHog que la empezó en el navegador (src/lib/analytics-server.ts). */
   analytics_id: string | null;
   created_at: string;
@@ -112,7 +114,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
     await setStatus(session.id, "terminada");
     await closeAgentConversations(session);
     captureLater("demo_exited", demoPerson(session), { via: demoVia(input.chatId), from_status: session.status });
-    const clinic = session.clinic_id ? await demoClinic(session.clinic_id) : null;
+    const clinic = session.clinic_id ? await demoClinic(session) : null;
     await sendChatText(input.chatId, DEMO_TEXTS.ended(clinic?.name ?? null));
     return { handled: true, status: "terminada" };
   }
@@ -127,7 +129,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
     return { handled: true, status: "analizando" };
   }
 
-  const clinic = session.clinic_id ? await demoClinic(session.clinic_id) : null;
+  const clinic = session.clinic_id ? await demoClinic(session) : null;
   if (!clinic) {
     await setStatus(session.id, "error", { error: "La clínica de la demo ya no existe." });
     await sendChatText(input.chatId, DEMO_TEXTS.failed);
@@ -156,7 +158,7 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
   await sql`update demo_sessions set updated_at = now() where id = ${session.id}`;
   captureLater("demo_message_sent", demoPerson(session), { via: demoVia(input.chatId), mode: session.status, audio: said !== input.text });
   await forwardToAgent(clinic, input, {
-    context: demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text }),
+    context: clinic.is_demo ? demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text }) : clinicTestContext(clinic.name),
     replyWithVoice: session.status === "audio",
   });
   return { handled: true, status: session.status };
@@ -164,7 +166,8 @@ export async function handleDemoMessage(input: DemoInput): Promise<DemoOutcome |
 
 async function startSavedProfile(input: DemoInput, clinicId: string): Promise<DemoOutcome> {
   const settings = await requireActiveChannel(channelForChat(input.chatId));
-  const [clinic] = await sql<Clinic[]>`select * from clinics where id = ${clinicId} and is_demo`;
+  // El enlace lo arma el panel de esa clínica: puede ser una demo o el consultorio de verdad.
+  const [clinic] = await sql<Clinic[]>`select * from clinics where id = ${clinicId}`;
   if (!clinic) throw new Error("La clínica del perfil ya no existe.");
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${`turnia-demo:${input.phone}`}, 0))`;
@@ -315,8 +318,10 @@ export async function analyzeDemo(sessionId: string): Promise<void> {
   }
 }
 
-async function demoClinic(id: string): Promise<Clinic | null> {
-  const [clinic] = await sql<Clinic[]>`select * from clinics where id = ${id} and is_demo`;
+/** La clínica de la demo. Un consultorio de verdad solo si lo abrió su panel (un perfil guardado). */
+async function demoClinic(session: Pick<DemoSession, "clinic_id" | "reused_profile">): Promise<Clinic | null> {
+  if (!session.clinic_id) return null;
+  const [clinic] = await sql<Clinic[]>`select * from clinics where id = ${session.clinic_id} and (is_demo or ${Boolean(session.reused_profile)})`;
   return clinic ?? null;
 }
 
@@ -387,7 +392,8 @@ async function sendCallLink(session: DemoSession, agent: string, clinicName: str
 
 /** Variables del agente para la clínica de la demo (llamadas por teléfono o por la web). */
 export async function demoDynamicVariables(clinic: Clinic, phone: string): Promise<Record<string, string>> {
-  return buildDynamicVariables(clinic, phone, { context: demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text }) });
+  const context = clinic.is_demo ? demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text }) : clinicTestContext(clinic.name);
+  return buildDynamicVariables(clinic, phone, { context });
 }
 
 /** Demo y clínica del link de llamada web, si sigue vigente. */
@@ -397,7 +403,7 @@ export async function sessionForCallToken(token: string): Promise<{ session: Dem
     select * from demo_sessions
     where call_token = ${token} and status = 'llamada' and updated_at > now() - make_interval(hours => ${ACTIVE_HOURS})`;
   if (!session?.clinic_id || !(await chatIsActive(session.chat_id, session.channel_revision))) return null;
-  const clinic = await demoClinic(session.clinic_id);
+  const clinic = await demoClinic(session);
   return clinic ? { session, clinic } : null;
 }
 

@@ -15,6 +15,7 @@ import { createProfileHandoff } from "@/lib/demo/handoff";
 import { messagingSettings } from "@/lib/messaging-settings";
 import { TELEGRAM_BOT_USERNAME } from "@/lib/telegram";
 import { demoWhatsappNumber } from "@/lib/demo/config";
+import { qrSvg } from "@/lib/agent-test";
 import type { FormState } from "./actions";
 
 export async function selectClinic(form: FormData): Promise<void> {
@@ -70,22 +71,38 @@ export async function retainClinic(form: FormData): Promise<void> {
   revalidatePath("/panel", "layout");
 }
 
-export type ProfileTestState = FormState & { url?: string };
-export async function launchProfile(_previous: ProfileTestState, form: FormData): Promise<ProfileTestState> {
+export type ProfileTestState = FormState & { url?: string; qr?: string };
+
+/**
+ * Enlace para probar esta ficha por chat: abre Telegram o el WhatsApp general con la ficha de la
+ * clínica (chat, audios o que lo llame). Sirve para las demos y para los consultorios: con un
+ * consultorio, lo que reserve queda en su agenda real. Vale 7 días y se puede usar varias veces.
+ */
+export async function prepareTestLink(_previous: ProfileTestState, form: FormData): Promise<ProfileTestState> {
   const clinic = await getPanelClinic(form);
-  if (!clinic.is_demo) return { ok: false, message: "La clínica principal se prueba desde la demo privada del panel." };
+  const asked = String(form.get("channel") ?? "");
   const settings = await messagingSettings();
-  if (settings.active_channel === "pausado") return { ok: false, message: "Elegí Telegram o WhatsApp en la configuración general para probar por chat." };
-  if (settings.active_channel === "telegram" && !settings.telegram_ready) return { ok: false, message: "Primero conectá el bot en la configuración general." };
-  const wa = settings.active_channel === "whatsapp" ? (await demoWhatsappNumber()).number : null;
-  if (settings.active_channel === "whatsapp" && !wa) return { ok: false, message: "WhatsApp no está disponible. La conexión existente se conserva." };
-  await touchClinic(clinic.id);
+  const channel = asked === "telegram" || asked === "whatsapp" ? asked : settings.active_channel;
+  if (channel === "pausado" || settings.active_channel !== channel) {
+    return { ok: false, message: channel === "telegram" ? "Telegram no está activo en este momento." : "El WhatsApp de prueba no está activo en este momento." };
+  }
+  if (channel === "telegram" && !settings.telegram_ready) return { ok: false, message: "Telegram no está activo en este momento." };
+  const wa = channel === "whatsapp" ? (await demoWhatsappNumber()).number : null;
+  if (channel === "whatsapp" && !wa) return { ok: false, message: "El WhatsApp no está disponible en este momento." };
+  // Probar una demo la conserva; con un consultorio no cambia nada de su ficha.
+  if (clinic.is_demo) await touchClinic(clinic.id);
   const token = await createProfileHandoff(clinic.id, clinic.website);
-  const url = settings.active_channel === "telegram"
+  const url = channel === "telegram"
     ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${token}`
     : `https://wa.me/${wa}?text=${encodeURIComponent(`¡Hola! Quiero probar este perfil de Turnia: ${token}`)}`;
   revalidatePath("/panel/configuracion", "layout");
-  return { ok: true, url, message: "Enlace listo por 7 días; podés usarlo varias veces. Usa esta ficha guardada, sin volver a leer la web." };
+  return { ok: true, url, qr: await qrSvg(url), message: "Enlace listo: vale 7 días y lo podés usar varias veces." };
+}
+
+/** Prueba por el canal de chat que esté activo (Telegram o el WhatsApp general). */
+export async function launchProfile(previous: ProfileTestState, form: FormData): Promise<ProfileTestState> {
+  form.delete("channel");
+  return prepareTestLink(previous, form);
 }
 
 export async function refreshClinic(_previous: FormState, form: FormData): Promise<FormState> {

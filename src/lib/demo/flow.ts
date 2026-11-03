@@ -100,6 +100,14 @@ export const DEMO_TEXTS = {
 
 
 /** Contexto para el agente: quién le escribe y qué es de prueba. */
+/** El consultorio se prueba a sí mismo desde su panel (Probar a Sofi), con su agenda real. */
+export function clinicTestContext(clinicName: string): string {
+  return [
+    `PRUEBA DEL CONSULTORIO: te escribe alguien del equipo de ${clinicName} para probar cómo atendés. Atendelo exactamente como a un paciente, con las reglas, la información y la agenda de la clínica.`,
+    "La agenda es la real: si reservás un turno, queda en la agenda del consultorio. No hace falta aclararlo salvo que pregunte.",
+  ].join(" ");
+}
+
 export function demoAgentContext(clinicName: string, opts: { defaultHours: boolean }): string {
   return [
     `DEMO DE TURNIA: te escribe el dueño o alguien del equipo de ${clinicName} para probar cómo atenderías a sus pacientes.`,

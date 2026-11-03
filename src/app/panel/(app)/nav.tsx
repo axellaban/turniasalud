@@ -7,8 +7,11 @@ import { PanelIcon, type PanelIconName } from "@/components/panel-icons";
 
 type Item = { href: string; label: string; short?: string; icon: PanelIconName };
 
+const TEST_HREF = "/panel/probar";
+
 const CLINIC: Item[] = [
   { href: "/panel", label: "Inicio", icon: "inicio" },
+  { href: TEST_HREF, label: "Probar a Sofi", short: "Probar", icon: "probar" },
   { href: "/panel/agenda", label: "Agenda", icon: "agenda" },
   { href: "/panel/conversaciones", label: "Conversaciones", short: "Chats", icon: "conversaciones" },
   { href: "/panel/tareas", label: "Tareas", icon: "tareas" },
@@ -44,7 +47,10 @@ function LogoutButton({ className }: { className: string }) {
   );
 }
 
-export function PanelSidebarNav({ admin }: { admin: boolean }) {
+/** «Probar a Sofi» con el nombre del agente de la clínica. */
+const withAgent = (items: Item[], agent: string) => items.map((i) => (i.href === TEST_HREF ? { ...i, label: `Probar a ${agent}` } : i));
+
+export function PanelSidebarNav({ admin, agent = "Sofi" }: { admin: boolean; agent?: string }) {
   const pathname = usePathname();
   const section = (title: string, items: Item[]) => (
     <div>
@@ -69,7 +75,7 @@ export function PanelSidebarNav({ admin }: { admin: boolean }) {
   );
   return (
     <nav aria-label="Panel" className="flex flex-1 flex-col px-3">
-      {section("Consultorio", CLINIC)}
+      {section("Consultorio", withAgent(CLINIC, agent))}
       {admin && section("Turnia", ADMIN)}
       <div className="mt-auto py-4">
         <LogoutButton className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm text-brand-100/75 hover:bg-white/5 hover:text-white" />
@@ -78,7 +84,7 @@ export function PanelSidebarNav({ admin }: { admin: boolean }) {
   );
 }
 
-export function PanelMobileNav({ admin }: { admin: boolean }) {
+export function PanelMobileNav({ admin, agent = "Sofi" }: { admin: boolean; agent?: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -87,7 +93,7 @@ export function PanelMobileNav({ admin }: { admin: boolean }) {
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [open]);
-  const all = [...CLINIC, ...(admin ? ADMIN : [])];
+  const all = [...withAgent(CLINIC, agent), ...(admin ? ADMIN : [])];
   const primary = all.filter((item) => PRIMARY.includes(item.href));
   const rest = all.filter((item) => !PRIMARY.includes(item.href));
   const restActive = rest.some((item) => isActive(pathname, item.href));
