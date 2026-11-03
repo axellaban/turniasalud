@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { after } from "next/server";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
@@ -15,13 +16,22 @@ import {
   todayKey,
   type OutreachView,
 } from "@/lib/sales/outreach";
-import { OutreachRow } from "./outreach-row";
+import { CollapsibleSection } from "./collapsible-section";
+import { FOLD_COOKIE, parseFolds } from "./folds";
+import { OutreachRow, awaitingPitch } from "./outreach-row";
 
 export const metadata: Metadata = { title: "Prospección · Panel" };
 
 const VIEWS: OutreachView[] = ["hoy", "seguimientos", "interesados", "todos"];
 const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 const pct = (part: number, total: number) => (total ? `${Math.round((part / total) * 100)} %` : "—");
+const safeDecode = (v: string | undefined) => {
+  try {
+    return v === undefined ? v : decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+};
 
 export default async function ProspeccionPage({ searchParams }: PageProps<"/panel/prospeccion">) {
   await requireAdmin();
@@ -34,7 +44,8 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
   const more = Number(one(params.mas)) || 0;
   const today = todayKey();
 
-  const [settings, stats, zones] = await Promise.all([outreachSettings(), outreachStats(), outreachZones()]);
+  const [settings, stats, zones, cookieStore] = await Promise.all([outreachSettings(), outreachStats(), outreachZones(), cookies()]);
+  const folds = parseFolds(safeDecode(cookieStore.get(FOLD_COOKIE)?.value));
   const remaining = Math.max(0, settings.daily_goal - stats.today_new) + more;
   const queue = view === "hoy" ? await outreachQueue(filter, remaining) : null;
   const list = view === "hoy" ? null : await listOutreach({ view, ...filter, page });
@@ -46,6 +57,10 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
     const s = out.toString();
     return `/panel/prospeccion${s ? `?${s}` : ""}`;
   };
+  // «Para hoy» en dos bloques: los saludados que esperan la demo y los seguimientos que tocan hoy.
+  const awaiting = queue ? queue.followups.filter(awaitingPitch) : [];
+  const due = queue ? queue.followups.filter((p) => !awaitingPitch(p)) : [];
+  const engaged = due.filter((p) => p.opened_at || p.demo_at).length;
   const row = (p: Parameters<typeof OutreachRow>[0]["p"]) => <OutreachRow key={p.id} p={p} templates={settings.templates} link={outreachDemoUrl(p.code)} today={today} />;
 
   return (
@@ -153,15 +168,34 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
 
           {queue && (
             <div className="space-y-6">
-              {queue.followups.length > 0 && (
-                <Card>
-                  <h2 className="font-display text-xl text-brand-950">Seguimientos de hoy</h2>
-                  <p className="mt-1 text-sm text-brand-900/70">
-                    A quienes saludaste y les falta la demo (mandásela cuando te respondan) y a quienes les escribiste hace unos días y no respondieron.
-                    Primero, quienes abrieron o probaron su demo.
+              {/* Los saludados esperan su demo y suelen ser muchos: van plegados para que los nuevos queden a la vista. */}
+              {awaiting.length > 0 && (
+                <CollapsibleSection
+                  id="esperan"
+                  title="Esperan la demo"
+                  count={awaiting.length}
+                  summary="Los saludaste: mandales la demo cuando te respondan"
+                  defaultOpen={folds.esperan ?? false}
+                >
+                  <p className="text-sm text-brand-900/70">
+                    Cuando alguien te contesta el saludo, tocá «Mandar la demo». Si no contesta, sigue acá hasta que le escribas o lo marques.
                   </p>
-                  <ul className="mt-2 divide-y divide-brand-900/5">{queue.followups.map(row)}</ul>
-                </Card>
+                  <ul className="mt-2 divide-y divide-brand-900/5">{awaiting.map(row)}</ul>
+                </CollapsibleSection>
+              )}
+              {due.length > 0 && (
+                <CollapsibleSection
+                  id="seguimientos"
+                  title="Seguimientos de hoy"
+                  count={due.length}
+                  summary={engaged > 0 ? `${engaged} ${engaged === 1 ? "abrió o probó" : "abrieron o probaron"} su demo` : "Les escribiste hace unos días y no respondieron"}
+                  defaultOpen={folds.seguimientos ?? true}
+                >
+                  <p className="text-sm text-brand-900/70">
+                    A quienes les mandaste la demo hace unos días y no respondieron. Primero, quienes la abrieron o la probaron.
+                  </p>
+                  <ul className="mt-2 divide-y divide-brand-900/5">{due.map(row)}</ul>
+                </CollapsibleSection>
               )}
               <Card>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
