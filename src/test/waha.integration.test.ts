@@ -532,6 +532,67 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     expect(fake.sent("channel")).toHaveLength(0);
   });
 
+  it("si Sofi ofreció horarios y el paciente no contesta, le vuelve a escribir con los que siguen libres (hasta 2 veces)", async () => {
+    const service = await import("@/lib/agent/service");
+    const { sendOfferFollowups } = await import("@/lib/followups");
+    const LIMPIEZA = "00000000-0000-4000-8000-0000000000b5";
+    // Mediodía de Buenos Aires dentro de `days` días: siempre en el horario en que se escribe.
+    const noon = (days: number) =>
+      new Date(`${new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(Date.now() + days * 86400_000))}T12:00:00-03:00`);
+    const offer = async (phone: string, conversation: string, messageId: string) => {
+      fake.nextConversation = conversation;
+      await inbound(wahaRequest(textMessage(messageId, "Hola, quiero un turno para limpieza", `${phone}@c.us`)));
+      const c = { clinicId: CLINIC, patientPhone: phone, conversationId: conversation, channel: "whatsapp" };
+      const { turnos } = await service.checkAvailability(c, { tipo_turno_id: LIMPIEZA });
+      await reply(replyRequest(agentSays(conversation, [messageId], `Tengo el ${turnos[0].cuando}. ¿Te sirve?`)));
+      return c;
+    };
+    await sql`update clinics set whatsapp_provider = 'waha', followup_attempts = 2, followup_delay_hours = 2 where id = ${CLINIC}`;
+    try {
+      const c = await offer("5491155550077", "conv_seguimiento", "seg1");
+      await service.registerPatient(c, { nombre_completo: "Paula Pendiente" });
+      fake.calls = [];
+
+      // Recién ofrecido, todavía no.
+      expect(await sendOfferFollowups()).toMatchObject({ enviados: 0 });
+      // Mañana al mediodía: el primero, con los horarios libres de ese momento y desde el mismo chat.
+      expect(await sendOfferFollowups(noon(1))).toMatchObject({ enviados: 1 });
+      const [first] = fake.sent("sendText");
+      expect(first.body).toMatchObject({ chatId: "5491155550077@c.us" });
+      expect((first.body as { text: string }).text).toMatch(/^Hola Paula, sobre el turno de limpieza dental: todavía hay lugar el .+ a las \d{2}:\d{2}( o el .+)?\. ¿(Reservamos alguno|Lo reservamos)\?$/);
+      // Otra corrida en el mismo momento no lo repite.
+      expect(await sendOfferFollowups(noon(1))).toMatchObject({ enviados: 0 });
+      // Al otro día, el segundo y último.
+      expect(await sendOfferFollowups(noon(2))).toMatchObject({ enviados: 1 });
+      expect((fake.sent("sendText")[1].body as { text: string }).text).toMatch(/^Hola Paula, retomo lo del turno de limpieza dental/);
+      expect(await sendOfferFollowups(noon(3))).toMatchObject({ enviados: 0 });
+      expect(fake.sent("sendText")).toHaveLength(2);
+
+      // Si contesta, el agente sabe por qué le escribimos y que tiene que volver a mirar la agenda.
+      fake.nextConversation = "conv_seguimiento_respuesta";
+      await inbound(wahaRequest(textMessage("seg2", "Sí, el primero", "5491155550077@c.us")));
+      const answer = fake.sent("channel").at(-1)!.body as { conversation_id?: string; dynamic_variables: Record<string, string> };
+      expect(answer.conversation_id).toBeUndefined();
+      expect(answer.dynamic_variables.conversation_context).toContain("Seguimiento automático: le ofreciste turno para Limpieza dental y no respondió");
+      expect(answer.dynamic_variables.conversation_context).toContain("volvé a consultar la disponibilidad antes de reservar");
+      expect(answer.dynamic_variables.conversation_context).toContain("retomo lo del turno de limpieza dental");
+
+      // Quien contestó algo después de los horarios (aunque sea «lo pienso») no recibe seguimiento.
+      await offer("5491155550078", "conv_lo_pienso", "seg3");
+      await inbound(wahaRequest(textMessage("seg4", "Lo pienso y te aviso", "5491155550078@c.us")));
+      // Con 0 intentos elegidos en el panel, tampoco.
+      await sql`update clinics set followup_attempts = 0 where id = ${CLINIC}`;
+      await offer("5491155550079", "conv_sin_seguimiento", "seg5");
+      fake.calls = [];
+      expect(await sendOfferFollowups(noon(1))).toMatchObject({ enviados: 0 });
+      expect(fake.sent("sendText")).toHaveLength(0);
+      const open = await sql`select patient_phone from agent_offers where closed_at is null`;
+      expect(open).toHaveLength(0);
+    } finally {
+      await sql`update clinics set followup_attempts = 1, followup_delay_hours = 2 where id = ${CLINIC}`;
+    }
+  });
+
   it("Sistema muestra el proveedor y qué variables faltan, sin mostrar valores", async () => {
     const actions = await import("@/app/panel/actions");
     const page = (await import("@/app/panel/(app)/sistema/page")).default;

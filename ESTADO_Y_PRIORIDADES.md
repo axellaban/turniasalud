@@ -2,6 +2,24 @@
 
 Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Si el paciente no contesta los horarios, Sofi le vuelve a escribir — 03/11/2026
+
+- **Pedido del Dr. Mininni:** Sofi ofrece un turno, el paciente no contesta y no le vuelve a hablar. Tiene que volver a escribirle para cerrar el turno, porque si el paciente contesta al otro día el horario puede ya no estar. Una o dos veces, no más, y que se elija desde el panel.
+- **Cómo funciona:**
+  - Cada vez que Sofi busca horarios en una conversación (`consultar_disponibilidad`), se guarda la búsqueda en `agent_offers`. Queda abierta solo la última de cada paciente.
+  - `sendOfferFollowups` (`src/lib/followups.ts`) corre con la automatización de cada 10 minutos (`/api/automations/calendario`, la de Google Calendar; también `/api/automations/seguimientos`).
+  - Escribe solo si el paciente **no contestó nada** después de los horarios. Si contestó algo, aunque sea «lo pienso», o sacó turno por otro lado, no escribe.
+  - El mensaje lleva los horarios que **siguen libres en ese momento**, buscados otra vez con los mismos criterios. Ejemplo: «Hola María, sobre el turno de limpieza dental: todavía hay lugar el martes 10/11 a las 11:00 o el miércoles 11/11 a las 15:30. ¿Reservamos alguno?». Si no queda ninguno, pregunta si buscan otros días. La redacción sirve para las clínicas que tutean y para las que tratan de usted.
+  - Si el paciente contesta, sigue Sofi con el contexto: qué se le ofreció, lo último que se habló y que tiene que volver a mirar la agenda antes de reservar.
+- **Reglas:**
+  - Solo por WhatsApp (WAHA), desde la misma línea por la que habló, de 9 a 20 en el horario de la clínica.
+  - El segundo mensaje va al menos 20 horas después del primero. Después de 3 días, el ofrecimiento se olvida.
+  - No escribe a las clínicas de demo, a quien pidió la baja, por llamadas ni por la demo web.
+  - Con el WhatsApp pausado espera, sin gastar el intento.
+- **Panel → Configuración → «Si el paciente no contesta»:** volver a escribirle No / 1 vez / 2 veces (de entrada, 1 vez) y el primer mensaje después de 1 a 24 horas (de entrada, 2 horas). Columnas `clinics.followup_attempts` y `clinics.followup_delay_hours`.
+- **Necesita el disparador de cada 10 minutos en n8n** (`POST /api/automations/calendario`, ver `GOOGLE_CALENDAR.md`). Si no está activo, no sale ningún seguimiento.
+- 3 pruebas nuevas (373 en total), una de integración con WhatsApp simulado, con TypeScript y ESLint.
+
 ## «Consulta de implantes» (o de lo que sea) es un turno — 03/11/2026
 
 - **Pedido del Dr. Mininni:** si alguien pide un turno para una «consulta de…» (implantes, prótesis, blanqueamiento o lo que sea), Sofi tiene que darle el turno. Tiene que ser un turno de 30 minutos que diga «Consulta de implantes».

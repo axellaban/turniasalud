@@ -370,6 +370,11 @@ export async function saveClinic(form: FormData) {
   if (websiteInput && !website) throw new Error("Revisá la dirección de la web.");
   const timezone = text(form, "timezone") ?? clinic.timezone;
   try { new Intl.DateTimeFormat("es", { timeZone: timezone }); } catch { throw new Error("Zona horaria inválida."); }
+  // Si el paciente no contesta los horarios que le pasó el agente: cuántas veces se le vuelve a escribir.
+  const attempts = Number(text(form, "followup_attempts") ?? clinic.followup_attempts);
+  const delay = Number(text(form, "followup_delay_hours") ?? clinic.followup_delay_hours);
+  if (![0, 1, 2].includes(attempts)) throw new Error("Elegí cuántas veces volver a escribir (ninguna, 1 o 2).");
+  if (!Number.isInteger(delay) || delay < 1 || delay > 24) throw new Error("Elegí cuánto esperar antes de volver a escribir.");
   await sql`
     update clinics set ${sql({
       name: text(form, "name") ?? clinic.name,
@@ -388,6 +393,8 @@ export async function saveClinic(form: FormData) {
       agent_context: text(form, "agent_context"),
       handoff_phone: text(form, "handoff_phone"),
       after_hours_instructions: text(form, "after_hours_instructions"),
+      followup_attempts: attempts,
+      followup_delay_hours: delay,
     })}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
     where id = ${clinic.id}`;
   await logClinicChange(clinic.id, "Reglas del consultorio");

@@ -993,3 +993,30 @@ alter table smile_connect_connections enable row level security;
 -- implantes» y se reservó la prestación de consulta. Lo muestran la agenda, la ficha, los
 -- recordatorios y Google Calendar; vacío, el turno se llama como su prestación.
 alter table appointments add column if not exists title text;
+
+-- Seguimiento de turnos ofrecidos por chat: si el agente le pasó horarios al paciente y no
+-- contestó, se le vuelve a escribir (0, 1 o 2 veces) con los horarios que siguen libres.
+alter table clinics add column if not exists followup_attempts integer not null default 1
+  check (followup_attempts between 0 and 2);
+alter table clinics add column if not exists followup_delay_hours integer not null default 2
+  check (followup_delay_hours between 1 and 24);
+
+-- Cada búsqueda de horarios del agente en una conversación (la última por paciente queda abierta).
+create table if not exists agent_offers (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  -- Conversación de ElevenLabs en la que se ofrecieron los horarios.
+  conversation_id text not null,
+  patient_phone text not null,
+  -- Lo que buscó (consultar_disponibilidad), para volver a buscarlo al escribirle.
+  query jsonb not null,
+  type_name text not null,
+  followups_sent integer not null default 0,
+  last_followup_at timestamptz,
+  -- Contestó, reservó, se agotaron los intentos o venció.
+  closed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists agent_offers_open_idx on agent_offers (created_at) where closed_at is null;
+create index if not exists agent_offers_patient_idx on agent_offers (clinic_id, patient_phone, created_at desc);
+alter table agent_offers enable row level security;

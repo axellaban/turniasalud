@@ -119,6 +119,21 @@ export default async function SettingsPage() {
             <div className={wide}><Field label="Instrucciones adicionales del agente" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio de esta clínica."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
           </Section>
 
+          <Section id="seguimiento" title="Si el paciente no contesta" description="Cuando Sofi le pasa horarios por WhatsApp y el paciente no responde, le vuelve a escribir con los que siguen libres en ese momento. Solo de 9 a 20; si contesta, sigue la charla con Sofi.">
+            <Field label="Volver a escribirle" hint="El segundo mensaje va al día siguiente del primero.">
+              <select name="followup_attempts" defaultValue={String(clinic.followup_attempts)} className={inputClass}>
+                <option value="0">No</option>
+                <option value="1">1 vez</option>
+                <option value="2">2 veces</option>
+              </select>
+            </Field>
+            <Field label="Primer mensaje después de">
+              <select name="followup_delay_hours" defaultValue={String(clinic.followup_delay_hours)} className={inputClass}>
+                {[1, 2, 3, 4, 6, 12, 24].map((h) => <option key={h} value={h}>{h === 1 ? "1 hora" : `${h} horas`}</option>)}
+              </select>
+            </Field>
+          </Section>
+
           <Section id="urgencias" title="Urgencias y derivación">
             <div className={wide}><Field label="Protocolo de urgencias"><textarea name="urgency_instructions" rows={3} defaultValue={clinic.urgency_instructions ?? ""} className={inputClass} /></Field></div>
             <div className={wide}><Field label="Fuera de horario" hint="Qué decir cuando no hay nadie atendiendo: guardia de un profesional, teléfono de emergencias, cuándo se responden los pedidos."><textarea name="after_hours_instructions" rows={2} defaultValue={clinic.after_hours_instructions ?? ""} className={inputClass} /></Field></div>
