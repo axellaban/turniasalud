@@ -163,6 +163,28 @@ describe.runIf(base)("pacientes que ya existen", () => {
     expect(n).toBe(0);
   });
 
+  it("la fecha correcta recupera la ficha web aunque el apellido provisorio se haya transcripto mal", async () => {
+    const id = await addPatient({ phone: "5491170000011", name: "Lucía Benítez", dni: "28645129", birth: "1987-04-21" });
+    const web = ctx("web-aaaa0011");
+    const identity = { dni: "28645129", nombre_completo: "Lucía Bendís" };
+    const initial = await service.registerPatient(web, identity);
+    expect(initial.mensaje).toContain("fecha de nacimiento");
+    const temp = await clinicLib.findPatientByPhone(CLINIC, web.patientPhone);
+    expect(temp?.id).not.toBe(id);
+    expect(temp?.dni).toBeNull();
+
+    const wrong = await service.findPatientByDni(web, { ...identity, fecha_nacimiento: "1987-04-20" });
+    expect(wrong.encontrado).toBeNull();
+    expect(wrong).not.toHaveProperty("ficha");
+
+    const matched = await service.findPatientByDni(web, { ...identity, fecha_nacimiento: "1987-04-21" });
+    expect(matched.encontrado).toBe(true);
+    const patient = await clinicLib.findPatientByPhone(CLINIC, web.patientPhone);
+    expect(patient).toMatchObject({ id, full_name: "Lucía Benítez", phone: "5491170000011" });
+    expect(await count(identity.dni)).toBe(1);
+    expect(await sql`select id from patients where id = ${temp!.id}`).toHaveLength(0);
+  });
+
   it("un DNI ajeno sin datos que coincidan no se guarda ni muestra la ficha", async () => {
     await addPatient({ phone: "5491170000003", name: "Diego Romero", dni: "31225678", birth: "1984-02-11", coverage: "OSDE", plan: "410" });
     const web = ctx("web-aaaa0003");

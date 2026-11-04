@@ -280,7 +280,13 @@ export async function identifyPatient(
     if (check !== "ok") return { estado: check } as const;
 
     if (current) {
-      const otherPerson = (current.dni && current.dni !== dni) || (current.full_name && !namesMatch(current.full_name, target.full_name ?? input.name));
+      // Un alias de la sesión web sin DNI es una ficha provisoria. Después de
+      // verificar la identidad, un apellido mal transcripto en esa sesión no
+      // debe tratarse como el titular distinto de un número telefónico real.
+      const provisionalWeb = phone.startsWith("web-") && current.phone === phone && !current.dni;
+      const otherPerson = !provisionalWeb && (
+        (current.dni && current.dni !== dni) || (current.full_name && !namesMatch(current.full_name, target.full_name ?? input.name))
+      );
       if (otherPerson) {
         // Un familiar con su ficha en este mismo celular: la conversación pasa a la suya.
         if (target.phone === phone) {
