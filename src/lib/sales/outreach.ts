@@ -44,6 +44,8 @@ export type Outreach = OutreachPerson & {
   demo_at: string | null;
   lead_id: string | null;
   notes: string;
+  /** Qué software de agenda usa el consultorio (para saber qué integrar primero). */
+  agenda_software: string | null;
   created_at: string;
   /** Otras personas con el mismo teléfono (un consultorio con varios odontólogos). */
   shared: Array<{ name: string; touched: boolean }>;
@@ -342,7 +344,7 @@ export async function setOutreachStatus(id: string, status: OutreachStatus, deta
   if (changed) prospectEvent("prospect_status_changed", { ...changed, status }, { status_from: changed.status, status_to: status, touch_number: changed.touches });
 }
 
-export type OutreachEdit = Partial<Pick<Outreach, "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "phone" | "phone_kind" | "instagram" | "email" | "website" | "notes" | "next_action_on">> & { priority?: number };
+export type OutreachEdit = Partial<Pick<Outreach, "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "phone" | "phone_kind" | "instagram" | "email" | "website" | "notes" | "next_action_on" | "agenda_software">> & { priority?: number };
 
 export async function updateOutreach(id: string, edit: OutreachEdit): Promise<void> {
   if (edit.name !== undefined && edit.name.trim().length < 2) throw new OutreachError("Falta el nombre.");

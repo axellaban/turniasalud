@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { GUERRA_MININNI } from "@/lib/agent/reschedule-policy";
 import { addDaysKey, localDateKey } from "@/lib/time";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 const url = testDatabaseUrl();
-const clinicId = GUERRA_MININNI;
+// Guerra–Mininni: sus reglas para mover turnos ahora son campos de la clínica. La migración de
+// supabase/schema.sql se las copia a la ficha real; acá se cargan igual, como lo haría el panel.
+const clinicId = "67c3954a-8df8-46c2-a604-f818832bee36";
 const phone = "5491100004001";
 const otherPhone = "5491100004002";
 const timezone = "America/Argentina/Buenos_Aires";
@@ -38,7 +39,8 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
     ({ sql } = await import("@/lib/db"));
     ({ rescheduleClinicAppointment: panelMove } = await import("@/lib/agent/service"));
     ({ POST: handler } = await import("@/app/api/agent/tools/[name]/route"));
-    await sql`insert into clinics (id, name) values (${clinicId}, 'Guerra–Mininni ficticia')`;
+    await sql`insert into clinics (id, name, reschedule_notice_hours, reschedule_max_minutes, keep_duration_on_reschedule, reception_only_terms, move_panel_only)
+      values (${clinicId}, 'Guerra–Mininni ficticia', 24, 120, true, 'implante, implantación, exodoncia, extracción, regeneración', true)`;
     [{ id: pro }, { id: alternate }] = await sql`
       insert into professionals (clinic_id, full_name, specialty)
       values (${clinicId}, 'Odontóloga de prueba', 'Odontología'), (${clinicId}, 'Odontólogo de prueba', 'Odontología')

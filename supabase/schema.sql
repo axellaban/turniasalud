@@ -1023,3 +1023,91 @@ create table if not exists agent_offers (
 create index if not exists agent_offers_open_idx on agent_offers (created_at) where closed_at is null;
 create index if not exists agent_offers_patient_idx on agent_offers (clinic_id, patient_phone, created_at desc);
 alter table agent_offers enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Protocolos odontológicos y reglas del panel (PLAN_PROTOCOLOS.md, 4/11/2026)
+-- ---------------------------------------------------------------------------
+-- Reglas para que Sofi mueva turnos ya dados (Panel → Configuración → Turnos y urgencias).
+alter table clinics add column if not exists reschedule_notice_hours integer check (reschedule_notice_hours between 1 and 720);
+alter table clinics add column if not exists reschedule_max_minutes integer check (reschedule_max_minutes between 15 and 600);
+alter table clinics add column if not exists keep_duration_on_reschedule boolean not null default false;
+-- Palabras que, en el nombre, el título o las notas del turno, hacen que lo mueva recepción.
+alter table clinics add column if not exists reception_only_terms text;
+-- Sofi mueve también los turnos de prestaciones que da solo el consultorio (si no, no los toca).
+alter table clinics add column if not exists move_panel_only boolean not null default false;
+-- «Si el paciente ya tiene el turno, Sofi lo puede mover». Lo que da solo el consultorio, además,
+-- solo si la clínica lo permite (move_panel_only).
+alter table appointment_types add column if not exists agent_can_reschedule boolean not null default true;
+
+-- 4/11/2026: las reglas de Guerra–Mininni para mover turnos estaban escritas en el código. Pasan a
+-- su ficha con los mismos valores; desde ahí las cambia el consultorio en el panel.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-04-reglas-guerra-mininni') then
+    update clinics set reschedule_notice_hours = 24, reschedule_max_minutes = 120, keep_duration_on_reschedule = true,
+      reception_only_terms = 'implante, implantación, exodoncia, extracción, regeneración', move_panel_only = true
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    insert into data_migrations (name) values ('2026-11-04-reglas-guerra-mininni');
+  end if;
+end $$;
+
+-- Aviso mínimo para que Sofi cancele (vacío: sin mínimo; con menos aviso, deriva a recepción).
+alter table clinics add column if not exists cancel_notice_hours integer check (cancel_notice_hours between 1 and 720);
+-- Cómo trata a los pacientes: vacío = de vos (o lo que digan las instrucciones de la clínica).
+alter table clinics add column if not exists tone text check (tone in ('vos', 'usted'));
+-- Protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts): prendido en todos los
+-- consultorios odontológicos (se detecta por la especialidad). Turnia lo puede apagar en una clínica.
+alter table clinics add column if not exists dental_protocol boolean not null default true;
+-- Horas reservadas para urgencias: cuántas horas antes quedan libres para cualquier prestación
+-- (vacío: nunca; solo las usan los turnos de urgencia o el consultorio desde la Agenda).
+alter table clinics add column if not exists urgent_release_hours integer check (urgent_release_hours between 1 and 72);
+
+alter table appointment_types add column if not exists is_urgent boolean not null default false;
+-- Prestación previa obligatoria: para reservar esta, el paciente tiene que haber tenido (o tener
+-- reservada) aquella. Por ejemplo, la colocación de implantes pide la consulta de implantes.
+alter table appointment_types add column if not exists requires_type_id uuid references appointment_types(id) on delete set null;
+-- Qué preguntar antes de reservar (por ejemplo, si tiene una panorámica reciente).
+alter table appointment_types add column if not exists ask_before text;
+-- Cómo dice el precio Sofi: referencia (como hasta ahora), exacto, «desde» o no lo informa.
+alter table appointment_types add column if not exists price_mode text not null default 'referencia'
+  check (price_mode in ('referencia', 'exacto', 'desde', 'no_informar'));
+
+-- Horarios reservados para urgencias y horarios que sirven solo para algunas prestaciones
+-- (vacío: todas). Por ejemplo, conductos solo los jueves.
+alter table schedules add column if not exists urgent_only boolean not null default false;
+alter table schedules add column if not exists appointment_type_ids uuid[];
+
+-- Qué prestaciones hace cada profesional. Sin filas, hace todas las de su especialidad (como antes).
+create table if not exists professional_appointment_types (
+  professional_id uuid not null references professionals(id) on delete cascade,
+  appointment_type_id uuid not null references appointment_types(id) on delete cascade,
+  primary key (professional_id, appointment_type_id)
+);
+create index if not exists professional_appointment_types_type_idx on professional_appointment_types (appointment_type_id);
+alter table professional_appointment_types enable row level security;
+
+-- Matriz de coberturas: qué se acepta por obra social o prepaga, con plan, prestación y profesional
+-- opcionales. La más específica manda. Las aplican consultar_disponibilidad y reservar_turno.
+create table if not exists coverage_rules (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  coverage text not null,
+  plan text,
+  appointment_type_id uuid references appointment_types(id) on delete cascade,
+  professional_id uuid references professionals(id) on delete cascade,
+  mode text not null check (mode in ('acepta', 'copago', 'reintegro', 'no_acepta')),
+  copay numeric(12, 2) check (copay is null or copay > 0),
+  requires_authorization boolean not null default false,
+  note text,
+  created_at timestamptz not null default now()
+);
+create index if not exists coverage_rules_clinic_idx on coverage_rules (clinic_id);
+alter table coverage_rules enable row level security;
+
+-- Cambios hechos en Google Calendar a un turno de Turnia (el profesional lo movió o lo borró):
+-- se avisa una vez al equipo con una tarea. Se limpia cuando el evento vuelve a coincidir.
+alter table appointments add column if not exists calendar_drift text;
+alter table appointments add column if not exists calendar_drift_at timestamptz;
+
+-- Prospección: qué software de agenda usa el consultorio, para saber qué integrar primero.
+alter table sales_outreach add column if not exists agenda_software text;

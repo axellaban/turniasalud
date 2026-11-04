@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { sql } from "../db";
 import { env } from "../env";
 import type { BusyInterval } from "../slots";
-import { zonedTimeToUtc } from "../time";
+import { humanSlot, zonedTimeToUtc } from "../time";
 import { calendarFetch, getConnection, GoogleError, type CalendarConnection } from "./google";
 
 // Agenda ↔ Google Calendar.
@@ -230,7 +230,7 @@ async function syncOne(conn: CalendarConnection | null, id: string): Promise<"ok
       const eventId = target ? await upsertEvent(conn, target, row) : null;
       await tx`
         update appointments set calendar_event_id = ${eventId}, calendar_event_calendar = ${target},
-          calendar_sync = 'ok', calendar_error = null
+          calendar_sync = 'ok', calendar_error = null, calendar_drift = null, calendar_drift_at = null
         where id = ${id}`;
       return "ok";
     } catch (e) {
@@ -312,4 +312,121 @@ export function syncCalendarLater(clinicId: string): void {
   } catch {
     // Sin contexto de pedido: lo toma /api/automations/calendario.
   }
+}
+
+// ── Cambios hechos en Google ─────────────────────────────────────────────────
+
+type DriftRow = {
+  id: string;
+  clinic_id: string;
+  patient_id: string;
+  starts_at: string;
+  ends_at: string;
+  calendar_event_id: string;
+  calendar_event_calendar: string;
+  calendar_drift: string | null;
+  type_name: string;
+  patient_name: string | null;
+  professional: string;
+  timezone: string;
+};
+
+/** Qué pasó con el evento de un turno: nada (null), «borrado» o «movido:<inicio ISO>/<fin ISO>». Pura. */
+export function eventDrift(event: GoogleEvent | null, row: Pick<DriftRow, "starts_at" | "ends_at">, timeZone: string): string | null {
+  if (!event || event.status === "cancelled") return "borrado";
+  const start = instant(event.start, timeZone);
+  const end = instant(event.end, timeZone);
+  if (start === null || end === null) return null;
+  const moved = Math.abs(start - Date.parse(row.starts_at)) > 60_000 || Math.abs(end - Date.parse(row.ends_at)) > 60_000;
+  return moved ? `movido:${new Date(start).toISOString()}/${new Date(end).toISOString()}` : null;
+}
+
+/** El evento por su id, aunque esté fuera del rango leído (null si ya no existe). */
+async function fetchEvent(conn: CalendarConnection, calendarId: string, eventId: string): Promise<GoogleEvent | null> {
+  const res = await calendarFetch(conn, `/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?fields=id,status,start,end`);
+  if (res.status === 404 || res.status === 410) return null;
+  if (!res.ok) throw new GoogleError(`No se pudo leer el evento (${res.status}).`, res.status);
+  return (await res.json()) as GoogleEvent;
+}
+
+/**
+ * Turnos próximos de Turnia que el profesional movió o borró en su Google Calendar. Se avisa una sola
+ * vez al equipo con una tarea, y nada más: Turnia no le escribe al paciente por esto ni vuelve a
+ * escribir el evento (no pisa lo que hizo el profesional). Si el evento vuelve a coincidir, se limpia.
+ * Corre con /api/automations/calendario.
+ */
+export async function checkCalendarChanges(clinicId?: string): Promise<{ revisados: number; cambios: number }> {
+  const clinics = await sql<Array<{ clinic_id: string }>>`
+    select clinic_id from calendar_connections where status = 'conectado' ${clinicId ? sql`and clinic_id = ${clinicId}` : sql``}`;
+  const result = { revisados: 0, cambios: 0 };
+  for (const { clinic_id } of clinics) {
+    const conn = await getConnection(clinic_id);
+    if (!conn || conn.status !== "conectado") continue;
+    const rows = await sql<DriftRow[]>`
+      select a.id, a.clinic_id, a.patient_id, a.starts_at, a.ends_at, a.calendar_event_id, a.calendar_event_calendar, a.calendar_drift,
+             coalesce(a.title, t.name) as type_name, pa.full_name as patient_name, pr.full_name as professional, c.timezone
+      from appointments a
+        join appointment_types t on t.id = a.appointment_type_id
+        join patients pa on pa.id = a.patient_id
+        join professionals pr on pr.id = a.professional_id
+        join clinics c on c.id = a.clinic_id
+      where a.clinic_id = ${clinic_id} and a.status in ('confirmado', 'pendiente') and a.calendar_sync = 'ok'
+        and a.calendar_event_id is not null and a.calendar_event_calendar is not null
+        and a.starts_at > now() and a.starts_at < now() + interval '14 days'
+      order by a.starts_at
+      limit 200`;
+    const calendars = [...new Set(rows.map((r) => r.calendar_event_calendar))];
+    for (const calendarId of calendars) {
+      const mine = rows.filter((r) => r.calendar_event_calendar === calendarId);
+      let events: GoogleEvent[];
+      try {
+        events = await fetchEvents(conn, calendarId, new Date(Date.now() - 86400_000), new Date(Date.now() + 15 * 86400_000));
+      } catch (e) {
+        console.error("Calendario: no se pudieron revisar los cambios", calendarId, e instanceof Error ? e.message : e);
+        continue;
+      }
+      const byId = new Map(events.filter((e) => e.id).map((e) => [e.id!, e]));
+      for (const row of mine) {
+        result.revisados++;
+        try {
+          const event = byId.get(row.calendar_event_id) ?? (await fetchEvent(conn, calendarId, row.calendar_event_id));
+          const drift = eventDrift(event, row, row.timezone);
+          if (drift === row.calendar_drift) continue;
+          // Si el turno cambió en Turnia mientras tanto, ya no se compara con esto; si otra corrida ya
+          // anotó el cambio, no se repite la tarea.
+          const [updated] = await sql<Array<{ id: string }>>`
+            update appointments set calendar_drift = ${drift}, calendar_drift_at = ${drift ? sql`now()` : null}
+            where id = ${row.id} and calendar_sync = 'ok' and starts_at = ${row.starts_at} and ends_at = ${row.ends_at}
+              and calendar_drift is not distinct from ${row.calendar_drift}
+            returning id`;
+          if (!updated || !drift) continue;
+          result.cambios++;
+          const when = humanSlot(new Date(row.starts_at), row.timezone);
+          const who = row.patient_name ?? "un paciente";
+          const [newStart, newEnd] = drift.startsWith("movido:") ? drift.slice("movido:".length).split("/") : [];
+          const fix = "En Turnia sigue como estaba: si el cambio va, hacelo también en la Agenda (así el recordatorio sale bien) y avisale al paciente.";
+          const task = !newStart
+            ? {
+                title: `Google Calendar: se borró el turno de ${who}`,
+                details: `${row.professional} borró de su Google Calendar el turno de ${row.type_name} del ${when}. En Turnia sigue reservado: si se canceló, cancelalo en la Agenda y avisale al paciente. Si el turno sigue en pie, no hace falta hacer nada.`,
+              }
+            : newStart === new Date(row.starts_at).toISOString()
+              ? {
+                  title: `Google Calendar: cambió la duración del turno de ${who}`,
+                  details: `${row.professional} cambió en su Google Calendar la duración del turno de ${row.type_name} del ${when}: ahora termina a las ${humanSlot(new Date(newEnd), row.timezone).split(" a las ").pop()}. ${fix}`,
+                }
+              : {
+                  title: `Google Calendar: se movió el turno de ${who}`,
+                  details: `${row.professional} movió en su Google Calendar el turno de ${row.type_name} del ${when} al ${humanSlot(new Date(newStart), row.timezone)}. ${fix}`,
+                };
+          await sql`
+            insert into tasks (clinic_id, patient_id, type, priority, title, details)
+            values (${row.clinic_id}, ${row.patient_id}, 'administrativo', 'alta', ${task.title}, ${task.details})`;
+        } catch (e) {
+          console.error("Calendario: no se pudo revisar un turno", row.id, e instanceof Error ? e.message : e);
+        }
+      }
+    }
+  }
+  return result;
 }

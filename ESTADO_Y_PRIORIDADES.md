@@ -1,6 +1,43 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 04/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Protocolos odontológicos y reglas del panel — 04/11/2026
+
+- **Pedido del usuario:** implementar [`PLAN_PROTOCOLOS.md`](PLAN_PROTOCOLOS.md) (base común, módulo odontológico y reglas en el panel) sin romper el WhatsApp de Guerra–Mininni, que está operando.
+- **Guerra–Mininni sigue igual:** sus reglas para mover turnos estaban escritas en el código y pasaron a su ficha con los mismos valores:
+  - 24 horas de aviso para mover;
+  - visitas de hasta 120 minutos;
+  - conservar la duración al mover;
+  - recepción mueve los implantes, las extracciones y la regeneración;
+  - Sofi mueve también lo que da solo el consultorio.
+
+  La copia la hace una migración única (`data_migrations`, `2026-11-04-reglas-guerra-mininni`). Las pruebas de su agenda (`reschedule.integration.test.ts`) pasan sin cambios en lo que esperan. El texto que recibe Sofi dice lo mismo que la regla vieja.
+- **Panel → Configuración:**
+  - **Coberturas** (nueva): matriz por plan, prestación y profesional; con copago, reintegro, no acepta y autorización.
+  - **Turnos y urgencias** (nueva): aviso mínimo para mover y para cancelar, lo que mueve recepción, la visita más larga que mueve Sofi, conservar la duración, mover lo que da solo el consultorio y liberar las horas de urgencia. Para Turnia, además, el protocolo odontológico, con su texto y los 12 casos de prueba. Va **prendido en todos los consultorios odontológicos** por decisión del usuario: se detecta por la especialidad de la clínica, de sus profesionales o de sus prestaciones, así que también lo reciben Guerra–Mininni y la clínica general (tiene una odontóloga).
+  - **Prestaciones:** urgencia, prestación previa, qué preguntar antes, cómo dice el precio, si Sofi la mueve y la plantilla odontológica.
+  - **Equipo y horarios:** qué prestaciones hace cada profesional, y horarios solo urgencias o solo para algunas prestaciones.
+  - **Reglas del consultorio:** «Cómo trata a los pacientes» (vos o usted).
+- **Herramientas de Sofi:**
+  - `consultar_disponibilidad` filtra por la cobertura de la ficha. Antes, la reserva fallaba recién después del «sí».
+  - Avisa el copago, el reintegro o la autorización.
+  - Busca urgencias para hoy y mañana.
+  - Pide la prestación previa y devuelve qué preguntar antes.
+  - `cancelar_turno` respeta el aviso mínimo.
+  - La lista de coberturas de cada profesional funciona igual que antes; solo se suma que «OSDE 310» en la ficha coincide con «OSDE» en la lista.
+- **Inicio:**
+  - Garantía del primer mes, solo para cuentas de clientes: muestra cuántas interacciones lleva de las 50.
+  - Turnos de Sofi fuera de horario.
+  - Valor estimado con los precios cargados.
+- **Google Calendar:** `/api/automations/calendario` avisa una vez al equipo, con una tarea, si el profesional movió, alargó o borró en Google un turno de Turnia. No le escribe al paciente.
+- **Prospección:** campo «Software de agenda».
+- **ElevenLabs:** no se tocó el prompt. Lo nuevo viaja en las variables de cada conversación. Para el parámetro opcional `cobertura`, «Actualizar agente» cuando convenga.
+- **Pruebas:**
+  - 445 en total, con lo último de `main`: 47 nuevas entre reglas puras, herramientas, panel, migración y Google.
+  - TypeScript, ESLint y `next build` sin errores.
+  - Recorrido en el navegador con Postgres local: sumar la plantilla, agregar una regla de cobertura y guardar las reglas de turnos, en computadora y celular, sin desbordes.
+- **Falta:** repasar con Mininni los criterios del módulo odontológico y probar los 12 casos en «Probar a Sofi».
 
 ## Precios del Programa Fundadores en `/pricing` (sin enlazar) — 04/11/2026
 
@@ -170,6 +207,23 @@ El panel de prospección común de Chapa Labs (repo `facundogregorini-lab/chapa-
 - **Limpieza:** los turnos de prueba se cancelaron y se retiró únicamente la ficha ficticia creada en esta sesión, con sus documentos, conversación y tarea. La conversación real del usuario se conserva.
 - Producción Ready. Webhook con HMAC correcto → **200**; firma incorrecta → **401**. CI del PR #84: **330 pruebas**, TypeScript, ESLint y build correctos, con Postgres descartable. Se conservaron los horarios, coberturas, precios y protocolos cargados por el consultorio. **Endodoncia ya tiene «Solo la da el consultorio»**, verificado en producción el 02/11.
 - **Alcance del piloto:** la ficha sigue siendo una demo conservada y utiliza su agenda de prueba. La línea propia funciona independientemente del selector de la demo general, que sigue en Telegram; `demo.whatsapp: false` en `/api/health` no señala una falla de esta línea. Gmail, campañas, llamadas y otras líneas quedan fuera de esta configuración. El rechazo de vinculación anterior está superado; no hace falta abrir la terminal de Hostinger para continuar el piloto.
+
+## Embudo comercial semanal — 1/11/2026
+
+- **Pedido del usuario:** fijar el embudo y seguirlo cada semana. Las etapas son saludos enviados, demos enviadas, demos visitadas, demos con interacción (al menos una conversación con Sofi en la demo temporal), cuentas creadas, cuentas activas y clientes pagos.
+- **[`EMBUDO.md`](EMBUDO.md):**
+  - la definición y la fuente de cada etapa;
+  - el criterio de cuenta activa: en la semana, Sofi atendió a 3 pacientes distintos y dio al menos 1 turno, sin contar los que se cargan en el panel;
+  - las reglas de conteo: semanas de lunes a domingo y cada uno cuenta una vez;
+  - la tabla de la semana 1.
+- **`npm run embudo`** (`scripts/embudo.mjs`): arma la tabla. Saca las etapas 1 a 4 de PostHog y las 5 a 7 de la base. Solo lee. Se probó contra PostHog real y contra un Postgres local con datos de prueba: cuentas revocadas, una anterior a la semana 1, un turno del domingo a la noche y un cliente que volvió a otro estado.
+- **Semana 1 (parcial, PostHog mide desde el 30/10):**
+  - 92 saludos, 41 demos enviadas, 2 visitadas y 1 con interacción (`ache-kthmf`, chat).
+  - Clientes pagos: 0.
+  - Cuentas: sin dato, porque esta sesión no tenía acceso a la base.
+- **Hallazgos:**
+  - El proyecto de PostHog 518346 se llama «Default project» y lo comparten Loreado y Copiloto.
+  - `/api/metricas` no ve las cuentas de los consultorios, que son clínicas conservadas con `is_demo`. Quedó en `PENDIENTES.md`.
 
 ## Prospección: solo números con WhatsApp — 31/10/2026
 

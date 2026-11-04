@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { getCatalog } from "@/lib/clinic";
+import { DENTAL_TEST_CASES } from "@/lib/agent/modules/odontologia";
 import { qrSvg, telegramBot, testChannelsFor, type ChannelOption } from "@/lib/agent-test";
 import { Card, PageHeader, buttonClass } from "@/components/ui";
 import { PanelIcon, type PanelIconName } from "@/components/panel-icons";
@@ -122,6 +123,22 @@ export default async function ProbarPage() {
               ))}
             </ul>
           </Card>
+          {dental && (
+            <Card>
+              <details>
+                <summary className="cursor-pointer font-semibold text-brand-950">Casos odontológicos ({DENTAL_TEST_CASES.length})</summary>
+                <p className="mt-1 text-sm text-brand-900/65">Para revisar antes de salir y después de cada cambio de reglas: qué decir y qué tiene que hacer {agent}.</p>
+                <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
+                  {DENTAL_TEST_CASES.map((c) => (
+                    <li key={c.message}>
+                      <p className="font-medium text-brand-950">«{c.message}»</p>
+                      <p className="mt-0.5 text-brand-900/65">{c.expected}</p>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            </Card>
+          )}
           <Card>
             <h2 className="font-semibold text-brand-950">Después de probar</h2>
             <p className="mt-1 text-sm leading-relaxed text-brand-900/70">

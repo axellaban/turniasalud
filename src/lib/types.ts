@@ -36,6 +36,24 @@ export type Clinic = {
   followup_attempts: number;
   /** Horas que se espera antes del primer seguimiento. */
   followup_delay_hours: number;
+  /** Sofi no mueve turnos a los que les faltan menos de estas horas (vacío: sin mínimo). */
+  reschedule_notice_hours: number | null;
+  /** Sofi no cancela turnos a los que les faltan menos de estas horas (vacío: sin mínimo). */
+  cancel_notice_hours: number | null;
+  /** Las visitas más largas que esto las mueve recepción (vacío: sin tope). */
+  reschedule_max_minutes: number | null;
+  /** Al mover un turno se conserva la duración que tenía (y no la de su prestación). */
+  keep_duration_on_reschedule: boolean;
+  /** Palabras que, en el nombre, el título o las notas del turno, hacen que lo mueva recepción. */
+  reception_only_terms: string | null;
+  /** Sofi mueve también los turnos de prestaciones que da solo el consultorio. */
+  move_panel_only: boolean;
+  /** Cómo trata a los pacientes. Vacío: de vos, o lo que digan las instrucciones de la clínica. */
+  tone: "vos" | "usted" | null;
+  /** Usa el protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). */
+  dental_protocol: boolean;
+  /** Horas antes del turno en que las horas reservadas para urgencias quedan libres para todo. */
+  urgent_release_hours: number | null;
   created_at: string;
 };
 
@@ -60,10 +78,23 @@ export type AppointmentType = {
   /** numeric de Postgres: llega como texto para no perder precisión. */
   price: string | null;
   is_first_visit: boolean;
-  /** Solo la da el consultorio: el agente no la ofrece, no la reserva ni la reprograma. */
+  /** Solo la da el consultorio: el agente no la ofrece ni la reserva. */
   panel_only: boolean;
+  /** Si el paciente ya tiene el turno, Sofi lo puede mover (si la da solo el consultorio, además, la clínica lo tiene que permitir). */
+  agent_can_reschedule: boolean;
+  /** Turno de urgencia: busca hoy y mañana, y puede usar las horas reservadas para urgencias. */
+  is_urgent: boolean;
+  /** Para reservarla, el paciente tiene que haber tenido (o tener reservada) esta otra prestación. */
+  requires_type_id: string | null;
+  /** Qué preguntar antes de reservar. */
+  ask_before: string | null;
+  /** Cómo dice el precio Sofi. */
+  price_mode: PriceMode;
   active: boolean;
 };
+
+export const PRICE_MODES = ["referencia", "exacto", "desde", "no_informar"] as const;
+export type PriceMode = (typeof PRICE_MODES)[number];
 
 export type Schedule = {
   id: string;
@@ -71,6 +102,32 @@ export type Schedule = {
   weekday: number;
   start_time: string;
   end_time: string;
+  /** Reservado para urgencias: solo lo usan los turnos de urgencia (y el consultorio). */
+  urgent_only: boolean;
+  /** Solo para estas prestaciones. Vacío: para todas las del profesional. */
+  appointment_type_ids: string[] | null;
+};
+
+/** Qué prestaciones hace cada profesional. Sin filas, hace todas las de su especialidad. */
+export type ProfessionalType = { professional_id: string; appointment_type_id: string };
+
+export const COVERAGE_MODES = ["acepta", "copago", "reintegro", "no_acepta"] as const;
+export type CoverageMode = (typeof COVERAGE_MODES)[number];
+
+/** Una regla de la matriz de coberturas. Plan, prestación y profesional vacíos: valen para todos. */
+export type CoverageRule = {
+  id: string;
+  clinic_id: string;
+  coverage: string;
+  plan: string | null;
+  appointment_type_id: string | null;
+  professional_id: string | null;
+  mode: CoverageMode;
+  /** numeric de Postgres: llega como texto. */
+  copay: string | null;
+  requires_authorization: boolean;
+  note: string | null;
+  created_at: string;
 };
 
 export type PatientSex = "femenino" | "masculino" | "otro";

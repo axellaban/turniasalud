@@ -112,7 +112,13 @@ export default async function SettingsPage() {
           <Section id="respuestas" title="Lo que responde el agente" description="Preguntas frecuentes, reglas y forma de atender. Una idea por línea es más fácil de mantener.">
             <div className={wide}><Field label="Preguntas frecuentes" hint="Estacionamiento, precios, qué traer, formas de pago… una por línea."><textarea name="faq" rows={6} defaultValue={clinic.faq ?? ""} className={inputClass} /></Field></div>
             <div className={wide}><Field label="Políticas" hint="Cancelaciones, tolerancia, coberturas que no se aceptan…"><textarea name="policies" rows={3} defaultValue={clinic.policies ?? ""} className={inputClass} /></Field></div>
-            <div className={wide}><Field label="Instrucciones adicionales del agente" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio de esta clínica."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
+            <Field label="Cómo trata a los pacientes" hint="De usted: en todos los mensajes, aunque el paciente tutee.">
+              <select name="tone" defaultValue={clinic.tone === "usted" ? "usted" : ""} className={inputClass}>
+                <option value="">De vos</option>
+                <option value="usted">De usted</option>
+              </select>
+            </Field>
+            <div className={wide}><Field label="Instrucciones adicionales del agente" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio de esta clínica. Para reglas de turnos, urgencias y coberturas usá sus pestañas: Sofi las hace cumplir."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
           </Section>
 
           <Section id="seguimiento" title="Si el paciente no contesta" description="Cuando Sofi le pasa horarios por WhatsApp y el paciente no responde, le vuelve a escribir con los que siguen libres en ese momento. Solo de 9 a 20; si contesta, sigue la charla con Sofi.">

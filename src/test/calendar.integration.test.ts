@@ -87,6 +87,10 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   const eventId = m[2];
   if (method === "GET") {
     expect(new URL(url).searchParams.get("fields")).not.toContain("summary");
+    if (eventId) {
+      const one = list.find((e) => e.id === eventId);
+      return one ? json(one) : json({ error: { message: "not found" } }, 404);
+    }
     return json({ items: list });
   }
   if (method === "POST") {
@@ -281,6 +285,48 @@ describe.runIf(baseUrl)("Google Calendar", () => {
     const res = await job(new Request("https://turnia.example/api/automations/calendario", { method: "POST", headers: { "x-turnia-secret": "secreto-de-prueba" } }), { params: Promise.resolve({ job: "calendario" }) });
     expect(await res.json()).toMatchObject({ ok: true, sincronizados: 1, errores: 0 });
     expect(calendarEvents().map((e) => e.id)).toContain(sync.eventIdFor(booked.turno_id));
+  });
+
+  it("si el profesional mueve o borra en Google un turno de Turnia, avisa una sola vez al equipo y no toca el turno", async () => {
+    const booked = (await service.bookAppointment(ctx, { tipo_turno_id: CONSULTA, profesional_id: RUIZ, inicio: at("14:00"), nombre_completo: "Juan Carlos Pérez" })) as { turno_id: string };
+    await sync.syncPendingCalendar(MAIN);
+    const event = () => calendarEvents().find((e) => e.id === sync.eventIdFor(booked.turno_id));
+    const original = { start: event()!.start, end: event()!.end };
+    const tasks = () => sql`select title, details, priority, patient_id from tasks where title like 'Google Calendar:%' order by created_at`;
+    const drift = async () => (await sql`select calendar_drift, status, starts_at from appointments where id = ${booked.turno_id}`)[0];
+
+    // Sin cambios en Google: nada.
+    expect(await sync.checkCalendarChanges(MAIN)).toMatchObject({ cambios: 0 });
+    expect(await tasks()).toHaveLength(0);
+
+    // El profesional lo arrastró media hora más tarde.
+    Object.assign(event()!, { start: { dateTime: at("14:30") }, end: { dateTime: at("15:00") } });
+    expect(await sync.checkCalendarChanges(MAIN)).toMatchObject({ cambios: 1 });
+    expect(await tasks()).toEqual([expect.objectContaining({ title: "Google Calendar: se movió el turno de Juan Carlos Pérez", priority: "alta" })]);
+    expect((await tasks())[0].details).toContain("Dra. Carolina Ruiz movió en su Google Calendar el turno de Consulta odontológica");
+    expect(await drift()).toMatchObject({ status: "confirmado", starts_at: at("14:00"), calendar_drift: `movido:${at("14:30")}/${at("15:00")}` });
+    // La siguiente corrida no repite la tarea.
+    expect(await sync.checkCalendarChanges(MAIN)).toMatchObject({ cambios: 0 });
+    expect(await tasks()).toHaveLength(1);
+
+    // Lo borró: otra tarea, y el turno sigue en Turnia.
+    calendarEvents().splice(calendarEvents().indexOf(event()!), 1);
+    expect(await sync.checkCalendarChanges(MAIN)).toMatchObject({ cambios: 1 });
+    expect((await tasks()).map((t) => t.title)).toEqual([
+      "Google Calendar: se movió el turno de Juan Carlos Pérez",
+      "Google Calendar: se borró el turno de Juan Carlos Pérez",
+    ]);
+    expect(await drift()).toMatchObject({ status: "confirmado", calendar_drift: "borrado" });
+    expect(event()).toBeUndefined();
+
+    // Lo volvió a poner como estaba: se limpia sin otra tarea.
+    calendarEvents().push({ id: sync.eventIdFor(booked.turno_id), ...original });
+    expect(await sync.checkCalendarChanges(MAIN)).toMatchObject({ cambios: 0 });
+    expect(await drift()).toMatchObject({ calendar_drift: null });
+    expect(await tasks()).toHaveLength(2);
+    await service.cancelAppointment(ctx, { turno_id: booked.turno_id });
+    await sync.syncPendingCalendar(MAIN);
+    await sql`delete from tasks where title like 'Google Calendar:%'`;
   });
 
   it("si Google pide reconectar, la agenda sigue andando y el panel lo avisa", async () => {

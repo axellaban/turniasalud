@@ -12,7 +12,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "node scripts/migrate-db.mjs --force"
+    "db:migrate": "node scripts/migrate-db.mjs --force",
+    "embudo": "node scripts/embudo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",

@@ -1,8 +1,9 @@
 import "server-only";
 import { json, sql, pgErrorCode, type TransactionSql } from "../db";
-import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText } from "../clinic";
+import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
-import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval } from "../slots";
+import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock } from "../slots";
+import { agentCanMove, agentSchedules, checkCoverage, coverageKey, durationPhrase, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
 import { env } from "../env";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
@@ -11,7 +12,6 @@ import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
-import { GUERRA_MININNI, isRestrictedDentalProcedure } from "./reschedule-policy";
 
 export type ToolContext = {
   clinicId: string;
@@ -267,10 +267,12 @@ export async function checkAvailability(
     desde?: string;
     hasta?: string;
     franja?: "manana" | "tarde" | "cualquiera";
+    cobertura?: string;
   },
 ) {
   const clinic = await getClinic(ctx.clinicId);
   const catalog = await getCatalog(clinic.id);
+  const links = catalog.links ?? [];
   const move = input.turno_id ? await loadReschedule(ctx, clinic, input.turno_id) : null;
   const type = catalog.appointmentTypes.find((t) => t.id === (move?.appt.appointment_type_id ?? input.tipo_turno_id));
   if (!type) throw new ToolError("No encontré ese tipo de turno. Usá un id del catálogo.");
@@ -283,14 +285,17 @@ export async function checkAvailability(
   } else if (move.follower && !next) {
     throw new ToolError("Una práctica de esta visita ya no está disponible. El cambio lo tiene que coordinar recepción.");
   }
+  const visit = next ? [type, next] : [type];
+  // Lo que pide una prestación antes (por ejemplo, la consulta de implantes antes de la colocación).
+  const patient = move ? move.patient : await currentPatient(ctx);
+  if (!move) await assertPrerequisites(catalog, patient, visit);
 
   const selectedPro = input.profesional_id || move?.appt.professional_id;
   const otherPro = move?.appt.second_professional_id;
-  const professionals = catalog.professionals.filter(
-    (p) => p.specialty === type.specialty && (!next || p.specialty === next.specialty)
-      && (!selectedPro || p.id === selectedPro) && p.id !== otherPro,
+  const capable = catalog.professionals.filter(
+    (p) => visit.every((t) => professionalDoes(p, t, links)) && (!selectedPro || p.id === selectedPro) && p.id !== otherPro,
   );
-  if (!professionals.length) {
+  if (!capable.length) {
     throw new ToolError(
       next
         ? `No hay un profesional que haga ${type.name} y ${next.name} en la misma visita. Buscá cada una por separado y ofrecé dos turnos.`
@@ -298,12 +303,38 @@ export async function checkAvailability(
     );
   }
 
+  // Cobertura: se ofrecen los profesionales que la atienden. Si nadie la atiende, los horarios
+  // salen igual, como particular, con el aviso (nunca se frena la búsqueda por esto).
+  let professionals = capable;
+  let coverageNotice: string | undefined;
+  const coverageNotes = new Map<string, string>();
+  const wanted = move ? null : input.cobertura?.trim() || patient?.coverage?.trim() || null;
+  if (wanted) {
+    const otherCoverage = input.cobertura?.trim() && patient?.coverage && coverageKey(input.cobertura) !== coverageKey(patient.coverage);
+    const plan = otherCoverage ? null : patient?.coverage_plan;
+    const checks = capable.map((p) => ({ p, check: checkCoverage(p, visit, wanted, plan, catalog.coverageRules) }));
+    const fine = checks.filter((c) => c.check.ok);
+    for (const { p, check } of fine) if (check.ok && check.notes.length) coverageNotes.set(p.id, check.notes.join(" "));
+    if (fine.length) professionals = fine.map((c) => c.p);
+    else {
+      const reasons = [...new Set(checks.map((c) => (c.check.ok ? "" : c.check.reason)))].join(" ");
+      // Nadie la atiende: se ofrece como particular con quienes atienden particular.
+      const asParticular = isParticular(wanted) ? [] : capable.filter((p) => checkCoverage(p, visit, "Particular", null, catalog.coverageRules).ok);
+      if (!asParticular.length) throw new ToolError(`${reasons} Nadie lo puede atender así: creá una tarea de derivacion_humana para que recepción lo coordine.`);
+      professionals = asParticular;
+      coverageNotice = `${reasons} Estos horarios son como particular: decíselo antes de ofrecerlos. Si lo acepta, reservá con cobertura «Particular»; si tiene otra cobertura, buscá de nuevo con esa.`;
+    }
+  }
+
   const now = new Date();
   const today = localDateKey(now, clinic.timezone);
+  // Un turno de urgencia busca hoy y mañana, salvo que se pidan otras fechas.
+  const urgent = type.is_urgent;
+  const span = urgent && !input.desde && !input.hasta ? 1 : 14;
   let fromKey = parseDateKey(input.desde) ?? today;
   if (fromKey < today) fromKey = today;
-  let toKey = parseDateKey(input.hasta) ?? addDaysKey(fromKey, 14);
-  if (toKey < fromKey) toKey = addDaysKey(fromKey, 14);
+  let toKey = parseDateKey(input.hasta) ?? addDaysKey(fromKey, span);
+  if (toKey < fromKey) toKey = addDaysKey(fromKey, span);
   if (toKey > addDaysKey(fromKey, 60)) toKey = addDaysKey(fromKey, 60);
 
   const proIds = professionals.map((p) => p.id);
@@ -318,7 +349,7 @@ export async function checkAvailability(
     googleBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
     move ? upcomingOf(move.patient.id) : [],
   ]);
-  const preserve = clinic.id === GUERRA_MININNI && !!move;
+  const preserve = clinic.keep_duration_on_reschedule && !!move;
   const firstDuration = (move && keptDuration(move.appt, preserve)) || type.duration_min;
   const nextDuration = (move?.follower && keptDuration(move.follower, preserve)) || next?.duration_min || 0;
   const duration = firstDuration + nextDuration;
@@ -327,23 +358,33 @@ export async function checkAvailability(
   const otherBusy = [...busy, ...calendar, ...blocked].filter((b) => b.professional_id === otherPro);
   const ownBusy = patientAppointments.filter((a) => !movingIds.includes(a.id));
 
+  // Los horarios que sirven para estas prestaciones. Las horas reservadas para urgencias solo
+  // las usa un turno de urgencia, salvo que ya estén por empezar (se liberan cerca de la hora).
+  const releaseUntil = clinic.urgent_release_hours ? now.getTime() + clinic.urgent_release_hours * 3600_000 : null;
+  const usable = agentSchedules(
+    catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
+    visit.map((t) => t.id),
+    { urgent, released: releaseUntil !== null },
+  );
+  const releasedOk = (start: Date, block: ScheduleBlock) => urgent || !block.urgent_only || (releaseUntil !== null && start.getTime() <= releaseUntil);
   const slots = computeSlots({
-    schedules: catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
+    schedules: usable,
     busy: [...busy, ...calendar],
     blocked,
     // Dos prácticas en la misma visita: tienen que entrar las dos, una detrás de la otra.
     durationMin: duration,
     stepMin: move ? 15 : type.duration_min,
-    accepts: move
-      ? (start, end) =>
-        (selectedPro !== move.appt.professional_id || start.getTime() !== Date.parse(move.appt.starts_at)) &&
-        !ownBusy.some((a) => start < new Date(a.ends_at) && end > new Date(a.starts_at)) &&
-        (!otherPro || isSlotFree(otherSchedules, otherBusy, start, duration, clinic.timezone).ok)
-      : undefined,
+    accepts: (start, end, block) =>
+      releasedOk(start, block) &&
+      (!move ||
+        ((selectedPro !== move.appt.professional_id || start.getTime() !== Date.parse(move.appt.starts_at)) &&
+          !ownBusy.some((a) => start < new Date(a.ends_at) && end > new Date(a.starts_at)) &&
+          (!otherPro || isSlotFree(otherSchedules, otherBusy, start, duration, clinic.timezone).ok))),
     fromKey,
     toKey,
     timeZone: clinic.timezone,
     now,
+    minLeadMinutes: urgent ? 30 : undefined,
     partOfDay: input.franja,
     limit: 6,
     perDayPerProfessional: 2,
@@ -354,9 +395,12 @@ export async function checkAvailability(
     return {
       ok: true,
       turnos: [],
+      ...(coverageNotice && { aviso_cobertura: coverageNotice }),
       mensaje: move
         ? `No hay horarios para mover esa visita entre ${fromKey} y ${toKey}. Ofrecé buscar otras fechas. El turno original sigue reservado.`
-        : next
+        : urgent && span === 1
+          ? "No hay lugar de urgencia hoy ni mañana. Creá una tarea de tipo «urgencia» con prioridad «urgente» para que el equipo lo contacte hoy, y decile qué hacer mientras tanto según el protocolo de urgencias."
+          : next
           ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
           : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`,
     };
@@ -367,7 +411,14 @@ export async function checkAvailability(
     inicio: s.starts_at,
     cuando: s.label,
     ...(next && { termina: clockTime(new Date(s.ends_at), clinic.timezone) }),
+    ...(coverageNotes.has(s.professional_id) && { cobertura: coverageNotes.get(s.professional_id) }),
   }));
+  // Lo que la prestación pide preguntar antes de reservar, y el aviso si nadie atiende su cobertura.
+  const extras = {
+    ...(coverageNotice && { aviso_cobertura: coverageNotice }),
+    ...(visit.some((t) => t.ask_before) && { preguntar_antes: visit.map((t) => t.ask_before).filter(Boolean).join(" ") }),
+    ...(urgent && !move && { urgencia: true }),
+  };
   if (move) {
     return {
       ok: true,
@@ -383,6 +434,7 @@ export async function checkAvailability(
   if (next) {
     return {
       ok: true,
+      ...extras,
       tipo_turno: `${type.name} y, a continuación, ${next.name}`,
       duracion_min: type.duration_min + next.duration_min,
       indicaciones: joinInstructions(type, next),
@@ -392,12 +444,40 @@ export async function checkAvailability(
   }
   return {
     ok: true,
+    ...extras,
     tipo_turno: type.name,
     duracion_min: type.duration_min,
     indicaciones: type.instructions,
     turnos,
-    mensaje: "Ofrecé 2 o 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual.",
+    mensaje: urgent
+      ? "Es un turno de urgencia: ofrecé el primero o los dos primeros, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual."
+      : "Ofrecé 2 o 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual.",
   };
+}
+
+/**
+ * Para una prestación que pide otra antes (la colocación de implantes, la consulta de implantes):
+ * el paciente tiene que haber tenido esa otra o tenerla reservada, o pedirla en la misma visita.
+ */
+async function assertPrerequisites(catalog: Catalog, patient: Patient | null, visit: AppointmentType[]): Promise<void> {
+  for (const t of visit) {
+    if (!t.requires_type_id || visit.some((v) => v.id === t.requires_type_id)) continue;
+    const required =
+      catalog.appointmentTypes.find((x) => x.id === t.requires_type_id) ??
+      (await sql<AppointmentType[]>`select * from appointment_types where id = ${t.requires_type_id}`)[0];
+    if (!required) continue;
+    const [had] = patient
+      ? await sql<Array<{ yes: boolean }>>`
+          select (exists (select 1 from appointments where patient_id = ${patient.id} and appointment_type_id = ${required.id}
+              and status in ('confirmado', 'pendiente', 'atendido'))
+            or exists (select 1 from patient_visits where patient_id = ${patient.id} and appointment_type_id = ${required.id})) as yes`
+      : [{ yes: false }];
+    if (had?.yes) continue;
+    const offer = required.active && !required.panel_only
+      ? `Ofrecé primero ese turno (id=${required.id}).`
+      : "Eso lo coordina el consultorio: creá una tarea de derivacion_humana.";
+    throw new ToolError(`Para «${t.name}» el paciente tiene que haber tenido antes «${required.name}». ${offer} El tratamiento lo indica el profesional en esa consulta.`);
+  }
 }
 
 /**
@@ -451,12 +531,13 @@ export async function freeSlotsOnDay(
   const catalog = await getCatalog(clinic.id);
   const type = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
   const pro = catalog.professionals.find((p) => p.id === input.profesional_id);
-  if (!type || !pro || pro.specialty !== type.specialty) return { turnos: [], horario: null, motivo: "Elegí la prestación y quién la atiende." };
+  if (!type || !pro || !professionalDoes(pro, type, catalog.links)) return { turnos: [], horario: null, motivo: "Elegí la prestación y quién la atiende." };
   const dayKey = parseDateKey(input.fecha);
   if (!dayKey) return { turnos: [], horario: null, motivo: "Elegí una fecha." };
   if (dayKey < localDateKey(new Date(), clinic.timezone)) return { turnos: [], horario: null, motivo: "Ese día ya pasó." };
 
-  const schedules = catalog.schedules.filter((s) => s.professional_id === pro.id && s.weekday === weekdayOfKey(dayKey));
+  // El consultorio ve también las horas reservadas para urgencias: decide él.
+  const schedules = schedulesForTypes(catalog.schedules, [type.id]).filter((s) => s.professional_id === pro.id && s.weekday === weekdayOfKey(dayKey));
   const horario = schedules.length
     ? [...schedules]
         .sort((a, b) => a.start_time.localeCompare(b.start_time))
@@ -520,6 +601,8 @@ type BookOptions = {
   secondProfessionalId?: string | null;
   /** Al mover un turno con duración propia (por ejemplo, traído de Smile Connect), conservarla. */
   durationMin?: number;
+  /** Lo da o lo mueve el consultorio: puede usar las horas reservadas para urgencias. */
+  byPanel?: boolean;
 };
 
 const AGAIN = " Consultá la disponibilidad de nuevo y ofrecé otra opción.";
@@ -539,7 +622,7 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   if (!type) throw new ToolError("Tipo de turno inválido.");
   const pro = catalog.professionals.find((p) => p.id === professionalId);
   if (!pro) throw new ToolError("Profesional inválido.");
-  if (pro.specialty !== type.specialty) throw new ToolError(`${pro.full_name} no hace ${type.name}.`);
+  if (!professionalDoes(pro, type, catalog.links)) throw new ToolError(`${pro.full_name} no hace ${type.name}.`);
   if (Number.isNaN(startsAt.getTime())) throw new ToolError("La fecha de inicio no es válida. Usá el campo 'inicio' de consultar_disponibilidad.");
   if (startsAt.getTime() < Date.now()) throw new ToolError("Ese horario ya pasó.");
 
@@ -560,9 +643,15 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   if (busy.some((b) => b.professional_id === pro.id)) throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`);
   if (second && busy.length) throw new ToolError(`${second.full_name} ya tiene un turno a esa hora.`);
   if (!opts.force) {
+    // Horarios de esta prestación. Las horas de urgencias, solo para urgencias, para el consultorio
+    // o si ya se liberaron (cerca de la hora).
+    const released = clinic.urgent_release_hours && startsAt.getTime() <= Date.now() + clinic.urgent_release_hours * 3600_000;
+    const own = (id: string) => catalog.schedules.filter((s) => s.professional_id === id);
     for (const who of second ? [pro, second] : [pro]) {
       const check = isSlotFree(
-        catalog.schedules.filter((s) => s.professional_id === who.id),
+        who === pro
+          ? agentSchedules(own(pro.id), [type.id], { urgent: type.is_urgent || !!opts.byPanel, released: !!released })
+          : own(who.id),
         [],
         startsAt,
         durationMin,
@@ -584,20 +673,27 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   return { type, pro, second, endsAt };
 }
 
-/** «osde», «OSDE » y «Osdé» son la misma cobertura. */
-const coverageKey = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/\s+/g, " ").trim().toLowerCase();
-
 /**
- * ¿El profesional atiende esa cobertura? Devuelve el nombre como lo cargó la clínica.
- * Sin lista, o sin cobertura del paciente, no hay restricción.
+ * ¿El profesional atiende esa cobertura para estas prestaciones? Devuelve el nombre como lo cargó la
+ * clínica y lo que hay que avisarle al paciente. El consultorio (panel) solo mira la lista del
+ * profesional; Sofi, también la matriz de coberturas.
  */
-function acceptedCoverage(pro: { full_name: string; accepted_coverages: string[] | null }, coverage: string | null | undefined): string | null {
-  if (!coverage?.trim()) return null;
-  if (!pro.accepted_coverages?.length) return coverage.trim();
-  const match = pro.accepted_coverages.find((c) => coverageKey(c) === coverageKey(coverage));
-  if (!match) throw new ToolError(`${pro.full_name} no atiende por ${coverage.trim()}. Atiende: ${pro.accepted_coverages.join(", ")}.`);
-  return match;
+function coverageFor(
+  catalog: Catalog,
+  pro: Catalog["professionals"][number],
+  types: AppointmentType[],
+  coverage: string | null | undefined,
+  plan: string | null | undefined,
+  byPanel: boolean,
+): { coverage: string | null; notes: string[] } {
+  const check = checkCoverage(pro, types, coverage, plan, byPanel ? [] : catalog.coverageRules);
+  if (!check.ok) throw new ToolError(check.reason);
+  return { coverage: check.coverage, notes: check.notes };
 }
+
+/** El plan del paciente solo vale para la cobertura de su ficha. */
+const planFor = (patient: Patient, coverage: string | null | undefined) =>
+  coverage && patient.coverage && coverageKey(coverage) === coverageKey(patient.coverage) ? patient.coverage_plan : null;
 
 type PatientAppointment = { id: string; starts_at: string; ends_at: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string };
 
@@ -671,6 +767,7 @@ export function appointmentTitle(raw: string | undefined, typeName: string): str
 
 export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {}) {
   const clinic = await getClinic(ctx.clinicId);
+  const byPanel = ctx.channel === "panel";
   const patient = await ensurePatient(ctx, input.nombre_completo);
   if (!patient.full_name) throw new ToolError("Antes de reservar necesito el nombre y apellido del paciente (registrar_paciente).");
 
@@ -694,7 +791,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
 
   type Part = Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date };
   const parts: Part[] = [];
-  if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, opts)), startsAt });
+  if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, { ...opts, byPanel })), startsAt });
   if (input.segundo_tipo_turno_id) {
     const { appointmentTypes } = await getCatalog(clinic.id);
     const first = appointmentTypes.find((t) => t.id === input.tipo_turno_id);
@@ -702,7 +799,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
     const next = secondTypeOf(appointmentTypes, first, input.segundo_tipo_turno_id)!;
     const nextStart = same ? new Date(same.ends_at) : parts[0].endsAt;
     try {
-      parts.push({ ...(await assertBookable(clinic, input.profesional_id, next.id, nextStart, { force: opts.force })), startsAt: nextStart });
+      parts.push({ ...(await assertBookable(clinic, input.profesional_id, next.id, nextStart, { force: opts.force, byPanel })), startsAt: nextStart });
     } catch (e) {
       if (!(e instanceof ToolError)) throw e;
       const reason = e.message.replace(AGAIN, "");
@@ -715,7 +812,14 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
       );
     }
   }
-  if (ctx.channel !== "panel") for (const p of parts) assertAgentCanBook(p.type);
+  const catalog = await getCatalog(clinic.id);
+  const visit = [input.tipo_turno_id, input.segundo_tipo_turno_id]
+    .map((id) => catalog.appointmentTypes.find((t) => t.id === id))
+    .filter((t): t is AppointmentType => Boolean(t));
+  if (!byPanel) {
+    for (const p of parts) assertAgentCanBook(p.type);
+    await assertPrerequisites(catalog, patient, visit);
+  }
   // Una persona no puede estar en dos turnos a la vez.
   for (const p of parts) {
     const clash = mine.find((a) => a.id !== same?.id && new Date(a.starts_at) < p.endsAt && new Date(a.ends_at) > p.startsAt);
@@ -726,7 +830,8 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
     }
   }
   const { pro, second } = parts[0];
-  const coverage = acceptedCoverage(pro, input.cobertura || patient.coverage);
+  const wantedCoverage = input.cobertura || patient.coverage;
+  const { coverage, notes: coverageNotes } = coverageFor(catalog, pro, visit, wantedCoverage, planFor(patient, wantedCoverage), byPanel);
   // El nombre propio es de la primera práctica (la que se está reservando ahora).
   const title = same ? null : appointmentTitle(input.titulo, parts[0].type.name);
   const nameOf = (p: Part, i: number) => (i === 0 && title) || p.type.name;
@@ -786,6 +891,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
     mensaje,
     direccion: clinic.address,
     indicaciones: joinInstructions(...parts.map((p) => p.type)),
+    ...(coverageNotes.length && { cobertura: coverageNotes.join(" ") }),
     ...(other && {
       aviso: `Ya tenía otro turno de ${other.type_name} el ${humanSlot(new Date(other.starts_at), clinic.timezone)}. Preguntale si quiere mantener los dos o cancelar el otro.`,
     }),
@@ -893,6 +999,13 @@ async function cancelLoaded(clinic: Clinic, patient: Patient, appt: Appointment,
 export async function cancelAppointment(ctx: ToolContext, input: { turno_id: string; motivo?: string }) {
   const clinic = await getClinic(ctx.clinicId);
   const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
+  assertNotOver(appt);
+  const notice = clinic.cancel_notice_hours;
+  if (notice && Date.parse(appt.starts_at) - Date.now() < notice * 3600_000) {
+    throw new ToolError(
+      `Faltan menos de ${notice} ${notice === 1 ? "hora" : "horas"} para el turno: según las reglas del consultorio, la cancelación la gestiona recepción. Creá una tarea de derivacion_humana con el pedido y aclarale al paciente que el turno sigue reservado hasta que recepción le confirme.`,
+    );
+  }
   const follower = await followerOf(appt);
   const { when, offered } = await cancelLoaded(clinic, patient, appt, input.motivo, "paciente");
   const [next] = follower ? await sql<Array<{ name: string }>>`select name from appointment_types where id = ${follower.appointment_type_id}` : [];
@@ -971,6 +1084,8 @@ async function rescheduleLoaded(
   force = false,
   /** La práctica que sigue en la misma visita: se mueve junto con este turno. */
   follower?: Appointment,
+  /** Lo mueve el consultorio desde el panel. */
+  byPanel = false,
 ) {
   assertNotOver(appt);
   const professionalId = input.profesional_id || appt.professional_id;
@@ -979,7 +1094,7 @@ async function rescheduleLoaded(
   if (appt.second_professional_id && appt.second_professional_id === professionalId) {
     throw new ToolError("Ese profesional ya atiende este turno como segundo profesional: elegí otro.");
   }
-  const preserve = clinic.id === GUERRA_MININNI;
+  const preserve = clinic.keep_duration_on_reschedule;
   const customDuration = keptDuration(appt, preserve);
   const moving = follower ? [appt.id, follower.id] : appt.id;
   const { type, pro, second, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, {
@@ -987,12 +1102,13 @@ async function rescheduleLoaded(
     force,
     secondProfessionalId: appt.second_professional_id,
     durationMin: customDuration,
+    byPanel,
   });
   let next: (Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date }) | null = null;
   if (follower) {
     try {
       next = {
-        ...(await assertBookable(clinic, pro.id, follower.appointment_type_id, endsAt, { ignoreAppointmentId: moving, force, durationMin: keptDuration(follower, preserve) })),
+        ...(await assertBookable(clinic, pro.id, follower.appointment_type_id, endsAt, { ignoreAppointmentId: moving, force, durationMin: keptDuration(follower, preserve), byPanel })),
         startsAt: endsAt,
       };
     } catch (e) {
@@ -1006,7 +1122,9 @@ async function rescheduleLoaded(
   }
   const visitEnd = next?.endsAt ?? endsAt;
   // Con otro profesional, que atienda la cobertura del turno.
-  const coverage = pro.id === appt.professional_id ? appt.coverage : acceptedCoverage(pro, appt.coverage);
+  const coverage = pro.id === appt.professional_id
+    ? appt.coverage
+    : coverageFor(await getCatalog(clinic.id), pro, [type, ...(next ? [next.type] : [])], appt.coverage, planFor(patient, appt.coverage), byPanel).coverage;
   const clash = (await upcomingOf(patient.id)).find(
     (a) => a.id !== appt.id && a.id !== follower?.id && new Date(a.starts_at) < visitEnd && new Date(a.ends_at) > startsAt,
   );
@@ -1078,13 +1196,13 @@ function keptDuration(appt: Appointment, preserve = false): number | undefined {
  * La práctica que sigue en la misma visita: mismo paciente y profesional, empieza cuando termina este
  * turno. Para moverla junto con el turno, solo si el agente la puede mover (no la da solo el consultorio).
  */
-async function followerOf(appt: Appointment, opts: { movable?: boolean } = {}): Promise<Appointment | undefined> {
+async function followerOf(appt: Appointment, opts: { movable?: { move_panel_only: boolean } } = {}): Promise<Appointment | undefined> {
   if (appt.second_professional_id) return undefined;
   const [row] = await sql<Appointment[]>`
     select a.* from appointments a join appointment_types t on t.id = a.appointment_type_id
     where a.patient_id = ${appt.patient_id} and a.professional_id = ${appt.professional_id} and a.id <> ${appt.id}
       and a.second_professional_id is null and a.status = any(${ACTIVE}::text[]) and a.starts_at = ${appt.ends_at}
-      ${opts.movable ? sql`and not t.panel_only` : sql``}
+      ${opts.movable ? sql`and t.agent_can_reschedule and (not t.panel_only or ${opts.movable.move_panel_only})` : sql``}
     limit 1`;
   return row;
 }
@@ -1092,26 +1210,36 @@ async function followerOf(appt: Appointment, opts: { movable?: boolean } = {}): 
 async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
   const { patient, appt } = await getOwnAppointment(ctx, id);
   assertNotOver(appt);
-  const restricted = clinic.id === GUERRA_MININNI;
-  const follower = await followerOf(appt, { movable: !restricted });
+  // La práctica que sigue en la misma visita se mueve con este turno, si Sofi la puede mover.
+  const follower = await followerOf(appt, { movable: clinic });
   const parts = follower ? [appt, follower] : [appt];
-  const types = await sql<Array<Pick<AppointmentType, "id" | "name" | "panel_only">>>`
-    select id, name, panel_only from appointment_types where id = any(${parts.map((a) => a.appointment_type_id)}::uuid[])`;
-  if (!restricted) {
-    const type = types.find((t) => t.id === appt.appointment_type_id);
-    if (type) assertAgentCanBook(type);
-    return { patient, appt, follower };
-  }
+  const types = await sql<Array<Pick<AppointmentType, "id" | "name" | "panel_only" | "agent_can_reschedule">>>`
+    select id, name, panel_only, agent_can_reschedule from appointment_types where id = any(${parts.map((a) => a.appointment_type_id)}::uuid[])`;
   const refer = "Creá una tarea de derivacion_humana para que recepción coordine el cambio. El turno original sigue reservado.";
-  if (parts.some((a) => {
-    const name = types.find((t) => t.id === a.appointment_type_id)?.name ?? "";
-    return [name, a.title, (a.source === "smile_connect" || a.source === "panel") ? a.notes : null].some((label) => label && isRestrictedDentalProcedure(label));
-  })) throw new ToolError(`El cambio de turno de implante, regeneración o extracción lo coordina recepción. ${refer}`);
-  if (Date.parse((follower ?? appt).ends_at) - Date.parse(appt.starts_at) > 120 * 60_000) {
-    throw new ToolError(`El cambio de una visita de más de dos horas lo coordina recepción. ${refer}`);
+  const type = types.find((t) => t.id === appt.appointment_type_id);
+  if (type && !agentCanMove(type, clinic)) {
+    // Lo que da solo el consultorio se explica como siempre.
+    if (type.panel_only && !clinic.move_panel_only) assertAgentCanBook(type);
+    throw new ToolError(`El cambio de «${type.name}» lo coordina recepción. ${refer}`);
   }
-  if (Date.parse(appt.starts_at) - Date.now() < 24 * 3600_000) {
-    throw new ToolError(`Faltan menos de 24 horas para el turno. ${refer}`);
+  // Reglas del consultorio (Panel → Configuración → Turnos y urgencias).
+  const terms = parseTerms(clinic.reception_only_terms);
+  if (terms.length) {
+    for (const a of parts) {
+      const name = types.find((t) => t.id === a.appointment_type_id)?.name ?? "";
+      // Las notas cuentan en los turnos que cargó el consultorio (a mano o desde Smile Connect).
+      const labels = [name, a.title, a.source === "smile_connect" || a.source === "panel" ? a.notes : null];
+      const term = labels.map((label) => receptionOnlyTerm(label, terms)).find(Boolean);
+      if (term) throw new ToolError(`El cambio de un turno de ${term} lo coordina recepción. ${refer}`);
+    }
+  }
+  const max = clinic.reschedule_max_minutes;
+  if (max && Date.parse((follower ?? appt).ends_at) - Date.parse(appt.starts_at) > max * 60_000) {
+    throw new ToolError(`El cambio de una visita de más de ${durationPhrase(max)} lo coordina recepción. ${refer}`);
+  }
+  const notice = clinic.reschedule_notice_hours;
+  if (notice && Date.parse(appt.starts_at) - Date.now() < notice * 3600_000) {
+    throw new ToolError(`Faltan menos de ${notice} ${notice === 1 ? "hora" : "horas"} para el turno. ${refer}`);
   }
   return { patient, appt, follower };
 }
@@ -1132,7 +1260,7 @@ export async function rescheduleClinicAppointment(
 ) {
   const clinic = await getClinic(clinicId);
   const { patient, appt } = await getClinicAppointment(clinicId, appointmentId);
-  const r = await rescheduleLoaded(clinic, patient, appt, input, appt.source, opts.force);
+  const r = await rescheduleLoaded(clinic, patient, appt, input, appt.source, opts.force, undefined, true);
   return { ok: true, ...r };
 }
 

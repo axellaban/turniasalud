@@ -8,6 +8,9 @@ import { parseClockTime } from "@/lib/time";
 import { ForceOption, SlotPicker, dayLabel } from "./slot-picker";
 
 type Option = { id: string; name: string; specialty: string };
+/** Un profesional: si tiene prestaciones marcadas (`does`), hace solo esas; si no, las de su especialidad. */
+type ProOption = Option & { does?: string[] };
+const doesType = (p: ProOption, type: Option | undefined) => Boolean(type) && (p.does?.length ? p.does.includes(type!.id) : p.specialty === type!.specialty);
 
 /**
  * Turno a mano: primero qué, con quién y cuándo (se elige entre los horarios libres
@@ -26,7 +29,7 @@ export function ManualAppointmentForm({
   clinicId: string;
   defaultDate: string;
   today: string;
-  professionals: Option[];
+  professionals: ProOption[];
   types: Option[];
   /** Al tocar un hueco de la grilla: con quién y a qué hora. */
   initialProId?: string;
@@ -37,9 +40,8 @@ export function ManualAppointmentForm({
   const nameRef = useRef<HTMLInputElement>(null);
   const coverageRef = useRef<HTMLInputElement>(null);
   const initialPro = professionals.find((p) => p.id === initialProId);
-  const [typeId, setTypeId] = useState((initialPro && types.find((t) => t.specialty === initialPro.specialty)?.id) ?? types[0]?.id ?? "");
-  const specialty = types.find((t) => t.id === typeId)?.specialty;
-  const pros = professionals.filter((p) => p.specialty === specialty);
+  const [typeId, setTypeId] = useState((initialPro && types.find((t) => doesType(initialPro, t))?.id) ?? types[0]?.id ?? "");
+  const pros = professionals.filter((p) => doesType(p, types.find((t) => t.id === typeId)));
   const [chosenPro, setProId] = useState(initialPro?.id ?? pros[0]?.id ?? "");
   // Al cambiar de prestación, si el profesional elegido no la hace, va el primero que sí.
   const proId = pros.some((p) => p.id === chosenPro) ? chosenPro : (pros[0]?.id ?? "");
