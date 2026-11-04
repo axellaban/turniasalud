@@ -9,7 +9,19 @@ import { useFormTracking } from "@/lib/form-tracking";
 const input =
   "mt-1.5 w-full rounded-lg border border-brand-950/12 bg-white px-3.5 py-2.5 text-sm text-brand-950 outline-none placeholder:text-brand-950/35 focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 
-export function FormularioDemo({ origen, compacto = false }: { origen: string; compacto?: boolean }) {
+export function FormularioDemo({
+  origen,
+  compacto = false,
+  titulo = "Pedí una demo",
+  boton = "Quiero mi demo",
+  gracias = "Te vamos a escribir para coordinar la demo.",
+}: {
+  origen: string;
+  compacto?: boolean;
+  titulo?: string;
+  boton?: string;
+  gracias?: string;
+}) {
   const [estado, enviar, enviando] = useActionState<EstadoLead | undefined, FormData>(pedirDemo, undefined);
   // PostHog: visto, empezado, enviado y su resultado (nunca lo que escribió).
   const form = useFormTracking("lead", { origen, compacto });
@@ -26,13 +38,13 @@ export function FormularioDemo({ origen, compacto = false }: { origen: string; c
       <div className="rounded-2xl bg-white p-8 text-center shadow-[0_20px_50px_rgb(8_24_63/0.12)] ring-1 ring-brand-950/5" role="status">
         <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald/15 text-2xl text-emerald-700">✓</span>
         <h2 className="mt-4 text-xl font-medium text-brand-950">¡Gracias! Recibimos tu pedido.</h2>
-        <p className="mt-2 text-sm text-tinta">Te vamos a escribir para coordinar la demo.</p>
+        <p className="mt-2 text-sm text-tinta">{gracias}</p>
       </div>
     );
 
   return (
     <form action={enviar} onSubmit={() => form.submitted()} onInputCapture={form.onInput} className="rounded-2xl bg-white p-6 text-left shadow-[0_20px_50px_rgb(8_24_63/0.12)] ring-1 ring-brand-950/5 sm:p-8">
-      <h2 className="text-xl font-medium tracking-tight text-brand-950">Pedí una demo</h2>
+      <h2 className="text-xl font-medium tracking-tight text-brand-950">{titulo}</h2>
       <input type="hidden" name="origen" value={origen} />
       <div className="absolute -left-[9999px]" aria-hidden="true">
         <label>
@@ -95,7 +107,7 @@ export function FormularioDemo({ origen, compacto = false }: { origen: string; c
         disabled={enviando}
         className="mt-6 w-full rounded-lg bg-brand-600 px-5 py-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
       >
-        {enviando ? "Enviando…" : "Quiero mi demo"}
+        {enviando ? "Enviando…" : boton}
       </button>
       <p className="mt-3 text-center text-xs text-tinta">
         Usamos tus datos solo para contactarte por la demo. Ver{" "}

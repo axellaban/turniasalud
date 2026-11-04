@@ -75,6 +75,7 @@ Todos los del navegador llevan `surface`:
 | `demo_web` | la demo del navegador |
 | `demo_llamada` | la llamada web de la demo de WhatsApp |
 | `pedi_una_demo` | «Pedí una demo» |
+| `pricing` | `/pricing`, precios del Programa Fundadores (no está enlazada: se comparte el link) |
 | `escucha` | ejemplos de conversaciones |
 | `landing` | especialidades, soluciones y organizaciones |
 | `producto` | plataforma, recepción, activa y nosotros |
@@ -154,7 +155,7 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `cta_clicked` | `cta_id`, `cta_location`, `cta_destination`, `cta_kind` (`conversion` o `navigation`) |
 | `demo_audio_played` | `audio_id` (el slug del audio), `with_audio` (falso = lectura animada sin audio). Primera vez que se reproduce en la visita |
 | `demo_audio_listened` | Cada vez que se corta. `listened_ms`, `max_pct`, `completed`, `end_reason` (`pause`, `ended`, `hidden`, `pagehide`) |
-| `lead_form_viewed` / `_started` / `_submitted` / `_error` | `origen` (la página del formulario), `compacto` |
+| `lead_form_viewed` / `_started` / `_submitted` / `_error` | `origen` (la página del formulario; en `/pricing` suma el plan y si paga anual: `/pricing · Revenue Growth · anual`), `compacto` |
 | `lead_created` | `origen`. Pedido de demo guiada guardado. `first_lead_at` en la persona |
 
 **Llamados a la acción medidos (`cta_id`):**
@@ -167,6 +168,9 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `listen_samples` | — | `home_section` |
 | `retry_demo` | — | `demo_unavailable` |
 | `panel_login` | — | `header`, `header_mobile`. Navegación |
+| `pricing_plan` | `core`, `growth` o `enterprise` | `pricing_card`: elige el plan y baja al formulario |
+| `pricing_join` | formulario de `/pricing` | `pricing_hero` |
+| `pricing_see_plans` | los planes | `pricing_hero`. Navegación |
 
 Para medir un botón nuevo: `{...cta("id", "zona", "destino")}` de `@/lib/analytics-shared`.
 

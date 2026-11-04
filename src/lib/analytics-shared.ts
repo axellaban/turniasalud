@@ -32,6 +32,7 @@ export function surfaceOf(pathname: string): string {
   if (pathname.startsWith("/probar-demo/llamada/")) return "demo_llamada";
   if (pathname.startsWith("/probar-demo")) return "probar_demo";
   if (pathname.startsWith("/pedi-una-demo")) return "pedi_una_demo";
+  if (pathname.startsWith("/pricing")) return "pricing";
   if (pathname.startsWith("/escucha-a-nuestros-agentes")) return "escucha";
   if (/^\/(especialidades|soluciones|organizaciones)(\/|$)/.test(pathname)) return "landing";
   if (/^\/(plataforma|recepcion|activa|nosotros)(\/|$)/.test(pathname)) return "producto";
