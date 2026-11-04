@@ -1055,9 +1055,9 @@ end $$;
 alter table clinics add column if not exists cancel_notice_hours integer check (cancel_notice_hours between 1 and 720);
 -- Cómo trata a los pacientes: vacío = de vos (o lo que digan las instrucciones de la clínica).
 alter table clinics add column if not exists tone text check (tone in ('vos', 'usted'));
--- Protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). Apagado hasta que un
--- odontólogo lo valide para esa clínica.
-alter table clinics add column if not exists dental_protocol boolean not null default false;
+-- Protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts): prendido en todos los
+-- consultorios odontológicos (se detecta por la especialidad). Turnia lo puede apagar en una clínica.
+alter table clinics add column if not exists dental_protocol boolean not null default true;
 -- Horas reservadas para urgencias: cuántas horas antes quedan libres para cualquier prestación
 -- (vacío: nunca; solo las usan los turnos de urgencia o el consultorio desde la Agenda).
 alter table clinics add column if not exists urgent_release_hours integer check (urgent_release_hours between 1 and 72);

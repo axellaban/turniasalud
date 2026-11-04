@@ -322,7 +322,9 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
   });
 
   it("lo que recibe Sofi: trato, protocolo odontológico, precio y qué preguntar antes", async () => {
-    await sql`update clinics set tone = 'usted', dental_protocol = true where id = ${clinicId}`;
+    // El protocolo odontológico viene prendido en todos los consultorios odontológicos.
+    expect((await clinic()).dental_protocol).toBe(true);
+    await sql`update clinics set tone = 'usted' where id = ${clinicId}`;
     await sql`update appointment_types set price = 900000, price_mode = 'desde' where id = ${colocacion}`;
     await sql`update appointment_types set price = 50000, price_mode = 'no_informar' where id = ${conducto}`;
     await sql`update appointment_types set ask_before = '¿Tenés una panorámica reciente?' where id = ${implantConsult}`;
@@ -330,7 +332,21 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
       const info = clinicLib.clinicInfoText(await clinic());
       expect(info).toContain("Trato: de usted con todos los pacientes");
       expect(info).toContain("Protocolo odontológico de Turnia");
-      await sql`update clinics set dental_protocol = false, tone = null where id = ${clinicId}`;
+      // También si la ficha dice otra especialidad pero sus profesionales son odontólogos.
+      await sql`update clinics set specialty = 'Multiespecialidad' where id = ${clinicId}`;
+      expect(clinicLib.clinicInfoText(await clinic())).not.toContain("Protocolo odontológico");
+      expect((await clinicLib.buildDynamicVariables(await clinic(), plain)).clinic_info).toContain("Protocolo odontológico de Turnia");
+      // Una clínica sin nada odontológico no lo recibe, aunque esté prendido; una multiespecialidad
+      // con una odontóloga (la de los datos de ejemplo), sí.
+      const [{ id: skin }] = await sql`insert into clinics (name, specialty, is_demo, retained_at) values ('Clínica de la piel', 'Dermatología', true, now()) returning id`;
+      const skinClinic = await clinicLib.getClinic(skin);
+      expect(skinClinic.dental_protocol).toBe(true);
+      expect((await clinicLib.buildDynamicVariables(skinClinic, plain)).clinic_info).not.toContain("Protocolo odontológico");
+      const seed = await clinicLib.getClinic("00000000-0000-4000-8000-000000000001");
+      expect(seed.specialty).toBe("Multiespecialidad");
+      expect((await clinicLib.buildDynamicVariables(seed, plain)).clinic_info).toContain("Protocolo odontológico de Turnia");
+      await sql`delete from clinics where id = ${skin}`;
+      await sql`update clinics set specialty = 'Odontología', dental_protocol = false, tone = null where id = ${clinicId}`;
       expect(clinicLib.clinicInfoText(await clinic())).not.toMatch(/Protocolo odontológico|Trato:/);
 
       const catalog = clinicLib.catalogText(await clinicLib.getCatalog(clinicId));
@@ -344,6 +360,7 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
         .toMatchObject({ ok: true, preguntar_antes: "¿Tenés una panorámica reciente?" });
     } finally {
       await sql`update appointment_types set price = null, price_mode = 'referencia', ask_before = null where id in (${colocacion}, ${conducto}, ${implantConsult})`;
+      await sql`update clinics set specialty = 'Odontología', dental_protocol = true where id = ${clinicId}`;
     }
   });
 

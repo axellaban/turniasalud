@@ -5,7 +5,7 @@ import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
 import { householdOf, patientForPhone } from "./patients";
 import { agentCanMove, coverageRuleText, durationPhrase, parseTerms, receptionOnlyTerm } from "./booking-rules";
-import { DENTAL_PROTOCOL } from "./agent/modules/odontologia";
+import { DENTAL_PROTOCOL, isDentalSpecialty } from "./agent/modules/odontologia";
 import { wahaConnections } from "./waha-connections";
 import type { Appointment, AppointmentType, Clinic, CoverageRule, Patient, Professional, ProfessionalType, Schedule, ScheduleBlock, Task } from "./types";
 
@@ -102,8 +102,23 @@ export async function getScheduleBlocks(clinicId: string, from: Date | string, t
   return [...rows];
 }
 
-/** Texto con la información fija de la clínica que el agente usa para responder. */
-export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
+/**
+ * ¿La clínica es odontológica? Por su especialidad o, si dice otra cosa (por ejemplo,
+ * «Multiespecialidad»), por la de sus profesionales y prestaciones.
+ */
+export function isDentalClinic(clinic: Pick<Clinic, "specialty">, catalog?: Pick<Catalog, "professionals" | "appointmentTypes">): boolean {
+  return (
+    isDentalSpecialty(clinic.specialty) ||
+    Boolean(catalog?.professionals.some((p) => isDentalSpecialty(p.specialty)) || catalog?.appointmentTypes.some((t) => isDentalSpecialty(t.specialty)))
+  );
+}
+
+/**
+ * Texto con la información fija de la clínica que el agente usa para responder. `dental`: si la
+ * clínica es odontológica (por defecto, por su especialidad), para sumar el protocolo odontológico.
+ */
+export function clinicInfoText(clinic: Clinic, openNow?: boolean, opts: { dental?: boolean } = {}): string {
+  const dental = opts.dental ?? isDentalSpecialty(clinic.specialty);
   return [
     `Nombre: ${clinic.name}`,
     `Especialidad: ${clinic.specialty}`,
@@ -121,7 +136,7 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
     clinic.tone === "usted" && "Trato: de usted con todos los pacientes, en todos los mensajes y desde el primero.",
     clinic.tone === "vos" && "Trato: de vos.",
     rescheduleRulesText(clinic),
-    clinic.dental_protocol && DENTAL_PROTOCOL,
+    clinic.dental_protocol && dental && DENTAL_PROTOCOL,
     clinic.agent_context && `Instrucciones de esta clínica:\n${clinic.agent_context}`,
   ]
     .filter(Boolean)
@@ -359,7 +374,7 @@ export async function buildDynamicVariables(
     clinic_id: clinic.id,
     clinic_name: clinic.name,
     agent_name: clinic.agent_name,
-    clinic_info: clinicInfoText(clinic, openNow),
+    clinic_info: clinicInfoText(clinic, openNow, { dental: isDentalClinic(clinic, catalog) }),
     clinic_catalog: catalogText(catalog, blocks, clinic.timezone, clinic),
     urgency_instructions: clinic.after_hours_instructions
       ? `${urgency}\nFuera del horario de atención: ${clinic.after_hours_instructions}`

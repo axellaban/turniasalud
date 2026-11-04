@@ -1,16 +1,16 @@
 // Módulo odontológico de Turnia (PLAN_PROTOCOLOS.md, capa 2): lo que vale igual para todos los
-// consultorios odontológicos. Va dentro de «Información de la clínica» solo si la clínica lo tiene
-// prendido (Panel → Configuración → Turnos y urgencias, solo Turnia), y las instrucciones propias del
-// consultorio mandan sobre él.
+// consultorios odontológicos. Va dentro de «Información de la clínica» en todas las clínicas
+// odontológicas (Turnia lo puede apagar en una, en Panel → Configuración → Turnos y urgencias), y las
+// instrucciones propias del consultorio mandan sobre él.
 //
-// ES UN BORRADOR: los criterios clínicos los tiene que validar un odontólogo antes de prenderlo en
-// una clínica. Cada cambio sube la versión y se prueba con DENTAL_TEST_CASES en «Probar a Sofi».
+// Prendido para todos por decisión del usuario (4/11/2026). Cada cambio sube la versión y se prueba
+// con DENTAL_TEST_CASES en «Probar a Sofi»; conviene repasar los criterios con un odontólogo.
 
 import type { PriceMode } from "../../types";
 
-export const DENTAL_PROTOCOL_VERSION = "2026-11-04 (borrador para validar)";
+export const DENTAL_PROTOCOL_VERSION = "2026-11-04";
 
-export const DENTAL_PROTOCOL = `Protocolo odontológico de Turnia (si las instrucciones de esta clínica dicen otra cosa, mandan ellas):
+export const DENTAL_PROTOCOL = `Protocolo odontológico de Turnia, para todo lo odontológico (si las instrucciones de esta clínica dicen otra cosa, mandan ellas):
 - Urgencia odontológica, para atender en el día: dolor fuerte que no se calma o no deja dormir, dolor que late, encía o cara hinchada (sin dificultad para respirar ni tragar), un diente roto, flojo o que se salió por un golpe, un provisorio o una corona de adelante que se cayó, o un sangrado que sigue después de una extracción aunque apriete una gasa.
 - Ante una urgencia odontológica, usá la prestación de urgencia del catálogo: consultar_disponibilidad busca lugar para hoy y mañana. Si no hay urgencia en el catálogo, usá la primera consulta y buscá hoy y mañana. Si no hay lugar, creá una tarea de tipo "urgencia" con prioridad "urgente" y decile que el equipo lo contacta hoy. Nunca le des un turno común para dentro de varios días.
 - Emergencia, primero el 107 o la guardia y después la tarea urgente: la hinchazón le dificulta respirar, tragar o abrir el ojo, tiene fiebre alta con la cara hinchada, se dio un golpe fuerte en la cara o la cabeza, o sangra mucho y no para.

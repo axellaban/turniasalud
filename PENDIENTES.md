@@ -101,7 +101,7 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 
 - [ ] Cargar datos y protocolos reales de la primera clínica (no reemplazar por suposición).
 - [x] **Protocolos odontológicos y reglas en el panel** (4/11). Incluye Coberturas, Turnos y urgencias, campos nuevos de Prestaciones y de Equipo, plantilla odontológica, Inicio y cambios en Google. Las reglas de Guerra–Mininni pasaron a su ficha. Ver [`PLAN_PROTOCOLOS.md`](PLAN_PROTOCOLOS.md).
-- [ ] **Validar el módulo odontológico con Mininni** (texto en Turnos y urgencias, solo Turnia) y probar los 12 casos de «Probar a Sofi» antes de prenderlo en una clínica.
+- [ ] **Repasar el módulo odontológico con Mininni.** Ya está prendido en todos los consultorios odontológicos por decisión del usuario; el texto está en Turnos y urgencias, solo Turnia. Probar los 12 casos de «Probar a Sofi» y anotar lo que haya que ajustar.
 - [ ] Opcional: «Actualizar agente» en cada clínica para que Sofi pueda mandar `cobertura` en `consultar_disponibilidad`. Sin eso, todo lo demás ya funciona.
 - [ ] Revisar consentimiento, conservación de datos y textos de privacidad. No activar Zero Retention de ElevenLabs a ciegas: es incompatible con el Custom Channel (ver `PLAN_WHATSAPP.md`).
 - [ ] Activar campañas (workflow n8n `g0H8xbQvRNv5FxQj`, hoy desactivado) solo después de validar canal, destinatarios y baja.

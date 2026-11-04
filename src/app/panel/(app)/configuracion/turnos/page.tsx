@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
-import { rescheduleRulesText } from "@/lib/clinic";
-import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES, isDentalSpecialty } from "@/lib/agent/modules/odontologia";
+import { getCatalog, isDentalClinic, rescheduleRulesText } from "@/lib/clinic";
+import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES } from "@/lib/agent/modules/odontologia";
 import { Badge, Card, Field, Notice, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
 import { ActionForm } from "../action-form";
@@ -18,7 +18,8 @@ export default async function BookingRulesPage() {
   const [clinic, user] = await Promise.all([getPanelClinic(), getPanelUser()]);
   const admin = user.role === "admin";
   const summary = rescheduleRulesText(clinic);
-  const dental = isDentalSpecialty(clinic.specialty);
+  const dental = isDentalClinic(clinic, await getCatalog(clinic.id));
+  const active = clinic.dental_protocol && dental;
 
   return (
     <>
@@ -74,16 +75,16 @@ export default async function BookingRulesPage() {
           <Card>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-semibold text-brand-950">Protocolo odontológico de Turnia</h2>
-              <Badge tone={clinic.dental_protocol ? "green" : "gray"}>{clinic.dental_protocol ? "Prendido" : "Apagado"}</Badge>
+              <Badge tone={active ? "green" : "gray"}>{active ? "Prendido" : "Apagado"}</Badge>
               <Badge>Solo Turnia</Badge>
             </div>
             <p className="mt-1 text-sm text-brand-900/60">
               Lo común a todos los consultorios odontológicos: qué es urgente, qué turno corresponde a cada pedido y qué tratamientos empiezan con una consulta. Las instrucciones propias de la clínica mandan sobre él.
             </p>
-            <Notice tone="warning" className="mt-3">
-              Versión {DENTAL_PROTOCOL_VERSION}. Es un borrador: prendelo solo después de que lo valide un odontólogo y de probar los casos de abajo en <Link href="/panel/probar" className="font-semibold underline">Probar a {clinic.agent_name || "Sofi"}</Link>.
+            <Notice tone="info" className="mt-3">
+              Versión {DENTAL_PROTOCOL_VERSION}. Va prendido en todos los consultorios odontológicos. Después de cada cambio, probá los casos de abajo en <Link href="/panel/probar" className="font-semibold underline">Probar a {clinic.agent_name || "Sofi"}</Link>; conviene repasar los criterios con un odontólogo.
             </Notice>
-            {!dental && <p className="mt-3 text-sm text-sun-700">La especialidad de esta clínica es «{clinic.specialty}»: el protocolo es para consultorios odontológicos.</p>}
+            {!dental && <p className="mt-3 text-sm text-sun-700">Esta clínica no es odontológica (ni su especialidad ni la de sus profesionales): el protocolo no se usa acá.</p>}
             <input type="hidden" name="dental_protocol_field" value="1" />
             <label className={`${check} mt-4`}>
               <input type="checkbox" name="dental_protocol" defaultChecked={clinic.dental_protocol} className="mt-1" />

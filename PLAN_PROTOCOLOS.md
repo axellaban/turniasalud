@@ -17,7 +17,7 @@ Las etapas 0 a 3 y la parte de la etapa 4 que el plan decía hacer ya están en 
 | 5. Disponibilidad por cobertura | `consultar_disponibilidad` deja afuera a quien no atiende la cobertura. Si nadie la atiende, ofrece como particular a quien atiende particular; si nadie, deriva. Nuevo parámetro opcional `cobertura`. |
 | 6. Profesional ↔ prestaciones | Tabla `professional_appointment_types` (sin filas: la especialidad, como antes). Casillas en Equipo y horarios. Horarios solo para algunas prestaciones (`schedules.appointment_type_ids`). |
 | 7. Matriz de coberturas | Tabla `coverage_rules` y Panel → Configuración → **Coberturas**. Manda la regla más específica. |
-| 8. Módulo odontológico | `src/lib/agent/modules/odontologia.ts`. Va dentro de «Información de la clínica» (no cambia el prompt de ElevenLabs). **Apagado** en todas las clínicas: lo prende Turnia en «Turnos y urgencias» después de validarlo con un odontólogo. |
+| 8. Módulo odontológico | `src/lib/agent/modules/odontologia.ts`. Va dentro de «Información de la clínica» (no cambia el prompt de ElevenLabs). **Prendido en todos los consultorios odontológicos** por decisión del usuario (4/11): se detecta por la especialidad de la clínica, de sus profesionales o de sus prestaciones. Turnia lo puede apagar en una clínica en «Turnos y urgencias». |
 | 9. Urgencias | Prestación «Es un turno de urgencia» (busca hoy y mañana) y horarios «Solo urgencias»; `urgent_release_hours` los libera cerca de la hora. |
 | 10. Prestación previa | `requires_type_id` y «Qué preguntar antes» (`ask_before`), validados en las herramientas. |
 | 11. Cómo decir el precio | `price_mode`: referencia (como antes), exacto, «desde» o no informar. |
@@ -32,7 +32,7 @@ Decisión tomada al implementar: la lista de coberturas de cada profesional sigu
 
 1. El deploy aplica el esquema y la migración de Guerra–Mininni solo.
 2. Todo funciona sin tocar ElevenLabs. Para que Sofi pueda mandar el parámetro nuevo `cobertura`, apretar «Actualizar agente» de cada clínica cuando convenga.
-3. Probar los 12 casos odontológicos en «Probar a Sofi» y validar el módulo con Mininni antes de prenderlo.
+3. Probar los 12 casos odontológicos en «Probar a Sofi». El módulo ya está prendido en todos los consultorios odontológicos; conviene repasar sus criterios con Mininni.
 
 Pruebas: `src/lib/booking-rules.test.ts`, `src/test/protocols.integration.test.ts`, el caso de Google en `src/test/calendar.integration.test.ts` y la migración en `src/test/migrations.integration.test.ts`.
 
