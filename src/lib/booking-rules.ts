@@ -134,7 +134,10 @@ export function bestCoverageRule(
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 /** «OSDE plan 210» o «OSDE». */
-const coverageLabel = (coverage: string, plan: string | null | undefined) => `${coverage.trim()}${plan?.trim() ? ` plan ${plan.trim()}` : ""}`;
+const coverageLabel = (coverage: string, plan: string | null | undefined) => {
+  const bare = plan?.trim().replace(/^plan\s+/i, "");
+  return `${coverage.trim()}${bare ? ` plan ${bare}` : ""}`;
+};
 
 export type CoverageCheck =
   | { ok: true; coverage: string | null; notes: string[] }

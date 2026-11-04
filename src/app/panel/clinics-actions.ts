@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { getClinic, isUuid } from "@/lib/clinic";
+import { applyDentalTemplate } from "@/lib/dental-template";
+import { DENTAL_SPECIALTY, isDentalSpecialty } from "@/lib/agent/modules/odontologia";
 import { CLINIC_COOKIE, getPanelClinic, logClinicChange, requireAdmin, touchClinic } from "@/lib/panel-clinic";
 import { createClinicAccess, revokeClinicAccess } from "@/lib/clinic-access";
 import { sessionCookieOptions } from "@/lib/session";
@@ -37,8 +39,11 @@ export async function createClinic(_previous: FormState, form: FormData): Promis
   if (!name) return { ok: false, message: "Ingresá el nombre de la clínica." };
   if (input && !website) return { ok: false, message: "Revisá la dirección de la web." };
   const main = await getClinic();
+  const specialty = String(form.get("specialty") ?? "Consultorio").trim().slice(0, 80) || "Consultorio";
   const [clinic] = await sql`insert into clinics (name, specialty, agent_name, timezone, website, is_demo, retained_at, urgency_instructions)
-    values (${name}, ${String(form.get("specialty") ?? "Consultorio").trim().slice(0, 80) || "Consultorio"}, ${main.agent_name}, ${main.timezone}, ${website}, true, now(), ${main.urgency_instructions}) returning id`;
+    values (${name}, ${specialty}, ${main.agent_name}, ${main.timezone}, ${website}, true, now(), ${main.urgency_instructions}) returning id`;
+  // Un consultorio odontológico arranca con las prestaciones de la plantilla (se confirman en el setup).
+  if (isDentalSpecialty(specialty)) await applyDentalTemplate(clinic.id, DENTAL_SPECIALTY);
   (await cookies()).set(CLINIC_COOKIE, clinic.id, sessionCookieOptions);
   revalidatePath("/panel", "layout");
   redirect("/panel/configuracion");

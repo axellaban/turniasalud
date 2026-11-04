@@ -83,6 +83,7 @@ function editOf(fields: Record<string, unknown>): OutreachEdit {
   if (str("email") !== undefined) edit.email = str("email") || null;
   if (str("web") !== undefined) edit.website = str("web") || null;
   if (str("instagram") !== undefined) edit.instagram = normalizeInstagram(str("instagram"));
+  if (str("agendaSoftware") !== undefined) edit.agenda_software = str("agendaSoftware")!.slice(0, 80) || null;
   const kind = str("phoneKind") ? PHONE_KIND[str("phoneKind")!] ?? null : null;
   if (str("phone") !== undefined) {
     if (!str("phone")) edit.phone = null;

@@ -6,6 +6,7 @@ import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } 
 import { Badge, Card, CHANNEL_LABEL, CheckMark, Empty, PageHeader, Stat, StatusBadge } from "@/components/ui";
 import { profileCompleteness } from "@/lib/profile-completeness";
 import { CompletenessCard } from "./completeness-card";
+import { ACTIVITY_GUARANTEE, agentBookings, clinicGuarantee } from "@/lib/clinic-impact";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Inicio · Panel" };
@@ -93,6 +94,9 @@ export default async function PanelHome() {
       limit 5`,
   ]);
 
+  const [guarantee, bookings] = await Promise.all([clinicGuarantee(clinic.id), agentBookings(clinic)]);
+  const shortDate = (iso: string) => new Intl.DateTimeFormat("es-AR", { timeZone: tz, day: "numeric", month: "numeric" }).format(new Date(iso));
+
   const resolutionRate = stats.conversations ? Math.round((stats.resolved / stats.conversations) * 100) : null;
   // Con pocos casos un porcentaje engaña (1 ausente = 100 %): se muestra recién desde 5.
   const MIN_SAMPLE = 5;
@@ -137,6 +141,32 @@ export default async function PanelHome() {
       )}
 
       {completeness.percent < 100 && <div className="mb-6"><CompletenessCard {...completeness} /></div>}
+
+      {guarantee && (!guarantee.endsAt || Date.parse(guarantee.endsAt) > now.getTime() - 15 * 86400_000) && (
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-semibold text-brand-950">Garantía del primer mes</h2>
+            {guarantee.interactions >= ACTIVITY_GUARANTEE && <Badge tone="green">Cumplida</Badge>}
+          </div>
+          {guarantee.operationalAt ? (
+            <>
+              <p className="mt-1 text-sm text-brand-900/70">
+                {clinic.agent_name || "Sofi"} atiende desde el {shortDate(guarantee.operationalAt)}. El primer mes va hasta el {shortDate(guarantee.endsAt!)}.
+              </p>
+              <p className="mt-3 text-2xl font-semibold text-brand-950">
+                {guarantee.interactions} <span className="text-base font-normal text-brand-900/65">de {ACTIVITY_GUARANTEE} interacciones</span>
+              </p>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-brand-900/10" role="progressbar" aria-valuemin={0} aria-valuemax={ACTIVITY_GUARANTEE} aria-valuenow={Math.min(guarantee.interactions, ACTIVITY_GUARANTEE)} aria-label="Interacciones del primer mes">
+                <div className="h-full rounded-full bg-brand-600" style={{ width: `${Math.min(100, Math.round((guarantee.interactions / ACTIVITY_GUARANTEE) * 100))}%` }} />
+              </div>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-brand-900/70">
+              Todavía no hubo conversaciones con {clinic.agent_name || "Sofi"}{guarantee.clientAt ? ` (cliente desde el ${shortDate(guarantee.clientAt)})` : ""}. El primer mes empieza con la primera.
+            </p>
+          )}
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card>
@@ -229,7 +259,7 @@ export default async function PanelHome() {
       </div>
 
       <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/65">Últimos 30 días</h2>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <Stat
           label="Satisfacción"
           value={quality.satisfaction === null ? "—" : `${quality.satisfaction}/10`}
@@ -241,6 +271,18 @@ export default async function PanelHome() {
           label="Ingresos recuperados"
           value={money.format(recovery.revenue)}
           hint={`${recovery.appointments} turnos por campañas (90 días, precio de referencia)`}
+        />
+        <Stat
+          label="Turnos fuera de horario"
+          value={bookings.outsideHours}
+          hint={bookings.total ? `de ${bookings.total} que dio ${clinic.agent_name || "Sofi"}: noches, fines de semana y feriados` : `${clinic.agent_name || "Sofi"} todavía no dio turnos`}
+        />
+        <Stat
+          label={`Valor de los turnos de ${clinic.agent_name || "Sofi"}`}
+          value={bookings.priced ? money.format(bookings.value) : "—"}
+          hint={bookings.priced
+            ? `estimado con tus precios · ${bookings.priced} de ${bookings.kept} turnos con precio`
+            : bookings.kept ? "cargá precios en Prestaciones para estimarlo" : "sin turnos todavía"}
         />
       </div>
 

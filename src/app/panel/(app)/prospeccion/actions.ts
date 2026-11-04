@@ -135,6 +135,8 @@ export async function updateOutreachAction(_prev: ActionState, form: FormData): 
     website,
     notes: text(form, "notes").slice(0, 4000),
     next_action_on: next || null,
+    // Sin el campo en el formulario, se conserva lo que había.
+    agenda_software: form.has("agenda_software") ? text(form, "agenda_software").slice(0, 80) || null : undefined,
     priority: Number(text(form, "priority")) || 2,
   };
   try {

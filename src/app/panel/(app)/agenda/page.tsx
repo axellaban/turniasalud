@@ -2,6 +2,7 @@ import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { getCatalog, getScheduleBlocks } from "@/lib/clinic";
+import { professionalDoes } from "@/lib/booking-rules";
 import { googleBusy } from "@/lib/calendar/sync";
 import { bookedMinutes, visibleHours, type Span } from "@/lib/agenda-layout";
 import { addDaysKey, localDateKey, parseDateKey, timeToMinutes, weekdayOfKey, zonedParts, zonedTimeToUtc } from "@/lib/time";
@@ -336,7 +337,13 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
               today={todayKey}
               dayKey={local(selected.starts_at).key}
               colleagues={catalog.professionals
-                .filter((p) => p.specialty === catalog.professionals.find((x) => x.id === selected.professional_id)?.specialty && p.id !== selected.second_professional_id)
+                .filter((p) => {
+                  const type = catalog.appointmentTypes.find((t) => t.id === selected.appointment_type_id);
+                  const same = type
+                    ? professionalDoes(p, type, catalog.links)
+                    : p.specialty === catalog.professionals.find((x) => x.id === selected.professional_id)?.specialty;
+                  return same && p.id !== selected.second_professional_id;
+                })
                 .map((p) => ({ id: p.id, name: p.full_name }))}
             />
           )}
@@ -347,7 +354,12 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
               today={todayKey}
               initialProId={wantsNew ? (newPro ?? proFilter ?? undefined) : undefined}
               initialTime={wantsNew ? newTime : undefined}
-              professionals={catalog.professionals.map((p) => ({ id: p.id, name: p.full_name, specialty: p.specialty }))}
+              professionals={catalog.professionals.map((p) => ({
+                id: p.id,
+                name: p.full_name,
+                specialty: p.specialty,
+                does: (catalog.links ?? []).filter((l) => l.professional_id === p.id).map((l) => l.appointment_type_id),
+              }))}
               types={catalog.appointmentTypes.map((t) => ({ id: t.id, name: t.name, specialty: t.specialty }))}
             />
           </ManualPanel>

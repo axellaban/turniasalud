@@ -17,10 +17,13 @@ export default async function TeamPage() {
   const clinic = await getPanelClinic();
   const [professionals, types, catalog] = await Promise.all([
     sql<Professional[]>`select * from professionals where clinic_id = ${clinic.id} order by active desc, full_name`,
-    sql<Pick<AppointmentType, "specialty">[]>`select specialty from appointment_types where clinic_id = ${clinic.id}`,
+    sql<Pick<AppointmentType, "id" | "name" | "specialty" | "active">[]>`select id, name, specialty, active from appointment_types where clinic_id = ${clinic.id} order by name`,
     getCatalog(clinic.id),
   ]);
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
+  const activeTypes = types.filter((t) => t.active);
+  const typeName = new Map(types.map((t) => [t.id, t.name]));
+  const linksOf = (id: string) => (catalog.links ?? []).filter((l) => l.professional_id === id).map((l) => l.appointment_type_id);
 
   return (
     <>
@@ -29,12 +32,14 @@ export default async function TeamPage() {
       <div className="space-y-4">
         {professionals.map((p) => {
           const ranges = catalog.schedules.filter((s) => s.professional_id === p.id);
+          const own = linksOf(p.id);
           return (
             <Card key={p.id} className={p.active ? "" : "opacity-70"}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h2 className="font-semibold text-brand-950">{p.full_name} {!p.active && <Badge>Inactivo</Badge>}</h2>
                   <p className="text-sm text-brand-900/60">{p.specialty}{p.accepted_coverages?.length ? ` · Solo: ${p.accepted_coverages.join(", ")}` : ""}</p>
+                  <p className="text-sm text-brand-900/60">{own.length ? `Hace: ${own.map((id) => typeName.get(id)).filter(Boolean).join(", ")}` : `Hace todas las prestaciones de ${p.specialty}`}</p>
                 </div>
                 <form action={toggleProfessional}><input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={p.id} />
@@ -51,14 +56,18 @@ export default async function TeamPage() {
                       <div key={day} className="flex items-start gap-2 rounded-xl bg-neutral-50 px-3 py-2 sm:block sm:min-h-20 sm:px-2">
                         <p className="w-10 shrink-0 pt-1 text-xs font-semibold uppercase text-brand-900/65 sm:w-auto sm:pt-0">{WEEKDAYS[day]}</p>
                         <div className="flex flex-1 flex-wrap gap-1 sm:mt-1.5 sm:flex-col">
-                          {list.map((s) => (
-                            <form key={s.id} action={deleteSchedule} className="inline-flex items-center justify-between gap-1 rounded-lg bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800">
+                          {list.map((s) => {
+                            const only = (s.appointment_type_ids ?? []).map((id) => typeName.get(id)).filter(Boolean);
+                            const note = [s.urgent_only && "Solo urgencias", only.length && `Solo ${only.join(", ")}`].filter(Boolean).join(" · ");
+                            return (
+                            <form key={s.id} action={deleteSchedule} title={note || undefined} className={`inline-flex items-center justify-between gap-1 rounded-lg px-2 py-1 text-xs font-medium ${s.urgent_only ? "bg-red-50 text-red-800" : "bg-brand-50 text-brand-800"}`}>
                               <input type="hidden" name="clinic_id" value={clinic.id} />
                               <input type="hidden" name="id" value={s.id} />
-                              {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
+                              <span>{s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}{note && <span className="block font-normal opacity-80">{s.urgent_only ? "urgencias" : ""}{s.urgent_only && only.length ? " · " : ""}{only.length ? `solo ${only.length === 1 ? only[0] : `${only.length} prestaciones`}` : ""}</span>}</span>
                               <button title="Quitar este horario" aria-label={`Quitar ${WEEKDAYS[day]} ${s.start_time.slice(0, 5)}`} className="px-0.5 text-brand-900/65 hover:text-red-600">×</button>
                             </form>
-                          ))}
+                            );
+                          })}
                           {!list.length && <span className="pt-1 text-xs text-brand-900/65 sm:pt-0">—</span>}
                         </div>
                       </div>
@@ -83,6 +92,21 @@ export default async function TeamPage() {
                   </fieldset>
                   <label className="text-xs font-medium text-brand-900/60">Desde<input type="time" name="start_time" required className="mt-1 block rounded-lg border border-brand-900/15 px-2 py-1.5 text-sm" /></label>
                   <label className="text-xs font-medium text-brand-900/60">Hasta<input type="time" name="end_time" required className="mt-1 block rounded-lg border border-brand-900/15 px-2 py-1.5 text-sm" /></label>
+                  <label className="flex items-center gap-1.5 self-center text-xs font-medium text-brand-900/70" title="Solo los usan los turnos de urgencia (y el consultorio desde la Agenda).">
+                    <input type="checkbox" name="urgent_only" /> Solo urgencias
+                  </label>
+                  {activeTypes.length > 1 && (
+                    <details className="basis-full text-xs">
+                      <summary className="cursor-pointer font-medium text-brand-700">Solo para algunas prestaciones (opcional)</summary>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+                        {activeTypes.map((t) => (
+                          <label key={t.id} className="flex items-center gap-1.5 text-brand-900/80">
+                            <input type="checkbox" name="appointment_type_ids" value={t.id} /> {t.name}
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                   <button className={smallButtonClass}>+ Agregar horario</button>
                 </form>
               </>}
@@ -94,6 +118,20 @@ export default async function TeamPage() {
                   <Field label="Especialidad del profesional"><input name="specialty" required defaultValue={p.specialty} list="specialties" className={inputClass} /></Field>
                   <Field label="Coberturas del profesional" hint="Solo si atiende algunas. Separadas por coma."><input name="accepted_coverages" defaultValue={p.accepted_coverages?.join(", ") ?? ""} className={inputClass} /></Field>
                   <Field label="Descripción del profesional"><input name="bio" defaultValue={p.bio ?? ""} className={inputClass} /></Field>
+                  {activeTypes.length > 0 && (
+                    <fieldset className="sm:col-span-2">
+                      <input type="hidden" name="types_field" value="1" />
+                      <legend className="text-sm font-medium text-brand-950">Qué prestaciones hace</legend>
+                      <p className="text-xs text-brand-900/60">Si no marcás ninguna, hace todas las de su especialidad ({p.specialty}).</p>
+                      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                        {activeTypes.map((t) => (
+                          <label key={t.id} className="flex items-center gap-2 text-sm">
+                            <input type="checkbox" name="appointment_type_ids" value={t.id} defaultChecked={own.includes(t.id)} /> {t.name}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )}
               </EditDetails></div>
             </Card>
           );

@@ -26,7 +26,7 @@ export function NewClinicForm() {
   const [state, action, pending] = useActionState(createClinic, {});
   return <form onSubmit={submitKeepingValues(action)} className="grid gap-3 sm:grid-cols-2">
     <Field label="Nombre de la nueva clínica"><input name="name" required maxLength={120} className={inputClass} /></Field>
-    <Field label="Especialidad principal"><input name="specialty" placeholder="Odontología" maxLength={80} className={inputClass} /></Field>
+    <Field label="Especialidad principal" hint="Si es odontología, arranca con las prestaciones de la plantilla odontológica."><input name="specialty" placeholder="Odontología" maxLength={80} className={inputClass} /></Field>
     <Field label="Web (opcional)"><input name="website" placeholder="https://miclinica.com.ar" className={inputClass} /></Field>
     <div className="self-end"><button disabled={pending} className={buttonClass}>{pending ? "Creando…" : "Crear perfil"}</button></div>
     <p className="text-xs text-brand-900/60 sm:col-span-2">Se conserva desde el inicio y usa agenda de prueba. Después podés completar todos sus datos o leer su web.</p>

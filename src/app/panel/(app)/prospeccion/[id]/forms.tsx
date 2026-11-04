@@ -65,6 +65,14 @@ export function EditOutreachForm({ p }: { p: Outreach }) {
           <input name="website" defaultValue={p.website ?? ""} placeholder="miconsultorio.com.ar" className={inputClass} />
         </Field>
       </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Software de agenda" hint="Qué usa para los turnos: sirve para saber qué integrar primero.">
+          <input name="agenda_software" list="agenda-software" defaultValue={p.agenda_software ?? ""} maxLength={80} placeholder="Google Calendar, Smile Connect…" className={inputClass} />
+        </Field>
+        <datalist id="agenda-software">
+          {["Agenda de papel", "Google Calendar", "Smile Connect", "Dentalink", "Excel o planilla", "WhatsApp y nada más", "Otro sistema"].map((o) => <option key={o} value={o} />)}
+        </datalist>
+      </div>
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem_8rem]">
         <Field label="Notas">
           <textarea name="notes" defaultValue={p.notes} rows={3} maxLength={4000} className={inputClass} />

@@ -20,6 +20,7 @@ import { connectTelegram, telegramConfigured } from "@/lib/telegram";
 import { missingWahaEnv } from "@/lib/env";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizeWebsite } from "@/lib/demo/website";
+import { PRICE_MODES, type PriceMode } from "@/lib/types";
 
 const requireSession = requirePanelSession;
 
@@ -395,6 +396,8 @@ export async function saveClinic(form: FormData) {
       after_hours_instructions: text(form, "after_hours_instructions"),
       followup_attempts: attempts,
       followup_delay_hours: delay,
+      // Sin el campo en el formulario, se conserva el que estaba.
+      tone: form.has("tone") ? (text(form, "tone") === "usted" ? "usted" : text(form, "tone") === "vos" ? "vos" : null) : clinic.tone,
     })}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
     where id = ${clinic.id}`;
   await logClinicChange(clinic.id, "Reglas del consultorio");
@@ -407,6 +410,24 @@ export async function saveClinicWithFeedback(_previous: FormState, form: FormDat
     await saveClinic(form);
     return { ok: true, message: "Perfil guardado y conservado. Las conversaciones nuevas usan esta información." };
   } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar el perfil." }; }
+}
+
+/**
+ * Qué prestaciones hace el profesional (casillas de Equipo y horarios). Solo si el formulario las
+ * trae: sin marcar ninguna, hace todas las de su especialidad.
+ */
+async function saveProfessionalTypes(form: FormData, clinicId: string, professionalId: string): Promise<void> {
+  if (!form.has("types_field")) return;
+  const ids = [...new Set(form.getAll("appointment_type_ids").filter((v): v is string => typeof v === "string" && isUuid(v)))];
+  await sql.begin(async (tx) => {
+    await tx`delete from professional_appointment_types where professional_id = ${professionalId}`;
+    if (ids.length) {
+      await tx`
+        insert into professional_appointment_types (professional_id, appointment_type_id)
+        select ${professionalId}::uuid, t.id from appointment_types t
+        where t.clinic_id = ${clinicId} and t.id = any(${ids}::uuid[])`;
+    }
+  });
 }
 
 export async function saveProfessional(form: FormData) {
@@ -431,9 +452,35 @@ export async function saveProfessionalWithFeedback(_previous: FormState, form: F
   const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
   const rows = await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id} returning id`;
   if (!rows.length) return { ok: false, message: "Este profesional no pertenece a la clínica elegida. Recargá la página." };
+  await saveProfessionalTypes(form, clinic.id, id);
   await touchClinic(clinic.id, "Equipo");
   revalidatePath("/panel/configuracion", "layout");
   return { ok: true, message: "Profesional guardado." };
+}
+
+/**
+ * Lo que Sofi hace con la prestación (si puede moverla, urgencia, prestación previa, qué preguntar y
+ * cómo dice el precio). Solo si el formulario trae esos campos; si algo está mal, el motivo.
+ */
+async function appointmentTypeRules(form: FormData, clinicId: string, selfId?: string): Promise<Record<string, unknown> | string> {
+  if (!form.has("protocol_fields")) return {};
+  const requires = uuid(form, "requires_type_id");
+  if (requires) {
+    if (requires === selfId) return "Una prestación no puede pedirse a sí misma antes.";
+    const [row] = await sql<Array<{ requires_type_id: string | null }>>`
+      select requires_type_id from appointment_types where id = ${requires} and clinic_id = ${clinicId}`;
+    if (!row) return "La prestación previa no es de esta clínica. Recargá la página.";
+    if (selfId && row.requires_type_id === selfId) return "Esas dos prestaciones se piden una a la otra: dejá la previa en una sola.";
+  }
+  const mode = (text(form, "price_mode") ?? "referencia") as PriceMode;
+  if (!PRICE_MODES.includes(mode)) return "Elegí cómo dice el precio Sofi.";
+  return {
+    agent_can_reschedule: form.get("agent_can_reschedule") === "on",
+    is_urgent: form.get("is_urgent") === "on",
+    requires_type_id: requires,
+    ask_before: text(form, "ask_before")?.slice(0, 300) ?? null,
+    price_mode: mode,
+  };
 }
 
 export async function saveAppointmentType(form: FormData) {
@@ -461,11 +508,14 @@ export async function saveAppointmentTypeWithFeedback(_previous: FormState, form
   const rawPrice = text(form, "price");
   const price = parsePrice(rawPrice);
   if (rawPrice && price === null) return { ok: false, message: "Revisá el precio: usá solo números (por ejemplo, 48000)." };
+  const rules = await appointmentTypeRules(form, clinic.id, id);
+  if (typeof rules === "string") return { ok: false, message: rules };
   const rows = await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${price},
     instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
     is_first_visit = ${form.get("is_first_visit") === "on"}, panel_only = ${form.get("panel_only") === "on"}
     where id = ${id} and clinic_id = ${clinic.id} returning id`;
   if (!rows.length) return { ok: false, message: "Esta prestación no pertenece a la clínica elegida. Recargá la página." };
+  if (Object.keys(rules).length) await sql`update appointment_types set ${sql(rules)} where id = ${id} and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id, "Prestaciones");
   revalidatePath("/panel/configuracion", "layout");
   return { ok: true, message: "Prestación guardada." };
@@ -481,14 +531,16 @@ export async function addProfessional(form: FormData) {
     .split(",")
     .map((c) => c.trim())
     .filter(Boolean);
-  await sql`
+  const [created] = await sql<Array<{ id: string }>>`
     insert into professionals ${sql({
       clinic_id: clinic.id,
       full_name: name,
       specialty,
       bio: text(form, "bio"),
       accepted_coverages: coverages.length ? coverages : null,
-    })}`;
+    })}
+    returning id`;
+  await saveProfessionalTypes(form, clinic.id, created.id);
   await touchClinic(clinic.id, "Equipo");
   revalidatePath("/panel/configuracion", "layout");
 }
@@ -511,9 +563,15 @@ export async function addSchedule(form: FormData) {
   const weekdays = form.getAll("weekday").map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
   if (!professionalId || !start || !end || !weekdays.length || end <= start) return;
   const clinic = await getPanelClinic(form);
+  // Horas reservadas para urgencias y horarios solo para algunas prestaciones (de esta clínica).
+  const urgentOnly = form.get("urgent_only") === "on";
+  const wanted = [...new Set(form.getAll("appointment_type_ids").filter((v): v is string => typeof v === "string" && isUuid(v)))];
+  const typeIds = wanted.length
+    ? (await sql<Array<{ id: string }>>`select id from appointment_types where clinic_id = ${clinic.id} and id = any(${wanted}::uuid[])`).map((t) => t.id)
+    : [];
   await sql`
-    insert into schedules (professional_id, weekday, start_time, end_time)
-    select p.id, w.weekday, ${start}::time, ${end}::time
+    insert into schedules (professional_id, weekday, start_time, end_time, urgent_only, appointment_type_ids)
+    select p.id, w.weekday, ${start}::time, ${end}::time, ${urgentOnly}, ${typeIds.length ? typeIds : null}::uuid[]
     from professionals p, unnest(${weekdays}::smallint[]) as w(weekday)
     where p.id = ${professionalId} and p.clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id, "Horarios");
@@ -542,8 +600,11 @@ export async function addAppointmentType(form: FormData) {
   if (!name || !specialty || !Number.isFinite(duration)) return;
   const recall = Number(text(form, "recall_months") ?? "");
   const price = parsePrice(text(form, "price"));
+  const rules = await appointmentTypeRules(form, clinic.id);
+  if (typeof rules === "string") return;
   await sql`
     insert into appointment_types ${sql({
+      ...rules,
       price,
       clinic_id: clinic.id,
       name,

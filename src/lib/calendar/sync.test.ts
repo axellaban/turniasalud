@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { busyFromEvents, eventIdFor, shortName } from "./sync";
+import { busyFromEvents, eventDrift, eventIdFor, shortName } from "./sync";
 
 describe("busyFromEvents", () => {
   const tz = "America/Argentina/Buenos_Aires";
@@ -33,5 +33,27 @@ describe("eventos", () => {
     expect(shortName("María")).toBe("María");
     expect(shortName(null)).toBe("Paciente");
     expect(shortName("  ")).toBe("Paciente");
+  });
+});
+
+describe("eventDrift: lo que el profesional hizo en Google con un turno de Turnia", () => {
+  const TZ = "America/Argentina/Buenos_Aires";
+  const row = { starts_at: "2030-03-04T13:00:00.000Z", ends_at: "2030-03-04T13:30:00.000Z" };
+  it("sin evento o cancelado: se borró", () => {
+    expect(eventDrift(null, row, TZ)).toBe("borrado");
+    expect(eventDrift({ id: "e", status: "cancelled" }, row, TZ)).toBe("borrado");
+  });
+  it("mismo horario (aunque venga en otra zona): nada", () => {
+    expect(eventDrift({ start: { dateTime: "2030-03-04T10:00:00-03:00" }, end: { dateTime: "2030-03-04T10:30:00-03:00" } }, row, TZ)).toBeNull();
+  });
+  it("otro horario: se movió, con el inicio nuevo", () => {
+    expect(eventDrift({ start: { dateTime: "2030-03-04T11:00:00-03:00" }, end: { dateTime: "2030-03-04T11:30:00-03:00" } }, row, TZ))
+      .toBe("movido:2030-03-04T14:00:00.000Z/2030-03-04T14:30:00.000Z");
+    // Lo alargó: también cuenta.
+    expect(eventDrift({ start: { dateTime: "2030-03-04T10:00:00-03:00" }, end: { dateTime: "2030-03-04T11:00:00-03:00" } }, row, TZ))
+      .toBe("movido:2030-03-04T13:00:00.000Z/2030-03-04T14:00:00.000Z");
+  });
+  it("sin horario legible: no se adivina", () => {
+    expect(eventDrift({ id: "e" }, row, TZ)).toBeNull();
   });
 });
