@@ -36,18 +36,19 @@ export async function attachLeadEmail(phone: string, email: string): Promise<voi
     where id = (select lead_id from demo_sessions where phone = ${phone} and lead_id is not null order by created_at desc limit 1)`;
 }
 
-/** Los enlaces de perfil se comparten para probar una ficha guardada: valen varias veces durante este lapso. */
-export const PROFILE_HANDOFF_DAYS = 7;
-
-/** Solo se emite desde el panel autenticado; no crea otra clínica ni consume una extracción. */
+/**
+ * Solo se emite desde el panel autenticado; no crea otra clínica ni consume una extracción.
+ * El enlace no vence nunca, y generar otro no desactiva los anteriores: todos siguen andando
+ * mientras exista la clínica.
+ */
 export async function createProfileHandoff(clinicId: string, website: string | null): Promise<string> {
   const token = `p_${randomBytes(18).toString("base64url")}`;
   await sql`insert into demo_handoffs (token, website, requester_hash, clinic_id, expires_at)
-    values (${token}, ${website || env.appUrl()}, 'admin-profile', ${clinicId}, now() + make_interval(days => ${PROFILE_HANDOFF_DAYS}))`;
+    values (${token}, ${website || env.appUrl()}, 'admin-profile', ${clinicId}, 'infinity')`;
   return token;
 }
 
-/** Reutilizable por cualquier chat mientras no venza; claimed_by guarda el último que lo usó. */
+/** Reutilizable por cualquier chat; claimed_by guarda el último que lo usó. */
 export async function claimProfileHandoff(token: string, userId: string): Promise<string | null> {
   if (!/^p_[a-zA-Z0-9_-]{24}$/.test(token)) return null;
   const [row] = await sql<{ clinic_id: string }[]>`update demo_handoffs set claimed_by = ${userId}

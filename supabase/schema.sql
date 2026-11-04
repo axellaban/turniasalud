@@ -433,9 +433,9 @@ alter table demo_sessions add column if not exists reused_profile boolean not nu
 alter table demo_handoffs add column if not exists clinic_id uuid references clinics(id) on delete cascade;
 -- Email que deja el interesado en /probar-demo antes de pasar a Telegram o WhatsApp.
 alter table demo_handoffs add column if not exists email text;
--- Los enlaces de perfil del panel valen 7 días y se pueden reutilizar (idempotente: no acorta ninguno).
-update demo_handoffs set expires_at = created_at + interval '7 days'
-  where clinic_id is not null and expires_at < created_at + interval '7 days';
+-- Los enlaces de perfil del panel («Probar a Sofi», «Probar este perfil») no vencen nunca y se
+-- pueden reutilizar; los que ya existían también (idempotente). Se borran solo con su clínica.
+update demo_handoffs set expires_at = 'infinity' where clinic_id is not null and expires_at <> 'infinity';
 
 -- Referencias de cada lectura: texto realmente leído y ficha propuesta, sin HTML ejecutable.
 create table if not exists clinic_imports (

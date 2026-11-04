@@ -34,6 +34,13 @@ Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendie
   - TypeScript, ESLint y `next build` sin errores.
   - Recorrido de las 20 pantallas del panel en computadora y celular, sin errores ni desbordes.
 
+## Links de «Probar a Sofi» sin vencimiento — 05/11/2026
+
+- **Pedido del usuario:** que no se venza nada.
+- **Cómo queda:** el link de «Probar a Sofi» (Telegram o WhatsApp) y el de «Probar este perfil» en Clínicas no vencen nunca y se pueden usar las veces que haga falta. Generar uno nuevo no desactiva los anteriores: todos siguen andando mientras exista la clínica.
+- **Los links que ya existían** también pasan a no vencer con el deploy (`schema.sql`).
+- **Los links personales de prospección** (`/p/<código>`) ya no vencían.
+
 ## Ficha de salud por chat (Guerra–Mininni) — 04/11/2026
 
 - **Pedido del usuario:** cuando un paciente nuevo saca turno, al final y ya confirmado, que Sofi le ofrezca adelantarse completando la ficha por chat («si no, la vas a tener que completar antes de que te atiendan»). Mandarle la lista sin lo que ya sabemos, para copiar, completar y pegar, y que la recepción la imprima igual a la de papel, con las piezas dentales vacías, para que la firme.
@@ -123,7 +130,7 @@ El panel de prospección común de Chapa Labs (repo `facundogregorini-lab/chapa-
 - **Nueva sección `Panel → Probar a Sofi`** (`/panel/probar`; lleva el nombre del agente de la clínica):
   - **En esta pantalla:** voz o chat (`/demo`).
   - **WhatsApp:** el número de la línea propia del consultorio, o el de la línea general si es la clínica que atiende. Tiene botón que abre WhatsApp con «¡Hola! Quiero sacar un turno.» ya escrito, y un QR en la computadora. Si no, un enlace de la ficha por la línea general. Si no está activo, lo dice.
-  - **Telegram:** «Preparar el enlace» arma el enlace al bot con la ficha (chat, audios o llamada), con QR. Vale 7 días.
+  - **Telegram:** «Preparar el enlace» arma el enlace al bot con la ficha (chat, audios o llamada), con QR. No vence nunca (05/11).
   - **Qué probar:** seis pedidos típicos, con datos de la ficha (su primera prestación, su primera cobertura; implantes y muela solo en odontología).
   - **Después de probar:** links a Conversaciones, Agenda y Configuración.
 - **A mano desde todas las pantallas:** ítem en la navegación (debajo de Inicio; en el celular, en «Más») y botón fijo «Probar a Sofi» arriba a la derecha («Probar» en el celular). La tarjeta de Configuración y el Inicio sin conversaciones llevan a la sección.
