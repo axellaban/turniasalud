@@ -5,7 +5,7 @@ import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, names
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock } from "../slots";
 import { agentCanMove, agentSchedules, checkCoverage, coverageKey, durationPhrase, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
 import { env } from "../env";
-import { addDaysKey, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
+import { addDaysKey, formatDate, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
@@ -13,6 +13,8 @@ import { googleBusy } from "../calendar/sync";
 import { appointmentAccessKey, expireAppointmentAccess, GUERRA_MININNI } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
+import { healthFormSheet, healthFormTemplate, type HealthFormInput } from "../health-form";
+import { HEALTH_FORM_VALID_DAYS, healthFormOffer, latestHealthForm, markHealthFormInvited, saveHealthFormAnswers } from "../health-forms";
 
 export type ToolContext = {
   clinicId: string;
@@ -906,6 +908,15 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
       : `Turno confirmado: ${nameOf(parts[0], 0)} con ${names} el ${humanSlot(startsAt, clinic.timezone)}.`;
   // ¿Ya tenía otro turno de lo mismo? Puede ser a propósito (dos sesiones), o que quería cambiarlo.
   const other = !same && mine.find((a) => a.appointment_type_id === parts[0].type.id);
+  // Paciente nuevo (o ficha vencida): ofrecerle completar la ficha de salud por chat.
+  // El turno ya quedó reservado: si esto falla, se confirma igual.
+  const healthForm =
+    ctx.channel === "panel"
+      ? null
+      : await healthFormOffer(clinic.id, patient, sourceFromChannel(ctx.channel, ctx.patientPhone), ctx.conversationId).catch((e) => {
+          console.error("Ficha de salud: no se pudo preparar la oferta", e);
+          return null;
+        });
   return {
     ok: true,
     turno_id: same?.id ?? created[0].id,
@@ -917,6 +928,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
     ...(other && {
       aviso: `Ya tenía otro turno de ${other.type_name} el ${humanSlot(new Date(other.starts_at), clinic.timezone)}. Preguntale si quiere mantener los dos o cancelar el otro.`,
     }),
+    ...(healthForm && { ficha_de_salud: healthForm }),
   };
 }
 
@@ -1350,4 +1362,70 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id: str
       preferences: input.preferencias ?? null,
     })}`;
   return { ok: true, mensaje: "Paciente anotado en la lista de espera. Si se libera un turno le escribimos por WhatsApp." };
+}
+
+// ---------------------------------------------------------------------------
+// guardar_ficha_salud
+// ---------------------------------------------------------------------------
+export async function saveHealthForm(ctx: ToolContext, input: HealthFormInput & { fecha_nacimiento?: string; email?: string }) {
+  const clinic = await getClinic(ctx.clinicId);
+  if (!healthFormSheet(clinic.id)) {
+    throw new ToolError("Esta clínica no usa la ficha de salud por chat: el paciente la completa en el consultorio.");
+  }
+  const patient = await ensurePatient(ctx);
+  const { fecha_nacimiento, email, ...answers } = input;
+  const birthDate = parseDateKey(fecha_nacimiento);
+  const answered = Object.values(answers).some((v) => v !== undefined && v !== "" && v !== false) || Boolean(birthDate || email);
+  const latest = await latestHealthForm(patient.id);
+
+  // Sin respuestas: pide la plantilla para mandársela (o ya la completó).
+  if (!answered) {
+    if (latest?.completed_at && Date.now() - new Date(latest.completed_at).getTime() < HEALTH_FORM_VALID_DAYS * 86400_000) {
+      return {
+        ok: true,
+        completa: true,
+        mensaje: `Ya completó la ficha de salud el ${formatDate(latest.completed_at, clinic.timezone)}. Si quiere corregir algo, guardá solo eso con esta herramienta.`,
+      };
+    }
+    const open = latest && !latest.completed_at ? latest : null;
+    const data = open?.data ?? {};
+    if (open) await markHealthFormInvited(open.id);
+    else {
+      await sql`
+        insert into patient_health_forms (clinic_id, patient_id, source, conversation_id, invited_at)
+        values (${clinic.id}, ${patient.id}, ${sourceFromChannel(ctx.channel, ctx.patientPhone)}, ${ctx.conversationId ?? null}, now())`;
+    }
+    return {
+      ok: true,
+      completa: false,
+      mensaje:
+        "Mandale la plantilla tal cual al final de tu mensaje, desde «📋 FICHA DE SALUD» y sin cambiarle nada: le llega aparte para que la copie, la complete y te la mande.",
+      plantilla: healthFormTemplate(data, patient),
+    };
+  }
+
+  const saved = await saveHealthFormAnswers(patient, answers, {
+    source: sourceFromChannel(ctx.channel, ctx.patientPhone),
+    conversationId: ctx.conversationId,
+    fechaNacimiento: birthDate,
+    email: email?.trim() || null,
+  });
+  if (!saved.missing.length) {
+    const biosafety = saved.form.data.bioseguridad === "si"
+      ? " Pidió conocer las normas de bioseguridad del consultorio: si la información de la clínica las menciona, contáselas; si no, decile que se las cuentan en el consultorio."
+      : "";
+    return {
+      ok: true,
+      completa: true,
+      mensaje: `${saved.wasComplete ? "Ficha de salud corregida." : "Ficha de salud completa y guardada."} El consultorio la imprime para que la firme cuando venga. Agradecele en una línea; no comentes sus respuestas ni des indicaciones médicas.${biosafety}`,
+    };
+  }
+  return {
+    ok: true,
+    completa: false,
+    faltan: saved.missing,
+    mensaje:
+      "Guardé lo que respondió. Pedile solo lo que falta (en «faltan»): si son uno o dos datos, preguntalos en una línea; si son más, mandale la plantilla tal cual al final del mensaje.",
+    plantilla: healthFormTemplate(saved.form.data, saved.patient),
+  };
 }

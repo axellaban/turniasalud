@@ -14,6 +14,7 @@ import {
   listPatientAppointments,
   registerPatient,
   rescheduleAppointment,
+  saveHealthForm,
   ToolError,
   type ToolContext,
 } from "@/lib/agent/service";
@@ -32,6 +33,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   reprogramar_turno: rescheduleAppointment,
   crear_tarea: createTask,
   anotar_lista_espera: joinWaitlist,
+  guardar_ficha_salud: saveHealthForm,
 };
 
 const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
