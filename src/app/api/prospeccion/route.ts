@@ -51,6 +51,7 @@ function authorized(request: Request): boolean {
 
 type Action = {
   type?: string;
+  template?: string;
   channel?: string;
   outcome?: string;
   detail?: string;
@@ -100,6 +101,15 @@ async function apply(id: string, a: Action): Promise<void> {
     case "sent": {
       const channel = SENT_CHANNEL[a.channel ?? "whatsapp"];
       if (!channel) throw new BadRequest("Canal desconocido.");
+      // Un reintento (o un doble clic, o un agente que confirma dos veces) no suma otro mensaje: si ya
+      // hay uno por el mismo canal en los últimos 2 minutos, se toma como el mismo envío.
+      // El saludo y la demo pueden salir con segundos de diferencia: solo es reintento si es el mismo paso
+      // (la plantilla dice si es el saludo).
+      const [recent] = await sql<Array<{ detail: string }>>`
+        select detail from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and channel = ${channel}
+          and created_at > now() - interval '2 minutes' order by created_at desc limit 1`;
+      const greeting = /saludo/.test(String(a.template ?? ""));
+      if (recent && a.template && (recent.detail === "saludo") === greeting) return;
       await recordTouch(id, channel);
       return;
     }
