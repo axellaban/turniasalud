@@ -23,6 +23,7 @@ describe("analítica: lo que nunca sale y cómo se nombra", () => {
     expect(surfaceOf("/probar-demo/llamada/abc")).toBe("demo_llamada");
     expect(surfaceOf("/especialidades/odontologia")).toBe("landing");
     expect(surfaceOf("/recepcion")).toBe("producto");
+    expect(surfaceOf("/pricing")).toBe("pricing");
   });
 
   it("un llamado a la acción se describe con atributos y el clic se lee solo de ellos", () => {

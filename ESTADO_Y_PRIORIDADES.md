@@ -2,6 +2,13 @@
 
 Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Precios del Programa Fundadores en `/pricing` (sin enlazar) — 04/11/2026
+
+- **Qué es:** página con los tres planes (Core Access, Revenue Growth, Enterprise / Red), selector mensual o anual, comparación con el sueldo de una recepcionista, tabla completa, triple garantía, letra chica y un formulario para reservar el lugar.
+- **No se ve desde la web:** no está en el menú, el footer ni el sitemap, y tiene `noindex`. Solo entra quien recibe el link `turniasalud.vercel.app/pricing`.
+- **El pedido llega como un lead** («Pedí una demo») con el plan en el origen: `/pricing · Revenue Growth · anual`.
+- **Dónde se cambian los precios:** `src/content/precios.ts`.
+
 ## Prospección operada desde Chapa Labs (`/prospecting`) — 03/11/2026
 
 El panel de prospección común de Chapa Labs (repo `facundogregorini-lab/chapa-labs`, ruta `/prospecting/turnia`) lee la pestaña «Prospección» de la planilla de Google que escribe Turnia y ahora también **opera** la prospección de Turnia.
