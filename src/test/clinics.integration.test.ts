@@ -87,6 +87,19 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(await actions.runClinicAgentSetup(undefined, form({ clinic_id: MAIN }))).toMatchObject({ ok: false });
     expect(mocks.setup).not.toHaveBeenCalled();
   });
+  it("pone al día al agente general y al propio de la clínica con el acceso del equipo", async () => {
+    mocks.setup.mockClear();
+    choose(a);
+    await sql`update clinics set elevenlabs_agent_id = null where id = ${a}`;
+    expect(await actions.runStaffAgentSetup(undefined, form({ clinic_id: a }))).toMatchObject({ ok: true });
+    expect(mocks.setup).toHaveBeenCalledTimes(1);
+    expect(mocks.setup).toHaveBeenCalledWith(expect.objectContaining({ id: MAIN }));
+    mocks.setup.mockClear();
+    await sql`update clinics set elevenlabs_agent_id = 'agent-own' where id = ${a}`;
+    expect((await actions.runStaffAgentSetup(undefined, form({ clinic_id: a }))).message).toContain("en las llamadas");
+    expect((mocks.setup.mock.calls as unknown as Array<[{ id: string }]>).map(([c]) => c.id)).toEqual([MAIN, a]);
+    mocks.setup.mockClear();
+  });
   it("edita profesionales y prestaciones con pertenencia a la clínica", async () => {
     const [pro] = await sql`select * from professionals where clinic_id = ${a}`;
     const [type] = await sql`select * from appointment_types where clinic_id = ${a}`;
