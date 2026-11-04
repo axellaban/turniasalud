@@ -117,10 +117,11 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] **Atención humana por chat**: implementar Tomar / Devolver al agente con pausa persistida y descarte de respuestas pendientes; conservar la app WhatsApp Business y WAHA, sin incorporar Chatwoot por rutina.
 - [ ] **Piloto de prospección telefónica**: destinatarios revisados, reglas de contacto/No Llame, baja persistente y probada, autorización manual, límite efectivo de duración/consumo y resultados. Validar que el agente pueda colgar y no afirme registrar una baja sin haberlo hecho. No reutilizar el destino de la prueba que pidió no recibir más llamadas. No activar llamadas en frío ni campañas automáticamente.
 
-- [ ] **Más adelante: ficha sistémica de Guerra–Mininni** (pedido del Dr. Mininni, actualizado el 03/11). Priorizar el funcionamiento de los turnos, la agenda y la atención del piloto.
-  - **Cuándo.** Ofrecerla por WhatsApp después de confirmar una primera consulta, o al terminar de resolver el pedido de un paciente habitual si falta la ficha o toca actualizarla. Es opcional. Registrar la fecha y acordar con Mariano la frecuencia de actualización para evitar invitaciones repetidas.
-  - **Cómo.** Partir de una copia en blanco de la ficha que usa el consultorio. Verificar si Smile Connect permite completar esos antecedentes por enlace antes de construir un formulario propio. Si hace falta un formulario, usar acceso restringido y respuestas claras («Sí», «No», «No sé»), con detalle cuando corresponda.
-  - **En recepción.** Preparar un PDF para que el paciente revise, corrija y firme en papel. El equipo conserva la versión firmada e incorpora los antecedentes revisados a Smile Connect. Automatizar la carga cuando se confirme una vía soportada y se pueda verificar la ficha de destino.
+- [x] **Ficha de salud de Guerra–Mininni por chat** (04/11): hecha con la hoja en blanco que pasó el usuario. Detalle en `ESTADO_Y_PRIORIDADES.md`.
+  - [ ] Después del deploy, actualizar los dos agentes (Sistema → «Crear / actualizar agente» y Configuración → «Crear / actualizar Sofi de esta clínica»): suman la herramienta `guardar_ficha_salud` y las reglas del prompt.
+  - [ ] Probar por WhatsApp con datos ficticios: paciente nuevo, reservar una consulta, recibir la plantilla en un mensaje aparte, devolverla completa y ver la ficha en Pacientes y en «Imprimir para firmar». Cancelar el turno y borrar la ficha de prueba.
+  - [ ] Acordar con Mariano: ¿a los pacientes que ya venían (tienen la ficha de papel) se les ofrece una vez? Hoy no. Y si la actualización anual le sirve.
+  - [ ] Más adelante: pasar las respuestas a Smile Connect, si tiene una vía soportada.
 
 ## 6. Técnico menor
 

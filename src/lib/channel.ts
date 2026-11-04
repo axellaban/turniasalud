@@ -5,6 +5,7 @@ import { INBOUND_CONTEXT, buildDynamicVariables, findPatientByPhone, getClinic }
 import { agentVoiceId, sendChannelMessage, textToSpeech } from "./elevenlabs";
 import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
+import { isHealthFormText, splitHealthFormMessage } from "./health-form";
 import { sendChatText, sendChatVoice } from "./messaging";
 import { channelForChat, chatIsActive, requireActiveChannel, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
@@ -272,8 +273,12 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
   if (text) {
     try {
       const requestedVoice = conv.transcript.some((t) => t.voiceReplyFor && ids.includes(t.voiceReplyFor));
-      if ((conv.reply_with_voice || requestedVoice) && !failed) await sendVoiceReply(conv, text, requestedVoice);
-      else await sendChatText(conv.chat_id, text);
+      // La plantilla de la ficha de salud va en un mensaje aparte (y siempre escrita), para copiarla sola.
+      const [first, ...rest] = failed ? [text] : splitHealthFormMessage(text);
+      const voice = !failed && (conv.reply_with_voice || requestedVoice) && !isHealthFormText(first);
+      if (voice) await sendVoiceReply(conv, first, requestedVoice);
+      else await sendChatText(conv.chat_id, first);
+      for (const part of rest) await sendChatText(conv.chat_id, part);
     } catch (e) {
       if (e instanceof ChannelPausedError) return { status: "inactive" };
       await releaseEvent(key);

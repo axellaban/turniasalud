@@ -12,6 +12,8 @@ import { AppointmentActions, MarkAttended } from "./appointment-actions";
 import { CalendarGrid, ColumnHeading, PRO_COLORS, clock, type GridColumn, type GridEvent } from "./calendar-grid";
 import { ManualAppointmentForm } from "./manual-form";
 import { ManualPanel } from "./manual-panel";
+import { healthFormSheet } from "@/lib/health-form";
+import { latestHealthForm } from "@/lib/health-forms";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Agenda · Panel" };
@@ -30,6 +32,7 @@ type Row = {
   professional_id: string;
   second_professional_id: string | null;
   appointment_type_id: string;
+  patient_id: string;
   patient: string | null;
   phone: string | null;
   type_name: string;
@@ -68,7 +71,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [rows, blocks, google] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.professional_id, a.second_professional_id, a.appointment_type_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name
+             a.calendar_sync, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
@@ -112,6 +115,8 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const visible = rows.filter((r) => VISIBLE.includes(r.status) && attends(r, shownIds));
   const selectedId = one(params.turno);
   const selected = rows.find((r) => r.id === selectedId) ?? null;
+  // Ficha de salud del paciente del turno elegido: para imprimirla cuando llega.
+  const selectedForm = selected && healthFormSheet(clinic.id) ? { form: await latestHealthForm(selected.patient_id) } : null;
   const nowAt = new Date();
   const now = zonedParts(nowAt, tz);
   const nowMinute = now.hour * 60 + now.minute;
@@ -330,6 +335,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
             <AppointmentDetail
               key={selected.id}
               row={selected}
+              healthForm={selectedForm}
               pro={prosOf(selected)}
               tz={tz}
               closeHref={href({ turno: null })}
@@ -386,7 +392,9 @@ function Legend({ google }: { google: boolean }) {
   );
 }
 
-function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey, colleagues }: {
+function AppointmentDetail({ row: a, healthForm, pro, tz, closeHref, clinicId, today, dayKey, colleagues }: {
+  /** null: la clínica no usa ficha de salud. */
+  healthForm: { form: Awaited<ReturnType<typeof latestHealthForm>> } | null;
   row: Row;
   pro: string;
   tz: string;
@@ -407,6 +415,13 @@ function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey
     ["Teléfono", displayPhone(a.phone)],
     ["Lo dio", CHANNEL_LABEL[a.source] ?? a.source],
     ["Nota", a.notes],
+    [
+      "Ficha de salud",
+      healthForm &&
+        (healthForm.form?.completed_at
+          ? `Completa (${new Intl.DateTimeFormat("es-AR", { timeZone: tz, day: "numeric", month: "numeric" }).format(new Date(healthForm.form.completed_at))})`
+          : "Sin completar: se completa al llegar"),
+    ],
   ];
   return (
     <section aria-label="Turno elegido" className="rounded-2xl border border-brand-900/10 bg-white p-5">
@@ -431,7 +446,14 @@ function AppointmentDetail({ row: a, pro, tz, closeHref, clinicId, today, dayKey
           </div>
         ))}
       </dl>
-      {wa && <a href={wa} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-medium text-brand-700 hover:underline">Escribirle por WhatsApp →</a>}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+        {wa && <a href={wa} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-700 hover:underline">Escribirle por WhatsApp →</a>}
+        {healthForm && (
+          <a href={`/panel/pacientes/${a.patient_id}/ficha`} className="text-sm font-medium text-brand-700 hover:underline">
+            Imprimir ficha de salud →
+          </a>
+        )}
+      </div>
       <AppointmentActions
         clinicId={clinicId}
         today={today}

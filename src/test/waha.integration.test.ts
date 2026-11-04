@@ -337,6 +337,18 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     expect((fake.sent("sendText")[0].body as { text: string }).text).toBe("¡De nada!");
   });
 
+  it("la plantilla de la ficha de salud llega en un mensaje aparte, para copiarla sola", async () => {
+    fake.nextConversation = "conv_ficha";
+    await inbound(wahaRequest(textMessage("f1", "Quiero una consulta", "5491155550009@c.us")));
+    const plantilla = "📋 FICHA DE SALUD\nCopiar este mensaje…\n\nAnemia:\nDiabetes:";
+    const res = await reply(replyRequest(agentSays("conv_ficha", ["f1"], `Listo: tu consulta quedó **confirmada**.\nPodés adelantarte completando la ficha por acá.\n\n${plantilla}`)));
+    expect(res.status).toBe(200);
+    expect(fake.sent("sendText").map((c) => (c.body as { text: string }).text)).toEqual([
+      "Listo: tu consulta quedó *confirmada*.\nPodés adelantarte completando la ficha por acá.",
+      plantilla,
+    ]);
+  });
+
   it("lee la foto de la credencial: el agente recibe lo que dice y queda en la ficha del paciente", async () => {
     const sharp = (await import("sharp")).default;
     fake.photo = await sharp({ create: { width: 40, height: 25, channels: 3, background: "#ffffff" } }).jpeg().toBuffer();

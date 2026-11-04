@@ -1124,3 +1124,27 @@ create table if not exists conversation_appointment_access (
 );
 create index if not exists conversation_appointment_access_expires_idx on conversation_appointment_access (expires_at);
 alter table conversation_appointment_access enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Ficha de salud (04/11/2026): la que el paciente firma en el consultorio. Sofi se la
+-- ofrece por chat después de confirmar su primera consulta (o cuando pasó más de un año
+-- desde la última); el paciente la completa copiando y pegando, y el consultorio la
+-- imprime igual a la de papel para que la firme al llegar.
+-- - data: lo que declaró (respuestas SI/NO, detalles, domicilio, bioseguridad).
+-- - Una fila por ficha: la abierta (completed_at vacío) junta las respuestas parciales;
+--   invited_at evita mandarle la plantilla de nuevo en cada turno.
+-- ---------------------------------------------------------------------------
+create table if not exists patient_health_forms (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  patient_id uuid not null references patients(id) on delete cascade,
+  data jsonb not null default '{}'::jsonb,
+  source text,
+  conversation_id text,
+  invited_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists patient_health_forms_patient_idx on patient_health_forms (patient_id, created_at desc);
+alter table patient_health_forms enable row level security;

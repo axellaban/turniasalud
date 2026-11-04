@@ -10,6 +10,8 @@ import { mergePatientDuplicates, setContactOptOut } from "../../../actions";
 import { duplicatesOf, householdOf } from "@/lib/patients";
 import { patientDocuments } from "@/lib/documents-panel";
 import { NextControl } from "./next-control";
+import { dentalHistory, healthFormSheet, missingForCompletion, positiveAnswers } from "@/lib/health-form";
+import { latestHealthForm, sheetPatient } from "@/lib/health-forms";
 import { DeletePatientButton } from "../delete-patients";
 import type { Patient, PatientSex, PatientVisit } from "@/lib/types";
 import type { Metadata } from "next";
@@ -68,6 +70,8 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
     // Familia: otras fichas con el mismo celular.
     householdOf(sql, clinic.id, p.phone, p.id),
   ]);
+  // Ficha de salud: solo en las clínicas que la usan.
+  const healthForm = healthFormSheet(clinic.id) ? { form: await latestHealthForm(p.id) } : null;
   const tz = clinic.timezone;
 
   const age = ageOn(p.birth_date, localDateKey(new Date(), tz));
@@ -165,6 +169,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
               <button className={smallButtonClass}>{p.contact_opt_out ? "Volver a habilitar" : "Dar de baja"}</button>
             </form>
           </Card>
+          {healthForm && <HealthFormCard patient={p} form={healthForm.form} tz={tz} />}
           <Card>
             <h2 className="text-sm font-semibold text-brand-950">Próximo control</h2>
             <p className="mb-3 mt-1 text-xs text-brand-900/65">Cuando llega la fecha, aparece en Campañas → «Controles vencidos» para escribirle.</p>
@@ -271,5 +276,68 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
         </div>
       </div>
     </>
+  );
+}
+
+/** Estado de la ficha de salud, lo que marcó con SI y el botón para imprimirla. */
+function HealthFormCard({ patient, form, tz }: { patient: Patient; form: Awaited<ReturnType<typeof latestHealthForm>>; tz: string }) {
+  const data = form?.data ?? {};
+  const positives = positiveAnswers(data);
+  const dental = dentalHistory(data);
+  const missing = missingForCompletion(data, sheetPatient(patient));
+  const answered = Boolean(form?.completed_at) || Object.keys(data.respuestas ?? {}).length > 0;
+  const status = form?.completed_at
+    ? `Completa el ${formatDate(form.completed_at, tz)}${form.source && CHANNEL_LABEL[form.source] ? ` por ${CHANNEL_LABEL[form.source]}` : ""}`
+    : answered
+      ? `Empezada: ${missing.length === 1 ? "falta 1 dato" : `faltan ${missing.length} datos`}`
+      : form?.invited_at
+        ? `Se la mandamos el ${formatDate(form.invited_at, tz)} y todavía no la completó`
+        : "Todavía no la completó";
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-brand-950">Ficha de salud</h2>
+      <p className={`mt-0.5 text-xs ${form?.completed_at ? "font-medium text-emerald-700" : "text-brand-900/65"}`}>{status}</p>
+      {answered ? (
+        <>
+          {positives.length ? (
+            <div className="mt-3">
+              <p className="text-xs text-brand-900/65">Respondió SI en</p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {positives.map((item) => (
+                  <li key={item} className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-200">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-brand-900/65">No marcó ninguna enfermedad ni medicación.</p>
+          )}
+          {(dental || data.otros) && (
+            <dl className="mt-3 space-y-1 text-xs">
+              {data.otros && (
+                <div>
+                  <dt className="inline text-brand-900/65">Además contó: </dt>
+                  <dd className="inline text-brand-950">{data.otros}</dd>
+                </div>
+              )}
+              {dental && (
+                <div>
+                  <dt className="inline text-brand-900/65">Tratamientos odontológicos anteriores: </dt>
+                  <dd className="inline text-brand-950">{dental}</dd>
+                </div>
+              )}
+            </dl>
+          )}
+        </>
+      ) : (
+        <p className="mt-2 text-xs text-brand-900/65">
+          Sofi se la ofrece por chat al confirmar su primera consulta. Mientras tanto, se imprime con sus datos y el resto se completa a mano.
+        </p>
+      )}
+      <a href={`/panel/pacientes/${patient.id}/ficha`} className={`${smallButtonClass} mt-3 inline-flex`}>
+        Imprimir para firmar
+      </a>
+    </Card>
   );
 }

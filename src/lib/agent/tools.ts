@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TASK_PRIORITIES, TASK_TYPES } from "../types";
+import { HEALTH_QUESTIONS } from "../health-form";
 
 // Definición única de las herramientas del agente: de acá salen tanto la
 // validación del endpoint como la configuración que se sube a ElevenLabs.
@@ -21,6 +22,20 @@ export type ToolDefinition = {
 const isoDate = "Fecha en formato AAAA-MM-DD (hora de Argentina).";
 const SECOND_TYPE =
   "Si el paciente quiere otra práctica en la misma visita (por ejemplo, control y limpieza): el id de esa segunda práctica, copiado del catálogo. Devuelve horarios en los que entran las dos, seguidas y con el mismo profesional.";
+
+/** Una pregunta de la ficha de salud por parámetro: así el agente no puede saltearse ninguna. */
+const YES_NO = ["si", "no"] as const;
+const healthQuestionParams: Record<string, Param> = Object.fromEntries(
+  HEALTH_QUESTIONS.map((question) => [
+    question.id,
+    {
+      type: "string" as const,
+      description: `${question.chat.replace(/^- /, "Tratamientos odontológicos ")}: "si" o "no", según respondió. Solo si lo respondió.`,
+      enum: YES_NO,
+    },
+  ]),
+);
+const yesNoSchema = z.string().trim().toLowerCase().transform((v) => v.normalize("NFD").replace(/\p{Diacritic}/gu, "")).pipe(z.enum(YES_NO));
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -188,6 +203,50 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       preferencias: { type: "string", description: "Días y horarios que le sirven." },
     },
     schema: z.object({ tipo_turno_id: z.string().min(1), profesional_id: z.string().optional(), preferencias: z.string().optional() }),
+  },
+  {
+    name: "guardar_ficha_salud",
+    description:
+      "Guarda la ficha de salud que el paciente completó por chat (la plantilla que le mandaste), entera o en partes. Mandá solo lo que respondió: cada pregunta con \"si\" o \"no\". Si devolvió la lista, resto_no=true: lo que no marcó con SI es NO. Sin respuestas, te devuelve la plantilla para mandársela (por ejemplo, si pide completar la ficha). Te dice si quedó completa o qué falta.",
+    params: {
+      ...healthQuestionParams,
+      resto_no: {
+        type: "boolean",
+        description: "true si el paciente devolvió la lista de la ficha: todo lo que no marcó con SI queda en NO (también la bioseguridad).",
+      },
+      embarazo_meses: { type: "string", description: "Si está embarazada: de cuántos meses." },
+      hepatitis_cual: { type: "string", description: "Si tuvo hepatitis: cuál (A, B, C…), si lo dijo." },
+      otros: { type: "string", description: "Tratamientos médicos, medicamentos o enfermedades que no están en la lista, con sus palabras." },
+      bioseguridad: { type: "string", description: "Si quiere conocer las normas de bioseguridad del consultorio: \"si\" o \"no\".", enum: YES_NO },
+      apellido: { type: "string", description: "Apellido o apellidos del paciente, separados de los nombres (también si ya lo tenías en el nombre completo)." },
+      nombres: { type: "string", description: "Nombre o nombres de pila del paciente." },
+      tipo_documento: { type: "string", description: "Solo si no es DNI (pasaporte, cédula…)." },
+      calle: { type: "string", description: "Calle del domicilio particular." },
+      numero: { type: "string", description: "Número de la calle." },
+      piso: { type: "string", description: "Piso, si tiene." },
+      dpto: { type: "string", description: "Departamento, si tiene." },
+      localidad: { type: "string", description: "Localidad o barrio." },
+      fecha_nacimiento: { type: "string", description: isoDate },
+      email: { type: "string", description: "Mail, si lo dio en la ficha." },
+    },
+    schema: z.object({
+      ...Object.fromEntries(HEALTH_QUESTIONS.map((question) => [question.id, yesNoSchema.optional()])),
+      resto_no: z.boolean().optional(),
+      embarazo_meses: z.string().optional(),
+      hepatitis_cual: z.string().optional(),
+      otros: z.string().optional(),
+      bioseguridad: yesNoSchema.optional(),
+      apellido: z.string().optional(),
+      nombres: z.string().optional(),
+      tipo_documento: z.string().optional(),
+      calle: z.string().optional(),
+      numero: z.string().optional(),
+      piso: z.string().optional(),
+      dpto: z.string().optional(),
+      localidad: z.string().optional(),
+      fecha_nacimiento: z.string().optional(),
+      email: z.string().optional(),
+    }),
   },
 ];
 

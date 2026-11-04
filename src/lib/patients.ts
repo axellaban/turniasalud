@@ -199,6 +199,7 @@ export async function mergePatientInto(tx: TransactionSql, clinicId: string, kee
   await tx`update tasks set patient_id = ${keepId} where patient_id = ${dropId}`;
   await tx`update waitlist set patient_id = ${keepId} where patient_id = ${dropId}`;
   await tx`update patient_documents set patient_id = ${keepId} where patient_id = ${dropId}`;
+  await tx`update patient_health_forms set patient_id = ${keepId} where patient_id = ${dropId}`;
   // Las que chocan con una fila igual de `keep` se van con la ficha repetida.
   await tx`
     update campaign_recipients r set patient_id = ${keepId}

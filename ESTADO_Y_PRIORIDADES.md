@@ -2,6 +2,26 @@
 
 Actualización: 04/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Ficha de salud por chat (Guerra–Mininni) — 04/11/2026
+
+- **Pedido del usuario:** cuando un paciente nuevo saca turno, al final y ya confirmado, que Sofi le ofrezca adelantarse completando la ficha por chat («si no, la vas a tener que completar antes de que te atiendan»). Mandarle la lista sin lo que ya sabemos, para copiar, completar y pegar, y que la recepción la imprima igual a la de papel, con las piezas dentales vacías, para que la firme.
+- **Cuándo se ofrece** (`healthFormOffer`, en la respuesta de `reservar_turno` como `ficha_de_salud`):
+  - Paciente nuevo (sin visitas) que no la completó: se le manda la plantilla.
+  - Si se le mandó hace menos de 30 días y no la completó: solo se le recuerda en una línea.
+  - Ficha completa hace más de un año: se le ofrece actualizarla.
+  - Quien ya venía antes de Turnia (tiene visitas) no la recibe: tiene la de papel.
+  - Por teléfono no se dicta: Sofi le avisa que la completa en el consultorio.
+  - Solo en las clínicas con hoja cargada en `src/lib/health-form.ts` (hoy Guerra–Mininni).
+- **La plantilla** omite nombre, DNI, nacimiento, mail, cobertura y domicilio si ya están. Pide escribir SI al lado de lo que tenga o haya tenido; lo que queda en blanco cuenta como NO. A un hombre no le pregunta por embarazo.
+- **Llega en un mensaje aparte:** la respuesta de Sofi se parte en «📋 FICHA DE SALUD» (`splitHealthFormMessage` en `src/lib/channel.ts`), así el paciente copia solo la lista. Si contesta con audio, la confirmación va en audio y la plantilla siempre escrita.
+- **Guardado** (`guardar_ficha_salud`, herramienta nueva): una pregunta por parámetro (`si`/`no`) y `resto_no` cuando devolvió la lista. Junta respuestas parciales, devuelve lo que falta y, completa, la cierra. Sin respuestas devuelve la plantilla (si la pide otro día). El domicilio, el nacimiento y el mail también quedan en la ficha del paciente. Tabla `patient_health_forms`; una corrección dentro del año se suma a la misma.
+- **Panel:**
+  - **Pacientes → ficha:** tarjeta «Ficha de salud» con su estado, lo que marcó con SI (en rojo), lo que agregó y los tratamientos odontológicos anteriores. Botón «Imprimir para firmar».
+  - **Agenda → turno:** «Ficha de salud: Completa (4/11)» o «Sin completar», y «Imprimir ficha de salud».
+  - **La hoja** (`/panel/pacientes/<id>/ficha`) reproduce la de papel en A4 y entra en una página. Lleva logo y profesionales, odontograma vacío, datos, las 32 preguntas con SI o NO encerrado en un círculo, lo que agregó, bioseguridad, fecha y firma. Sin completar, sale con sus datos y el resto se completa a mano.
+- **Pruebas:** `src/lib/health-form.test.ts`, `src/test/health-form.integration.test.ts` y una más en `waha.integration.test.ts` (dos mensajes). Suite completa, con lo último de `main`: 466 tests.
+- **Falta:** actualizar los dos agentes después del deploy y probarlo por WhatsApp (ver `PENDIENTES.md`).
+
 ## Protocolos odontológicos y reglas del panel — 04/11/2026
 
 - **Pedido del usuario:** implementar [`PLAN_PROTOCOLOS.md`](PLAN_PROTOCOLOS.md) (base común, módulo odontológico y reglas en el panel) sin romper el WhatsApp de Guerra–Mininni, que está operando.
