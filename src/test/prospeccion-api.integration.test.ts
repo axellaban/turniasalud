@@ -68,6 +68,17 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect(r.body.header).toContain("Conversó en la demo");
   });
 
+  it("en lote, con «step», registrar el mismo paso dos veces no suma nada", async () => {
+    await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status) values ('lote-333', 'Lote Prueba', 'Lote', '+5492235000033', 'movil', 'por_contactar')`;
+    for (const step of [0, 1, 2, 0, 1, 2]) {
+      const r = await post({ code: "lote-333", action: { type: "sent", channel: "whatsapp", step } });
+      expect(r.status).toBe(200);
+    }
+    const r = await post({ code: "lote-333", action: { type: "note", text: "lote" } });
+    expect(col(r.body, "Mensajes")).toBe(2);
+    expect(col(r.body, "Saludo enviado")).toMatch(/^\d{4}-/);
+  });
+
   it("estados, notas, próximo paso y deshacer", async () => {
     let r = await post({ code: "ana-111", action: { type: "outcome", outcome: "interesado", detail: "quiere verla el martes" } });
     expect(col(r.body, "Estado")).toBe("Respondió");
