@@ -162,7 +162,9 @@ export function ConversacionDemo({
     },
     onError: (message) => {
       if (charla.current) track("demo_conversation_error", { mode: charla.current.mode });
-      setError(typeof message === "string" ? message : "Se cortó la conversación.");
+      setError(mode === "voz"
+        ? "La llamada se interrumpió. Podés volver a llamar."
+        : typeof message === "string" ? message : "Se cortó la conversación.");
     },
     onDisconnect: (details: DisconnectionDetails) => {
       // Si se corta antes de que el agente diga algo y no la cortó la persona, se muestra
@@ -177,7 +179,11 @@ export function ConversacionDemo({
               .slice(0, 160);
       terminarCharla(details.reason === "user" ? "disconnect" : `disconnect_${details.reason}`, false, motivo);
       if (sinRespuesta) {
-        setError(`No se pudo conectar con ${clinic.agentName}${motivo ? ` (${motivo})` : ""}. Probá de nuevo en unos segundos.`);
+        setError(`No se pudo conectar con ${clinic.agentName}. Probá de nuevo en unos segundos.`);
+        return;
+      }
+      if (mode === "voz" && details.reason === "error") {
+        setError("La llamada se interrumpió. Podés volver a llamar.");
         return;
       }
       push("system", "Conversación terminada.");
