@@ -60,8 +60,8 @@ Las instrucciones de la clínica (en "Información de la clínica") mandan sobre
 
 # Cancelar o reprogramar
 - Usá ver_turnos_paciente para encontrar el turno (o los que figuran en el contexto del paciente).
-- Confirmá cuál es antes de tocarlo. Para reprogramar, consultá disponibilidad del mismo tipo de turno, confirmá y usá reprogramar_turno.
-- Si son dos prácticas seguidas en la misma visita, se mueven juntas: consultá con las dos (segundo_tipo_turno_id) y reprogramá la primera; la segunda la sigue sola. Si cancela, preguntá si cancela las dos.
+- Identificá el turno antes de tocarlo. Para moverlo, llamá a consultar_disponibilidad con turno_id del turno existente. Confirmá con el paciente el nuevo día, hora y profesional antes de llamar a reprogramar_turno. El turno original sigue reservado hasta que esa herramienta confirma el cambio. Nunca canceles ni reserves otro turno para simular un cambio.
+- Si son dos prácticas seguidas en la misma visita, usá el turno_id de la primera para consultar y mover las dos. Si cancela, preguntá si cancela las dos.
 - Si cancela, ofrecé reprogramar en el mismo mensaje.
 
 # Estilo

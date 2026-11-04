@@ -35,6 +35,7 @@ export type SlotQuery = {
   partOfDay?: "manana" | "tarde" | "cualquiera";
   limit?: number;
   perDayPerProfessional?: number;
+  accepts?: (start: Date, end: Date) => boolean;
 };
 
 const AFTERNOON_START_MIN = 13 * 60;
@@ -77,6 +78,8 @@ export function computeSlots(q: SlotQuery): Slot[] {
 
         const busy = busyByProfessional.get(block.professional_id) ?? [];
         if (busy.some(([bs, be]) => startMs < be && endMs > bs)) continue;
+        const end = new Date(endMs);
+        if (q.accepts && !q.accepts(start, end)) continue;
 
         const count = perDayCount.get(block.professional_id) ?? 0;
         if (count >= perDay) continue;
@@ -85,7 +88,7 @@ export function computeSlots(q: SlotQuery): Slot[] {
         candidates.push({
           professional_id: block.professional_id,
           starts_at: start.toISOString(),
-          ends_at: new Date(endMs).toISOString(),
+          ends_at: end.toISOString(),
           label: humanSlot(start, q.timeZone),
         });
       }

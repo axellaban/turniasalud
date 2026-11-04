@@ -4,6 +4,7 @@ import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
 import { householdOf, patientForPhone } from "./patients";
+import { GUERRA_MININNI, RESCHEDULE_GUIDANCE } from "./agent/reschedule-policy";
 import { wahaConnections } from "./waha-connections";
 import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule, ScheduleBlock, Task } from "./types";
 
@@ -102,6 +103,7 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
     clinic.policies && `Políticas:\n${clinic.policies}`,
     clinic.payment_methods && `Formas de pago:\n${clinic.payment_methods}`,
     clinic.agent_context && `Instrucciones de esta clínica:\n${clinic.agent_context}`,
+    clinic.id === GUERRA_MININNI && RESCHEDULE_GUIDANCE,
   ]
     .filter(Boolean)
     .join("\n");

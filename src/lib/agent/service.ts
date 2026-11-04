@@ -11,6 +11,8 @@ import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
+import { GUERRA_MININNI, isRestrictedDentalProcedure } from "./reschedule-policy";
+
 export type ToolContext = {
   clinicId: string;
   patientPhone: string;
@@ -258,7 +260,8 @@ export async function findPatientByDni(
 export async function checkAvailability(
   ctx: ToolContext,
   input: {
-    tipo_turno_id: string;
+    tipo_turno_id?: string;
+    turno_id?: string;
     segundo_tipo_turno_id?: string;
     profesional_id?: string;
     desde?: string;
@@ -268,14 +271,25 @@ export async function checkAvailability(
 ) {
   const clinic = await getClinic(ctx.clinicId);
   const catalog = await getCatalog(clinic.id);
-  const type = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
+  const move = input.turno_id ? await loadReschedule(ctx, clinic, input.turno_id) : null;
+  const type = catalog.appointmentTypes.find((t) => t.id === (move?.appt.appointment_type_id ?? input.tipo_turno_id));
   if (!type) throw new ToolError("No encontré ese tipo de turno. Usá un id del catálogo.");
-  assertAgentCanBook(type);
-  const next = secondTypeOf(catalog.appointmentTypes, type, input.segundo_tipo_turno_id);
-  if (next) assertAgentCanBook(next);
+  const next = move
+    ? catalog.appointmentTypes.find((t) => t.id === move.follower?.appointment_type_id) ?? null
+    : secondTypeOf(catalog.appointmentTypes, type, input.segundo_tipo_turno_id);
+  if (!move) {
+    assertAgentCanBook(type);
+    if (next) assertAgentCanBook(next);
+  } else if (move.follower && !next) {
+    throw new ToolError("Una práctica de esta visita ya no está disponible. El cambio lo tiene que coordinar recepción.");
+  }
 
-  let professionals = catalog.professionals.filter((p) => p.specialty === type.specialty && (!next || p.specialty === next.specialty));
-  if (input.profesional_id) professionals = professionals.filter((p) => p.id === input.profesional_id);
+  const selectedPro = input.profesional_id || move?.appt.professional_id;
+  const otherPro = move?.appt.second_professional_id;
+  const professionals = catalog.professionals.filter(
+    (p) => p.specialty === type.specialty && (!next || p.specialty === next.specialty)
+      && (!selectedPro || p.id === selectedPro) && p.id !== otherPro,
+  );
   if (!professionals.length) {
     throw new ToolError(
       next
@@ -295,20 +309,37 @@ export async function checkAvailability(
   const proIds = professionals.map((p) => p.id);
   const rangeStart = `${addDaysKey(fromKey, -1)}T00:00:00Z`;
   const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
-  const [busy, blocks, calendar] = await Promise.all([
-    busyOf(proIds, rangeStart, rangeEnd),
+  const checkedPros = otherPro ? [...proIds, otherPro] : proIds;
+  const movingIds = move ? [move.appt.id, ...(move.follower ? [move.follower.id] : [])] : [];
+  const [busy, blocks, calendar, patientAppointments] = await Promise.all([
+    busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
     // Lo ocupado en el Google Calendar de cada profesional (si la clínica lo conectó).
-    googleBusy(clinic.id, proIds, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+    googleBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+    move ? upcomingOf(move.patient.id) : [],
   ]);
+  const preserve = clinic.id === GUERRA_MININNI && !!move;
+  const firstDuration = (move && keptDuration(move.appt, preserve)) || type.duration_min;
+  const nextDuration = (move?.follower && keptDuration(move.follower, preserve)) || next?.duration_min || 0;
+  const duration = firstDuration + nextDuration;
+  const blocked = expandBlocks(blocks, checkedPros);
+  const otherSchedules = catalog.schedules.filter((s) => s.professional_id === otherPro);
+  const otherBusy = [...busy, ...calendar, ...blocked].filter((b) => b.professional_id === otherPro);
+  const ownBusy = patientAppointments.filter((a) => !movingIds.includes(a.id));
 
   const slots = computeSlots({
     schedules: catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
     busy: [...busy, ...calendar],
-    blocked: expandBlocks(blocks, proIds),
+    blocked,
     // Dos prácticas en la misma visita: tienen que entrar las dos, una detrás de la otra.
-    durationMin: type.duration_min + (next?.duration_min ?? 0),
-    stepMin: type.duration_min,
+    durationMin: duration,
+    stepMin: move ? 15 : type.duration_min,
+    accepts: move
+      ? (start, end) =>
+        (selectedPro !== move.appt.professional_id || start.getTime() !== Date.parse(move.appt.starts_at)) &&
+        !ownBusy.some((a) => start < new Date(a.ends_at) && end > new Date(a.starts_at)) &&
+        (!otherPro || isSlotFree(otherSchedules, otherBusy, start, duration, clinic.timezone).ok)
+      : undefined,
     fromKey,
     toKey,
     timeZone: clinic.timezone,
@@ -323,9 +354,11 @@ export async function checkAvailability(
     return {
       ok: true,
       turnos: [],
-      mensaje: next
-        ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
-        : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`,
+      mensaje: move
+        ? `No hay horarios para mover esa visita entre ${fromKey} y ${toKey}. Ofrecé buscar otras fechas. El turno original sigue reservado.`
+        : next
+          ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
+          : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`,
     };
   }
   const turnos = slots.map((s) => ({
@@ -335,6 +368,17 @@ export async function checkAvailability(
     cuando: s.label,
     ...(next && { termina: clockTime(new Date(s.ends_at), clinic.timezone) }),
   }));
+  if (move) {
+    return {
+      ok: true,
+      turno_id: move.appt.id,
+      tipo_turno: move.appt.title || type.name,
+      ...(next && { segunda_practica: move.follower?.title || next.name }),
+      duracion_min: duration,
+      turnos,
+      mensaje: "Ofrecé opciones para mover el turno existente. Tras la confirmación explícita, usá reprogramar_turno con este turno_id, el nuevo inicio y el profesional elegido. El turno original sigue reservado hasta que el cambio se confirma.",
+    };
+  }
   await recordOffer(ctx, input, next ? `${type.name} y ${next.name}` : type.name);
   if (next) {
     return {
@@ -756,9 +800,9 @@ export async function listPatientAppointments(ctx: ToolContext) {
   const patient = await currentPatient(ctx);
   if (!patient) return { ok: true, turnos: [], mensaje: "El paciente no tiene turnos registrados." };
   const rows = await sql<
-    Array<{ id: string; starts_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
+    Array<{ id: string; starts_at: string; ends_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
   >`
-    select a.id, a.starts_at, a.status, a.professional_id, a.appointment_type_id,
+    select a.id, a.starts_at, a.ends_at, a.status, a.professional_id, a.appointment_type_id,
            pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, coalesce(a.title, t.name) as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
@@ -772,6 +816,7 @@ export async function listPatientAppointments(ctx: ToolContext) {
       turno_id: r.id,
       cuando: humanSlot(new Date(r.starts_at), clinic.timezone),
       inicio: r.starts_at,
+      fin: r.ends_at,
       tipo_turno: r.type_name,
       tipo_turno_id: r.appointment_type_id,
       profesional: r.professional,
@@ -934,7 +979,8 @@ async function rescheduleLoaded(
   if (appt.second_professional_id && appt.second_professional_id === professionalId) {
     throw new ToolError("Ese profesional ya atiende este turno como segundo profesional: elegí otro.");
   }
-  const customDuration = keptDuration(appt);
+  const preserve = clinic.id === GUERRA_MININNI;
+  const customDuration = keptDuration(appt, preserve);
   const moving = follower ? [appt.id, follower.id] : appt.id;
   const { type, pro, second, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, {
     ignoreAppointmentId: moving,
@@ -946,7 +992,7 @@ async function rescheduleLoaded(
   if (follower) {
     try {
       next = {
-        ...(await assertBookable(clinic, pro.id, follower.appointment_type_id, endsAt, { ignoreAppointmentId: moving, force, durationMin: keptDuration(follower) })),
+        ...(await assertBookable(clinic, pro.id, follower.appointment_type_id, endsAt, { ignoreAppointmentId: moving, force, durationMin: keptDuration(follower, preserve) })),
         startsAt: endsAt,
       };
     } catch (e) {
@@ -976,10 +1022,18 @@ async function rescheduleLoaded(
     [newAppt, newNext] = await sql.begin(async (tx) => {
       await lockProfessionals(tx, [appt.professional_id, pro.id, ...(second ? [second.id] : [])]);
       const ids = follower ? [appt.id, follower.id] : [appt.id];
-      const freed = await tx`
+      const freed = await tx<Appointment[]>`
         update appointments set status = 'reprogramado', cancelled_at = now()
-        where id = any(${ids}::uuid[]) and status = any(${ACTIVE}::text[]) returning id`;
+        where id = any(${ids}::uuid[]) and status = any(${ACTIVE}::text[]) returning *`;
       if (freed.length < ids.length) throw new ToolError("Ese turno ya no está activo: se canceló o se reprogramó recién.");
+      // Smile Connect puede cambiar una práctica o su duración mientras se busca el nuevo horario.
+      if ([appt, ...(follower ? [follower] : [])].some((before) => {
+        const current = freed.find((a) => a.id === before.id)!;
+        return current.starts_at !== before.starts_at || current.ends_at !== before.ends_at
+          || current.professional_id !== before.professional_id || current.second_professional_id !== before.second_professional_id
+          || current.patient_id !== before.patient_id || current.appointment_type_id !== before.appointment_type_id
+          || current.notes !== before.notes || current.title !== before.title;
+      })) throw new ToolError("Ese turno cambió recién. Volvé a consultar el turno y la disponibilidad.");
       const row = (t: Appointment, p: { pro: { id: string }; second: { id: string } | null; type: { id: string }; endsAt: Date }, at: Date) => ({
         clinic_id: clinic.id,
         patient_id: patient.id,
@@ -1013,10 +1067,11 @@ async function rescheduleLoaded(
   };
 }
 
-/** Un turno que vino de Smile Connect conserva su duración al moverse. */
-function keptDuration(appt: Appointment): number | undefined {
-  const minutes = Math.round((new Date(appt.ends_at).getTime() - new Date(appt.starts_at).getTime()) / 60_000);
-  return appt.source === "smile_connect" && minutes >= 5 && minutes <= 480 ? minutes : undefined;
+/** Smile Connect y las reprogramaciones de Guerra–Mininni conservan la duración registrada. */
+function keptDuration(appt: Appointment, preserve = false): number | undefined {
+  const minutes = (Date.parse(appt.ends_at) - Date.parse(appt.starts_at)) / 60_000;
+  if (preserve) return minutes;
+  return appt.source === "smile_connect" && minutes >= 5 && minutes <= 480 ? Math.round(minutes) : undefined;
 }
 
 /**
@@ -1034,12 +1089,37 @@ async function followerOf(appt: Appointment, opts: { movable?: boolean } = {}): 
   return row;
 }
 
+async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
+  const { patient, appt } = await getOwnAppointment(ctx, id);
+  assertNotOver(appt);
+  const restricted = clinic.id === GUERRA_MININNI;
+  const follower = await followerOf(appt, { movable: !restricted });
+  const parts = follower ? [appt, follower] : [appt];
+  const types = await sql<Array<Pick<AppointmentType, "id" | "name" | "panel_only">>>`
+    select id, name, panel_only from appointment_types where id = any(${parts.map((a) => a.appointment_type_id)}::uuid[])`;
+  if (!restricted) {
+    const type = types.find((t) => t.id === appt.appointment_type_id);
+    if (type) assertAgentCanBook(type);
+    return { patient, appt, follower };
+  }
+  const refer = "Creá una tarea de derivacion_humana para que recepción coordine el cambio. El turno original sigue reservado.";
+  if (parts.some((a) => {
+    const name = types.find((t) => t.id === a.appointment_type_id)?.name ?? "";
+    return [name, a.title, (a.source === "smile_connect" || a.source === "panel") ? a.notes : null].some((label) => label && isRestrictedDentalProcedure(label));
+  })) throw new ToolError(`El cambio de turno de implante, regeneración o extracción lo coordina recepción. ${refer}`);
+  if (Date.parse((follower ?? appt).ends_at) - Date.parse(appt.starts_at) > 120 * 60_000) {
+    throw new ToolError(`El cambio de una visita de más de dos horas lo coordina recepción. ${refer}`);
+  }
+  if (Date.parse(appt.starts_at) - Date.now() < 24 * 3600_000) {
+    throw new ToolError(`Faltan menos de 24 horas para el turno. ${refer}`);
+  }
+  return { patient, appt, follower };
+}
+
 export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id: string; nuevo_inicio: string; profesional_id?: string }) {
   const clinic = await getClinic(ctx.clinicId);
-  const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
-  const [type] = await sql<Array<Pick<AppointmentType, "name" | "panel_only">>>`select name, panel_only from appointment_types where id = ${appt.appointment_type_id}`;
-  if (type) assertAgentCanBook(type);
-  const r = await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, await followerOf(appt, { movable: true }));
+  const { patient, appt, follower } = await loadReschedule(ctx, clinic, input.turno_id);
+  const r = await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, follower);
   return { ok: true, ...r };
 }
 
