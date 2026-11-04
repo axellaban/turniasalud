@@ -132,6 +132,22 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
     expect((await sql`select appointment_type_id from appointments where id = ${moved.turno_id}`)[0].appointment_type_id).toBe(endodontics);
   });
 
+  it("encuentra un turno existente con el DNI corregido y el nombre, sin pedir fecha ni crear otra ficha", async () => {
+    const web = "web-dni-corregido";
+    const dni = "38800074";
+    await sql`update patients set dni = ${dni}, birth_date = null where id = ${patient}`;
+    const id = await seed(25, 30);
+    const wrong = await tool("buscar_paciente", { dni: "388000744", nombre_completo: "Paciente de prueba" }, web, "react_sdk");
+    expect(wrong).toMatchObject({ encontrado: false, mensaje: expect.stringContaining("No registres una ficha") });
+    expect(await sql`select id from patients where phone = ${web}`).toHaveLength(0);
+
+    const matched = await tool("buscar_paciente", { dni, nombre_completo: "Paciente de prueba" }, web, "react_sdk");
+    expect(matched.encontrado).toBe(true);
+    const listed = await tool("ver_turnos_paciente", {}, web, "react_sdk");
+    expect(listed.turnos).toContainEqual(expect.objectContaining({ turno_id: id }));
+    expect(await search(id, 26, {}, web)).toMatchObject({ ok: true, turno_id: id });
+  });
+
   it("una consulta de implantes se puede cambiar de profesional y conserva su título", async () => {
     const id = await seed(7, 30, { title: "Consulta de implantes" });
     const offers = await search(id, 8, { profesional_id: alternate });

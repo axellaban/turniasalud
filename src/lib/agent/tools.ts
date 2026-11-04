@@ -41,7 +41,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "registrar_paciente",
     description:
-      "Guarda o actualiza los datos del paciente con el que estás hablando (nombre, DNI, cobertura, etc.). Usala apenas el paciente te dé datos nuevos, antes de reservar. Si dice que ya es paciente y el contexto no trae su ficha, primero usá buscar_paciente.",
+      "Guarda o actualiza los datos del paciente con el que estás hablando (nombre, DNI, cobertura, etc.). Usala para admisión de un turno nuevo o cuando el paciente quiere actualizar sus datos. Para encontrar, mover o cancelar un turno existente, usá buscar_paciente y ver_turnos_paciente sin registrar otra ficha.",
     params: {
       nombre_completo: { type: "string", description: "Nombre y apellido del paciente." },
       dni: { type: "string", description: "DNI, solo números." },
