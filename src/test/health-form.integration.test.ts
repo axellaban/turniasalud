@@ -169,4 +169,22 @@ describe.runIf(url)("ficha de salud por chat (Guerra–Mininni)", () => {
     expect(booked.ficha_de_salud).toBeUndefined();
     expect(await tool("guardar_ficha_salud", { anemia: "no" }, phone, "whatsapp", otherClinic)).toMatchObject({ ok: false });
   });
+
+  it("si reserva el equipo del consultorio por WhatsApp, la plantilla no le llega a quien reserva", async () => {
+    const staffPhone = "5491100005099";
+    const patientPhone = "5491100005008";
+    await sql`insert into clinic_staff_phones (clinic_id, phone, name) values (${clinicId}, ${staffPhone}, 'Recepción de prueba')`;
+    await newPatient(patientPhone);
+    const [{ id: patientId }] = await sql`select id from patients where phone = ${patientPhone}`;
+
+    const booked = await tool("reservar_turno", { paciente_id: patientId, tipo_turno_id: consult, profesional_id: pro, inicio: at(8, "10:00") }, staffPhone, "custom");
+    expect(booked.ok).toBe(true);
+    expect(booked.ficha_de_salud).toBeUndefined();
+    // Si el equipo pide la plantilla, no cuenta como enviada al paciente: Sofi se la ofrece cuando él escriba.
+    const asked = await tool("guardar_ficha_salud", { paciente_id: patientId }, staffPhone, "custom");
+    expect(asked.plantilla.startsWith(HEALTH_FORM_MARKER)).toBe(true);
+    expect((await sql`select 1 from patient_health_forms where patient_id = ${patientId}`).length).toBe(0);
+    // Al paciente, en cambio, sí se la ofrece en su próximo turno.
+    expect((await book(patientPhone, 9)).ficha_de_salud.plantilla).toContain("Anemia:");
+  });
 });
