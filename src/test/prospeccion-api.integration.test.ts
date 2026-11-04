@@ -122,6 +122,20 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect((await route.GET(new Request("https://turnia.example/api/prospeccion"))).status).toBe(401);
   });
 
+  it("guarda las metas del embudo: la semanal de saludos es la del panel", async () => {
+    const get = async () => (await route.GET(new Request("https://turnia.example/api/prospeccion", { headers: { authorization: `Bearer ${SECRET}` } }))).json();
+    expect((await get()).funnelRates).toEqual({});
+    const r = await post({ funnel: { perWeek: 300, rates: { demos: 0.2, llamadas: 0.6 } } });
+    expect(r.status).toBe(200);
+    const after = await get();
+    expect(after.weeklyGoal).toBe(300);
+    expect(after.funnelRates).toEqual({ demos: 0.2, llamadas: 0.6 });
+    const [settings] = await sql<Array<{ outreach_weekly_goal: number }>>`select outreach_weekly_goal from sales_settings where id = 1`;
+    expect(settings.outreach_weekly_goal).toBe(300);
+    expect((await post({ funnel: { perWeek: 0, rates: {} } })).status).toBe(422);
+    expect((await post({ funnel: { perWeek: 250, rates: { demos: 1.5 } } })).status).toBe(422);
+  });
+
   it("vincula la cuenta real que se le dio y la marca activa si su clínica tiene turnos", async () => {
     const [clinic] = await sql<Array<{ id: string; name: string }>>`insert into clinics (name, is_demo) values ('Clínica Real Prueba', false) returning id, name`;
     const [demo] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Clínica Demo', true) returning id`;

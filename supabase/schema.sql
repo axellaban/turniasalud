@@ -816,6 +816,8 @@ end $$;
 alter table sales_settings add column if not exists outreach_templates jsonb not null default '{}'::jsonb;
 alter table sales_settings add column if not exists outreach_daily_goal integer not null default 50;
 alter table sales_settings add column if not exists outreach_weekly_goal integer not null default 250;
+-- Conversión esperada de cada paso del embudo comercial (la editan en Chapa Labs): { paso: 0.45 }.
+alter table sales_settings add column if not exists outreach_funnel_rates jsonb not null default '{}'::jsonb;
 
 -- Pedidos de demo → Google Sheets: la URL de la aplicación web de Apps Script que el usuario
 -- implementa en su planilla, y el resultado de la última copia.
