@@ -105,7 +105,7 @@ function isAnotherPerson(current: Patient, dni: string, name: string | undefined
 function identificationNotice(result: Exclude<Identification, { estado: "vinculado" }>): string {
   switch (result.estado) {
     case "sin_ficha":
-      return "No hay ninguna ficha con ese DNI. Si dice que ya es paciente, puede que todavía no esté cargado: explicale que vas a completar su ficha, pedí los datos que falten y guardalos con registrar_paciente. Para elegir el turno, seguí las instrucciones de la clínica para pacientes que ya vinieron.";
+      return "No hay ficha con ese DNI. Si busca un turno existente, confirmá los dígitos y volvé a buscar. Si sigue sin aparecer, ofrecé que recepción lo revise. No registres una ficha para buscar un turno existente. Si está sacando un turno nuevo, seguí el proceso de admisión de la clínica.";
     case "falta_fecha":
       return "Para confirmar quién es necesito también su fecha de nacimiento. Pedísela sin decirle por qué y volvé a llamar a buscar_paciente con el DNI, el nombre y la fecha. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
     case "falta_nombre":
