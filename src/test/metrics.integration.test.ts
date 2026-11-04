@@ -71,6 +71,23 @@ describe.runIf(base)("métricas del tablero", () => {
     expect(m.uso).toMatchObject({ clinicas: 1, clinicas_activas: 1, ultimos7: 3, previos7: 0, turnos: 3 });
   });
 
+  it("North Star: conversaciones con Sofi, en clínicas reales y en las demos", async () => {
+    const [real] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Clínica real de prueba', false) returning id`;
+    const [demo] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Clínica de una demo', true) returning id`;
+    await sql`insert into conversations (clinic_id, started_at) values
+      (${real.id}, now() - interval '1 day'), (${demo.id}, now() - interval '2 days'), (${demo.id}, now() - interval '3 days'),
+      (${real.id}, now() - interval '10 days')`;
+    const m = await metrics.turniaMetrics({ from: null, to: null });
+    expect(m.sofi).toMatchObject({ clinicas7: m.sofi.clinicas7, demos7: m.sofi.demos7 });
+    expect(m.sofi.ultimos7).toBe(m.sofi.clinicas7 + m.sofi.demos7);
+    expect(m.sofi.demos7).toBeGreaterThanOrEqual(2);
+    expect(m.sofi.clinicas7).toBeGreaterThanOrEqual(1);
+    expect(m.sofi.previos7).toBeGreaterThanOrEqual(1);
+    const days = m.sofi.diario.reduce((sum, d) => sum + Number(d.conversaciones), 0);
+    expect(days).toBe(m.sofi.total);
+    expect(m.sofi.total).toBe(m.sofi.clinicas + m.sofi.demos);
+  });
+
   it("con fechas, cuenta la cohorte del primer contacto en el período", async () => {
     const m = await metrics.turniaMetrics({ from: "2026-10-21", to: "2026-10-26" });
     expect(m.prospeccion).toMatchObject({ prospectados: 4, contactados: 1, clientes: 1 });

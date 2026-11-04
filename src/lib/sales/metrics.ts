@@ -37,6 +37,8 @@ export async function turniaMetrics({ from, to }: Range) {
     leadDaily,
     [product],
     productDaily,
+    [sofi],
+    sofiDaily,
   ] = await Promise.all([
     // Cohorte: contactados por primera vez en el período. Prospectados es siempre toda la base.
     sql<Array<Counts<"prospectados" | "contactados" | "abrieron_demo" | "probaron_demo" | "respondieron" | "interesados" | "reuniones" | "clientes" | "no_interesa" | "toques">>>`
@@ -123,6 +125,22 @@ export async function turniaMetrics({ from, to }: Range) {
           from conversations v join clinics c on c.id = v.clinic_id
           where not c.is_demo and ${inRange("v.started_at")} group by 1
       ) t group by 1 order by 1`,
+    // North Star: conversaciones con Sofi, en clínicas reales y en las demos (cada demo arma su clínica).
+    sql<Array<Counts<"ultimos7" | "previos7" | "clinicas7" | "demos7" | "total" | "clinicas" | "demos">>>`
+      select
+        count(*) filter (where v.started_at > now() - interval '7 days')::int as ultimos7,
+        count(*) filter (where v.started_at <= now() - interval '7 days' and v.started_at > now() - interval '14 days')::int as previos7,
+        count(*) filter (where v.started_at > now() - interval '7 days' and not c.is_demo)::int as clinicas7,
+        count(*) filter (where v.started_at > now() - interval '7 days' and c.is_demo)::int as demos7,
+        count(*) filter (where ${inRange("v.started_at")})::int as total,
+        count(*) filter (where ${inRange("v.started_at")} and not c.is_demo)::int as clinicas,
+        count(*) filter (where ${inRange("v.started_at")} and c.is_demo)::int as demos
+      from conversations v join clinics c on c.id = v.clinic_id`,
+    sql<Array<Record<string, number | string>>>`
+      select ${day("v.started_at")} as date, count(*)::int as conversaciones,
+        count(*) filter (where not c.is_demo)::int as clinicas, count(*) filter (where c.is_demo)::int as demos
+      from conversations v join clinics c on c.id = v.clinic_id
+      where ${inRange("v.started_at")} group by 1 order by 1`,
   ]);
 
   // Une las dos series de la prospección por día.
@@ -145,5 +163,6 @@ export async function turniaMetrics({ from, to }: Range) {
     demos: { ...demos, diario: demoDaily },
     pedidos: { ...leads, diario: leadDaily },
     uso: { ...product, diario: productDaily },
+    sofi: { ...sofi, diario: sofiDaily },
   };
 }
