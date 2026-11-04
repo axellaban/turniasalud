@@ -54,6 +54,7 @@ function authorized(request: Request): boolean {
 type Action = {
   type?: string;
   template?: string;
+  step?: number;
   channel?: string;
   outcome?: string;
   detail?: string;
@@ -108,6 +109,14 @@ async function apply(id: string, a: Action): Promise<void> {
       // hay uno por el mismo canal en los últimos 2 minutos, se toma como el mismo envío.
       // El saludo y la demo pueden salir con segundos de diferencia: solo es reintento si es el mismo paso
       // (la plantilla dice si es el saludo).
+      // Con «step» (0 el saludo, 1 la demo, 2 el seguimiento, 3 el último) el registro es idempotente por
+      // estado: si la persona ya tiene ese paso, no se suma nada. Así se puede registrar en lote y repetir.
+      if (typeof a.step === "number") {
+        const [row] = await sql<Array<{ touches: number; greeted_at: string | null }>>`select touches, greeted_at from sales_outreach where id = ${id}`;
+        if (a.step === 0 ? Boolean(row.greeted_at) || row.touches > 0 : row.touches >= a.step) return;
+        await recordTouch(id, channel);
+        return;
+      }
       const [recent] = await sql<Array<{ detail: string }>>`
         select detail from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and channel = ${channel}
           and created_at > now() - interval '2 minutes' order by created_at desc limit 1`;
