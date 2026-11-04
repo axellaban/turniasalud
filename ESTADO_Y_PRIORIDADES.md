@@ -1,6 +1,45 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 03/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 04/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Protocolos odontológicos y reglas del panel — 04/11/2026
+
+- **Pedido del usuario:** implementar [`PLAN_PROTOCOLOS.md`](PLAN_PROTOCOLOS.md) (base común, módulo odontológico y reglas en el panel) sin romper el WhatsApp de Guerra–Mininni, que está operando.
+- **Guerra–Mininni sigue igual:** sus reglas para mover turnos estaban escritas en el código y pasaron a su ficha con los mismos valores:
+  - 24 horas de aviso para mover;
+  - visitas de hasta 120 minutos;
+  - conservar la duración al mover;
+  - recepción mueve los implantes, las extracciones y la regeneración;
+  - Sofi mueve también lo que da solo el consultorio.
+
+  La copia la hace una migración única (`data_migrations`, `2026-11-04-reglas-guerra-mininni`). Las pruebas de su agenda (`reschedule.integration.test.ts`) pasan sin cambios en lo que esperan. El texto que recibe Sofi dice lo mismo que la regla vieja.
+- **Panel → Configuración:**
+  - **Coberturas** (nueva): matriz por plan, prestación y profesional; con copago, reintegro, no acepta y autorización.
+  - **Turnos y urgencias** (nueva): aviso mínimo para mover y para cancelar, lo que mueve recepción, la visita más larga que mueve Sofi, conservar la duración, mover lo que da solo el consultorio y liberar las horas de urgencia. Para Turnia, además, el protocolo odontológico: apagado, con su texto y los 12 casos de prueba.
+  - **Prestaciones:** urgencia, prestación previa, qué preguntar antes, cómo dice el precio, si Sofi la mueve y la plantilla odontológica.
+  - **Equipo y horarios:** qué prestaciones hace cada profesional, y horarios solo urgencias o solo para algunas prestaciones.
+  - **Reglas del consultorio:** «Cómo trata a los pacientes» (vos o usted).
+- **Herramientas de Sofi:**
+  - `consultar_disponibilidad` filtra por la cobertura de la ficha. Antes, la reserva fallaba recién después del «sí».
+  - Avisa el copago, el reintegro o la autorización.
+  - Busca urgencias para hoy y mañana.
+  - Pide la prestación previa y devuelve qué preguntar antes.
+  - `cancelar_turno` respeta el aviso mínimo.
+  - La lista de coberturas de cada profesional funciona igual que antes; solo se suma que «OSDE 310» en la ficha coincide con «OSDE» en la lista.
+- **Inicio:**
+  - Garantía del primer mes, solo para cuentas de clientes: muestra cuántas interacciones lleva de las 50.
+  - Turnos de Sofi fuera de horario.
+  - Valor estimado con los precios cargados.
+- **Google Calendar:** `/api/automations/calendario` avisa una vez al equipo, con una tarea, si el profesional movió, alargó o borró en Google un turno de Turnia. No le escribe al paciente.
+- **Prospección:** campo «Software de agenda».
+- **ElevenLabs:** no se tocó el prompt. Lo nuevo viaja en las variables de cada conversación. Para el parámetro opcional `cobertura`, «Actualizar agente» cuando convenga.
+- **Pruebas:**
+  - 443 en total: 47 nuevas entre reglas puras, herramientas, panel, migración y Google.
+  - TypeScript, ESLint y `next build` sin errores.
+  - Recorrido en el navegador con Postgres local: sumar la plantilla, agregar una regla de cobertura y guardar las reglas de turnos, en computadora y celular, sin desbordes.
+- **Falta:**
+  - Validar el módulo odontológico con Mininni antes de prenderlo.
+  - Merge a `main`, decisión del usuario.
 
 ## Precios del Programa Fundadores en `/pricing` (sin enlazar) — 04/11/2026
 

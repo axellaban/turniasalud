@@ -4,6 +4,38 @@ Escrito el 4/11/2026. Parte de una investigación que el usuario le pidió a otr
 
 Regla del repo que sigue valiendo: de Assort se toman ideas, no material (ni textos, ni videos, ni fotos).
 
+## Estado al 4/11/2026: implementado
+
+Las etapas 0 a 3 y la parte de la etapa 4 que el plan decía hacer ya están en el código (rama `claude/adoring-ptolemy-kdclkh`). Guerra–Mininni se comporta igual que antes: sus reglas pasaron del código a su ficha con los mismos valores.
+
+| Punto del plan | Dónde quedó |
+| --- | --- |
+| 1. Plantilla odontológica | `src/lib/dental-template.ts` y `DENTAL_TEMPLATE` (13 prestaciones). Se carga sola al crear una clínica odontológica y con «Sumar las que faltan» en Prestaciones. |
+| 2. Mininni fuera del código | Campos de la clínica (`reschedule_notice_hours`, `reschedule_max_minutes`, `keep_duration_on_reschedule`, `reception_only_terms`, `move_panel_only`) y de la prestación (`agent_can_reschedule`). Migración única en `supabase/schema.sql` (`data_migrations`: `2026-11-04-reglas-guerra-mininni`). Se borró `reschedule-policy.ts`. |
+| 3. Aviso mínimo | `cancel_notice_hours` y `reschedule_notice_hours`: los hacen cumplir `cancelar_turno` y `reprogramar_turno`. |
+| 4. Tono | `clinics.tone`, en Reglas del consultorio → «Cómo trata a los pacientes». |
+| 5. Disponibilidad por cobertura | `consultar_disponibilidad` deja afuera a quien no atiende la cobertura. Si nadie la atiende, ofrece como particular a quien atiende particular; si nadie, deriva. Nuevo parámetro opcional `cobertura`. |
+| 6. Profesional ↔ prestaciones | Tabla `professional_appointment_types` (sin filas: la especialidad, como antes). Casillas en Equipo y horarios. Horarios solo para algunas prestaciones (`schedules.appointment_type_ids`). |
+| 7. Matriz de coberturas | Tabla `coverage_rules` y Panel → Configuración → **Coberturas**. Manda la regla más específica. |
+| 8. Módulo odontológico | `src/lib/agent/modules/odontologia.ts`. Va dentro de «Información de la clínica» (no cambia el prompt de ElevenLabs). **Apagado** en todas las clínicas: lo prende Turnia en «Turnos y urgencias» después de validarlo con un odontólogo. |
+| 9. Urgencias | Prestación «Es un turno de urgencia» (busca hoy y mañana) y horarios «Solo urgencias»; `urgent_release_hours` los libera cerca de la hora. |
+| 10. Prestación previa | `requires_type_id` y «Qué preguntar antes» (`ask_before`), validados en las herramientas. |
+| 11. Cómo decir el precio | `price_mode`: referencia (como antes), exacto, «desde» o no informar. |
+| 12 a 14. Inicio | Garantía del primer mes (solo si la clínica es la cuenta de un cliente de Prospección), turnos de Sofi fuera de horario y su valor estimado con los precios cargados (`src/lib/clinic-impact.ts`). |
+| 15. Google en dos direcciones | `checkCalendarChanges` en `/api/automations/calendario`: si el profesional mueve, alarga o borra en Google un turno de Turnia, se crea **una** tarea para el equipo. Decisión: no le escribe al paciente ni vuelve a escribir el evento, para no pisar lo que hizo el profesional. |
+| 18. Software de agenda | `sales_outreach.agenda_software`, en la ficha de Prospección y en `POST /api/prospeccion` (`fields.agendaSoftware`). |
+| 16, 17 y 19 | No se construyen, como decía el plan: Dentalink cuando un cliente lo use, la escritura en Smile Connect con la ficha de salud y la seña cuando un cliente la pida. |
+
+Decisión tomada al implementar: la lista de coberturas de cada profesional sigue funcionando igual. Si tiene lista, «Particular» también tiene que estar, como en los datos de ejemplo.
+
+**Después del merge:**
+
+1. El deploy aplica el esquema y la migración de Guerra–Mininni solo.
+2. Todo funciona sin tocar ElevenLabs. Para que Sofi pueda mandar el parámetro nuevo `cobertura`, apretar «Actualizar agente» de cada clínica cuando convenga.
+3. Probar los 12 casos odontológicos en «Probar a Sofi» y validar el módulo con Mininni antes de prenderlo.
+
+Pruebas: `src/lib/booking-rules.test.ts`, `src/test/protocols.integration.test.ts`, el caso de Google en `src/test/calendar.integration.test.ts` y la migración en `src/test/migrations.integration.test.ts`.
+
 ## 1. Qué hace Assort, según lo que publica
 
 Lo comprobado en su web (assorthealth.com/blog, noviembre de 2026):
