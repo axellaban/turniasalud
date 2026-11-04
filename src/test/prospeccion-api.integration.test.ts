@@ -139,6 +139,14 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
               values (${clinic.id}, ${patient.id}, ${pro.id}, ${type.id}, now() + interval '1 day', now() + interval '1 day 30 minutes', 'whatsapp')`;
     r = await post({ code: "ana-111", action: { type: "note", text: "operando" } });
     expect(col(r.body, "Cuenta activa")).toMatch(/^\d{4}-/);
+    // Onboarding: operativa desde su primera conversación y las del primer mes.
+    expect(col(r.body, "Operativa desde")).toBe("");
+    expect(col(r.body, "Interacciones del primer mes")).toBe(0);
+    await sql`insert into conversations (clinic_id, started_at) values (${clinic.id}, now() - interval '2 days'), (${clinic.id}, now() - interval '1 day')`;
+    r = await post({ code: "ana-111", action: { type: "outcome", outcome: "cliente", detail: "setup cobrado" } });
+    expect(col(r.body, "Cliente desde")).toMatch(/^\d{4}-/);
+    expect(col(r.body, "Operativa desde")).toMatch(/^\d{4}-/);
+    expect(col(r.body, "Interacciones del primer mes")).toBe(2);
     r = await post({ code: "ana-111", action: { type: "account", clinicId: null } });
     expect(col(r.body, "Cuenta creada")).toBe("");
   });

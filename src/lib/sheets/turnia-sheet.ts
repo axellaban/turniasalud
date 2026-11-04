@@ -208,7 +208,7 @@ function stamp(iso: string | null): string {
 export const OUTREACH_COLUMNS = [
   "Código", "Nombre", "Trato", "Saludo", "Consultorio", "Zona", "Dirección", "Especialidad", "Teléfono", "De quién es el teléfono",
   "Instagram", "Email", "Web", "Prioridad", "Estado", "Mensajes", "Saludo enviado", "Primer contacto", "Último contacto", "Último canal", "Próximo paso",
-  "Abrió su demo", "Veces que la abrió", "Probó la demo", "Clínica de la demo", "Conversó en la demo", "Cuenta creada", "Clínica de la cuenta", "Cuenta activa", "Link de su demo", "Señales", "Fuente", "Notas", "Actualizado",
+  "Abrió su demo", "Veces que la abrió", "Probó la demo", "Clínica de la demo", "Conversó en la demo", "Cuenta creada", "Clínica de la cuenta", "Cuenta activa", "Cliente desde", "Operativa desde", "Interacciones del primer mes", "Link de su demo", "Señales", "Fuente", "Notas", "Actualizado",
 ];
 
 type OutreachRow = Omit<Outreach, "shared" | "suppressed"> & {
@@ -218,6 +218,10 @@ type OutreachRow = Omit<Outreach, "shared" | "suppressed"> & {
   account_at: string | null;
   account_clinic: string | null;
   account_active_at: string | null;
+  client_at: string | null;
+  operational_at: string | null;
+  first_month: number | null;
+  clinic_id: string | null;
 };
 
 /**
@@ -234,14 +238,21 @@ export async function outreachSheetRows(id?: string): Promise<Cell[][]> {
       (select c.name from clinics c where c.id = o.clinic_id) as account_clinic,
       -- Activa: su clínica tuvo turnos en los últimos 30 días (lo mismo que «clínicas activas» en /api/metricas).
       (select max(a.created_at) from appointments a where o.clinic_id is not null and a.clinic_id = o.clinic_id
-        and a.created_at > now() - interval '30 days') as account_active_at
+        and a.created_at > now() - interval '30 days') as account_active_at,
+      -- Onboarding (garantías del Programa Fundadores): cuándo pasó a cliente, cuándo su clínica tuvo la
+      -- primera conversación (operativa) y cuántas conversaciones tuvo en su primer mes.
+      (select max(e.created_at) from sales_outreach_events e
+        where e.outreach_id = o.id and e.kind = 'estado' and split_part(e.detail, ':', 1) = 'cliente') as client_at,
+      (select min(v.started_at) from conversations v where o.clinic_id is not null and v.clinic_id = o.clinic_id) as operational_at,
+      (select count(*)::int from conversations v where o.clinic_id is not null and v.clinic_id = o.clinic_id
+        and v.started_at < (select min(v2.started_at) from conversations v2 where v2.clinic_id = o.clinic_id) + interval '30 days') as first_month
     from sales_outreach o ${id ? sql`where o.id = ${id}` : sql``} order by o.created_at, o.id`;
   return rows.map((p) => [
     p.code, p.name, p.title, p.greeting, p.business_name, p.zone, p.address, p.specialty,
     p.phone ? displayOutreachPhone(p.phone) : "", p.phone_kind ? PHONE_KIND_LABEL[p.phone_kind] : "",
     p.instagram ? `@${p.instagram}` : "", p.email ?? "", p.website ?? "", p.priority, STATUS_LABEL[p.status] ?? p.status, p.touches,
     stamp(p.greeted_at), stamp(p.first_contact_at), stamp(p.last_contact_at), p.last_channel ? (CHANNEL_LABEL[p.last_channel] ?? p.last_channel) : "", p.next_action_on ?? "",
-    stamp(p.opened_at), p.opens, stamp(p.demo_at), stamp(p.demo_clinic_at), stamp(p.demo_chat_at), stamp(p.account_at), p.account_clinic ?? "", stamp(p.account_active_at), demoUrl(env.appUrl(), p.code), p.signals, p.source, p.notes, stamp(p.updated_at),
+    stamp(p.opened_at), p.opens, stamp(p.demo_at), stamp(p.demo_clinic_at), stamp(p.demo_chat_at), stamp(p.account_at), p.account_clinic ?? "", stamp(p.account_active_at), stamp(p.client_at), stamp(p.operational_at), p.clinic_id ? p.first_month ?? 0 : "", demoUrl(env.appUrl(), p.code), p.signals, p.source, p.notes, stamp(p.updated_at),
   ]);
 }
 
