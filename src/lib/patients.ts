@@ -1,3 +1,4 @@
+import { appointmentAccessKey, grantAppointmentAccess } from "./agent/appointment-access";
 import "server-only";
 import { sql, type Sql, type TransactionSql } from "./db";
 import { mergeMemory } from "./memory";
@@ -247,11 +248,11 @@ export async function mergePatientInto(tx: TransactionSql, clinicId: string, kee
 
 export type Identification =
   | { estado: "sin_ficha" }
-  | { estado: "falta_fecha" | "falta_nombre" | "no_coincide" }
+  | { estado: "falta_fecha" | "falta_nombre" | "no_coincide" | "verificacion_manual" }
   /** Este número ya es la ficha de otra persona (por ejemplo, una madre que saca turno para su hijo). */
   | { estado: "otra_persona"; patient: Patient }
   /** familiar: es otra ficha del mismo celular (la conversación pasó a la suya). */
-  | { estado: "vinculado"; patient: Patient; unificada: boolean; familiar?: boolean };
+  | { estado: "vinculado"; patient: Patient; unificada: boolean; familiar?: boolean; soloTurnos?: boolean };
 
 /**
  * Busca la ficha con ese DNI y, si quien habla confirma su identidad, la une
@@ -261,7 +262,7 @@ export type Identification =
 export async function identifyPatient(
   clinicId: string,
   phone: string,
-  input: { dni: string; birthDate?: string | null; name?: string | null },
+  input: { dni: string; birthDate?: string | null; name?: string | null; appointmentConversationId?: string },
 ): Promise<Identification> {
   const dni = normalizeDni(input.dni);
   if (!dni) return { estado: "sin_ficha" };
@@ -276,6 +277,20 @@ export async function identifyPatient(
     if (!candidates.length) return { estado: "sin_ficha" } as const;
 
     const target = preferredPatient(candidates);
+    const accessKey = appointmentAccessKey({ clinicId, patientPhone: phone, conversationId: input.appointmentConversationId });
+    if (accessKey && target.phone !== phone) {
+      // Un permiso temporal para turnos nunca elige ni fusiona fichas para este teléfono.
+      // En una línea ya asociada a otra ficha, exigimos los tres datos del paciente.
+      if (!input.name) return { estado: "falta_nombre" } as const;
+      if (!namesMatch(input.name, target.full_name)) return { estado: "no_coincide" } as const;
+      if (current) {
+        if (!target.birth_date) return { estado: "verificacion_manual" } as const;
+        if (!input.birthDate) return { estado: "falta_fecha" } as const;
+        if (input.birthDate !== target.birth_date) return { estado: "no_coincide" } as const;
+      }
+      await grantAppointmentAccess(tx, accessKey, target.id);
+      return { estado: "vinculado", patient: target, unificada: false, soloTurnos: true } as const;
+    }
     const check = verifyIdentity(target, { birthDate: input.birthDate, name: input.name ?? current?.full_name });
     if (check !== "ok") return { estado: check } as const;
 

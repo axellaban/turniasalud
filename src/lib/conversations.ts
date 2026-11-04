@@ -1,6 +1,7 @@
 import "server-only";
 import { json, sql } from "./db";
 import { INBOUND_CONTEXT, findPatientByPhone, isUuid, resolveClinic } from "./clinic";
+import { readAppointmentAccess } from "./agent/appointment-access";
 import { findOrCreatePatientForPhone } from "./patients";
 import { normalizePhone } from "./phone";
 import { formatDate } from "./time";
@@ -66,13 +67,16 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
       data.metadata?.phone_call?.external_number ??
       "",
   );
-  const campaignId = isUuid(vars.campaign_id) ? vars.campaign_id : null;
+  // La charla puede mezclar a quien escribe con el paciente verificado para un turno.
+  // Queda disponible para recepción sin sumar sus datos a la memoria de ninguna ficha.
+  const temporaryAccess = await readAppointmentAccess({ clinicId, patientPhone: phone, conversationId: data.conversation_id });
+  const campaignId = !temporaryAccess && isUuid(vars.campaign_id) ? vars.campaign_id : null;
   const direction = campaignId || (typeof vars.conversation_context === "string" && vars.conversation_context !== INBOUND_CONTEXT) ? "saliente" : "entrante";
 
-  let patient: Patient | null = await findPatientByPhone(clinicId, phone);
+  let patient: Patient | null = temporaryAccess ? null : await findPatientByPhone(clinicId, phone);
   const name = collected(data, "nombre_paciente");
   const memory = collected(data, "memoria");
-  if (!patient && phone && name) patient = (await findOrCreatePatientForPhone(clinicId, phone, { name })).patient;
+  if (!temporaryAccess && !patient && phone && name) patient = (await findOrCreatePatientForPhone(clinicId, phone, { name })).patient;
   const startedAt = data.metadata?.start_time_unix_secs
     ? new Date(data.metadata.start_time_unix_secs * 1000).toISOString()
     : new Date().toISOString();

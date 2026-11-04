@@ -1111,3 +1111,16 @@ alter table appointments add column if not exists calendar_drift_at timestamptz;
 
 -- Prospección: qué software de agenda usa el consultorio, para saber qué integrar primero.
 alter table sales_outreach add column if not exists agenda_software text;
+
+-- Permiso limitado a turnos de una conversación verificada desde otro número.
+-- No toca patient_phones, que es la identidad persistente del número.
+create table if not exists conversation_appointment_access (
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  phone text not null,
+  conversation_id text not null,
+  patient_id uuid not null references patients(id) on delete cascade,
+  expires_at timestamptz not null default (now() + interval '30 minutes'),
+  primary key (clinic_id, phone, conversation_id)
+);
+create index if not exists conversation_appointment_access_expires_idx on conversation_appointment_access (expires_at);
+alter table conversation_appointment_access enable row level security;

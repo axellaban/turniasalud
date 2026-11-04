@@ -39,8 +39,8 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
     ({ sql } = await import("@/lib/db"));
     ({ rescheduleClinicAppointment: panelMove } = await import("@/lib/agent/service"));
     ({ POST: handler } = await import("@/app/api/agent/tools/[name]/route"));
-    await sql`insert into clinics (id, name, reschedule_notice_hours, reschedule_max_minutes, keep_duration_on_reschedule, reception_only_terms, move_panel_only)
-      values (${clinicId}, 'Guerra–Mininni ficticia', 24, 120, true, 'implante, implantación, exodoncia, extracción, regeneración', true)`;
+    await sql`insert into clinics (id, name, reschedule_notice_hours, cancel_notice_hours, reschedule_max_minutes, keep_duration_on_reschedule, reception_only_terms, move_panel_only)
+      values (${clinicId}, 'Guerra–Mininni ficticia', 24, 24, 120, true, 'implante, implantación, exodoncia, extracción, regeneración', true)`;
     [{ id: pro }, { id: alternate }] = await sql`
       insert into professionals (clinic_id, full_name, specialty)
       values (${clinicId}, 'Odontóloga de prueba', 'Odontología'), (${clinicId}, 'Odontólogo de prueba', 'Odontología')
@@ -148,6 +148,79 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
     const listed = await tool("ver_turnos_paciente", {}, web, "react_sdk");
     expect(listed.turnos).toContainEqual(expect.objectContaining({ turno_id: id }));
     expect(await search(id, 26, {}, web)).toMatchObject({ ok: true, turno_id: id });
+  });
+
+  it("desde un número con otra ficha, exige los tres datos y permite solo turnos en esa conversación", async () => {
+    const conversation = "conv_otro_numero";
+    const dni = "38800075";
+    const birth = "1987-04-21";
+    await sql`update patients set dni = ${dni}, birth_date = ${birth} where id = ${patient}`;
+    const id = await seed(27, 30);
+    const sameDay = await seed(28, 30);
+    await sql`update appointments set starts_at = now() + interval '5 hours', ends_at = now() + interval '5.5 hours' where id = ${sameDay}`;
+    const identity = { dni, nombre_completo: "Paciente de prueba", para_turno_existente: true };
+    const viaOther = (name: string, input: Record<string, unknown> = {}, chat = conversation, from = otherPhone) =>
+      tool(name, { conversation_id: chat, ...input }, from, "custom");
+
+    expect(await viaOther("buscar_paciente", identity)).toMatchObject({
+      encontrado: null, mensaje: expect.stringContaining("fecha de nacimiento"),
+    });
+    expect(await viaOther("cancelar_turno", { turno_id: id })).toMatchObject({ ok: false });
+    expect(await viaOther("buscar_paciente", { ...identity, fecha_nacimiento: "1987-04-20" }))
+      .toMatchObject({ encontrado: null });
+    expect(await viaOther("buscar_paciente", { ...identity, nombre_completo: "Otro Nombre", fecha_nacimiento: birth }))
+      .toMatchObject({ encontrado: null });
+
+    const verified = await viaOther("buscar_paciente", { ...identity, fecha_nacimiento: birth });
+    expect(verified).toMatchObject({ encontrado: true, solo_turnos: true });
+    expect(verified).not.toHaveProperty("ficha");
+    expect((await viaOther("ver_turnos_paciente")).turnos).toContainEqual(expect.objectContaining({ turno_id: id }));
+    expect(await viaOther("cancelar_turno", { turno_id: id }, "conv_otra_charla")).toMatchObject({ ok: false });
+    expect(await viaOther("cancelar_turno", { turno_id: id }, conversation, "5491100004003")).toMatchObject({ ok: false });
+    expect(await viaOther("registrar_paciente", { email: "alterado@example.invalid" })).toMatchObject({ ok: false });
+    expect(await viaOther("reservar_turno", { tipo_turno_id: control, profesional_id: pro, inicio: at(28, "11:00") }))
+      .toMatchObject({ ok: false });
+    expect(await viaOther("cancelar_turno", { turno_id: sameDay }))
+      .toMatchObject({ ok: false, error: expect.stringContaining("menos de 24 horas") });
+
+    const offers = await viaOther("consultar_disponibilidad", { turno_id: id, desde: day(28), hasta: day(28) });
+    const moved = await viaOther("reprogramar_turno", { turno_id: id, nuevo_inicio: offers.turnos[0].inicio });
+    expect(moved.ok).toBe(true);
+    expect(await viaOther("cancelar_turno", { turno_id: moved.turno_id })).toMatchObject({ ok: true });
+    const original = await sql`select patient_id, status from appointments where id = ${id}`;
+    const newSlot = await sql`select patient_id, status from appointments where id = ${moved.turno_id}`;
+    expect(original[0]).toEqual({ patient_id: patient, status: "reprogramado" });
+    expect(newSlot[0]).toEqual({ patient_id: patient, status: "cancelado" });
+    expect(await sql`select phone, email from patients where id in (${patient}, ${other}) order by phone`)
+      .toEqual([{ phone, email: null }, { phone: otherPhone, email: null }]);
+    expect(await sql`select id from patient_phones where clinic_id = ${clinicId} and phone = ${otherPhone}`).toHaveLength(0);
+
+    await sql`update conversation_appointment_access set expires_at = now() - interval '1 minute' where conversation_id = ${conversation}`;
+    expect(await viaOther("ver_turnos_paciente")).toMatchObject({ ok: false, error: expect.stringContaining("venció") });
+    const { recordConversation } = await import("@/lib/conversations");
+    await recordConversation({
+      agent_id: "agent_prueba", conversation_id: conversation,
+      conversation_initiation_client_data: { dynamic_variables: { clinic_id: clinicId, patient_phone: otherPhone } },
+      analysis: { data_collection_results: { memoria: { value: "Memoria de la otra ficha" } } },
+    });
+    expect((await sql`select patient_id from conversations where elevenlabs_conversation_id = ${conversation}`)[0].patient_id).toBeNull();
+    expect(await sql`select id from patients where clinic_id = ${clinicId} and memory_summary like '%Memoria de la otra ficha%'`).toHaveLength(0);
+  });
+
+  it("desde un número nuevo, verifica nombre y DNI para el turno sin registrar ese teléfono", async () => {
+    const who = "5491100004004";
+    const conversation_id = "conv_numero_nuevo";
+    const dni = "38800076";
+    await sql`update patients set dni = ${dni}, birth_date = null where id = ${patient}`;
+    const id = await seed(29, 30);
+    const identity = { dni, nombre_completo: "Paciente de prueba", para_turno_existente: true };
+    expect(await tool("buscar_paciente", { ...identity, conversation_id }, who))
+      .toMatchObject({ encontrado: true, solo_turnos: true });
+    expect((await tool("ver_turnos_paciente", { conversation_id }, who)).turnos)
+      .toContainEqual(expect.objectContaining({ turno_id: id }));
+    expect(await tool("buscar_paciente", { ...identity, conversation_id: "conv_numero_ocupado" }, otherPhone))
+      .toMatchObject({ encontrado: null, mensaje: expect.stringContaining("recepción") });
+    expect(await sql`select id from patient_phones where clinic_id = ${clinicId} and phone = ${who}`).toHaveLength(0);
   });
 
   it("una consulta de implantes se puede cambiar de profesional y conserva su título", async () => {

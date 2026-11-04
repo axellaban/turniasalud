@@ -10,6 +10,7 @@ import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
+import { appointmentAccessKey, expireAppointmentAccess, GUERRA_MININNI } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
 
@@ -18,6 +19,8 @@ export type ToolContext = {
   patientPhone: string;
   /** Panel: la ficha elegida (en un celular compartido, el familiar para el que es el turno). */
   patientId?: string;
+  /** Autorización temporal resuelta por el servidor, solo para turnos existentes. */
+  appointmentPatientId?: string;
   conversationId?: string;
   channel?: string;
 };
@@ -76,6 +79,12 @@ async function currentPatient(ctx: ToolContext): Promise<Patient | null> {
   return phone && phone !== "desconocido" ? findPatientByPhone(ctx.clinicId, phone) : null;
 }
 
+async function appointmentPatient(ctx: ToolContext): Promise<Patient | null> {
+  if (!ctx.appointmentPatientId) return currentPatient(ctx);
+  const [patient] = await sql<Patient[]>`select * from patients where clinic_id = ${ctx.clinicId} and id = ${ctx.appointmentPatientId}`;
+  return patient ?? null;
+}
+
 async function ensurePatient(ctx: ToolContext, name?: string): Promise<Patient> {
   const existing = await currentPatient(ctx);
   const phone = normalizePhone(ctx.patientPhone);
@@ -112,6 +121,8 @@ function identificationNotice(result: Exclude<Identification, { estado: "vincula
       return "Para confirmar quién es necesito su nombre y apellido. Pedíselos y volvé a llamar a buscar_paciente con el DNI y el nombre. Hasta entonces no le digas si encontraste una ficha ni le des datos de ninguna.";
     case "no_coincide":
       return "Los datos no coinciden con la ficha de ese DNI. No le des ningún dato de esa ficha ni le digas qué no coincide. Pedile que revise el DNI y cómo figura su nombre; si siguen sin coincidir, seguí como con un paciente sin ficha o ofrecele comunicarse con recepción.";
+    case "verificacion_manual":
+      return "No pude verificar la identidad para gestionar ese turno desde este número. Ofrecé que recepción revise el pedido, sin dar datos de la ficha.";
     case "otra_persona":
       return `Este número es de la ficha de ${result.patient.full_name ?? "otra persona"}, y ese DNI es de otro paciente que tiene otro celular. No cambies los datos de esta ficha ni le des datos de la otra. Si quiere un turno para esa persona, creá una tarea de tipo derivacion_humana con sus datos para que recepción lo agende.`;
   }
@@ -229,20 +240,31 @@ export async function registerPatient(
 // ---------------------------------------------------------------------------
 export async function findPatientByDni(
   ctx: ToolContext,
-  input: { dni: string; fecha_nacimiento?: string; nombre_completo?: string },
+  input: { dni: string; fecha_nacimiento?: string; nombre_completo?: string; para_turno_existente?: boolean },
 ) {
   const phone = normalizePhone(ctx.patientPhone);
   if (!phone || phone === "desconocido") throw new ToolError("No tengo el teléfono del paciente para identificarlo.");
+  if (input.para_turno_existente && ctx.clinicId === GUERRA_MININNI && /^\d{10,15}$/.test(phone) && !appointmentAccessKey(ctx)) {
+    throw new ToolError("No pude verificar esta conversación para gestionar el turno. Ofrecé que recepción revise el pedido.");
+  }
+  await expireAppointmentAccess(ctx);
   const dni = normalizeDni(input.dni);
   if (!dni) return { ok: true, encontrado: false, mensaje: "Ese DNI no parece válido. Pedíselo de nuevo, solo números." };
   const result = await identifyPatient(ctx.clinicId, phone, {
     dni,
     birthDate: parseDateKey(input.fecha_nacimiento),
     name: input.nombre_completo,
+    appointmentConversationId: input.para_turno_existente ? ctx.conversationId : undefined,
   });
   if (result.estado !== "vinculado") {
     return { ok: true, encontrado: result.estado === "sin_ficha" ? false : null, mensaje: identificationNotice(result) };
   }
+  if (result.soloTurnos) return {
+    ok: true,
+    encontrado: true,
+    solo_turnos: true,
+    mensaje: "Identidad verificada para gestionar turnos en esta conversación. Usá ver_turnos_paciente para encontrar el turno pedido. Confirmá el turno y el cambio antes de ejecutarlo. El permiso no incluye otros trámites ni actualiza los teléfonos de las fichas.",
+  };
   await sql`update patients set last_contact_at = now() where id = ${result.patient.id}`;
   return {
     ok: true,
@@ -903,7 +925,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
 // ---------------------------------------------------------------------------
 export async function listPatientAppointments(ctx: ToolContext) {
   const clinic = await getClinic(ctx.clinicId);
-  const patient = await currentPatient(ctx);
+  const patient = await appointmentPatient(ctx);
   if (!patient) return { ok: true, turnos: [], mensaje: "El paciente no tiene turnos registrados." };
   const rows = await sql<
     Array<{ id: string; starts_at: string; ends_at: string; status: string; professional_id: string; appointment_type_id: string; professional: string; type_name: string }>
@@ -933,7 +955,7 @@ export async function listPatientAppointments(ctx: ToolContext) {
 }
 
 async function getOwnAppointment(ctx: ToolContext, appointmentId: string) {
-  const patient = await currentPatient(ctx);
+  const patient = await appointmentPatient(ctx);
   if (!patient) throw new ToolError("No encontré al paciente.");
   const [appt] = isUuid(appointmentId)
     ? await sql<Appointment[]>`select * from appointments where id = ${appointmentId} and patient_id = ${patient.id}`
@@ -1273,7 +1295,7 @@ export async function createTask(
 ) {
   let patientId: string | null = null;
   try {
-    patientId = (await ensurePatient(ctx)).id;
+    patientId = ctx.appointmentPatientId ?? (await ensurePatient(ctx)).id;
   } catch {
     patientId = null;
   }
