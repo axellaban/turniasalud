@@ -70,6 +70,13 @@ export default async function SettingsPage() {
         <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio. Empezá por estos datos y seguí con las pestañas de arriba, en orden.
         Cada cambio lo usa {agent} desde el próximo mensaje.
       </Notice>}
+      {/* En pantallas angostas la columna de la derecha queda debajo de todo el formulario. */}
+      {admin && <nav aria-label="Solo Turnia" className="mb-4 flex flex-wrap items-center gap-2 text-sm xl:hidden">
+        <span className="text-brand-900/60">Solo Turnia:</span>
+        <a href="#whatsapp-equipo" className={smallButtonClass}>Acceso total por WhatsApp{staff.length ? ` (${staff.length})` : ""}</a>
+        <a href="#acceso-consultorio" className={smallButtonClass}>Acceso del consultorio</a>
+        {clinic.id !== main?.id && <a href="#agente-llamadas" className={smallButtonClass}>{agent} · llamadas</a>}
+      </nav>}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0">
           <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} agentName={agent}>
@@ -109,36 +116,6 @@ export default async function SettingsPage() {
         </div>
 
         <div className="space-y-6">
-          {admin && clinic.id !== main?.id && <Card>
-            <h2 className="font-semibold text-brand-950">{agent} de este consultorio · llamadas</h2>
-            <p className="mt-1 text-sm text-brand-900/60">Un agente propio para atender las llamadas con las reglas y la agenda de {clinic.name}.</p>
-            <p className="mt-3 text-sm text-brand-900/70">{clinic.elevenlabs_agent_id ? <>Agente preparado: <code className="break-all text-xs">{clinic.elevenlabs_agent_id}</code>.</> : "Todavía no tiene un agente propio preparado."}</p>
-            <ClinicAgentSetup key={clinic.id} clinicId={clinic.id} disabled={!process.env.ELEVENLABS_API_KEY} />
-            <p className="mt-3 text-xs text-brand-900/65">
-              {clinic.elevenlabs_agent_id
-                ? "Actualizalo después de cada cambio de Turnia en Sofi, para que las llamadas lo tomen. No toca el número ni el desvío de la línea."
-                : "Prepararlo no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante."}
-            </p>
-            <p className="mt-2 text-xs text-brand-900/65">Las llamadas que Turnia inicia por Twilio se graban (con cargo por uso); las del navegador y Telegram, no. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Ver grabaciones en Twilio</a>.</p>
-          </Card>}
-
-          {admin && <Card>
-            <h2 className="font-semibold text-brand-950">Acceso del consultorio</h2>
-            <p className="mt-1 text-sm text-brand-900/60">Un código para que el consultorio entre al panel. Solo ve y edita esta clínica, y no puede borrar fichas.</p>
-            <div className="mt-4"><AccessCreator clinicId={clinic.id} loginUrl={loginUrl} /></div>
-            {accesses.length > 0 && <ul className="mt-4 divide-y divide-brand-900/5 text-sm">
-              {accesses.map((a) => <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span className="min-w-0">
-                  <span className="font-medium text-brand-950">{a.label || "Sin nombre"}</span> <span className="font-mono text-xs text-brand-900/65">····{a.code_hint}</span>
-                  <span className="block text-xs text-brand-900/65">{a.revoked_at ? `Revocado ${formatDateTime(a.revoked_at, clinic.timezone)}` : a.last_used_at ? `Último ingreso ${formatDateTime(a.last_used_at, clinic.timezone)}` : `Creado ${formatDateTime(a.created_at, clinic.timezone)} · sin ingresos`}</span>
-                </span>
-                {a.revoked_at ? <Badge>Revocado</Badge> : <form action={revokeAccess}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="access_id" value={a.id} /><button className={smallButtonClass}>Revocar</button></form>}
-              </li>)}
-            </ul>}
-            <p className="mt-4 text-xs text-brand-900/65">{status}</p>
-            {clinic.is_demo && !clinic.retained_at && <form action={retainClinic} className="mt-2"><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
-          </Card>}
-
           {admin && <Card id="whatsapp-equipo" className="scroll-mt-20">
             <h2 className="font-semibold text-brand-950">Acceso total por WhatsApp</h2>
             <p className="mt-1 text-sm text-brand-900/60">
@@ -155,6 +132,36 @@ export default async function SettingsPage() {
               <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dr. Mininni" className={inputClass} /></Field>
               <Field label="Celular" hint="Con código de área. Es el de WhatsApp."><input name="phone" required inputMode="tel" placeholder="11 5555-0100" className={inputClass} /></Field>
             </ActionForm>
+          </Card>}
+
+          {admin && clinic.id !== main?.id && <Card id="agente-llamadas" className="scroll-mt-20">
+            <h2 className="font-semibold text-brand-950">{agent} de este consultorio · llamadas</h2>
+            <p className="mt-1 text-sm text-brand-900/60">Un agente propio para atender las llamadas con las reglas y la agenda de {clinic.name}.</p>
+            <p className="mt-3 text-sm text-brand-900/70">{clinic.elevenlabs_agent_id ? <>Agente preparado: <code className="break-all text-xs">{clinic.elevenlabs_agent_id}</code>.</> : "Todavía no tiene un agente propio preparado."}</p>
+            <ClinicAgentSetup key={clinic.id} clinicId={clinic.id} disabled={!process.env.ELEVENLABS_API_KEY} />
+            <p className="mt-3 text-xs text-brand-900/65">
+              {clinic.elevenlabs_agent_id
+                ? "Actualizalo después de cada cambio de Turnia en Sofi, para que las llamadas lo tomen. No toca el número ni el desvío de la línea."
+                : "Prepararlo no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante."}
+            </p>
+            <p className="mt-2 text-xs text-brand-900/65">Las llamadas que Turnia inicia por Twilio se graban (con cargo por uso); las del navegador y Telegram, no. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Ver grabaciones en Twilio</a>.</p>
+          </Card>}
+
+          {admin && <Card id="acceso-consultorio" className="scroll-mt-20">
+            <h2 className="font-semibold text-brand-950">Acceso del consultorio</h2>
+            <p className="mt-1 text-sm text-brand-900/60">Un código para que el consultorio entre al panel. Solo ve y edita esta clínica, y no puede borrar fichas.</p>
+            <div className="mt-4"><AccessCreator clinicId={clinic.id} loginUrl={loginUrl} /></div>
+            {accesses.length > 0 && <ul className="mt-4 divide-y divide-brand-900/5 text-sm">
+              {accesses.map((a) => <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span className="min-w-0">
+                  <span className="font-medium text-brand-950">{a.label || "Sin nombre"}</span> <span className="font-mono text-xs text-brand-900/65">····{a.code_hint}</span>
+                  <span className="block text-xs text-brand-900/65">{a.revoked_at ? `Revocado ${formatDateTime(a.revoked_at, clinic.timezone)}` : a.last_used_at ? `Último ingreso ${formatDateTime(a.last_used_at, clinic.timezone)}` : `Creado ${formatDateTime(a.created_at, clinic.timezone)} · sin ingresos`}</span>
+                </span>
+                {a.revoked_at ? <Badge>Revocado</Badge> : <form action={revokeAccess}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="access_id" value={a.id} /><button className={smallButtonClass}>Revocar</button></form>}
+              </li>)}
+            </ul>}
+            <p className="mt-4 text-xs text-brand-900/65">{status}</p>
+            {clinic.is_demo && !clinic.retained_at && <form action={retainClinic} className="mt-2"><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
           </Card>}
 
           <Card>
