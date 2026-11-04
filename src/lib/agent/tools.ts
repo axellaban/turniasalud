@@ -71,7 +71,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "consultar_disponibilidad",
     description:
-      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios; nunca inventes horarios.",
+      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios; nunca inventes horarios. Ya deja afuera a los profesionales que no atienden la cobertura del paciente (si viene 'aviso_cobertura', decíselo antes de ofrecer), y con un turno de urgencia busca hoy y mañana. Si trae 'preguntar_antes', preguntalo antes de reservar.",
     params: {
       tipo_turno_id: { type: "string", description: "Para reservar: id del tipo de turno, copiado del catálogo." },
       turno_id: { type: "string", description: "Para reprogramar: turno_id del turno existente (si son dos prácticas seguidas, usá el de la primera)." },
@@ -80,6 +80,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       desde: { type: "string", description: `Primer día a buscar. ${isoDate} Por defecto, hoy.` },
       hasta: { type: "string", description: `Último día a buscar. ${isoDate} Por defecto, dos semanas después de 'desde'.` },
       franja: { type: "string", description: "Franja horaria preferida.", enum: ["manana", "tarde", "cualquiera"] },
+      cobertura: {
+        type: "string",
+        description: "Solo si el paciente se va a atender con otra cobertura que la de su ficha (por ejemplo, 'Particular'). Si no, se usa la de la ficha.",
+      },
     },
     schema: z.object({
       tipo_turno_id: z.string().min(1).optional(),
@@ -89,6 +93,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       desde: z.string().optional(),
       hasta: z.string().optional(),
       franja: z.enum(["manana", "tarde", "cualquiera"]).optional(),
+      cobertura: z.string().optional(),
     }).refine((input) => Boolean(input.tipo_turno_id) !== Boolean(input.turno_id), "Usá tipo_turno_id para reservar o turno_id para reprogramar."),
   },
   {

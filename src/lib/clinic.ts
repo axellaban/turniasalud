@@ -4,9 +4,10 @@ import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
 import { householdOf, patientForPhone } from "./patients";
-import { GUERRA_MININNI, RESCHEDULE_GUIDANCE } from "./agent/reschedule-policy";
+import { agentCanMove, coverageRuleText, durationPhrase, parseTerms, receptionOnlyTerm } from "./booking-rules";
+import { DENTAL_PROTOCOL } from "./agent/modules/odontologia";
 import { wahaConnections } from "./waha-connections";
-import type { Appointment, AppointmentType, Clinic, Patient, Professional, Schedule, ScheduleBlock, Task } from "./types";
+import type { Appointment, AppointmentType, Clinic, CoverageRule, Patient, Professional, ProfessionalType, Schedule, ScheduleBlock, Task } from "./types";
 
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
@@ -62,10 +63,14 @@ export type Catalog = {
   professionals: Professional[];
   appointmentTypes: AppointmentType[];
   schedules: Schedule[];
+  /** Qué prestaciones hace cada profesional (sin filas: todas las de su especialidad). */
+  links?: ProfessionalType[];
+  /** Matriz de coberturas. */
+  coverageRules?: CoverageRule[];
 };
 
 export async function getCatalog(clinicId: string): Promise<Catalog> {
-  const [professionals, appointmentTypes, schedules] = await Promise.all([
+  const [professionals, appointmentTypes, schedules, links, coverageRules] = await Promise.all([
     sql<Professional[]>`select * from professionals where clinic_id = ${clinicId} and active order by full_name`,
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinicId} and active order by specialty, name`,
     sql<Schedule[]>`
@@ -73,8 +78,19 @@ export async function getCatalog(clinicId: string): Promise<Catalog> {
       join professionals p on p.id = s.professional_id
       where p.clinic_id = ${clinicId} and p.active
       order by s.weekday, s.start_time`,
+    sql<ProfessionalType[]>`
+      select l.professional_id, l.appointment_type_id from professional_appointment_types l
+      join professionals p on p.id = l.professional_id
+      where p.clinic_id = ${clinicId}`,
+    sql<CoverageRule[]>`select * from coverage_rules where clinic_id = ${clinicId} order by coverage, plan nulls first, created_at`,
   ]);
-  return { professionals: [...professionals], appointmentTypes: [...appointmentTypes], schedules: [...schedules] };
+  return {
+    professionals: [...professionals],
+    appointmentTypes: [...appointmentTypes],
+    schedules: [...schedules],
+    links: [...links],
+    coverageRules: [...coverageRules],
+  };
 }
 
 /** Feriados, vacaciones y bloqueos que se superponen con el rango pedido. */
@@ -102,27 +118,113 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean): string {
     clinic.faq && `Preguntas frecuentes:\n${clinic.faq}`,
     clinic.policies && `Políticas:\n${clinic.policies}`,
     clinic.payment_methods && `Formas de pago:\n${clinic.payment_methods}`,
+    clinic.tone === "usted" && "Trato: de usted con todos los pacientes, en todos los mensajes y desde el primero.",
+    clinic.tone === "vos" && "Trato: de vos.",
+    rescheduleRulesText(clinic),
+    clinic.dental_protocol && DENTAL_PROTOCOL,
     clinic.agent_context && `Instrucciones de esta clínica:\n${clinic.agent_context}`,
-    clinic.id === GUERRA_MININNI && RESCHEDULE_GUIDANCE,
   ]
     .filter(Boolean)
     .join("\n");
 }
 
+const hoursText = (n: number) => `${n} ${n === 1 ? "hora" : "horas"}`;
+
+/** «implante, extracción y regeneración», como lo escribió el consultorio. */
+function termsPhrase(text: string | null): string {
+  const terms = [...new Set((text ?? "").split(/[,;\n]/).map((t) => t.trim()).filter((t) => t.length >= 3))];
+  return terms.length <= 1 ? (terms[0] ?? "") : `${terms.slice(0, -1).join(", ")} y ${terms.at(-1)}`;
+}
+
+/** Las reglas del consultorio para que Sofi mueva o cancele turnos ya dados, si cargó alguna. */
+export function rescheduleRulesText(
+  clinic: Pick<Clinic, "reschedule_notice_hours" | "cancel_notice_hours" | "reschedule_max_minutes" | "reception_only_terms">,
+): string | null {
+  const reception = [
+    parseTerms(clinic.reception_only_terms).length && `los turnos de ${termsPhrase(clinic.reception_only_terms)} (una consulta o un control de eso sí se pueden mover)`,
+    clinic.reschedule_max_minutes && `las visitas de más de ${durationPhrase(clinic.reschedule_max_minutes)}`,
+  ].filter(Boolean);
+  const lines = [
+    reception.length && `Recepción mueve ${reception.join(" y ")}.`,
+    clinic.reschedule_notice_hours && `Para mover un turno hacen falta al menos ${hoursText(clinic.reschedule_notice_hours)} de aviso.`,
+    clinic.cancel_notice_hours &&
+      `Para cancelar un turno hacen falta al menos ${hoursText(clinic.cancel_notice_hours)} de aviso: con menos, la cancelación la gestiona recepción.`,
+  ].filter(Boolean);
+  if (!lines.length) return null;
+  return [
+    "Mover y cancelar turnos:",
+    ...lines.map((l) => `- ${l}`),
+    "- Si la herramienta indica que lo coordina recepción, creá una tarea de derivacion_humana y aclarale al paciente que conserva el turno original.",
+  ].join("\n");
+}
+
+/** Cómo dice el precio Sofi, según la prestación. */
+function priceText(t: Pick<AppointmentType, "price" | "price_mode">): string {
+  if (t.price_mode === "no_informar") return " | Precio: no lo informes (el presupuesto se da en el consultorio)";
+  if (!t.price) return "";
+  if (t.price_mode === "exacto") return ` | Precio: $${t.price}`;
+  if (t.price_mode === "desde") return ` | Precio: desde $${t.price} (el presupuesto final se da después de la evaluación)`;
+  return ` | Precio de referencia: $${t.price}`;
+}
+
+/** Qué puede hacer Sofi con un turno de esta prestación que el paciente ya tiene. */
+function moveText(
+  t: Pick<AppointmentType, "name" | "panel_only" | "agent_can_reschedule">,
+  clinic: { move_panel_only: boolean },
+  terms: string[],
+): string {
+  const movable = agentCanMove(t, clinic) && !receptionOnlyTerm(t.name, terms);
+  // Sin cambios de la clínica, el texto de siempre (la herramienta igual frena el cambio).
+  if (t.panel_only) {
+    return movable
+      ? " | Solo la da el consultorio: no la ofrezcas ni la reserves. Si el paciente ya tiene ese turno, sí podés moverlo con su turno_id"
+      : " | Solo la da el consultorio: no la ofrezcas ni la reserves";
+  }
+  return movable ? "" : " | Si el paciente ya tiene ese turno, el cambio lo coordina recepción";
+}
+
 /** Catálogo de profesionales y prácticas con sus IDs, para que el agente use las herramientas. */
-export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], timeZone?: string): string {
+export function catalogText(
+  catalog: Catalog,
+  blocks: ScheduleBlock[] = [],
+  timeZone?: string,
+  clinic?: Pick<Clinic, "reception_only_terms" | "move_panel_only">,
+): string {
+  const links = catalog.links ?? [];
+  const typeName = new Map(catalog.appointmentTypes.map((t) => [t.id, t.name]));
+  const terms = parseTerms(clinic?.reception_only_terms);
+  const scheduleNote = (s: Schedule) => {
+    const only = (s.appointment_type_ids ?? []).map((id) => typeName.get(id)).filter(Boolean);
+    return [s.urgent_only && "reservado para urgencias", only.length && `solo ${only.join(", ")}`].filter(Boolean).join(", ");
+  };
   const proLines = catalog.professionals.map((p) => {
     const days = catalog.schedules
       .filter((s) => s.professional_id === p.id)
       .sort((a, b) => a.weekday - b.weekday)
-      .map((s) => `${WEEKDAY_NAMES[s.weekday]} ${s.start_time.slice(0, 5)}-${s.end_time.slice(0, 5)}`)
+      .map((s) => {
+        const note = scheduleNote(s);
+        return `${WEEKDAY_NAMES[s.weekday]} ${s.start_time.slice(0, 5)}-${s.end_time.slice(0, 5)}${note ? ` (${note})` : ""}`;
+      })
       .join(", ");
+    const own = links.filter((l) => l.professional_id === p.id).map((l) => typeName.get(l.appointment_type_id)).filter(Boolean);
+    const does = own.length ? ` | Hace solo: ${own.join(", ")}` : "";
     const coverages = p.accepted_coverages?.length ? ` | Solo atiende: ${p.accepted_coverages.join(", ")}` : "";
-    return `- ${p.full_name} (${p.specialty}) id=${p.id} | Atiende: ${days || "sin horarios cargados"}${coverages}${p.bio ? ` | ${p.bio}` : ""}`;
+    return `- ${p.full_name} (${p.specialty}) id=${p.id} | Atiende: ${days || "sin horarios cargados"}${does}${coverages}${p.bio ? ` | ${p.bio}` : ""}`;
   });
   const typeLines = catalog.appointmentTypes.map(
     (t) =>
-      `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${t.price ? ` | Precio de referencia: $${t.price}` : ""}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}${t.panel_only ? " | Solo la da el consultorio: no la ofrezcas ni la reserves" : ""}`,
+      `- ${t.name} (${t.specialty}, ${t.duration_min} min) id=${t.id}${priceText(t)}${t.instructions ? ` | Indicaciones: ${t.instructions}` : ""}${
+        t.is_urgent ? " | Turno de urgencia: consultar_disponibilidad busca lugar para hoy y mañana" : ""
+      }${t.requires_type_id ? ` | Solo si ya tuvo o tiene reservada: ${typeName.get(t.requires_type_id) ?? "la consulta previa"}` : ""}${
+        t.ask_before ? ` | Antes de reservar, preguntá: ${t.ask_before} (anotá la respuesta en notas)` : ""
+      }${moveText(t, { move_panel_only: clinic?.move_panel_only ?? false }, terms)}`,
+  );
+  const proName = new Map(catalog.professionals.map((p) => [p.id, p.full_name]));
+  const ruleLines = (catalog.coverageRules ?? []).map((r) =>
+    coverageRuleText(r, {
+      type: r.appointment_type_id ? (typeName.get(r.appointment_type_id) ?? "otra prestación") : undefined,
+      professional: r.professional_id ? (proName.get(r.professional_id) ?? "otro profesional") : undefined,
+    }),
   );
   const names = new Map(catalog.professionals.map((p) => [p.id, p.full_name]));
   const blockLines = blocks.map((b) => {
@@ -131,7 +233,10 @@ export function catalogText(catalog: Catalog, blocks: ScheduleBlock[] = [], time
     const to = formatDateTime(b.ends_at, timeZone);
     return `- ${who}: del ${from} al ${to}${b.reason ? ` (${b.reason})` : ""}`;
   });
-  const text = `PROFESIONALES:\n${proLines.join("\n")}\n\nTIPOS DE TURNO:\n${typeLines.join("\n")}`;
+  const coverage = ruleLines.length
+    ? `\n\nCOBERTURAS (consultar_disponibilidad y reservar_turno ya las aplican; usalas para contestar preguntas):\n${ruleLines.join("\n")}`
+    : "";
+  const text = `PROFESIONALES:\n${proLines.join("\n")}\n\nTIPOS DE TURNO:\n${typeLines.join("\n")}${coverage}`;
   return blockLines.length ? `${text}\n\nDÍAS SIN ATENCIÓN (próximos 60 días):\n${blockLines.join("\n")}` : text;
 }
 
@@ -255,7 +360,7 @@ export async function buildDynamicVariables(
     clinic_name: clinic.name,
     agent_name: clinic.agent_name,
     clinic_info: clinicInfoText(clinic, openNow),
-    clinic_catalog: catalogText(catalog, blocks, clinic.timezone),
+    clinic_catalog: catalogText(catalog, blocks, clinic.timezone, clinic),
     urgency_instructions: clinic.after_hours_instructions
       ? `${urgency}\nFuera del horario de atención: ${clinic.after_hours_instructions}`
       : urgency,

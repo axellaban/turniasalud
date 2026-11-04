@@ -8,6 +8,8 @@ export type ScheduleBlock = {
   weekday: number;
   start_time: string; // "09:00"
   end_time: string; // "13:00"
+  /** Horas reservadas para urgencias (ver booking-rules.ts). */
+  urgent_only?: boolean;
 };
 
 export type BusyInterval = { professional_id: string; starts_at: string; ends_at: string };
@@ -35,7 +37,8 @@ export type SlotQuery = {
   partOfDay?: "manana" | "tarde" | "cualquiera";
   limit?: number;
   perDayPerProfessional?: number;
-  accepts?: (start: Date, end: Date) => boolean;
+  /** Filtro extra. Recibe el horario del que sale la opción. */
+  accepts?: (start: Date, end: Date, block: ScheduleBlock) => boolean;
 };
 
 const AFTERNOON_START_MIN = 13 * 60;
@@ -55,6 +58,8 @@ export function computeSlots(q: SlotQuery): Slot[] {
   }
 
   const candidates: Slot[] = [];
+  // Dos horarios que se pisan (por ejemplo, uno común y otro de urgencias) no repiten la opción.
+  const seen = new Set<string>();
   for (let key = q.fromKey; key <= q.toKey; key = addDaysKey(key, 1)) {
     const weekday = weekdayOfKey(key);
     const [y, m, d] = key.split("-").map(Number);
@@ -79,11 +84,14 @@ export function computeSlots(q: SlotQuery): Slot[] {
         const busy = busyByProfessional.get(block.professional_id) ?? [];
         if (busy.some(([bs, be]) => startMs < be && endMs > bs)) continue;
         const end = new Date(endMs);
-        if (q.accepts && !q.accepts(start, end)) continue;
+        if (q.accepts && !q.accepts(start, end, block)) continue;
+        const slotKey = `${block.professional_id}|${startMs}`;
+        if (seen.has(slotKey)) continue;
 
         const count = perDayCount.get(block.professional_id) ?? 0;
         if (count >= perDay) continue;
         perDayCount.set(block.professional_id, count + 1);
+        seen.add(slotKey);
 
         candidates.push({
           professional_id: block.professional_id,
