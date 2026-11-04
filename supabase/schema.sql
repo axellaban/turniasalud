@@ -753,6 +753,9 @@ alter table sales_outreach add constraint sales_outreach_phone_kind_check check 
 -- El saludo de WhatsApp sin link («¡Buenas! ¿Hablo con…?») va antes de la presentación con la demo,
 -- para que WhatsApp no bloquee el número. No cuenta como toque.
 alter table sales_outreach add column if not exists greeted_at timestamptz;
+-- La cuenta real (no demo) que se le dio a esta persona, para medir la prospección hasta la clínica activa.
+alter table sales_outreach add column if not exists clinic_id uuid references clinics(id) on delete set null;
+alter table sales_outreach add column if not exists account_at timestamptz;
 
 -- Historia de cada contacto: mensajes, llamadas, visitas, respuestas, cambios de estado y la demo.
 create table if not exists sales_outreach_events (

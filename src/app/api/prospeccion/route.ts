@@ -1,11 +1,22 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { OUTREACH_COLUMNS, outreachSheetRows, queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
-import { normalizeInstagram, outreachPhone, type OutreachChannel, type OutreachStatus, type PhoneKind } from "@/lib/sales/outreach-messages";
+import {
+  TEMPLATE_KEYS,
+  TEMPLATE_LABEL,
+  normalizeInstagram,
+  outreachPhone,
+  type OutreachChannel,
+  type OutreachStatus,
+  type PhoneKind,
+  type TemplateKey,
+} from "@/lib/sales/outreach-messages";
 import {
   OutreachError,
   addOutreachNote,
+  outreachSettings,
   recordTouch,
+  saveOutreachSettings,
   setOutreachStatus,
   undoLastTouch,
   updateOutreach,
@@ -15,12 +26,14 @@ import { sql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// POST /api/prospeccion — el panel de prospección de Chapa Labs (/prospecting) opera la prospección
-// de Turnia desde acá: registra contactos, estados, notas, próximos pasos y ediciones con las mismas
-// funciones y reglas que Panel → Prospección, y la planilla de Google se vuelve a copiar como siempre.
-// De servidor a servidor: Authorization: Bearer $PROSPECTING_API_SECRET (o $METRICS_SECRET, la misma
-// clave que ya usa /api/metricas). Cuerpo: { code, action, by }. Devuelve la fila de esa persona con
-// las mismas columnas que la pestaña «Prospección».
+// /api/prospeccion — el panel de prospección de Chapa Labs (/prospecting) opera la prospección de
+// Turnia desde acá, con las mismas funciones y reglas que Panel → Prospección; la planilla de Google se
+// vuelve a copiar como siempre. De servidor a servidor: Authorization: Bearer $PROSPECTING_API_SECRET
+// (o $METRICS_SECRET, la misma clave que ya usa /api/metricas).
+//   GET                          los mensajes (los mismos de Panel → Prospección → Mensajes) y las
+//                                clínicas reales, para vincular la cuenta que se le da a cada persona.
+//   POST { code, action, by }    una acción sobre una persona; devuelve su fila de la planilla.
+//   POST { templates }           guarda mensajes ({ clave: texto }); los demás quedan como estaban.
 
 function secret(): string | null {
   // Pegada en Vercel puede traer un espacio o un salto de línea de más.
@@ -45,6 +58,7 @@ type Action = {
   nextAt?: string;
   nextStep?: string;
   fields?: Record<string, unknown>;
+  clinicId?: string | null;
 };
 
 const SENT_CHANNEL: Record<string, OutreachChannel> = { whatsapp: "whatsapp", instagram: "instagram", email: "email" };
@@ -124,6 +138,21 @@ async function apply(id: string, a: Action): Promise<void> {
     case "edit":
       await updateOutreach(id, editOf(a.fields ?? {}));
       return;
+    case "account": {
+      // La cuenta real que se le dio (o null para desvincularla).
+      const clinicId = a.clinicId ? String(a.clinicId) : null;
+      if (clinicId && !/^[0-9a-f-]{36}$/i.test(clinicId)) throw new BadRequest("Esa clínica no existe o es de una demo.");
+      if (clinicId) {
+        const [clinic] = await sql<Array<{ name: string }>>`select name from clinics where id = ${clinicId}::uuid and not is_demo`;
+        if (!clinic) throw new BadRequest("Esa clínica no existe o es de una demo.");
+        await sql`update sales_outreach set clinic_id = ${clinicId}::uuid, account_at = coalesce(account_at, now()), updated_at = now() where id = ${id}`;
+        await addOutreachNote(id, `Cuenta creada: ${clinic.name}`);
+      } else {
+        await sql`update sales_outreach set clinic_id = null, account_at = null, updated_at = now() where id = ${id}`;
+        await addOutreachNote(id, "Se desvinculó su cuenta.");
+      }
+      return;
+    }
     case "demo":
       throw new BadRequest("Turnia registra sola cuando abre o prueba su demo.");
     default:
@@ -131,9 +160,49 @@ async function apply(id: string, a: Action): Promise<void> {
   }
 }
 
+
+export async function GET(request: Request) {
+  if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const [settings, clinics] = await Promise.all([
+    outreachSettings(),
+    sql<Array<{ id: string; name: string }>>`select id, name from clinics where not is_demo order by name`,
+  ]);
+  return NextResponse.json(
+    {
+      templates: TEMPLATE_KEYS.map((key) => ({ key, ...TEMPLATE_LABEL[key], text: settings.templates[key] })),
+      dailyGoal: settings.daily_goal,
+      weeklyGoal: settings.weekly_goal,
+      clinics,
+    },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
+/** Guarda solo los mensajes que llegan; los demás quedan como estaban (y las metas, igual). */
+async function saveTemplates(input: Record<string, unknown>) {
+  const current = await outreachSettings();
+  const templates = { ...current.templates };
+  for (const [key, value] of Object.entries(input)) {
+    if (!(TEMPLATE_KEYS as readonly string[]).includes(key)) throw new BadRequest(`No existe el mensaje «${key}».`);
+    if (typeof value !== "string" || !value.trim()) throw new BadRequest("El mensaje no puede quedar vacío.");
+    templates[key as TemplateKey] = value;
+  }
+  await saveOutreachSettings({ templates, daily_goal: current.daily_goal, weekly_goal: current.weekly_goal });
+}
+
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const body = (await request.json().catch(() => null)) as { code?: unknown; action?: Action } | null;
+  const body = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; templates?: unknown } | null;
+  if (body?.templates && typeof body.templates === "object" && !body.code) {
+    try {
+      await saveTemplates(body.templates as Record<string, unknown>);
+    } catch (e) {
+      if (e instanceof OutreachError || e instanceof BadRequest) return NextResponse.json({ error: e.message }, { status: 422 });
+      throw e;
+    }
+    const settings = await outreachSettings();
+    return NextResponse.json({ templates: TEMPLATE_KEYS.map((key) => ({ key, ...TEMPLATE_LABEL[key], text: settings.templates[key] })) });
+  }
   const code = typeof body?.code === "string" ? body.code.trim().toLowerCase() : "";
   if (!code || !body?.action || typeof body.action !== "object") return NextResponse.json({ error: "Falta la persona o la acción." }, { status: 400 });
   const [person] = await sql<Array<{ id: string }>>`select id from sales_outreach where code = ${code}`;
