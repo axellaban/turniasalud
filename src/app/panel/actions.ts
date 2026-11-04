@@ -749,6 +749,29 @@ export async function runClinicAgentSetup(_previous: AgentSetupState | undefined
   }
 }
 
+/**
+ * Pone al día a los agentes que atienden a esta clínica (el general, que atiende su WhatsApp, y el
+ * propio de llamadas si tiene uno) con el prompt y las herramientas del equipo del consultorio.
+ */
+export async function runStaffAgentSetup(_previous: AgentSetupState | undefined, form: FormData): Promise<AgentSetupState> {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const main = await getClinic();
+  try {
+    await setupAgent(main);
+    const own = clinic.id !== main.id && clinic.elevenlabs_agent_id && clinic.elevenlabs_agent_id !== main.elevenlabs_agent_id;
+    if (own) await setupAgent(clinic);
+    revalidatePath("/panel/configuracion", "layout");
+    revalidatePath("/panel/sistema");
+    return {
+      ok: true,
+      message: `Listo: ${clinic.agent_name} ya tiene las herramientas del equipo${own ? " (en WhatsApp y en las llamadas)" : ""}. Escribile un mensaje nuevo desde ese celular para probar.`,
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "No se pudo actualizar el agente." };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Audios de las demos de la web pública
 // ---------------------------------------------------------------------------

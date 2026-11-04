@@ -14,7 +14,7 @@ import { Badge, Card, Field, Notice, inputClass, secondaryButtonClass, smallButt
 import { ConfigHeader } from "./header";
 import { Section, wide } from "./section";
 import { AccessCreator } from "./access-manager";
-import { ClinicAgentSetup } from "./clinic-agent";
+import { ClinicAgentSetup, StaffAgentSetup } from "./clinic-agent";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Consultorio · Panel" };
@@ -132,6 +132,12 @@ export default async function SettingsPage() {
               <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dr. Mininni" className={inputClass} /></Field>
               <Field label="Celular" hint="Con código de área. Es el de WhatsApp."><input name="phone" required inputMode="tel" placeholder="11 5555-0100" className={inputClass} /></Field>
             </ActionForm>
+            <div className="mt-4 border-t border-brand-900/5 pt-4">
+              <p className="mb-2 text-xs text-brand-900/65">
+                Si {agent} no reconoce al equipo (contesta como a un paciente), actualizala acá una vez. Después, cada celular nuevo vale desde su próximo mensaje.
+              </p>
+              <StaffAgentSetup key={clinic.id} clinicId={clinic.id} agentName={agent} disabled={!process.env.ELEVENLABS_API_KEY} />
+            </div>
           </Card>}
 
           {admin && clinic.id !== main?.id && <Card id="agente-llamadas" className="scroll-mt-20">
