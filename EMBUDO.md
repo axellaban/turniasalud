@@ -36,7 +36,7 @@ Los umbrales están en `scripts/embudo.mjs` (`ACTIVE_MIN_PATIENTS` y `ACTIVE_MIN
 - **Excepción, «Cuentas activas»:** se mide de nuevo cada semana, porque es un estado. En la columna «Total» va el valor de la última semana.
 - **Se descuenta lo deshecho:** un saludo o una demo enviada que se deshizo con «Deshacer contacto» no cuenta.
 - **No hay corte por cohorte:** una etapa no exige haber pasado por la anterior. Por ejemplo, alguien puede abrir su demo en la semana 2 aunque el mensaje se haya mandado en la 1.
-- **Las cuentas no se atan a un prospecto.** Hoy no hay un vínculo entre la ficha de prospección y la clínica. Las etapas 5 y 6 cuentan todas las cuentas, vengan o no de la prospección (por ejemplo, el piloto Guerra–Mininni).
+- **Las etapas 5 y 6 cuentan todas las cuentas**, vengan o no de la prospección (por ejemplo, el piloto Guerra–Mininni). Desde el 4/11 existe el vínculo entre la persona y su clínica (`sales_outreach.clinic_id`, acción `account` de `/api/prospeccion`), pero el script todavía no lo usa.
 
 ## Cómo actualizar la tabla
 
@@ -80,5 +80,5 @@ POSTHOG_PERSONAL_API_KEY=phx_… DATABASE_URL=postgres://… npm run embudo
 ## Pendiente para medir mejor
 
 - **Cuentas en las métricas de Chapa Labs.** `/api/metricas` (`src/lib/sales/metrics.ts`) cuenta clínicas y uso solo donde `is_demo` es falso. Pero las cuentas de los consultorios se crean como clínicas conservadas (`is_demo` = `true`, con `retained_at`): hoy ese tablero no las ve. Habría que contarlas como en `scripts/embudo.mjs`, por su código de acceso.
-- **Atar la cuenta al prospecto** (por ejemplo, `sales_outreach.clinic_id`), para ver el embudo completo de cada odontólogo y por cohorte de semana de contacto.
+- **Contar solo las cuentas de la prospección** con `sales_outreach.clinic_id` (existe desde el 4/11), para ver el embudo completo de cada odontólogo y por cohorte de semana de contacto. Ojo: la columna «Cuenta activa» de la planilla de Chapa Labs usa otro criterio (turnos en 30 días) y su embudo pone la cuenta después del cliente; conviene unificarlos con el de este archivo.
 - **Eventos de cuenta en PostHog** (`clinic_account_created`, y el primer turno que da Sofi en una cuenta), para que todo el embudo se vea en un solo tablero.

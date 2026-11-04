@@ -100,6 +100,7 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 ## 5. Producto y legal (antes de usar pacientes reales)
 
 - [ ] Cargar datos y protocolos reales de la primera clínica (no reemplazar por suposición).
+- [ ] **Protocolos odontológicos y reglas en el panel** (plan del 4/11): base común, módulo odontológico validado por un odontólogo y reglas que hoy van en texto o en el código de Guerra–Mininni (cobertura al buscar horarios, quién hace qué prestación, aviso mínimo, urgencias, prestación previa). La etapa 0 va antes del segundo cliente. Ver [`PLAN_PROTOCOLOS.md`](PLAN_PROTOCOLOS.md).
 - [ ] Revisar consentimiento, conservación de datos y textos de privacidad. No activar Zero Retention de ElevenLabs a ciegas: es incompatible con el Custom Channel (ver `PLAN_WHATSAPP.md`).
 - [ ] Activar campañas (workflow n8n `g0H8xbQvRNv5FxQj`, hoy desactivado) solo después de validar canal, destinatarios y baja.
 - [x] **Twilio saliente configurado** (24/10): línea propia verificada, importada en ElevenLabs y `ELEVENLABS_PHONE_NUMBER_ID` guardada en Production; despliegue Ready, salud con `llamada_telefonica: true`. La conexión final usa credenciales de la cuenta existente por elección del usuario; no una subcuenta. Detalle y alcance en `ESTADO_Y_PRIORIDADES.md`.
@@ -137,4 +138,5 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 | Campañas, importación de pacientes y CRM | `PLAN_CAMPANAS.md` |
 | Google Calendar | `GOOGLE_CALENDAR.md` |
 | Google Sheets | `GOOGLE_SHEETS.md` |
+| Protocolos odontológicos, base común y reglas del panel | `PLAN_PROTOCOLOS.md` |
 | Qué es Turnia, decisiones y arquitectura | `CONTEXTO_PROYECTO.md` |

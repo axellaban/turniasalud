@@ -22,4 +22,5 @@ Antes de trabajar en este repo leé, en este orden:
 7. [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md): cómo conseguir clientes (odontólogos de Mar del Plata y Miramar), Panel → Prospección y la demo personal de cada uno (`/p/<código>`).
 8. [`ANALITICA.md`](ANALITICA.md): PostHog (eventos del navegador y del servidor, embudos, tableros). Si sumás un botón, un paso o un evento, actualizá el catálogo.
 9. [`EMBUDO.md`](EMBUDO.md): **el embudo comercial que se sigue cada semana** (de los saludos a los clientes pagos), con sus definiciones, el criterio de cuenta activa y la tabla. Se actualiza con `npm run embudo`.
-10. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
+10. [`PLAN_PROTOCOLOS.md`](PLAN_PROTOCOLOS.md): qué es común a todos los consultorios odontológicos y qué configura cada uno (prompt base, módulo odontológico, reglas en el panel), comparado con Assort Health, y el plan por etapas. **Plan, sin código todavía.**
+11. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
