@@ -50,13 +50,19 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
 
   it("el primer WhatsApp es el saludo; el segundo, la demo, y copia la planilla", async () => {
     mocks.after.length = 0;
-    let r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp" } });
+    let r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_saludo" } });
     expect(r.status).toBe(200);
     expect(col(r.body, "Estado")).toBe("Contactado");
     expect(col(r.body, "Mensajes")).toBe(0);
     expect(col(r.body, "Saludo enviado")).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     expect(mocks.after.length).toBeGreaterThan(0);
-    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp" } });
+    // El mismo saludo confirmado otra vez es un reintento: no suma.
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_saludo" } });
+    expect(col(r.body, "Mensajes")).toBe(0);
+    // Respondió enseguida: la demo sale un minuto después del saludo y sí cuenta.
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_1" } });
+    expect(col(r.body, "Mensajes")).toBe(1);
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_1" } });
     expect(col(r.body, "Mensajes")).toBe(1);
     expect(r.body.header).toContain("Clínica de la demo");
     expect(r.body.header).toContain("Conversó en la demo");
