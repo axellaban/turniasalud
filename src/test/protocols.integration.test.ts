@@ -71,7 +71,7 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     [{ id: clinicId }] = await sql`insert into clinics (name, specialty, is_demo, retained_at) values ('Consultorio de reglas', 'Odontología', true, now()) returning id`;
     [{ id: ana }, { id: beto }] = await sql`
       insert into professionals (clinic_id, full_name, specialty, accepted_coverages) values
-      (${clinicId}, 'Dra. Ana Prueba', 'Odontología', null), (${clinicId}, 'Dr. Beto Prueba', 'Odontología', ${["Swiss Medical"]})
+      (${clinicId}, 'Dra. Ana Prueba', 'Odontología', null), (${clinicId}, 'Dr. Beto Prueba', 'Odontología', ${["Swiss Medical", "Particular"]})
       returning id`;
     await sql`
       insert into schedules (professional_id, weekday, start_time, end_time)
@@ -107,7 +107,7 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
   it("la búsqueda deja afuera a quien no atiende la cobertura de la ficha; si nadie la atiende, ofrece como particular", async () => {
     const both = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, desde: day(2), hasta: day(2) });
     expect(pros(both)).toEqual(new Set([ana, beto]));
-    // OSDE: el Dr. Beto solo atiende Swiss Medical.
+    // OSDE: el Dr. Beto solo atiende Swiss Medical y particular.
     const r = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, desde: day(2), hasta: day(2) }, osde);
     expect(r.ok).toBe(true);
     expect(pros(r)).toEqual(new Set([ana]));
@@ -119,16 +119,21 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     expect(particular.ok).toBe(true);
     expect((await sql`select coverage from appointments where id = ${particular.turno_id!}`)[0].coverage).toBe("Particular");
 
-    // Nadie atiende OSDE: los horarios salen igual, con el aviso para ofrecer particular.
+    // Nadie atiende OSDE: salen los horarios de quien atiende particular, con el aviso.
     await sql`update professionals set accepted_coverages = ${["Galeno"]} where id = ${ana}`;
     try {
       const nobody = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, desde: day(3), hasta: day(3) }, osde);
-      expect(nobody.turnos.length).toBeGreaterThan(0);
+      expect(pros(nobody)).toEqual(new Set([beto]));
       expect(nobody.aviso_cobertura).toContain("como particular");
       const asParticular = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, desde: day(3), hasta: day(3), cobertura: "Particular" }, osde);
-      expect(pros(asParticular)).toEqual(new Set([ana, beto]));
+      expect(pros(asParticular)).toEqual(new Set([beto]));
       expect(asParticular.aviso_cobertura).toBeUndefined();
+      // Y si tampoco hay quien atienda particular, no ofrece horarios que después no se pueden reservar.
+      await sql`update professionals set accepted_coverages = ${["Swiss Medical"]} where id = ${beto}`;
+      expect(await tool("consultar_disponibilidad", { tipo_turno_id: consulta, desde: day(3), hasta: day(3) }, osde))
+        .toMatchObject({ ok: false, error: expect.stringContaining("Nadie lo puede atender así") });
     } finally {
+      await sql`update professionals set accepted_coverages = ${["Swiss Medical", "Particular"]} where id = ${beto}`;
       await sql`update professionals set accepted_coverages = null where id = ${ana}`;
       await clearAppointments();
     }
@@ -410,7 +415,7 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     await sql`update appointment_types set requires_type_id = null, price_mode = 'referencia', ask_before = null, agent_can_reschedule = true where id = ${colocacion}`;
 
     // Profesionales: qué prestaciones hacen.
-    const pro = { clinic_id: clinicId, id: beto, full_name: "Dr. Beto Prueba", specialty: "Odontología", accepted_coverages: "Swiss Medical" };
+    const pro = { clinic_id: clinicId, id: beto, full_name: "Dr. Beto Prueba", specialty: "Odontología", accepted_coverages: "Swiss Medical, Particular" };
     expect(await actions.saveProfessionalWithFeedback({}, form({ ...pro, types_field: "1", appointment_type_ids: [conducto, limpieza, "no-es-un-id"] }))).toMatchObject({ ok: true });
     const links = async () => (await sql`select appointment_type_id from professional_appointment_types where professional_id = ${beto}`).map((r) => r.appointment_type_id).sort();
     expect(await links()).toEqual([conducto, limpieza].sort());

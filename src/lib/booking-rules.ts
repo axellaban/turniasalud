@@ -145,9 +145,9 @@ export type CoverageCheck =
 
 /**
  * ¿Este profesional atiende estas prestaciones con esta cobertura? Junta la lista de coberturas del
- * profesional (Equipo y horarios) y la matriz de coberturas. Devuelve el nombre de la cobertura como
- * lo cargó la clínica y lo que hay que avisarle al paciente (copago, reintegro, autorización).
- * Particular siempre se puede, salvo que una regla diga lo contrario.
+ * profesional (Equipo y horarios, como siempre: si tiene lista, «Particular» también tiene que estar)
+ * y la matriz de coberturas. Devuelve el nombre de la cobertura como lo cargó la clínica y lo que hay
+ * que avisarle al paciente (copago, reintegro, autorización).
  */
 export function checkCoverage(
   pro: Pick<Professional, "id" | "full_name" | "accepted_coverages">,
@@ -159,14 +159,17 @@ export function checkCoverage(
   const wanted = coverage?.trim();
   if (!wanted) return { ok: true, coverage: null, notes: [] };
   const particular = isParticular(wanted);
-  const listed = pro.accepted_coverages?.length ? pro.accepted_coverages.find((c) => coverageKey(c) === coverageKey(wanted)) : wanted;
+  const key = coverageKey(wanted);
+  // «OSDE 310» en la ficha también es «OSDE» en la lista del profesional.
+  const exact = pro.accepted_coverages?.find((c) => coverageKey(c) === key);
+  const listed = !pro.accepted_coverages?.length ? wanted : (exact ?? (pro.accepted_coverages.some((c) => key.startsWith(`${coverageKey(c)} `)) ? wanted : undefined));
   const label = coverageLabel(wanted, plan);
   const notes: string[] = [];
   // Sin prestación (no debería pasar), igual se mira la lista del profesional.
   for (const type of types.length ? types : [{ id: "", name: "el turno" }]) {
     const rule = bestCoverageRule(rules, { coverage: wanted, plan, typeId: type.id, professionalId: pro.id });
     // Una regla de este profesional manda sobre su lista de coberturas.
-    if (!(rule?.professional_id === pro.id) && !particular && !listed) {
+    if (!(rule?.professional_id === pro.id) && !listed) {
       return { ok: false, reason: `${pro.full_name} no atiende por ${wanted}. Atiende: ${pro.accepted_coverages!.join(", ")}.` };
     }
     if (!rule) continue;
@@ -185,7 +188,7 @@ export function checkCoverage(
     if (rule.mode === "acepta" && note) notes.push(`Por ${label}, ${type.name}: ${rule.note!.trim()}.`);
     if (rule.requires_authorization) notes.push(`Para ${type.name} por ${label} necesita la autorización u orden de la prepaga antes del turno: avisale que la traiga.`);
   }
-  return { ok: true, coverage: particular ? wanted : (listed ?? wanted), notes: [...new Set(notes)] };
+  return { ok: true, coverage: listed ?? wanted, notes: [...new Set(notes)] };
 }
 
 /** Texto de una regla para el catálogo del agente. */

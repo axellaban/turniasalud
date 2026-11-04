@@ -87,7 +87,7 @@ export default async function CoveragePage() {
       <ConfigHeader clinic={clinic} current="/panel/configuracion/coberturas" />
       <div className="mb-4 max-w-3xl space-y-2 text-sm text-brand-900/60">
         <p>Qué pasa con cada obra social o prepaga: por plan, por prestación o por profesional. Sofi no ofrece horarios con quien no la acepta y avisa el copago, el reintegro o la autorización antes de reservar.</p>
-        <p>Si hay varias reglas, manda la más específica (prestación, después profesional, después plan). Particular siempre se puede, salvo que una regla diga lo contrario. Sin reglas, vale la lista de coberturas de cada profesional.</p>
+        <p>Si hay varias reglas, manda la más específica (prestación, después profesional, después plan). La lista de coberturas de cada profesional (Equipo y horarios) sigue valiendo: si tiene lista, «Particular» también tiene que estar. Una regla de ese profesional manda sobre su lista.</p>
       </div>
 
       <Card className="p-0">

@@ -117,10 +117,17 @@ describe("coberturas", () => {
     expect(checkCoverage(limited, [limpieza], "Galeno", null)).toEqual({ ok: false, reason: "Dr. Gómez no atiende por Galeno. Atiende: OSDE, Swiss Medical." });
   });
 
-  it("particular siempre se puede, salvo que una regla diga lo contrario", () => {
-    expect(checkCoverage(limited, [limpieza], "Particular", null)).toMatchObject({ ok: true, coverage: "Particular" });
-    const noParticular = [rule({ coverage: "Particular", professional_id: "p2", mode: "no_acepta" })];
-    expect(checkCoverage(limited, [limpieza], "particular", null, noParticular)).toMatchObject({ ok: false, reason: expect.stringContaining("no se atiende como particular") });
+  it("particular sigue la lista del profesional, como siempre; una regla del profesional manda", () => {
+    expect(checkCoverage(pro, [limpieza], "Particular", null)).toMatchObject({ ok: true, coverage: "Particular" });
+    expect(checkCoverage(limited, [limpieza], "Particular", null)).toMatchObject({ ok: false, reason: expect.stringContaining("no atiende por Particular") });
+    expect(checkCoverage(limited, [limpieza], "Particular", null, [rule({ coverage: "Particular", professional_id: "p2" })])).toMatchObject({ ok: true });
+    const noParticular = [rule({ coverage: "Particular", professional_id: "p1", mode: "no_acepta" })];
+    expect(checkCoverage(pro, [limpieza], "particular", null, noParticular)).toMatchObject({ ok: false, reason: expect.stringContaining("no se atiende como particular") });
+  });
+
+  it("«OSDE 310» en la ficha coincide con «OSDE» en la lista, y conserva el plan", () => {
+    expect(checkCoverage(limited, [limpieza], "OSDE 310", null)).toEqual({ ok: true, coverage: "OSDE 310", notes: [] });
+    expect(checkCoverage(limited, [limpieza], "OSDEPYM", null)).toMatchObject({ ok: false });
   });
 
   it("manda la regla más específica: prestación, después profesional, después plan", () => {

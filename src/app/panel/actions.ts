@@ -467,10 +467,14 @@ async function appointmentTypeRules(form: FormData, clinicId: string, selfId?: s
   const requires = uuid(form, "requires_type_id");
   if (requires) {
     if (requires === selfId) return "Una prestación no puede pedirse a sí misma antes.";
-    const [row] = await sql<Array<{ requires_type_id: string | null }>>`
-      select requires_type_id from appointment_types where id = ${requires} and clinic_id = ${clinicId}`;
-    if (!row) return "La prestación previa no es de esta clínica. Recargá la página.";
-    if (selfId && row.requires_type_id === selfId) return "Esas dos prestaciones se piden una a la otra: dejá la previa en una sola.";
+    const chain = await sql<Array<{ id: string; requires_type_id: string | null }>>`
+      select id, requires_type_id from appointment_types where clinic_id = ${clinicId}`;
+    if (!chain.some((t) => t.id === requires)) return "La prestación previa no es de esta clínica. Recargá la página.";
+    // Que la cadena de prestaciones previas no vuelva a esta (A pide B, B pide A).
+    const next = new Map(chain.map((t) => [t.id, t.requires_type_id]));
+    for (let at: string | null | undefined = requires, steps = 0; at && steps < chain.length; at = next.get(at), steps++) {
+      if (selfId && next.get(at) === selfId) return "Esas prestaciones se piden una a la otra: dejá la previa en una sola.";
+    }
   }
   const mode = (text(form, "price_mode") ?? "referencia") as PriceMode;
   if (!PRICE_MODES.includes(mode)) return "Elegí cómo dice el precio Sofi.";

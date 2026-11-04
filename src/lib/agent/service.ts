@@ -318,7 +318,10 @@ export async function checkAvailability(
     if (fine.length) professionals = fine.map((c) => c.p);
     else {
       const reasons = [...new Set(checks.map((c) => (c.check.ok ? "" : c.check.reason)))].join(" ");
-      if (isParticular(wanted)) throw new ToolError(`${reasons} Creá una tarea de derivacion_humana para que recepción lo coordine.`);
+      // Nadie la atiende: se ofrece como particular con quienes atienden particular.
+      const asParticular = isParticular(wanted) ? [] : capable.filter((p) => checkCoverage(p, visit, "Particular", null, catalog.coverageRules).ok);
+      if (!asParticular.length) throw new ToolError(`${reasons} Nadie lo puede atender así: creá una tarea de derivacion_humana para que recepción lo coordine.`);
+      professionals = asParticular;
       coverageNotice = `${reasons} Estos horarios son como particular: decíselo antes de ofrecerlos. Si lo acepta, reservá con cobertura «Particular»; si tiene otra cobertura, buscá de nuevo con esa.`;
     }
   }

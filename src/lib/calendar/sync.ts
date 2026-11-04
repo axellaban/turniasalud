@@ -392,10 +392,12 @@ export async function checkCalendarChanges(clinicId?: string): Promise<{ revisad
           const event = byId.get(row.calendar_event_id) ?? (await fetchEvent(conn, calendarId, row.calendar_event_id));
           const drift = eventDrift(event, row, row.timezone);
           if (drift === row.calendar_drift) continue;
-          // Si el turno cambió en Turnia mientras tanto, ya no se compara con esto.
+          // Si el turno cambió en Turnia mientras tanto, ya no se compara con esto; si otra corrida ya
+          // anotó el cambio, no se repite la tarea.
           const [updated] = await sql<Array<{ id: string }>>`
             update appointments set calendar_drift = ${drift}, calendar_drift_at = ${drift ? sql`now()` : null}
             where id = ${row.id} and calendar_sync = 'ok' and starts_at = ${row.starts_at} and ends_at = ${row.ends_at}
+              and calendar_drift is not distinct from ${row.calendar_drift}
             returning id`;
           if (!updated || !drift) continue;
           result.cambios++;
