@@ -100,6 +100,43 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect(col(r.body, "Conversó en la demo")).toBeTruthy();
   });
 
+  it("lee y guarda los mensajes, sin tocar los demás ni las metas", async () => {
+    const get = async () => (await route.GET(new Request("https://turnia.example/api/prospeccion", { headers: { authorization: `Bearer ${SECRET}` } }))).json();
+    const before = await get();
+    expect(before.templates.map((t: { key: string }) => t.key)).toContain("whatsapp_saludo");
+    expect(before.weeklyGoal).toBe(250);
+    const r = await post({ templates: { whatsapp_saludo: "¡Hola! ¿Hablo con {saludo}?" } });
+    expect(r.status).toBe(200);
+    const after = await get();
+    const text = (k: string, x: { templates: Array<{ key: string; text: string }> }) => x.templates.find((t) => t.key === k)?.text;
+    expect(text("whatsapp_saludo", after)).toBe("¡Hola! ¿Hablo con {saludo}?");
+    expect(text("whatsapp_1", after)).toBe(text("whatsapp_1", before));
+    expect((await post({ templates: { no_existe: "x" } })).status).toBe(422);
+    expect((await post({ templates: { whatsapp_1: "  " } })).status).toBe(422);
+    expect((await route.GET(new Request("https://turnia.example/api/prospeccion"))).status).toBe(401);
+  });
+
+  it("vincula la cuenta real que se le dio y la marca activa si su clínica tiene turnos", async () => {
+    const [clinic] = await sql<Array<{ id: string; name: string }>>`insert into clinics (name, is_demo) values ('Clínica Real Prueba', false) returning id, name`;
+    const [demo] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Clínica Demo', true) returning id`;
+    expect((await post({ code: "ana-111", action: { type: "account", clinicId: demo.id } })).status).toBe(422);
+    expect((await post({ code: "ana-111", action: { type: "account", clinicId: "no-es-un-id" } })).status).toBe(422);
+    let r = await post({ code: "ana-111", action: { type: "account", clinicId: clinic.id } });
+    expect(r.status).toBe(200);
+    expect(col(r.body, "Clínica de la cuenta")).toBe("Clínica Real Prueba");
+    expect(col(r.body, "Cuenta creada")).toMatch(/^\d{4}-/);
+    expect(col(r.body, "Cuenta activa")).toBe("");
+    const [pro] = await sql<Array<{ id: string }>>`insert into professionals (clinic_id, full_name, specialty) values (${clinic.id}, 'Dra. Prueba', 'Odontología') returning id`;
+    const [type] = await sql<Array<{ id: string }>>`insert into appointment_types (clinic_id, name, specialty) values (${clinic.id}, 'Consulta', 'Odontología') returning id`;
+    const [patient] = await sql<Array<{ id: string }>>`insert into patients (clinic_id, full_name, phone) values (${clinic.id}, 'Paciente Prueba', '+5492235009999') returning id`;
+    await sql`insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, source)
+              values (${clinic.id}, ${patient.id}, ${pro.id}, ${type.id}, now() + interval '1 day', now() + interval '1 day 30 minutes', 'whatsapp')`;
+    r = await post({ code: "ana-111", action: { type: "note", text: "operando" } });
+    expect(col(r.body, "Cuenta activa")).toMatch(/^\d{4}-/);
+    r = await post({ code: "ana-111", action: { type: "account", clinicId: null } });
+    expect(col(r.body, "Cuenta creada")).toBe("");
+  });
+
   it("edita datos con las mismas validaciones del panel", async () => {
     const r = await post({ code: "ana-111", action: { type: "edit", fields: { org: "Consultorio Ana", phone: "223 500-0009", phoneKind: "compartido", instagram: "https://instagram.com/ana.odonto" } } });
     expect(r.status).toBe(200);
