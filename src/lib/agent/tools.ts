@@ -71,9 +71,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "consultar_disponibilidad",
     description:
-      "Busca turnos libres reales para un tipo de turno. Usala SIEMPRE antes de ofrecer horarios; nunca inventes horarios.",
+      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios; nunca inventes horarios.",
     params: {
-      tipo_turno_id: { type: "string", description: "id del tipo de turno, copiado del catálogo.", required: true },
+      tipo_turno_id: { type: "string", description: "Para reservar: id del tipo de turno, copiado del catálogo." },
+      turno_id: { type: "string", description: "Para reprogramar: turno_id del turno existente (si son dos prácticas seguidas, usá el de la primera)." },
       segundo_tipo_turno_id: { type: "string", description: SECOND_TYPE },
       profesional_id: { type: "string", description: "id del profesional si el paciente pidió uno en particular." },
       desde: { type: "string", description: `Primer día a buscar. ${isoDate} Por defecto, hoy.` },
@@ -81,13 +82,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       franja: { type: "string", description: "Franja horaria preferida.", enum: ["manana", "tarde", "cualquiera"] },
     },
     schema: z.object({
-      tipo_turno_id: z.string().min(1),
+      tipo_turno_id: z.string().min(1).optional(),
+      turno_id: z.string().min(1).optional(),
       segundo_tipo_turno_id: z.string().optional(),
       profesional_id: z.string().optional(),
       desde: z.string().optional(),
       hasta: z.string().optional(),
       franja: z.enum(["manana", "tarde", "cualquiera"]).optional(),
-    }),
+    }).refine((input) => Boolean(input.tipo_turno_id) !== Boolean(input.turno_id), "Usá tipo_turno_id para reservar o turno_id para reprogramar."),
   },
   {
     name: "reservar_turno",
@@ -145,7 +147,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "reprogramar_turno",
     description:
-      "Mueve un turno existente a un nuevo horario. Primero consultá disponibilidad para el mismo tipo de turno y confirmá el nuevo horario con el paciente. Si el turno tiene otra práctica a continuación en la misma visita, se mueven juntas: consultá la disponibilidad con las dos (segundo_tipo_turno_id) y mové solo la primera.",
+      "Mueve un turno existente a un nuevo horario. Primero usá consultar_disponibilidad con el turno_id del turno existente y confirmá el nuevo horario con el paciente. Si son dos prácticas seguidas de la misma visita, usá el turno_id de la primera para consultar y para moverlas juntas.",
     params: {
       turno_id: { type: "string", description: "turno_id del turno a mover.", required: true },
       nuevo_inicio: { type: "string", description: "Nuevo inicio en ISO 8601, tal cual vino en consultar_disponibilidad.", required: true },
