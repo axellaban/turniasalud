@@ -148,7 +148,7 @@ export async function forwardToAgent(
 
     vars.conversation_context = open?.context ?? opts.context ?? INBOUND_CONTEXT;
     if (channelForChat(input.chatId) === "telegram") vars.conversation_context += " Canal actual: Telegram. Respondé en texto breve sin Markdown; cuando el usuario elige audio, Turnia convierte tu respuesta con tu voz de ElevenLabs. No pidas un teléfono para identificarlo: patient_phone es su identidad de Telegram.";
-    if (stale && open?.transcript.length) vars.conversation_context += ` La información de la clínica se actualizó durante esta charla: usá la de ahora. Lo último que se habló: ${recapTranscript(open.transcript)}`;
+    if (stale && open?.transcript.length) vars.conversation_context += ` La información de la clínica o tus herramientas se actualizaron durante esta charla: usá las de ahora, aunque antes hayas dicho que no podías hacer algo. Lo último que se habló: ${recapTranscript(open.transcript)}`;
     vars.campaign_id = open?.campaign_id ?? "ninguna";
     // El webhook decide: un audio del paciente, o un pedido de audio en una línea propia con voz.
     const voiceForMessage = Boolean(opts.voiceForMessage) && channelForChat(input.chatId) === "whatsapp";
