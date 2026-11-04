@@ -22,7 +22,7 @@ import {
   updateOutreach,
   type OutreachEdit,
 } from "@/lib/sales/outreach";
-import { sql } from "@/lib/db";
+import { json, sql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,8 @@ export const dynamic = "force-dynamic";
 //                                clínicas reales, para vincular la cuenta que se le da a cada persona.
 //   POST { code, action, by }    una acción sobre una persona; devuelve su fila de la planilla.
 //   POST { templates }           guarda mensajes ({ clave: texto }); los demás quedan como estaban.
+//   POST { funnel }              guarda las metas del embudo: { perWeek, rates: { paso: 0.45 } }. perWeek es
+//                                la meta semanal de saludos de Panel → Prospección (la misma).
 
 function secret(): string | null {
   // Pegada en Vercel puede traer un espacio o un salto de línea de más.
@@ -174,15 +176,17 @@ async function apply(id: string, a: Action): Promise<void> {
 
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const [settings, clinics] = await Promise.all([
+  const [settings, clinics, [funnel]] = await Promise.all([
     outreachSettings(),
     sql<Array<{ id: string; name: string }>>`select id, name from clinics where not is_demo order by name`,
+    sql<Array<{ rates: Record<string, number> }>>`select outreach_funnel_rates as rates from sales_settings where id = 1`,
   ]);
   return NextResponse.json(
     {
       templates: TEMPLATE_KEYS.map((key) => ({ key, ...TEMPLATE_LABEL[key], text: settings.templates[key] })),
       dailyGoal: settings.daily_goal,
       weeklyGoal: settings.weekly_goal,
+      funnelRates: funnel?.rates ?? {},
       clinics,
     },
     { headers: { "Cache-Control": "private, no-store" } },
@@ -201,9 +205,34 @@ async function saveTemplates(input: Record<string, unknown>) {
   await saveOutreachSettings({ templates, daily_goal: current.daily_goal, weekly_goal: current.weekly_goal });
 }
 
+/** Metas del embudo: la semanal de saludos (la del panel) y la conversión de cada paso. */
+async function saveFunnel(input: unknown) {
+  const f = (input ?? {}) as { perWeek?: unknown; rates?: unknown };
+  const perWeek = Number(f.perWeek);
+  if (!Number.isInteger(perWeek) || perWeek < 1 || perWeek > 2000) throw new BadRequest("La meta semanal va de 1 a 2000.");
+  const rates: Record<string, number> = {};
+  const entries = Object.entries((f.rates && typeof f.rates === "object" ? f.rates : {}) as Record<string, unknown>);
+  if (entries.length > 12) throw new BadRequest("Demasiados pasos.");
+  for (const [key, value] of entries) {
+    const r = Number(value);
+    if (!/^[a-z0-9_]{2,40}$/.test(key) || !Number.isFinite(r) || r <= 0 || r > 1) throw new BadRequest("Cada paso tiene que estar entre 1% y 100%.");
+    rates[key] = Math.round(r * 1000) / 1000;
+  }
+  await sql`update sales_settings set outreach_weekly_goal = ${perWeek}, outreach_funnel_rates = ${json(rates)}, updated_at = now() where id = 1`;
+  return { perWeek, rates };
+}
+
 export async function POST(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const body = (await request.json().catch(() => null)) as { code?: unknown; action?: Action; templates?: unknown } | null;
+  if (body && "funnel" in body && !body.code) {
+    try {
+      return NextResponse.json({ funnel: await saveFunnel((body as { funnel: unknown }).funnel) });
+    } catch (e) {
+      if (e instanceof BadRequest) return NextResponse.json({ error: e.message }, { status: 422 });
+      throw e;
+    }
+  }
   if (body?.templates && typeof body.templates === "object" && !body.code) {
     try {
       await saveTemplates(body.templates as Record<string, unknown>);
