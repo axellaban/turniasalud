@@ -5,7 +5,7 @@ import { submitKeepingValues } from "@/components/keep-form";
 import { addScheduleBlock } from "../../actions";
 import { Field, buttonClass, inputClass } from "@/components/ui";
 
-export function ScheduleBlockForm({ professionals, today, clinicId }: { clinicId?: string; professionals: Array<{ id: string; name: string }>; today: string }) {
+export function ScheduleBlockForm({ professionals, today, clinicId, agent = "Sofi" }: { clinicId?: string; professionals: Array<{ id: string; name: string }>; today: string; agent?: string }) {
   const [state, action, pending] = useActionState(addScheduleBlock, undefined);
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => { if (state?.ok) form.current?.reset(); }, [state]);
@@ -22,7 +22,7 @@ export function ScheduleBlockForm({ professionals, today, clinicId }: { clinicId
           ))}
         </select>
       </Field>
-      <Field label="Motivo" hint="El agente lo menciona si el paciente pide ese día.">
+      <Field label="Motivo" hint={`${agent} lo menciona si el paciente pide ese día.`}>
         <input name="reason" placeholder="Feriado, vacaciones, congreso…" className={inputClass} />
       </Field>
       <Field label="Desde el día">

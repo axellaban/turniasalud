@@ -241,9 +241,12 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
   });
   it("muestra el editor completo y aísla las conexiones generales", async () => {
     const render = async (path: string) => renderToStaticMarkup(await (await import(`@/app/panel/(app)/${path}/page`)).default());
-    const pages = await Promise.all(["configuracion", "configuracion/equipo", "configuracion/prestaciones", "configuracion/bloqueos", "configuracion/web"].map(render));
+    const pages = await Promise.all(["configuracion", "configuracion/equipo", "configuracion/prestaciones", "configuracion/coberturas", "configuracion/turnos", "configuracion/bloqueos", "configuracion/web"].map(render));
     const html = pages.join("");
-    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Protocolo de urgencias", "Instrucciones adicionales", "Formas de pago", "Editar profesional", "Editar prestación", "En el navegador, WhatsApp o Telegram", "Lecturas de la web", "Bloquear agenda", "Acceso del consultorio"]) expect(html).toContain(label);
+    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Qué hacer ante una urgencia", "Instrucciones adicionales", "Formas de pago", "Coberturas que acepta el consultorio", "Editar profesional", "Editar prestación", "Completar la ficha con la web", "Bloquear agenda", "Acceso del consultorio", "Acceso total por WhatsApp"]) expect(html).toContain(label);
+    // Cada dato se carga en un solo lugar: la ficha del consultorio ya no repite coberturas, urgencias ni seguimiento.
+    const [consultorio] = pages;
+    for (const moved of ["Coberturas aceptadas", "Protocolo de urgencias", "Si el paciente no contesta", "Políticas"]) expect(consultorio).not.toContain(`>${moved}<`);
     // Las conexiones generales viven solo en Sistema.
     expect(html).not.toContain("Conectar bot de Telegram"); expect(html).not.toContain("Regenerar"); expect(html).not.toContain("WhatsApp por WAHA");
     expect(renderToStaticMarkup(await (await import("@/app/panel/(app)/sistema/page")).default())).toContain("Conectar bot de Telegram");
@@ -274,7 +277,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect((await clinic(a)).name).toBe("Alfa por el consultorio");
     expect((await clinic(b)).name).toBe("Clínica Beta");
     // Queda registrado quién cambió qué.
-    expect((await sql`select actor, area from clinic_changes where clinic_id = ${a}`)[0]).toMatchObject({ actor: "Dr. Alfa", area: "Reglas del consultorio" });
+    expect((await sql`select actor, area from clinic_changes where clinic_id = ${a}`)[0]).toMatchObject({ actor: "Dr. Alfa", area: "Consultorio" });
 
     // Lo del administrador queda cerrado.
     const denied = "redirect:/panel";

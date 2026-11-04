@@ -1150,3 +1150,17 @@ create table if not exists patient_health_forms (
 );
 create index if not exists patient_health_forms_patient_idx on patient_health_forms (patient_id, created_at desc);
 alter table patient_health_forms enable row level security;
+
+-- Teléfonos del equipo del consultorio con acceso total por WhatsApp (Panel → Configuración →
+-- Consultorio, solo Turnia). Sofi los reconoce solo por WhatsApp, donde el número no se puede
+-- falsear: les muestra la agenda y los pacientes y les deja cambiar cualquier turno.
+create table if not exists clinic_staff_phones (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  -- Normalizado como los pacientes (5491155550000).
+  phone text not null,
+  name text not null,
+  created_at timestamptz not null default now(),
+  unique (clinic_id, phone)
+);
+alter table clinic_staff_phones enable row level security;

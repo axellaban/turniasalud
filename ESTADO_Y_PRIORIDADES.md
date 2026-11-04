@@ -1,6 +1,38 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 04/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Panel sin repetidos y acceso total por WhatsApp para el equipo — 05/11/2026
+
+- **Pedido del usuario:** que el panel quede limpio, sin datos repetidos e intuitivo (la duda que lo disparó: «Coberturas aceptadas» en Reglas del consultorio y, además, la pestaña Coberturas). Y que el celular del Dr. Mininni tenga «superpoderes» con Sofi.
+- **Configuración: cada dato en un solo lugar.** Las pestañas quedan en el orden en que se arma un consultorio: Consultorio, Equipo y horarios, Prestaciones, Coberturas, Turnos y urgencias, Feriados y bloqueos y Google Calendar.
+  - **Consultorio** (antes «Reglas del consultorio»): datos, horario en texto, formas de pago, preguntas frecuentes, trato e instrucciones.
+  - **Coberturas:** las del consultorio, las de cada profesional y las excepciones. Antes estaban en tres pantallas.
+  - **Turnos y urgencias:** suma lo que estaba suelto en la primera pestaña (otras condiciones o políticas, si el paciente no contesta, qué hacer ante una urgencia, fuera de horario y teléfono de recepción).
+  - **Prestaciones:** ya no repite el control periódico, que se carga en Campañas, donde se usa.
+  - **Equipo:** las coberturas de cada profesional se editan solo en Coberturas.
+  - **Lectura de la web:** deja de ser pestaña y se abre desde el campo Web.
+  - **Lo que se sacó por repetido:** la tarjeta «Probar a Sofi» de Configuración (está en el menú y arriba a la derecha), «Ficha completa» de Configuración (queda en el Inicio) y los recuadros «Lo que sabe Sofi» de Turnos y de Coberturas (queda uno en Consultorio).
+  - **Guardado:** las tres pantallas con formulario largo usan la misma barra fija «Guardar cambios», con aviso de cambios sin guardar y borrador. Cada una guarda solo sus campos: guardar una ya no puede borrar lo de otra.
+- **Inicio:**
+  - La puesta en marcha general entra en una línea.
+  - «Turnos que dio Sofi» lleva cuántos fueron fuera de horario y su valor.
+  - Los recuperados por campañas son un solo número de los últimos 30 días; antes eran dos, uno «histórico» y otro de 90 días.
+  - Se arregló un desborde horizontal en el celular y «Turnos de hoy» quedó alineado.
+- **Resto:**
+  - «Probar a Sofi» tiene un solo listado, con los casos odontológicos adentro.
+  - Campañas no repite «Importar pacientes».
+  - Comercial tiene ícono y título propios.
+  - Las pantallas del consultorio usan el nombre del agente en lugar de «el agente».
+- **Acceso total por WhatsApp** (Configuración → Consultorio, solo Turnia):
+  - **Qué puede hacer el número:** al escribirle a Sofi, ve la agenda (`ver_agenda`), busca y crea pacientes (`buscar_pacientes`, `crear_paciente`), da, mueve y cancela turnos de cualquiera como el consultorio (`paciente_id`, sin las reglas de recepción), bloquea la agenda (`bloquear_agenda`) y ve y resuelve los pedidos al equipo (`ver_tareas`, `resolver_tarea`).
+  - **Solo por WhatsApp:** hace falta que ElevenLabs informe el canal WhatsApp o que la conversación la haya abierto nuestra línea para ese número. Por llamada nunca, porque el número de quien llama se puede falsear; por la web tampoco.
+  - **El número del Dr. Mininni no está en el repositorio,** que es público: se carga en el panel después del merge.
+  - **Agente:** las herramientas nuevas necesitan «Crear / actualizar agente» en Sistema (el agente detrás de la línea de WhatsApp).
+- **Pruebas:**
+  - 450 en total: 5 nuevas del acceso del equipo, más las de Configuración sin repetidos.
+  - TypeScript, ESLint y `next build` sin errores.
+  - Recorrido de las 20 pantallas del panel en computadora y celular, sin errores ni desbordes.
 
 ## Ficha de salud por chat (Guerra–Mininni) — 04/11/2026
 

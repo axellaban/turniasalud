@@ -230,7 +230,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
     <>
       <PageHeader
         title="Agenda"
-        description="Los turnos que da el agente aparecen acá al instante. Tocá un hueco libre para dar un turno."
+        description={`Los turnos que da ${clinic.agent_name || "Sofi"} aparecen acá al instante. Tocá un hueco libre para dar un turno.`}
         actions={
           <div className="flex items-center gap-2">
             <div className="hidden rounded-full bg-brand-900/5 p-0.5 md:flex" role="group" aria-label="Vista">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/panel-clinic";
 import { budgetToday, salesSettings, type Prospect, type SalesCall } from "@/lib/sales/service";
@@ -8,6 +9,7 @@ import { ReviewFields } from "./fields";
 import { BudgetControl, PendingCalls } from "./call-controls";
 
 export const maxDuration = 300;
+export const metadata: Metadata = { title: "Comercial · Panel" };
 
 export default async function CommercialPage() {
   await requireAdmin();

@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { sql } from "@/lib/db";
-import { coverageRuleText } from "@/lib/booking-rules";
 import { Badge, Card, Empty, Field, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, CoverageRule, Professional } from "@/lib/types";
-import { addCoverageRule, deleteCoverageRule, saveCoverageRule } from "../../../protocol-actions";
+import { addCoverageRule, deleteCoverageRule, saveCoverageLists, saveCoverageRule } from "../../../protocol-actions";
 import { ActionForm } from "../action-form";
 import { EditDetails } from "../edit-details";
 import { ConfigHeader } from "../header";
+import { CoverageInput } from "../coverage-input";
+import { ProfileSaveForm } from "../profile-save";
+import { Section, wide } from "../section";
 
 export const metadata: Metadata = { title: "Coberturas · Panel" };
 
@@ -72,6 +74,7 @@ function RuleFields({ rule, types, pros }: { rule?: CoverageRule; types: Array<P
 
 export default async function CoveragePage() {
   const clinic = await getPanelClinic();
+  const agent = clinic.agent_name || "Sofi";
   const [rules, types, pros] = await Promise.all([
     sql<CoverageRule[]>`select * from coverage_rules where clinic_id = ${clinic.id} order by coverage, plan nulls first, created_at`,
     sql<Array<Pick<AppointmentType, "id" | "name">>>`select id, name from appointment_types where clinic_id = ${clinic.id} and active order by name`,
@@ -80,18 +83,38 @@ export default async function CoveragePage() {
   const typeName = new Map(types.map((t) => [t.id, t.name]));
   const proName = new Map(pros.map((p) => [p.id, p.full_name]));
   const suggestions = [...new Set([...COMMON, ...clinic.accepted_coverages, ...pros.flatMap((p) => p.accepted_coverages ?? [])])];
-  const limited = pros.filter((p) => p.accepted_coverages?.length);
 
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion/coberturas" />
-      <div className="mb-4 max-w-3xl space-y-2 text-sm text-brand-900/60">
-        <p>Qué pasa con cada obra social o prepaga: por plan, por prestación o por profesional. Sofi no ofrece horarios con quien no la acepta y avisa el copago, el reintegro o la autorización antes de reservar.</p>
-        <p>Si hay varias reglas, manda la más específica (prestación, después profesional, después plan). La lista de coberturas de cada profesional (Equipo y horarios) sigue valiendo: si tiene lista, «Particular» también tiene que estar. Una regla de ese profesional manda sobre su lista.</p>
-      </div>
+      <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveCoverageLists} scope="coberturas" agentName={agent}>
+        <Section id="consultorio" title="Coberturas que acepta el consultorio" description={`Lo que ${agent} contesta cuando preguntan «¿atienden por…?».`}>
+          <div className={wide}>
+            <CoverageInput name="accepted_coverages" defaultValue={clinic.accepted_coverages} list="coverages" label="Agregar una cobertura del consultorio" />
+            <p className="mt-1 text-xs text-brand-900/65">Agregá «Particular» si atienden sin cobertura.</p>
+          </div>
+        </Section>
+        {pros.length > 0 && (
+          <Section id="profesionales" title="Profesionales que atienden solo algunas" description={`Con una lista, ${agent} le da turnos a ese profesional solo con esas coberturas. Vacío: atiende todas.`}>
+            {pros.map((p) => (
+              <div key={p.id} className={wide}>
+                <p className="mb-1 text-sm font-medium text-brand-950">{p.full_name}</p>
+                <CoverageInput name={`pro:${p.id}`} defaultValue={p.accepted_coverages ?? []} list="coverages" label={`Agregar una cobertura de ${p.full_name}`} />
+              </div>
+            ))}
+            <p className={`${wide} text-xs text-brand-900/65`}>Si tiene lista y atiende sin cobertura, sumá «Particular».</p>
+          </Section>
+        )}
+      </ProfileSaveForm>
 
-      <Card className="p-0">
-        <ul className="divide-y divide-brand-900/5">
+      <Card className="mt-6 p-0">
+        <div className="px-5 pt-5">
+          <h2 className="font-semibold text-brand-950">Excepciones</h2>
+          <p className="mt-1 max-w-3xl text-sm text-brand-900/60">
+            Para lo que no entra arriba: un plan con copago, una prestación que la cobertura no cubre, una autorización. {agent} las aplica al buscar horarios y al reservar, y si hay varias para el mismo caso manda la más específica.
+          </p>
+        </div>
+        <ul className="mt-3 divide-y divide-brand-900/5 border-t border-brand-900/5">
           {rules.map((r) => (
             <li key={r.id} className="px-5 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -110,10 +133,10 @@ export default async function CoveragePage() {
                 <form action={deleteCoverageRule}>
                   <input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={r.id} />
-                  <button className={smallButtonClass} aria-label={`Borrar la regla de ${r.coverage}`}>Borrar</button>
+                  <button className={smallButtonClass} aria-label={`Borrar la excepción de ${r.coverage}`}>Borrar</button>
                 </form>
               </div>
-              <EditDetails summary="Editar regla" submit="Guardar regla" action={saveCoverageRule} className="mt-3 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2">
+              <EditDetails summary="Editar" submit="Guardar" action={saveCoverageRule} className="mt-3 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2">
                 <input type="hidden" name="clinic_id" value={clinic.id} />
                 <input type="hidden" name="id" value={r.id} />
                 <RuleFields rule={r} types={types} pros={pros} />
@@ -121,33 +144,15 @@ export default async function CoveragePage() {
             </li>
           ))}
         </ul>
-        {!rules.length && <div className="p-5"><Empty>Todavía no hay reglas. Sofi usa la lista de coberturas de cada profesional.</Empty></div>}
+        {!rules.length && <div className="px-5 pb-5"><Empty>Sin excepciones: valen las listas de arriba.</Empty></div>}
+        <details className="border-t border-brand-900/5 px-5 py-4">
+          <summary className="cursor-pointer text-sm font-semibold text-brand-700">+ Agregar una excepción</summary>
+          <ActionForm action={addCoverageRule} submit="Agregar excepción" resetOnSuccess className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input type="hidden" name="clinic_id" value={clinic.id} />
+            <RuleFields types={types} pros={pros} />
+          </ActionForm>
+        </details>
       </Card>
-
-      <Card className="mt-6">
-        <h2 className="mb-4 font-semibold text-brand-950">Agregar regla</h2>
-        <ActionForm action={addCoverageRule} submit="Agregar regla" resetOnSuccess className="grid gap-3 sm:grid-cols-2">
-          <input type="hidden" name="clinic_id" value={clinic.id} />
-          <RuleFields types={types} pros={pros} />
-        </ActionForm>
-      </Card>
-
-      {(rules.length > 0 || limited.length > 0) && (
-        <Card className="mt-6">
-          <h2 className="font-semibold text-brand-950">Lo que sabe Sofi</h2>
-          <ul className="mt-2 space-y-1 text-sm text-brand-900/80">
-            {limited.map((p) => <li key={p.id}>- {p.full_name}: solo {p.accepted_coverages!.join(", ")} (se cambia en Equipo y horarios)</li>)}
-            {rules.map((r) => (
-              <li key={r.id}>
-                {coverageRuleText(r, {
-                  type: r.appointment_type_id ? typeName.get(r.appointment_type_id) : undefined,
-                  professional: r.professional_id ? proName.get(r.professional_id) : undefined,
-                })}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
       <datalist id="coverages">{suggestions.map((c) => <option key={c} value={c} />)}</datalist>
     </>
   );

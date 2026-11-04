@@ -1,6 +1,7 @@
 "use client";
+import Link from "next/link";
 import { useActionState, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { saveClinicWithFeedback } from "../../actions";
+import { saveClinicWithFeedback, type FormState } from "../../actions";
 import { submitKeepingValues } from "@/components/keep-form";
 import { setUnsavedChanges } from "@/components/unsaved-changes";
 import { Notice, buttonClass, ghostButtonClass } from "@/components/ui";
@@ -28,14 +29,22 @@ function subscribe(callback: () => void) {
 }
 
 /**
- * Formulario del perfil con una barra fija de guardado: avisa si hay cambios
+ * Formulario de Configuración con una barra fija de guardado: avisa si hay cambios
  * sin guardar, pide confirmación antes de salir y, si algo falla al guardar,
- * conserva lo escrito.
+ * conserva lo escrito. `scope` separa el borrador de cada pantalla.
  */
-export function ProfileSaveForm({ clinicId, revision, children }: { clinicId: string; revision: number; children: ReactNode }) {
-  const [state, action, pending] = useActionState(saveClinicWithFeedback, {});
+export function ProfileSaveForm({ clinicId, revision, children, action: save = saveClinicWithFeedback, scope = "ficha", agentName = "Sofi" }: {
+  clinicId: string;
+  revision: number;
+  children: ReactNode;
+  action?: (previous: FormState, form: FormData) => Promise<FormState>;
+  scope?: string;
+  agentName?: string;
+}) {
+  const [state, action, pending] = useActionState(save, {});
   const form = useRef<HTMLFormElement>(null);
-  const key = `${PREFIX}${clinicId}:${revision}`;
+  const base = `${PREFIX}${scope}:${clinicId}:`;
+  const key = `${base}${revision}`;
   // Guardar con éxito incrementa la revisión: el formulario deja de estar «sucio» solo.
   const [dirtyAt, setDirtyAt] = useState<number | null>(null);
   const dirty = dirtyAt === revision;
@@ -59,9 +68,9 @@ export function ProfileSaveForm({ clinicId, revision, children }: { clinicId: st
   // Al guardar (revisión nueva) se descartan los borradores anteriores de esta clínica.
   useEffect(() => {
     try {
-      for (const k of Object.keys(localStorage)) if (k.startsWith(`${PREFIX}${clinicId}:`) && k !== key) localStorage.removeItem(k);
+      for (const k of Object.keys(localStorage)) if (k.startsWith(base) && k !== key) localStorage.removeItem(k);
     } catch { /* sin almacenamiento */ }
-  }, [clinicId, key]);
+  }, [base, key]);
 
   const remember = () => {
     setDirtyAt(revision);
@@ -92,12 +101,12 @@ export function ProfileSaveForm({ clinicId, revision, children }: { clinicId: st
         <button type="button" onClick={() => writeDraft(key, null)} className={ghostButtonClass}>Descartar</button>
       </span>
     </Notice>}
-    <input type="hidden" name="clinic_id" value={clinicId} /><fieldset key={revision} className="contents">{children}</fieldset>
+    <input type="hidden" name="clinic_id" value={clinicId} /><fieldset key={revision} className="min-w-0 space-y-6">{children}</fieldset>
     <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-900/10 bg-white/95 px-4 py-3 shadow-lg backdrop-blur md:bottom-4">
       <p role="status" className={`text-sm font-medium ${tone}`}>{status}</p>
       <div className="flex flex-wrap gap-2">
         {dirty && !pending && <button type="button" onClick={discard} className={ghostButtonClass}>Descartar</button>}
-        {!dirty && state.ok && <a href="#probar" className={ghostButtonClass}>Probar los cambios ↓</a>}
+        {!dirty && state.ok && <Link href="/panel/probar" className={ghostButtonClass}>Probar a {agentName} →</Link>}
         <button disabled={pending} className={buttonClass}>{pending ? "Guardando…" : "Guardar cambios"}</button>
       </div>
     </div>

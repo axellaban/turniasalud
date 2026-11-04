@@ -173,7 +173,7 @@ export function ForceOption({ show }: { show: boolean | undefined }) {
   return (
     <label className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
       <input type="checkbox" name="force" value="1" className="mt-0.5 h-4 w-4 accent-amber-600" />
-      <span>Darlo igual: el profesional lo atiende en ese horario. El agente nunca lo ofrece por su cuenta.</span>
+      <span>Darlo igual: el profesional lo atiende en ese horario. A los pacientes no se les ofrece por su cuenta.</span>
     </label>
   );
 }

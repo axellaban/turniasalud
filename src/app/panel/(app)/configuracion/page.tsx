@@ -4,30 +4,22 @@ import { retainClinic, revokeAccess } from "../../clinics-actions";
 import { getPanelClinic, getPanelUser, recentClinicChanges } from "@/lib/panel-clinic";
 import { clinicInfoText, getClinic } from "@/lib/clinic";
 import { listClinicAccess } from "@/lib/clinic-access";
+import { listStaffPhones } from "@/lib/staff";
+import { displayPhone } from "@/lib/phone";
+import { addStaffPhone, removeStaffPhone } from "../../protocol-actions";
+import { ActionForm } from "./action-form";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
-import { Badge, Card, Field, Notice, buttonClass, inputClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
+import { Badge, Card, Field, Notice, inputClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import { ConfigHeader } from "./header";
+import { Section, wide } from "./section";
 import { AccessCreator } from "./access-manager";
-import { CoverageInput } from "./coverage-input";
-import { CompletenessCard } from "../completeness-card";
-import { profileCompleteness } from "@/lib/profile-completeness";
 import { ClinicAgentSetup } from "./clinic-agent";
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Reglas del consultorio · Panel" };
+export const metadata: Metadata = { title: "Consultorio · Panel" };
 
-function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
-  return (
-    <Card className="scroll-mt-20" id={id}>
-      <h2 className="font-semibold text-brand-950">{title}</h2>
-      {description && <p className="mt-1 text-sm text-brand-900/60">{description}</p>}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">{children}</div>
-    </Card>
-  );
-}
 
-const wide = "sm:col-span-2";
 
 /** Zonas horarias habituales (Argentina primero); se conserva la guardada aunque sea otra. */
 const TIMEZONES: Array<[string, string]> = [
@@ -61,30 +53,64 @@ function timezones(current: string): Array<{ value: string; label: string }> {
 export default async function SettingsPage() {
   const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
   const admin = user.role === "admin";
-  const [accesses, completeness, changes, main] = await Promise.all([admin ? listClinicAccess(clinic.id) : [], profileCompleteness(clinic), recentClinicChanges(clinic.id), admin ? getClinic() : null]);
+  const agent = clinic.agent_name || "Sofi";
+  const [accesses, changes, main, staff] = await Promise.all([
+    admin ? listClinicAccess(clinic.id) : [],
+    recentClinicChanges(clinic.id),
+    admin ? getClinic() : null,
+    admin ? listStaffPhones(clinic.id) : [],
+  ]);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
+  const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la conservás.";
 
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion" />
       {!admin && <Notice tone="info" className="mb-6">
-        <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio: datos, horarios, coberturas y lo que tiene que responder el agente.
-        Cambiá lo que necesites, tocá <strong>Guardar cambios</strong> y probalo desde <Link href="/panel/probar" className="font-semibold underline">Probar a {clinic.agent_name || "Sofi"}</Link>: el agente usa la ficha nueva desde el próximo mensaje.
+        <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio. Empezá por estos datos y seguí con las pestañas de arriba, en orden.
+        Cada cambio lo usa {agent} desde el próximo mensaje.
       </Notice>}
-      {/* En el celular primero va qué falta y cómo probar; en la compu, a la derecha del formulario. */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[auto_1fr]">
-        <div className="space-y-6 xl:col-start-2 xl:row-start-1">
-          <CompletenessCard {...completeness} compact />
-          <Card id="probar" className="scroll-mt-20">
-            <h2 className="font-semibold text-brand-950">Probar a {clinic.agent_name || "Sofi"}</h2>
-            <p className="mt-1 text-sm text-brand-900/60">Guardá los cambios y escribile: usa la ficha nueva desde el próximo mensaje.</p>
-            <Link href="/panel/probar" className={`${buttonClass} mt-4`}>En el navegador, WhatsApp o Telegram</Link>
-            {clinic.is_demo && !clinic.retained_at && <form action={retainClinic} className="mt-3"><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
-            {admin && <p className="mt-3 text-sm text-brand-900/70">Las llamadas telefónicas nuevas que Turnia inicia por Twilio se solicitan con grabación. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Abrir grabaciones en Twilio</a>. No incluye llamadas de navegador o Telegram. Grabación y almacenamiento tienen cargo por uso.</p>}
-            <p className="mt-3 text-xs text-brand-900/65">{!clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la guardás o conservás."}</p>
-          </Card>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0">
+          <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} agentName={agent}>
+            <Section id="datos" title="Datos del consultorio" description={`Lo que ${agent} le dice al paciente cuando pregunta dónde están, cuándo atienden o cómo se paga.`}>
+              <Field label="Nombre del consultorio"><input name="name" defaultValue={clinic.name} className={inputClass} required /></Field>
+              <Field label="Nombre del agente" hint="Cómo se presenta al atender."><input name="agent_name" defaultValue={clinic.agent_name} className={inputClass} required /></Field>
+              <Field label="Especialidad"><input name="specialty" defaultValue={clinic.specialty} placeholder="Odontología" className={inputClass} /></Field>
+              <Field label="Teléfono"><input name="phone" defaultValue={clinic.phone ?? ""} inputMode="tel" className={inputClass} /></Field>
+              <div className={wide}><Field label="Dirección"><input name="address" defaultValue={clinic.address ?? ""} className={inputClass} /></Field></div>
+              <div className={wide}>
+                <Field label="Horario de atención" hint="Cómo lo dice al paciente. Los turnos que ofrece salen de «Equipo y horarios».">
+                  <input name="hours_text" defaultValue={clinic.hours_text ?? ""} placeholder="Lunes a viernes de 9 a 18" className={inputClass} />
+                </Field>
+              </div>
+              <div className={wide}><Field label="Formas de pago"><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} placeholder="Efectivo, transferencia y tarjetas" className={inputClass} /></Field></div>
+              <Field
+                label="Web"
+                hint={clinic.website ? undefined : "Con la web guardada, se puede leer para completar la ficha."}
+              >
+                <input name="website" defaultValue={clinic.website ?? ""} placeholder="https://miconsultorio.com.ar" className={inputClass} />
+              </Field>
+              <Field label="Zona horaria"><select name="timezone" defaultValue={clinic.timezone} className={inputClass}>{timezones(clinic.timezone).map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}</select></Field>
+              {clinic.website && <p className={`${wide} -mt-2 text-sm`}><Link href="/panel/configuracion/web" className="font-medium text-brand-700 hover:underline">Completar la ficha con lo que dice la web →</Link></p>}
+            </Section>
+
+            <Section id="respuestas" title={`Lo que responde ${agent}`} description="Una idea por línea es más fácil de mantener. Los turnos, las coberturas y las urgencias tienen su pestaña: ahí se cargan como reglas que se cumplen siempre.">
+              <div className={wide}><Field label="Preguntas frecuentes" hint="Estacionamiento, qué traer, si atienden chicos… una por línea."><textarea name="faq" rows={6} defaultValue={clinic.faq ?? ""} className={inputClass} /></Field></div>
+              <Field label="Cómo trata a los pacientes" hint="De usted: en todos los mensajes, aunque el paciente tutee.">
+                <select name="tone" defaultValue={clinic.tone === "usted" ? "usted" : ""} className={inputClass}>
+                  <option value="">De vos</option>
+                  <option value="usted">De usted</option>
+                </select>
+              </Field>
+              <div className={wide}><Field label="Instrucciones adicionales" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio del consultorio."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
+            </Section>
+          </ProfileSaveForm>
+        </div>
+
+        <div className="space-y-6">
           {admin && clinic.id !== main?.id && <Card>
-            <h2 className="font-semibold text-brand-950">Sofi de esta clínica · llamadas</h2>
+            <h2 className="font-semibold text-brand-950">{agent} de este consultorio · llamadas</h2>
             <p className="mt-1 text-sm text-brand-900/60">Un agente propio para atender las llamadas con las reglas y la agenda de {clinic.name}.</p>
             <p className="mt-3 text-sm text-brand-900/70">{clinic.elevenlabs_agent_id ? <>Agente preparado: <code className="break-all text-xs">{clinic.elevenlabs_agent_id}</code>.</> : "Todavía no tiene un agente propio preparado."}</p>
             <ClinicAgentSetup key={clinic.id} clinicId={clinic.id} disabled={!process.env.ELEVENLABS_API_KEY} />
@@ -93,66 +119,12 @@ export default async function SettingsPage() {
                 ? "Actualizalo después de cada cambio de Turnia en Sofi, para que las llamadas lo tomen. No toca el número ni el desvío de la línea."
                 : "Prepararlo no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante."}
             </p>
+            <p className="mt-2 text-xs text-brand-900/65">Las llamadas que Turnia inicia por Twilio se graban (con cargo por uso); las del navegador y Telegram, no. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Ver grabaciones en Twilio</a>.</p>
           </Card>}
-        </div>
-        <div className="min-w-0 xl:col-start-1 xl:row-span-2 xl:row-start-1">
-        <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision}>
-          <Section id="datos" title="Datos de la clínica">
-            <Field label="Nombre de la clínica"><input name="name" defaultValue={clinic.name} className={inputClass} required /></Field>
-            <Field label="Nombre del agente" hint="Cómo se presenta al atender."><input name="agent_name" defaultValue={clinic.agent_name} className={inputClass} required /></Field>
-            <Field label="Especialidad / tipo de centro"><input name="specialty" defaultValue={clinic.specialty} className={inputClass} /></Field>
-            <Field label="Teléfono"><input name="phone" defaultValue={clinic.phone ?? ""} inputMode="tel" className={inputClass} /></Field>
-            <div className={wide}><Field label="Dirección"><input name="address" defaultValue={clinic.address ?? ""} className={inputClass} /></Field></div>
-            <Field label="Web del consultorio"><input name="website" defaultValue={clinic.website ?? ""} placeholder="https://miclinica.com.ar" className={inputClass} /></Field>
-            <Field label="Zona horaria"><select name="timezone" defaultValue={clinic.timezone} className={inputClass}>{timezones(clinic.timezone).map((z) => <option key={z.value} value={z.value}>{z.label}</option>)}</select></Field>
-          </Section>
-
-          <Section id="atencion" title="Atención y pagos" description="Lo que el agente dice cuando preguntan cuándo atienden, con qué cobertura y cómo se paga.">
-            <div className={wide}><Field label="Horario de atención" hint="Texto que se le dice al paciente. Los turnos salen de «Equipo y horarios»."><input name="hours_text" defaultValue={clinic.hours_text ?? ""} className={inputClass} /></Field></div>
-            <div className={wide}><p className="mb-1 text-sm font-medium text-brand-900">Coberturas aceptadas</p><CoverageInput name="accepted_coverages" defaultValue={clinic.accepted_coverages} /><p className="mt-1 text-xs text-brand-900/65">Agregá «Particular» si atienden sin cobertura.</p></div>
-            <div className={wide}><Field label="Formas de pago"><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} className={inputClass} /></Field></div>
-          </Section>
-
-          <Section id="respuestas" title="Lo que responde el agente" description="Preguntas frecuentes, reglas y forma de atender. Una idea por línea es más fácil de mantener.">
-            <div className={wide}><Field label="Preguntas frecuentes" hint="Estacionamiento, precios, qué traer, formas de pago… una por línea."><textarea name="faq" rows={6} defaultValue={clinic.faq ?? ""} className={inputClass} /></Field></div>
-            <div className={wide}><Field label="Políticas" hint="Cancelaciones, tolerancia, coberturas que no se aceptan…"><textarea name="policies" rows={3} defaultValue={clinic.policies ?? ""} className={inputClass} /></Field></div>
-            <Field label="Cómo trata a los pacientes" hint="De usted: en todos los mensajes, aunque el paciente tutee.">
-              <select name="tone" defaultValue={clinic.tone === "usted" ? "usted" : ""} className={inputClass}>
-                <option value="">De vos</option>
-                <option value="usted">De usted</option>
-              </select>
-            </Field>
-            <div className={wide}><Field label="Instrucciones adicionales del agente" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio de esta clínica. Para reglas de turnos, urgencias y coberturas usá sus pestañas: Sofi las hace cumplir."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
-          </Section>
-
-          <Section id="seguimiento" title="Si el paciente no contesta" description="Cuando Sofi le pasa horarios por WhatsApp y el paciente no responde, le vuelve a escribir con los que siguen libres en ese momento. Solo de 9 a 20; si contesta, sigue la charla con Sofi.">
-            <Field label="Volver a escribirle" hint="El segundo mensaje va al día siguiente del primero.">
-              <select name="followup_attempts" defaultValue={String(clinic.followup_attempts)} className={inputClass}>
-                <option value="0">No</option>
-                <option value="1">1 vez</option>
-                <option value="2">2 veces</option>
-              </select>
-            </Field>
-            <Field label="Primer mensaje después de">
-              <select name="followup_delay_hours" defaultValue={String(clinic.followup_delay_hours)} className={inputClass}>
-                {[1, 2, 3, 4, 6, 12, 24].map((h) => <option key={h} value={h}>{h === 1 ? "1 hora" : `${h} horas`}</option>)}
-              </select>
-            </Field>
-          </Section>
-
-          <Section id="urgencias" title="Urgencias y derivación">
-            <div className={wide}><Field label="Protocolo de urgencias"><textarea name="urgency_instructions" rows={3} defaultValue={clinic.urgency_instructions ?? ""} className={inputClass} /></Field></div>
-            <div className={wide}><Field label="Fuera de horario" hint="Qué decir cuando no hay nadie atendiendo: guardia de un profesional, teléfono de emergencias, cuándo se responden los pedidos."><textarea name="after_hours_instructions" rows={2} defaultValue={clinic.after_hours_instructions ?? ""} className={inputClass} /></Field></div>
-            <Field label="Teléfono de derivación a recepción"><input name="handoff_phone" defaultValue={clinic.handoff_phone ?? ""} inputMode="tel" className={inputClass} /></Field>
-          </Section>
-        </ProfileSaveForm>
-        </div>
-
-        <div className="space-y-6 xl:col-start-2 xl:row-start-2">
 
           {admin && <Card>
             <h2 className="font-semibold text-brand-950">Acceso del consultorio</h2>
-            <p className="mt-1 text-sm text-brand-900/60">Un código propio para que el consultorio entre al panel. Solo ve y edita esta clínica: no ve otras clínicas, pedidos de demo ni el sistema, y no puede borrar fichas.</p>
+            <p className="mt-1 text-sm text-brand-900/60">Un código para que el consultorio entre al panel. Solo ve y edita esta clínica, y no puede borrar fichas.</p>
             <div className="mt-4"><AccessCreator clinicId={clinic.id} loginUrl={loginUrl} /></div>
             {accesses.length > 0 && <ul className="mt-4 divide-y divide-brand-900/5 text-sm">
               {accesses.map((a) => <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
@@ -163,6 +135,26 @@ export default async function SettingsPage() {
                 {a.revoked_at ? <Badge>Revocado</Badge> : <form action={revokeAccess}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="access_id" value={a.id} /><button className={smallButtonClass}>Revocar</button></form>}
               </li>)}
             </ul>}
+            <p className="mt-4 text-xs text-brand-900/65">{status}</p>
+            {clinic.is_demo && !clinic.retained_at && <form action={retainClinic} className="mt-2"><input type="hidden" name="clinic_id" value={clinic.id} /><button className={secondaryButtonClass}>Conservar esta demo</button></form>}
+          </Card>}
+
+          {admin && <Card id="whatsapp-equipo" className="scroll-mt-20">
+            <h2 className="font-semibold text-brand-950">Acceso total por WhatsApp</h2>
+            <p className="mt-1 text-sm text-brand-900/60">
+              Celulares del equipo que, al escribirle a {agent} por WhatsApp, pueden ver la agenda y los pacientes, dar, mover y cancelar cualquier turno, bloquear la agenda y responder los pedidos al equipo. Por llamada, no: el número de quien llama se puede falsear.
+            </p>
+            {staff.length > 0 && <ul className="mt-3 divide-y divide-brand-900/5 text-sm">
+              {staff.map((member) => <li key={member.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span className="min-w-0"><span className="font-medium text-brand-950">{member.name}</span> <span className="text-brand-900/65">· {displayPhone(member.phone)}</span></span>
+                <form action={removeStaffPhone}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={member.id} /><button className={smallButtonClass} aria-label={`Quitar el acceso de ${member.name}`}>Quitar</button></form>
+              </li>)}
+            </ul>}
+            <ActionForm action={addStaffPhone} submit="Dar acceso" resetOnSuccess secondary className="mt-4 grid gap-3">
+              <input type="hidden" name="clinic_id" value={clinic.id} />
+              <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dr. Mininni" className={inputClass} /></Field>
+              <Field label="Celular" hint="Con código de área. Es el de WhatsApp."><input name="phone" required inputMode="tel" placeholder="11 5555-0100" className={inputClass} /></Field>
+            </ActionForm>
           </Card>}
 
           <Card>
@@ -177,12 +169,11 @@ export default async function SettingsPage() {
 
           <Card>
             <details>
-              <summary className="cursor-pointer font-semibold text-brand-950">Vista previa del contexto</summary>
-              <p className="mt-2 text-xs text-brand-900/65">Así le llega la ficha guardada al agente.</p>
+              <summary className="cursor-pointer font-semibold text-brand-950">Lo que sabe {agent} del consultorio</summary>
+              <p className="mt-2 text-xs text-brand-900/65">Así le llega lo guardado en esta pestaña y en «Turnos y urgencias». Los profesionales, las prestaciones y las coberturas le llegan aparte.</p>
               <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm text-brand-900/70">{clinicInfoText(clinic)}</pre>
             </details>
           </Card>
-          {admin && <Link href="/panel/sistema" className={`${buttonClass} w-full`}>Canal, agente y sistema →</Link>}
         </div>
       </div>
     </>

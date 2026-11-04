@@ -46,11 +46,11 @@ export default async function ProbarPage() {
   const dental = /odont|dent/i.test(`${clinic.specialty} ${catalog.professionals.map((p) => p.specialty).join(" ")}`);
   const ideas: Array<[string, string]> = [
     ["«Hola, quiero un turno para la semana que viene»", `Te pide los datos que faltan y te ofrece horarios reales${firstVisit ? `, por ejemplo de ${firstVisit.name.charAt(0).toLowerCase()}${firstVisit.name.slice(1)}` : ""}.`],
-    ...(dental ? [["«Quiero una consulta de implantes»", "Te da un turno de consulta que en la agenda dice «Consulta de implantes»."] as [string, string]] : []),
     [`«¿Atienden por ${coverage ?? "mi obra social"}? ¿Cuánto sale la consulta?»`, "Contesta con lo que cargaste en Configuración. Si algo no está, lo dice."],
     ["«Necesito cambiar mi turno»", "Busca tu turno y te ofrece otro día."],
     ["Un audio, o «mandámelo en audio»", "Por WhatsApp te contesta con una nota de voz."],
-    [dental ? "«Me duele mucho una muela»" : "«Me duele mucho el pecho»", "Sigue tu protocolo de urgencias."],
+    // En odontología, las urgencias y los tratamientos están en los casos odontológicos de abajo.
+    ...(dental ? [] : [["«Me duele mucho el pecho»", "Sigue tu protocolo de urgencias."] as [string, string]]),
   ];
 
   return (
@@ -122,12 +122,10 @@ export default async function ProbarPage() {
                 </li>
               ))}
             </ul>
-          </Card>
-          {dental && (
-            <Card>
-              <details>
-                <summary className="cursor-pointer font-semibold text-brand-950">Casos odontológicos ({DENTAL_TEST_CASES.length})</summary>
-                <p className="mt-1 text-sm text-brand-900/65">Para revisar antes de salir y después de cada cambio de reglas: qué decir y qué tiene que hacer {agent}.</p>
+            {dental && (
+              <details className="mt-4 border-t border-brand-900/5 pt-4">
+                <summary className="cursor-pointer text-sm font-semibold text-brand-700">Casos odontológicos ({DENTAL_TEST_CASES.length})</summary>
+                <p className="mt-1 text-sm text-brand-900/65">Urgencias, tratamientos, coberturas y cambios de turno: qué decir y qué tiene que hacer {agent}. Conviene repasarlos después de cada cambio de reglas.</p>
                 <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
                   {DENTAL_TEST_CASES.map((c) => (
                     <li key={c.message}>
@@ -137,8 +135,8 @@ export default async function ProbarPage() {
                   ))}
                 </ol>
               </details>
-            </Card>
-          )}
+            )}
+          </Card>
           <Card>
             <h2 className="font-semibold text-brand-950">Después de probar</h2>
             <p className="mt-1 text-sm leading-relaxed text-brand-900/70">

@@ -387,23 +387,43 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     const actions = await import("@/app/panel/actions");
     // Turnos y urgencias.
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, reschedule_notice_hours: "0" }))).toMatchObject({ ok: false });
+    expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, handoff_phone: "abc" })))
+      .toMatchObject({ ok: false, message: expect.stringContaining("teléfono de recepción") });
     expect(await protocol.saveBookingRules({}, form({
-      clinic_id: clinicId, reschedule_notice_hours: "24", cancel_notice_hours: "", reschedule_max_minutes: "120",
+      clinic_id: clinicId, rules_form: "1", reschedule_notice_hours: "24", cancel_notice_hours: "", reschedule_max_minutes: "120",
       reception_only_terms: "extracción, implante", keep_duration_on_reschedule: "on", urgent_release_hours: "12",
+      policies: "Tolerancia de 15 minutos", followup_attempts: "2", followup_delay_hours: "3", urgency_instructions: "Llamar al 107",
+      after_hours_instructions: "Guardia: 223 555-0199", handoff_phone: "+54 223 555-0100",
       dental_protocol_field: "1", dental_protocol: "on",
     }))).toMatchObject({ ok: true });
     expect(await clinic()).toMatchObject({
       reschedule_notice_hours: 24, cancel_notice_hours: null, reschedule_max_minutes: 120, reception_only_terms: "extracción, implante",
       keep_duration_on_reschedule: true, move_panel_only: false, urgent_release_hours: 12, dental_protocol: true,
+      policies: "Tolerancia de 15 minutos", followup_attempts: 2, followup_delay_hours: 3, urgency_instructions: "Llamar al 107",
+      after_hours_instructions: "Guardia: 223 555-0199", handoff_phone: "+54 223 555-0100",
     });
+    // Guardar Consultorio no borra lo de esta pantalla (cada pantalla manda solo sus campos).
+    await actions.saveClinic(form({ clinic_id: clinicId, name: "Consultorio de reglas", agent_name: "Sofi", faq: "Hay estacionamiento" }));
+    expect(await clinic()).toMatchObject({ policies: "Tolerancia de 15 minutos", handoff_phone: "+54 223 555-0100", reschedule_notice_hours: 24, faq: "Hay estacionamiento" });
     // El consultorio no prende ni apaga el protocolo odontológico.
     const { createClinicAccess } = await import("@/lib/clinic-access");
     const { access } = await createClinicAccess(clinicId, "Recepción");
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createClinicSessionToken(access.id));
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, dental_protocol_field: "1" }))).toMatchObject({ ok: true });
-    expect(await clinic()).toMatchObject({ dental_protocol: true, reschedule_notice_hours: null });
+    expect(await clinic()).toMatchObject({ dental_protocol: true, reschedule_notice_hours: 24 });
+    // Dar un celular con acceso total es solo de Turnia.
+    await expect(protocol.addStaffPhone({}, form({ clinic_id: clinicId, name: "Recepción", phone: "11 5555-0100" }))).rejects.toThrow("redirect:/panel");
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
-    await sql`update clinics set dental_protocol = false, keep_duration_on_reschedule = false, reception_only_terms = null, reschedule_max_minutes = null, urgent_release_hours = null where id = ${clinicId}`;
+    await sql`update clinics set dental_protocol = false, keep_duration_on_reschedule = false, reception_only_terms = null, reschedule_max_minutes = null, reschedule_notice_hours = null,
+      urgent_release_hours = null, policies = null, followup_attempts = 1, followup_delay_hours = 2, urgency_instructions = null, after_hours_instructions = null,
+      handoff_phone = null, faq = null where id = ${clinicId}`;
+
+    // Coberturas del consultorio y de cada profesional, en un mismo formulario.
+    expect(await protocol.saveCoverageLists({}, form({ clinic_id: clinicId, accepted_coverages: "OSDE, Particular, OSDE", [`pro:${beto}`]: "Swiss Medical, Particular", [`pro:${ana}`]: "" }))).toMatchObject({ ok: true });
+    expect((await clinic()).accepted_coverages).toEqual(["OSDE", "Particular"]);
+    const coveragesOf = async (id: string) => (await sql`select accepted_coverages from professionals where id = ${id}`)[0].accepted_coverages;
+    expect(await coveragesOf(ana)).toBeNull();
+    expect(await coveragesOf(beto)).toEqual(["Swiss Medical", "Particular"]);
 
     // Coberturas.
     expect(await protocol.addCoverageRule({}, form({ clinic_id: clinicId, coverage: "OSDE", mode: "otro" }))).toMatchObject({ ok: false });
@@ -462,16 +482,19 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
       const rules = await render("turnos");
       expect(rules).toContain("Mover y cancelar turnos");
       expect(rules).toContain("Protocolo odontológico de Turnia");
-      expect(rules).toContain("Me late toda la cara desde anoche");
+      expect(rules).toContain("Qué hacer ante una urgencia");
+      expect(rules).toContain("Si el paciente no contesta");
       const coverage = await render("coberturas");
       expect(coverage).toContain("La acepta con copago");
       expect(coverage).toContain("IOMA");
       const services = await render("prestaciones");
       expect(services).toContain("Plantilla odontológica");
-      expect(services).toContain("Cómo dice el precio Sofi");
+      expect(services).toContain("Cómo dice el precio");
+      expect(services).not.toContain("Control periódico (meses)");
       expect(services).toContain("urgencia");
       const team = await render("equipo");
-      expect(team).toContain("Hace: Consulta");
+      expect(team).toContain("hace Consulta");
+      expect(team).not.toContain("Coberturas del profesional");
       expect(team).toContain("Qué prestaciones hace");
       expect(team).toContain("Solo urgencias");
       const probar = renderToStaticMarkup((await (await import("@/app/panel/(app)/probar/page")).default()) as React.ReactElement);
@@ -514,7 +537,8 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     const home = renderToStaticMarkup((await (await import("@/app/panel/(app)/page")).default()) as React.ReactElement);
     expect(home).toContain("Garantía del primer mes");
     expect(home).toContain("de 50 interacciones");
-    expect(home).toContain("Turnos fuera de horario");
+    expect(home).toContain("fuera de horario");
+    expect(home).toContain("Recuperado con campañas");
     await sql`delete from conversations where clinic_id = ${clinicId}`;
   });
 });

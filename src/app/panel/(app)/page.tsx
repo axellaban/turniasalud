@@ -3,7 +3,7 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { isConfigured } from "@/lib/env";
 import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } from "@/lib/time";
-import { Badge, Card, CHANNEL_LABEL, CheckMark, Empty, PageHeader, Stat, StatusBadge } from "@/components/ui";
+import { Badge, Card, CHANNEL_LABEL, Empty, Notice, PageHeader, Stat, StatusBadge } from "@/components/ui";
 import { profileCompleteness } from "@/lib/profile-completeness";
 import { CompletenessCard } from "./completeness-card";
 import { ACTIVITY_GUARANTEE, agentBookings, clinicGuarantee } from "@/lib/clinic-impact";
@@ -39,16 +39,12 @@ export default async function PanelHome() {
   const dayEnd = zonedTimeToUtc(ny, nm, nd, 0, 0, tz).toISOString();
 
   const month = new Date(now.getTime() - 30 * 86400_000).toISOString();
-  const quarter = new Date(now.getTime() - 90 * 86400_000).toISOString();
   const [[stats], [quality], [recovery], today, recentRows, urgentTasks] = await Promise.all([
-    sql<Array<{ conversations: number; resolved: number; booked_by_ai: number; open_tasks: number; recovered: number }>>`
+    sql<Array<{ conversations: number; resolved: number; open_tasks: number }>>`
       select
         (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since}) as conversations,
         (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since} and outcome = 'resuelto') as resolved,
-        (select count(*)::int from appointments where clinic_id = ${clinic.id} and source in ('whatsapp', 'telefono', 'web', 'campana') and created_at >= ${since}) as booked_by_ai,
-        (select count(*)::int from tasks where clinic_id = ${clinic.id} and status <> 'resuelta') as open_tasks,
-        (select count(*)::int from campaign_recipients r join campaigns c on c.id = r.campaign_id where c.clinic_id = ${clinic.id}
-          and (r.status = 'agendo' or exists (select 1 from appointments a where a.patient_id = r.patient_id and r.sent_at is not null and a.created_at >= r.sent_at and a.status <> 'cancelado'))) as recovered`,
+        (select count(*)::int from tasks where clinic_id = ${clinic.id} and status <> 'resuelta') as open_tasks`,
     // Últimos 30 días: satisfacción, confirmación de recordatorios y ausentismo.
     sql<Array<{ satisfaction: number | null; answers: number; reminded: number; confirmed: number; attended: number; absent: number }>>`
       select
@@ -58,7 +54,7 @@ export default async function PanelHome() {
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month} and confirmed_at is not null) as confirmed,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'atendido') as attended,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'ausente') as absent`,
-    // Turnos que sacaron pacientes después de recibir una campaña (90 días), con Sofi, en el panel
+    // Turnos que sacaron pacientes después de recibir una campaña (30 días), con Sofi, en el panel
     // o por teléfono (también los que se escribieron desde el WhatsApp de la clínica), y su valor de referencia.
     sql<Array<{ appointments: number; revenue: number }>>`
       select count(*)::int as appointments, coalesce(sum(t.price), 0)::float8 as revenue
@@ -71,7 +67,7 @@ export default async function PanelHome() {
         limit 1
       ) booked on true
       join appointment_types t on t.id = booked.appointment_type_id
-      where c.clinic_id = ${clinic.id} and r.sent_at >= ${quarter}`,
+      where c.clinic_id = ${clinic.id} and r.sent_at >= ${month}`,
     sql<Array<{ id: string; starts_at: string; status: string; patient: string | null; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, p.full_name as patient, pr.full_name as professional, coalesce(a.title, t.name) as type_name
       from appointments a
@@ -94,7 +90,8 @@ export default async function PanelHome() {
       limit 5`,
   ]);
 
-  const [guarantee, bookings] = await Promise.all([clinicGuarantee(clinic.id), agentBookings(clinic)]);
+  const [guarantee, week] = await Promise.all([clinicGuarantee(clinic.id), agentBookings(clinic, 7)]);
+  const agent = clinic.agent_name || "Sofi";
   const shortDate = (iso: string) => new Intl.DateTimeFormat("es-AR", { timeZone: tz, day: "numeric", month: "numeric" }).format(new Date(iso));
 
   const resolutionRate = stats.conversations ? Math.round((stats.resolved / stats.conversations) * 100) : null;
@@ -104,16 +101,18 @@ export default async function PanelHome() {
   const sample = (total: number, text: string) => (total >= MIN_SAMPLE ? text : `${text} · pocos datos todavía`);
   const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
+  // Lo que falta, dicho como lo que hay que hacer (el detalle está en Sistema).
   const checklist = [
-    { done: configured.database, label: "Base de datos configurada" },
-    { done: configured.elevenlabs, label: "API key de ElevenLabs cargada" },
-    { done: Boolean(clinic.elevenlabs_agent_id), label: "Agente creado en ElevenLabs" },
+    { done: configured.database, todo: "configurar la base de datos" },
+    { done: configured.elevenlabs, todo: "cargar la API key de ElevenLabs" },
+    { done: Boolean(clinic.elevenlabs_agent_id), todo: "crear el agente en ElevenLabs" },
     {
       done: clinic.whatsapp_provider === "waha" ? configured.waha : Boolean(clinic.whatsapp_phone_number_id),
-      label: clinic.whatsapp_provider === "waha" ? "WhatsApp por WAHA configurado" : "Número de WhatsApp conectado",
+      todo: clinic.whatsapp_provider === "waha" ? "configurar WhatsApp por WAHA" : "conectar el número de WhatsApp",
     },
-    { done: Boolean(process.env.ELEVENLABS_WEBHOOK_SECRET), label: "Webhook post-conversación configurado" },
+    { done: Boolean(process.env.ELEVENLABS_WEBHOOK_SECRET), todo: "configurar el webhook post-conversación" },
   ];
+  const listOf = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`);
   // La puesta en marcha es técnica y general: solo la ve el administrador.
   const pending = user.role === "admin" ? checklist.filter((c) => !c.done) : [];
 
@@ -125,22 +124,13 @@ export default async function PanelHome() {
       />
 
       {pending.length > 0 && (
-        <Card className="mb-6 border-sun-300 bg-sun-100/50">
-          <p className="text-sm font-semibold text-brand-950">Terminá la puesta en marcha</p>
-          <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
-            {checklist.map((c) => (
-              <li key={c.label} className={c.done ? "text-brand-700" : "text-brand-950/70"}>
-                <CheckMark ok={c.done} />{c.label}
-              </li>
-            ))}
-          </ul>
-          <Link href="/panel/sistema" className="mt-3 inline-block text-sm font-semibold text-brand-700 hover:underline">
-            Ir a Sistema →
-          </Link>
-        </Card>
+        <Notice tone="warning" className="mb-6 flex flex-wrap items-center justify-between gap-2">
+          <span>Para terminar la puesta en marcha general falta {listOf(pending.map((c) => c.todo))}.</span>
+          <Link href="/panel/sistema" className="font-semibold text-brand-700 hover:underline">Ir a Sistema →</Link>
+        </Notice>
       )}
 
-      {completeness.percent < 100 && <div className="mb-6"><CompletenessCard {...completeness} /></div>}
+      {completeness.percent < 100 && <div className="mb-6"><CompletenessCard {...completeness} agent={agent} /></div>}
 
       {guarantee && (!guarantee.endsAt || Date.parse(guarantee.endsAt) > now.getTime() - 15 * 86400_000) && (
         <Card className="mb-6">
@@ -168,7 +158,7 @@ export default async function PanelHome() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <Card>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="font-semibold text-brand-950">Turnos de hoy</h2>
@@ -179,11 +169,11 @@ export default async function PanelHome() {
           {today.length ? (
             <ul className="divide-y divide-brand-900/5">
               {today.map((a) => (
-                <li key={a.id} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
-                  <span className="w-12 font-mono text-brand-900">{formatTime(a.starts_at, tz)}</span>
-                  <span className="flex-1 font-medium text-brand-950">{a.patient ?? "Paciente"}</span>
-                  <span className="text-brand-900/60">
-                    {a.type_name} · {a.professional}
+                <li key={a.id} className="flex items-start gap-3 py-2.5 text-sm">
+                  <span className="w-12 shrink-0 font-mono tabular-nums text-brand-900">{formatTime(a.starts_at, tz)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-brand-950">{a.patient ?? "Paciente"}</span>
+                    <span className="block text-brand-900/60">{a.type_name} · {a.professional}</span>
                   </span>
                   <StatusBadge value={a.status} />
                 </li>
@@ -253,39 +243,34 @@ export default async function PanelHome() {
       <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/65">Últimos 7 días</h2>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Conversaciones" value={stats.conversations} hint="WhatsApp, teléfono y web" />
-        <Stat label="Resueltas por IA" value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin intervención humana" />
-        <Stat label="Turnos dados por IA" value={stats.booked_by_ai} hint="últimos 7 días" />
-        <Stat label="Turnos recuperados" value={stats.recovered} hint="por campañas (histórico)" />
+        <Stat label={`Resueltas por ${agent}`} value={resolutionRate === null ? "—" : `${resolutionRate}%`} hint="sin que intervenga el equipo" />
+        <Stat
+          label={`Turnos que dio ${agent}`}
+          value={week.total}
+          hint={week.total ? `${week.outsideHours} fuera de horario: noches, fines de semana y feriados` : "todavía ninguno esta semana"}
+        />
+        <Stat
+          label="Valor de esos turnos"
+          value={week.priced ? money.format(week.value) : "—"}
+          hint={week.priced ? `con tus precios · ${week.priced} de ${week.kept} con precio` : week.kept ? "cargá precios en Prestaciones" : "sin turnos todavía"}
+        />
       </div>
 
       <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wider text-brand-900/65">Últimos 30 días</h2>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat
           label="Satisfacción"
           value={quality.satisfaction === null ? "—" : `${quality.satisfaction}/10`}
-          hint={`${quality.answers} respuestas a encuestas`}
+          hint={`${quality.answers} ${quality.answers === 1 ? "respuesta" : "respuestas"} a encuestas`}
         />
         <Stat label="Confirmaron asistencia" value={percent(quality.confirmed, quality.reminded)} hint={sample(quality.reminded, `de ${quality.reminded} recordatorios`)} />
         <Stat label="Ausentismo" value={percent(quality.absent, quality.absent + quality.attended)} hint={sample(quality.absent + quality.attended, `${quality.absent} ${quality.absent === 1 ? "ausente" : "ausentes"} de ${quality.absent + quality.attended} ${quality.absent + quality.attended === 1 ? "turno" : "turnos"}`)} />
         <Stat
-          label="Ingresos recuperados"
+          label="Recuperado con campañas"
           value={money.format(recovery.revenue)}
-          hint={`${recovery.appointments} turnos por campañas (90 días, precio de referencia)`}
-        />
-        <Stat
-          label="Turnos fuera de horario"
-          value={bookings.outsideHours}
-          hint={bookings.total ? `de ${bookings.total} que dio ${clinic.agent_name || "Sofi"}: noches, fines de semana y feriados` : `${clinic.agent_name || "Sofi"} todavía no dio turnos`}
-        />
-        <Stat
-          label={`Valor de los turnos de ${clinic.agent_name || "Sofi"}`}
-          value={bookings.priced ? money.format(bookings.value) : "—"}
-          hint={bookings.priced
-            ? `estimado con tus precios · ${bookings.priced} de ${bookings.kept} turnos con precio`
-            : bookings.kept ? "cargá precios en Prestaciones para estimarlo" : "sin turnos todavía"}
+          hint={`${recovery.appointments} ${recovery.appointments === 1 ? "turno" : "turnos"} de pacientes que recibieron una campaña`}
         />
       </div>
-
     </>
   );
 }
