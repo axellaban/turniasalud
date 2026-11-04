@@ -25,7 +25,7 @@ export default async function BlocksPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
           <h2 className="font-semibold text-brand-950">Próximos bloqueos</h2>
-          <p className="mt-1 text-sm text-brand-900/60">En estos períodos el agente no ofrece turnos y avisa que no se atiende. Los turnos ya dados no se cancelan solos.</p>
+          <p className="mt-1 text-sm text-brand-900/60">En estos períodos {clinic.agent_name || "Sofi"} no ofrece turnos y avisa que no se atiende. Los turnos ya dados no se cancelan solos.</p>
           <ul className="mt-4 space-y-2 text-sm">
             {blocks.map((b) => (
               <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50/60 px-3 py-2">
@@ -45,6 +45,7 @@ export default async function BlocksPage() {
         <Card>
           <h2 className="mb-4 font-semibold text-brand-950">Bloquear la agenda</h2>
           <ScheduleBlockForm
+            agent={clinic.agent_name || "Sofi"}
             clinicId={clinic.id}
             professionals={professionals.filter((p) => p.active).map((p) => ({ id: p.id, name: p.full_name }))}
             today={localDateKey(now, clinic.timezone)}

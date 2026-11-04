@@ -20,6 +20,13 @@ export type ToolDefinition = {
 };
 
 const isoDate = "Fecha en formato AAAA-MM-DD (hora de Argentina).";
+/** Para el equipo del consultorio: el paciente para el que se pide (de buscar_pacientes o ver_agenda). */
+const PATIENT_PARAM = {
+  type: "string" as const,
+  description: "Solo si te escribe alguien del equipo del consultorio (el contexto lo dice): el paciente_id del paciente para el que pide, de buscar_pacientes o ver_agenda. Con un paciente, no lo mandes.",
+};
+const STAFF = "Solo para el equipo del consultorio (el contexto lo dice); con un paciente, no la uses.";
+
 const SECOND_TYPE =
   "Si el paciente quiere otra práctica en la misma visita (por ejemplo, control y limpieza): el id de esa segunda práctica, copiado del catálogo. Devuelve horarios en los que entran las dos, seguidas y con el mismo profesional.";
 
@@ -101,8 +108,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         type: "string",
         description: "Solo si el paciente se va a atender con otra cobertura que la de su ficha (por ejemplo, 'Particular'). Si no, se usa la de la ficha.",
       },
+      paciente_id: PATIENT_PARAM,
     },
     schema: z.object({
+      paciente_id: z.string().optional(),
       tipo_turno_id: z.string().min(1).optional(),
       turno_id: z.string().min(1).optional(),
       segundo_tipo_turno_id: z.string().optional(),
@@ -130,8 +139,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         description:
           "Solo si pidió una consulta sobre un tratamiento (implantes, prótesis, blanqueamiento, ortodoncia…) y reservás la prestación de consulta: cómo se llama el turno, por ejemplo «Consulta de implantes». Así figura en la agenda, en la ficha y en el recordatorio.",
       },
+      paciente_id: PATIENT_PARAM,
     },
     schema: z.object({
+      paciente_id: z.string().optional(),
       tipo_turno_id: z.string().min(1),
       segundo_tipo_turno_id: z.string().optional(),
       profesional_id: z.string().min(1),
@@ -145,8 +156,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "ver_turnos_paciente",
     description: "Lista los próximos turnos del paciente (para confirmarlos, cancelarlos o reprogramarlos).",
-    params: {},
-    schema: z.object({}),
+    params: { paciente_id: PATIENT_PARAM },
+    schema: z.object({ paciente_id: z.string().optional() }),
   },
   {
     name: "confirmar_turno",
@@ -247,6 +258,70 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       fecha_nacimiento: z.string().optional(),
       email: z.string().optional(),
     }),
+  },
+  // Equipo del consultorio (acceso total por WhatsApp).
+  {
+    name: "ver_agenda",
+    description: `${STAFF} Muestra los turnos de la agenda de uno o varios días (hasta 14), de toda la clínica o de un profesional, con su turno_id y paciente_id.`,
+    params: {
+      desde: { type: "string", description: `Primer día. ${isoDate} Por defecto, hoy.` },
+      hasta: { type: "string", description: `Último día. ${isoDate} Por defecto, el mismo día.` },
+      profesional_id: { type: "string", description: "id del profesional, si pide la agenda de uno solo." },
+    },
+    schema: z.object({ desde: z.string().optional(), hasta: z.string().optional(), profesional_id: z.string().optional() }),
+  },
+  {
+    name: "buscar_pacientes",
+    description: `${STAFF} Busca pacientes por nombre, DNI o celular y devuelve su paciente_id, cobertura y próximos turnos.`,
+    params: { texto: { type: "string", description: "Nombre, apellido, DNI o celular.", required: true } },
+    schema: z.object({ texto: z.string().min(1) }),
+  },
+  {
+    name: "crear_paciente",
+    description: `${STAFF} Crea la ficha de alguien que todavía no es paciente, para darle un turno. Devuelve su paciente_id.`,
+    params: {
+      nombre_completo: { type: "string", description: "Nombre y apellido.", required: true },
+      celular: { type: "string", description: "Celular del paciente, si lo sabe." },
+      dni: { type: "string", description: "DNI, solo números." },
+      cobertura: { type: "string", description: "Obra social o prepaga, o 'Particular'." },
+      plan: { type: "string", description: "Plan de la cobertura." },
+    },
+    schema: z.object({ nombre_completo: z.string().min(1), celular: z.string().optional(), dni: z.string().optional(), cobertura: z.string().optional(), plan: z.string().optional() }),
+  },
+  {
+    name: "bloquear_agenda",
+    description: `${STAFF} Bloquea la agenda (feriado, vacaciones, un rato sin atender) de toda la clínica o de un profesional: Sofi deja de ofrecer turnos ahí. Los turnos ya dados no se cancelan solos. Confirmá antes de bloquear.`,
+    params: {
+      desde: { type: "string", description: `Primer día. ${isoDate}`, required: true },
+      hasta: { type: "string", description: `Último día (inclusive). ${isoDate} Por defecto, el mismo día.` },
+      hora_desde: { type: "string", description: "Hora de inicio HH:MM, si es solo una parte del día." },
+      hora_hasta: { type: "string", description: "Hora de fin HH:MM, si es solo una parte del día." },
+      profesional_id: { type: "string", description: "id del profesional; sin esto, bloquea toda la clínica." },
+      motivo: { type: "string", description: "Motivo (feriado, vacaciones, congreso…): Sofi lo dice si un paciente pide ese día." },
+    },
+    schema: z.object({
+      desde: z.string().min(1),
+      hasta: z.string().optional(),
+      hora_desde: z.string().optional(),
+      hora_hasta: z.string().optional(),
+      profesional_id: z.string().optional(),
+      motivo: z.string().optional(),
+    }),
+  },
+  {
+    name: "ver_tareas",
+    description: `${STAFF} Lista los pedidos al equipo que siguen abiertos (recetas, consultas, derivaciones…), los urgentes primero.`,
+    params: {},
+    schema: z.object({}),
+  },
+  {
+    name: "resolver_tarea",
+    description: `${STAFF} Cierra un pedido al equipo. Con respuesta, se la manda al paciente por WhatsApp: confirmá el texto antes.`,
+    params: {
+      tarea_id: { type: "string", description: "tarea_id de ver_tareas.", required: true },
+      respuesta: { type: "string", description: "Lo que se le contesta al paciente, si hay que contestarle algo." },
+    },
+    schema: z.object({ tarea_id: z.string().min(1), respuesta: z.string().optional() }),
   },
 ];
 

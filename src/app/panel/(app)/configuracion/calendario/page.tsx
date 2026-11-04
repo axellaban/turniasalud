@@ -10,7 +10,7 @@ import { ProfessionalCalendarForm } from "../calendario-form";
 import { ConfigHeader } from "../header";
 import { SmileConnectCard } from "../smile-connect-card";
 
-export const metadata: Metadata = { title: "Calendario · Panel" };
+export const metadata: Metadata = { title: "Google Calendar · Panel" };
 
 const RESULT: Record<string, { tone: "success" | "warning" | "error"; text: string }> = {
   conectado: { tone: "success", text: "Google Calendar quedó conectado. Ahora elegí el calendario de cada profesional." },

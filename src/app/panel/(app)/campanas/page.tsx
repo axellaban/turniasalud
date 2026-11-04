@@ -114,11 +114,12 @@ export default async function CampaignsPage() {
       <PageHeader
         title="Campañas"
         description="Pacientes que ya te conocen y tienen algo pendiente. Elegí a quiénes escribirles, revisá la lista y mandalo desde tu WhatsApp o con Sofi."
-        actions={
+        // Sin base todavía, el botón de importar va en el recuadro de abajo, con su explicación.
+        actions={!needsBase && (
           <Link href="/panel/pacientes/importar" className={secondaryButtonClass}>
             Importar pacientes
           </Link>
-        }
+        )}
       />
       {clinic.is_demo && (
         <Notice tone="info" className="mb-6">

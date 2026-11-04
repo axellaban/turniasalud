@@ -42,7 +42,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
 
   return (
     <>
-      <PageHeader title="Conversaciones" description="Cada conversación del agente, con resumen, motivo y resultado." />
+      <PageHeader title="Conversaciones" description={`Cada conversación de ${clinic.agent_name || "Sofi"}, con resumen, motivo y resultado.`} />
       <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <Link
@@ -84,7 +84,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
         </Card>
       ) : (
         <Empty>
-          Todavía no hay conversaciones. Cada charla del agente aparece acá cuando termina, con su resumen y resultado.
+          Todavía no hay conversaciones. Cada charla de {clinic.agent_name || "Sofi"} aparece acá cuando termina, con su resumen y resultado.
         </Empty>
       )}
     </>

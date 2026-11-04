@@ -130,7 +130,8 @@ export async function forwardToAgent(
   if (currentWahaConnection() && currentWahaConnection()!.clinicId !== clinic.id) throw new Error("La línea de WhatsApp no corresponde a esta clínica.");
   const settings = await requireActiveChannel(channelForChat(input.chatId));
   // Fuera de la transacción: son varias consultas y no conviene retener la conexión.
-  const vars = await buildDynamicVariables(clinic, input.phone);
+  // WhatsApp garantiza el número: si es del equipo del consultorio, Sofi lo sabe.
+  const vars = await buildDynamicVariables(clinic, input.phone, { verifiedPhone: true });
   return sql.begin(async (tx) => {
     // Dos mensajes seguidos del mismo paciente no pueden abrir dos conversaciones.
     await tx`select pg_advisory_xact_lock(hashtextextended(${`${clinic.id}:${input.phone}`}, 0))`;

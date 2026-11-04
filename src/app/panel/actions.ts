@@ -12,7 +12,7 @@ import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionC
 import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError, type ToolContext } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
 import { addHouseholdMember, deletePatients, mergeDuplicates } from "@/lib/patients";
-import { addDaysKey, humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
+import { humanSlot, localDateKey, parseClockTime, parseDateKey, zonedTimeToUtc } from "@/lib/time";
 import { AudioError, elegirVoces, generarAudio } from "@/lib/web-audios";
 import { getConversacion } from "@/content/conversaciones";
 import { selectMessagingChannel, messagingSettings, setDemoDailyLimit } from "@/lib/messaging-settings";
@@ -20,6 +20,7 @@ import { connectTelegram, telegramConfigured } from "@/lib/telegram";
 import { missingWahaEnv } from "@/lib/env";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizeWebsite } from "@/lib/demo/website";
+import { createScheduleBlock } from "@/lib/schedule-blocks";
 import { PRICE_MODES, type PriceMode } from "@/lib/types";
 
 const requireSession = requirePanelSession;
@@ -359,48 +360,60 @@ export async function resolveTaskAction(_prev: FormState | undefined, form: Form
 // ---------------------------------------------------------------------------
 // Configuración de la clínica
 // ---------------------------------------------------------------------------
+/** Lo que el panel guarda de la ficha de la clínica con saveClinic (cada pantalla manda solo lo suyo). */
+const CLINIC_TEXT_FIELDS = [
+  "address", "phone", "hours_text", "faq", "policies", "urgency_instructions", "payment_methods",
+  "agent_context", "handoff_phone", "after_hours_instructions",
+] as const;
+
+/**
+ * Guarda la ficha de la clínica. Cada pantalla del panel manda solo sus campos: lo que no viene en
+ * el formulario se conserva como estaba (así guardar una pantalla nunca borra lo de otra).
+ */
 export async function saveClinic(form: FormData) {
   await requireSession();
   const clinic = await getPanelClinic(form);
-  const coverages = (text(form, "accepted_coverages") ?? "")
-    .split(",")
-    .map((c) => c.trim())
-    .filter(Boolean);
-  const websiteInput = text(form, "website");
-  const website = websiteInput ? normalizeWebsite(websiteInput) : null;
-  if (websiteInput && !website) throw new Error("Revisá la dirección de la web.");
-  const timezone = text(form, "timezone") ?? clinic.timezone;
-  try { new Intl.DateTimeFormat("es", { timeZone: timezone }); } catch { throw new Error("Zona horaria inválida."); }
+  const fields: Record<string, unknown> = {};
+  if (form.has("name")) fields.name = text(form, "name") ?? clinic.name;
+  if (form.has("agent_name")) fields.agent_name = text(form, "agent_name") ?? clinic.agent_name;
+  if (form.has("specialty")) fields.specialty = text(form, "specialty") ?? clinic.specialty;
+  for (const key of CLINIC_TEXT_FIELDS) if (form.has(key)) fields[key] = text(form, key);
+  if (form.has("accepted_coverages")) {
+    fields.accepted_coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+  }
+  if (form.has("website")) {
+    const websiteInput = text(form, "website");
+    const website = websiteInput ? normalizeWebsite(websiteInput) : null;
+    if (websiteInput && !website) throw new Error("Revisá la dirección de la web.");
+    fields.website = website;
+  }
+  if (form.has("timezone")) {
+    const timezone = text(form, "timezone") ?? clinic.timezone;
+    try { new Intl.DateTimeFormat("es", { timeZone: timezone }); } catch { throw new Error("Zona horaria inválida."); }
+    fields.timezone = timezone;
+  }
   // Si el paciente no contesta los horarios que le pasó el agente: cuántas veces se le vuelve a escribir.
-  const attempts = Number(text(form, "followup_attempts") ?? clinic.followup_attempts);
-  const delay = Number(text(form, "followup_delay_hours") ?? clinic.followup_delay_hours);
-  if (![0, 1, 2].includes(attempts)) throw new Error("Elegí cuántas veces volver a escribir (ninguna, 1 o 2).");
-  if (!Number.isInteger(delay) || delay < 1 || delay > 24) throw new Error("Elegí cuánto esperar antes de volver a escribir.");
-  await sql`
-    update clinics set ${sql({
-      name: text(form, "name") ?? clinic.name,
-      agent_name: text(form, "agent_name") ?? clinic.agent_name,
-      specialty: text(form, "specialty") ?? clinic.specialty,
-      address: text(form, "address"),
-      phone: text(form, "phone"),
-      hours_text: text(form, "hours_text"),
-      accepted_coverages: coverages,
-      faq: text(form, "faq"),
-      policies: text(form, "policies"),
-      urgency_instructions: text(form, "urgency_instructions"),
-      website,
-      timezone,
-      payment_methods: text(form, "payment_methods"),
-      agent_context: text(form, "agent_context"),
-      handoff_phone: text(form, "handoff_phone"),
-      after_hours_instructions: text(form, "after_hours_instructions"),
-      followup_attempts: attempts,
-      followup_delay_hours: delay,
-      // Sin el campo en el formulario, se conserva el que estaba.
-      tone: form.has("tone") ? (text(form, "tone") === "usted" ? "usted" : text(form, "tone") === "vos" ? "vos" : null) : clinic.tone,
-    })}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
-    where id = ${clinic.id}`;
-  await logClinicChange(clinic.id, "Reglas del consultorio");
+  if (form.has("followup_attempts")) {
+    const attempts = Number(text(form, "followup_attempts") ?? clinic.followup_attempts);
+    if (![0, 1, 2].includes(attempts)) throw new Error("Elegí cuántas veces volver a escribir (ninguna, 1 o 2).");
+    fields.followup_attempts = attempts;
+  }
+  if (form.has("followup_delay_hours")) {
+    const delay = Number(text(form, "followup_delay_hours") ?? clinic.followup_delay_hours);
+    if (!Number.isInteger(delay) || delay < 1 || delay > 24) throw new Error("Elegí cuánto esperar antes de volver a escribir.");
+    fields.followup_delay_hours = delay;
+  }
+  if (form.has("tone")) fields.tone = text(form, "tone") === "usted" ? "usted" : text(form, "tone") === "vos" ? "vos" : null;
+  // El ayudante de postgres.js tiene que ir directo después de «set» (dentro de otro fragmento no
+  // se arma bien), así que sin campos se marca la ficha sola.
+  if (Object.keys(fields).length) {
+    await sql`
+      update clinics set ${sql(fields)}, retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1
+      where id = ${clinic.id}`;
+  } else {
+    await sql`update clinics set retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1 where id = ${clinic.id}`;
+  }
+  await logClinicChange(clinic.id, "Consultorio");
   revalidatePath("/panel/configuracion", "layout");
 }
 
@@ -449,8 +462,12 @@ export async function saveProfessionalWithFeedback(_previous: FormState, form: F
   const specialty = text(form, "specialty");
   if (!id) return { ok: false, message: "No encontré el profesional. Recargá la página." };
   if (!name || !specialty) return { ok: false, message: "Completá el nombre y la especialidad." };
+  // Las coberturas del profesional se cargan en Configuración → Coberturas: sin el campo, se conservan.
   const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
-  const rows = await sql`update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}, accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  const rows = await sql`
+    update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}
+      ${form.has("accepted_coverages") ? sql`, accepted_coverages = ${coverages.length ? coverages : null}` : sql``}
+    where id = ${id} and clinic_id = ${clinic.id} returning id`;
   if (!rows.length) return { ok: false, message: "Este profesional no pertenece a la clínica elegida. Recargá la página." };
   await saveProfessionalTypes(form, clinic.id, id);
   await touchClinic(clinic.id, "Equipo");
@@ -514,8 +531,10 @@ export async function saveAppointmentTypeWithFeedback(_previous: FormState, form
   if (rawPrice && price === null) return { ok: false, message: "Revisá el precio: usá solo números (por ejemplo, 48000)." };
   const rules = await appointmentTypeRules(form, clinic.id, id);
   if (typeof rules === "string") return { ok: false, message: rules };
+  // El control periódico se carga en Campañas → Controles periódicos: sin el campo, se conserva.
   const rows = await sql`update appointment_types set name = ${name}, specialty = ${specialty}, duration_min = ${Math.round(duration)}, price = ${price},
-    instructions = ${text(form, "instructions")}, recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},
+    instructions = ${text(form, "instructions")},
+    ${form.has("recall_months") ? sql`recall_months = ${Number.isFinite(recall) && recall > 0 && recall <= 60 ? Math.round(recall) : null},` : sql``}
     is_first_visit = ${form.get("is_first_visit") === "on"}, panel_only = ${form.get("panel_only") === "on"}
     where id = ${id} and clinic_id = ${clinic.id} returning id`;
   if (!rows.length) return { ok: false, message: "Esta prestación no pertenece a la clínica elegida. Recargá la página." };
@@ -647,38 +666,22 @@ export async function setAppointmentTypePrice(form: FormData) {
 export async function addScheduleBlock(_prev: FormState | undefined, form: FormData): Promise<FormState> {
   await requireSession();
   const clinic = await getPanelClinic(form);
-  const fromKey = parseDateKey(text(form, "date_from"));
-  const toKey = parseDateKey(text(form, "date_to")) ?? fromKey;
-  if (!fromKey || !toKey || toKey < fromKey) return { ok: false, message: "Revisá las fechas." };
-  const professionalId = uuid(form, "professional_id");
-  const time = (key: string) => /^(\d{2}):(\d{2})$/.exec(text(form, key) ?? "");
-  const startTime = time("time_from");
-  const endTime = time("time_to");
-  const [fy, fm, fd] = fromKey.split("-").map(Number);
-  const startsAt = zonedTimeToUtc(fy, fm, fd, startTime ? Number(startTime[1]) : 0, startTime ? Number(startTime[2]) : 0, clinic.timezone);
-  // Sin hora de fin, el bloqueo dura hasta el final del último día.
-  const [ty, tm, td] = (endTime ? toKey : addDaysKey(toKey, 1)).split("-").map(Number);
-  const endsAt = zonedTimeToUtc(ty, tm, td, endTime ? Number(endTime[1]) : 0, endTime ? Number(endTime[2]) : 0, clinic.timezone);
-  if (endsAt <= startsAt) return { ok: false, message: "La hora de fin tiene que ser posterior a la de inicio." };
-  const [block] = await sql<Array<{ id: string }>>`
-    insert into schedule_blocks (clinic_id, professional_id, starts_at, ends_at, reason)
-    select ${clinic.id}::uuid, ${professionalId}::uuid, ${startsAt}::timestamptz, ${endsAt}::timestamptz, ${text(form, "reason")}::text
-    where ${professionalId}::uuid is null
-       or exists (select 1 from professionals where id = ${professionalId} and clinic_id = ${clinic.id})
-    returning id`;
-  if (!block) return { ok: false, message: "No encontré ese profesional." };
-  const [{ affected }] = await sql<Array<{ affected: number }>>`
-    select count(*)::int as affected from appointments
-    where clinic_id = ${clinic.id} and status in ('confirmado', 'pendiente')
-      and starts_at < ${endsAt} and ends_at > ${startsAt}
-      ${professionalId ? sql`and (professional_id = ${professionalId} or second_professional_id = ${professionalId})` : sql``}`;
+  const result = await createScheduleBlock(clinic, {
+    professionalId: uuid(form, "professional_id"),
+    from: text(form, "date_from"),
+    to: text(form, "date_to"),
+    timeFrom: text(form, "time_from"),
+    timeTo: text(form, "time_to"),
+    reason: text(form, "reason"),
+  });
+  if (!result.ok) return result;
   await touchClinic(clinic.id, "Feriados y bloqueos");
   revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");
   return {
     ok: true,
-    message: affected
-      ? `Bloqueo guardado. Ojo: hay ${affected} turno(s) ya dados en ese período; reprogramalos desde la Agenda.`
+    message: result.affected
+      ? `Bloqueo guardado. Ojo: hay ${result.affected} turno(s) ya dados en ese período; reprogramalos desde la Agenda.`
       : "Bloqueo guardado. El agente ya no ofrece turnos en ese período.",
   };
 }

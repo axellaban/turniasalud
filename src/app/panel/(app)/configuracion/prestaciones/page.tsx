@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { sql } from "@/lib/db";
 import { agentCanMove, professionalDoes } from "@/lib/booking-rules";
@@ -25,11 +26,12 @@ const PRICE_LABEL: Record<AppointmentType["price_mode"], string> = {
 };
 
 /** Lo que Sofi hace con la prestación: los mismos campos al editar y al agregar. */
-function ProtocolFields({ type, others, clinic }: { type?: AppointmentType; others: AppointmentType[]; clinic: Pick<Clinic, "move_panel_only"> }) {
+function ProtocolFields({ type, others, clinic, agent }: { type?: AppointmentType; others: AppointmentType[]; clinic: Pick<Clinic, "move_panel_only">; agent: string }) {
   return (
     <>
       <input type="hidden" name="protocol_fields" value="1" />
-      <Field label="Cómo dice el precio Sofi">
+      <p className="mt-2 text-sm font-semibold text-brand-950 sm:col-span-2">Cómo la da {agent}</p>
+      <Field label="Cómo dice el precio">
         <select name="price_mode" defaultValue={type?.price_mode ?? "referencia"} className={inputClass}>
           {(Object.keys(PRICE_LABEL) as AppointmentType["price_mode"][]).map((m) => <option key={m} value={m}>{PRICE_LABEL[m]}</option>)}
         </select>
@@ -41,18 +43,18 @@ function ProtocolFields({ type, others, clinic }: { type?: AppointmentType; othe
         </select>
       </Field>
       <div className="sm:col-span-2">
-        <Field label="Qué preguntar antes de reservar" hint="Por ejemplo: «¿Tenés una panorámica reciente?». Sofi anota la respuesta en el turno.">
+        <Field label="Qué preguntar antes de reservar" hint={`Por ejemplo: «¿Tenés una panorámica reciente?». ${agent} anota la respuesta en el turno.`}>
           <input name="ask_before" defaultValue={type?.ask_before ?? ""} maxLength={300} className={inputClass} />
         </Field>
       </div>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" name="is_urgent" defaultChecked={type?.is_urgent ?? false} className="mt-1" />
-        <span>Es un turno de urgencia<span className={hint}>Sofi busca lugar para hoy y mañana y puede usar las horas «Solo urgencias».</span></span>
+        <span>Es un turno de urgencia<span className={hint}>Busca lugar para hoy y mañana y puede usar las horas «Solo urgencias».</span></span>
       </label>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" name="agent_can_reschedule" defaultChecked={type?.agent_can_reschedule ?? true} className="mt-1" />
         <span>
-          Si el paciente ya tiene el turno, Sofi lo puede mover
+          Si el paciente ya tiene el turno, {agent} lo puede mover
           <span className={hint}>
             Si no, el cambio lo coordina recepción.{type?.panel_only && !clinic.move_panel_only ? " Como la da solo el consultorio, además hay que permitirlo en «Turnos y urgencias»." : ""}
           </span>
@@ -76,11 +78,12 @@ export default async function ServicesPage() {
   const staffed = (t: AppointmentType) => active.some((p) => professionalDoes(p, t, [...links]));
   const typeName = new Map(types.map((t) => [t.id, t.name]));
   const dental = isDentalSpecialty(clinic.specialty) || specialties.some(isDentalSpecialty);
+  const agent = clinic.agent_name || "Sofi";
 
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion/prestaciones" />
-      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que el agente puede dar. Cada una la atiende un profesional activo de su especialidad, o los que la tengan marcada en Equipo y horarios.</p>
+      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (para las campañas de recall) se carga en <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link>.</p>
       {dental && (
         <Card className="mb-6">
           <h2 className="font-semibold text-brand-950">Plantilla odontológica</h2>
@@ -122,15 +125,14 @@ export default async function ServicesPage() {
               <EditDetails summary="Editar prestación" submit="Guardar prestación" action={saveAppointmentTypeWithFeedback} className="mt-3 grid gap-3 rounded-xl bg-neutral-50 p-4 sm:grid-cols-2">
                 <input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={x.id} />
-                  <Field label="Nombre de la prestación"><input name="name" required defaultValue={x.name} className={inputClass} /></Field>
-                  <Field label="Especialidad de la prestación"><input name="specialty" required defaultValue={x.specialty} list="specialties" className={inputClass} /></Field>
-                  <Field label="Duración del turno (min)"><input name="duration_min" type="number" min={5} max={480} required defaultValue={x.duration_min} className={inputClass} /></Field>
-                  <Field label="Precio" hint="Referencia para el paciente y para medir campañas."><input name="price" inputMode="decimal" defaultValue={priceInput(x.price)} placeholder="45000" className={inputClass} /></Field>
-                  <Field label="Control periódico (meses)" hint="Para las campañas de recall. Vacío si no aplica."><input name="recall_months" type="number" min={1} max={60} defaultValue={x.recall_months ?? ""} className={inputClass} /></Field>
-                  <Field label="Indicaciones previas"><textarea name="instructions" rows={2} defaultValue={x.instructions ?? ""} className={inputClass} /></Field>
-                  <ProtocolFields type={x} others={types} clinic={clinic} />
+                  <Field label="Nombre"><input name="name" required defaultValue={x.name} className={inputClass} /></Field>
+                  <Field label="Especialidad" hint="La atienden los profesionales de esta especialidad."><input name="specialty" required defaultValue={x.specialty} list="specialties" className={inputClass} /></Field>
+                  <Field label="Duración (min)"><input name="duration_min" type="number" min={5} max={480} required defaultValue={x.duration_min} className={inputClass} /></Field>
+                  <Field label="Precio" hint="Para el paciente y para medir las campañas."><input name="price" inputMode="decimal" defaultValue={priceInput(x.price)} placeholder="45000" className={inputClass} /></Field>
+                  <Field label="Indicaciones previas" hint="Lo que el paciente tiene que saber o traer."><textarea name="instructions" rows={2} defaultValue={x.instructions ?? ""} className={inputClass} /></Field>
+                  <ProtocolFields type={x} others={types} clinic={clinic} agent={agent} />
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_first_visit" defaultChecked={x.is_first_visit} /> Es primera consulta</label>
-                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" defaultChecked={x.panel_only} className="mt-1" /> <span>Solo la da el consultorio <span className={hint}>Sofi no la ofrece ni la reserva (y no la mueve, salvo que lo permitas en «Turnos y urgencias»). El turno se da desde la Agenda.</span></span></label>
+                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" defaultChecked={x.panel_only} className="mt-1" /> <span>Solo la da el consultorio <span className={hint}>{agent} no la ofrece ni la reserva (y no la mueve, salvo que lo permitas en «Turnos y urgencias»). El turno se da desde la Agenda.</span></span></label>
               </EditDetails>
             </li>
           ))}
@@ -142,14 +144,13 @@ export default async function ServicesPage() {
         <h2 className="mb-4 font-semibold text-brand-950">Agregar prestación</h2>
         <form action={addAppointmentType} className="grid gap-3 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
           <Field label="Nombre"><input name="name" required placeholder="Control de ortodoncia" className={inputClass} /></Field>
-          <Field label="Especialidad" hint="Tiene que coincidir con la del profesional."><input name="specialty" required list="specialties" className={inputClass} /></Field>
+          <Field label="Especialidad" hint="La atienden los profesionales de esta especialidad."><input name="specialty" required list="specialties" placeholder="Odontología" className={inputClass} /></Field>
           <Field label="Duración (min)"><input name="duration_min" type="number" min={5} max={480} defaultValue={30} className={inputClass} /></Field>
-          <Field label="Precio de referencia (opcional)" hint="Para estimar cuánto recuperan las campañas."><input name="price" inputMode="decimal" placeholder="45000" className={inputClass} /></Field>
-          <Field label="Control periódico (meses)" hint="Para las campañas de recall. Vacío si no aplica."><input name="recall_months" type="number" min={1} max={60} className={inputClass} /></Field>
-          <Field label="Indicaciones previas"><input name="instructions" className={inputClass} /></Field>
-          <ProtocolFields others={types} clinic={clinic} />
+          <Field label="Precio (opcional)" hint="Para el paciente y para medir las campañas."><input name="price" inputMode="decimal" placeholder="45000" className={inputClass} /></Field>
+          <div className="sm:col-span-2"><Field label="Indicaciones previas" hint="Lo que el paciente tiene que saber o traer."><input name="instructions" className={inputClass} /></Field></div>
+          <ProtocolFields others={types} clinic={clinic} agent={agent} />
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_first_visit" /> Es primera consulta</label>
-          <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" className="mt-1" /> <span>Solo la da el consultorio <span className={hint}>Sofi no la ofrece ni la reserva (y no la mueve, salvo que lo permitas en «Turnos y urgencias»). El turno se da desde la Agenda.</span></span></label>
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" className="mt-1" /> <span>Solo la da el consultorio <span className={hint}>{agent} no la ofrece ni la reserva (y no la mueve, salvo que lo permitas en «Turnos y urgencias»). El turno se da desde la Agenda.</span></span></label>
           <div className="sm:col-span-2"><button className={buttonClass}>Agregar prestación</button></div>
         </form>
       </Card>

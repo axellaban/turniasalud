@@ -61,7 +61,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
     <>
       <PageHeader
         title="Tareas"
-        description="Lo que el agente no puede resolver solo llega acá, con todo el contexto para no volver a preguntar."
+        description={`Lo que ${clinic.agent_name || "Sofi"} no puede resolver por su cuenta llega acá, con todo el contexto para no volver a preguntar.`}
       />
       <Tabs current={showResolved ? "/panel/tareas?ver=resueltas" : "/panel/tareas"} items={[
         { href: "/panel/tareas", label: "Pendientes", count: counts.open },

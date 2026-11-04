@@ -25,6 +25,12 @@ export type ToolContext = {
   appointmentPatientId?: string;
   conversationId?: string;
   channel?: string;
+  /**
+   * Le escribe alguien del equipo del consultorio por WhatsApp (Configuración → Consultorio →
+   * Acceso total por WhatsApp): actúa como el consultorio sobre cualquier turno. Lo decide la ruta
+   * de herramientas, nunca el modelo.
+   */
+  staff?: { name: string } | null;
 };
 
 export class ToolError extends Error {
@@ -303,16 +309,18 @@ export async function checkAvailability(
   const next = move
     ? catalog.appointmentTypes.find((t) => t.id === move.follower?.appointment_type_id) ?? null
     : secondTypeOf(catalog.appointmentTypes, type, input.segundo_tipo_turno_id);
-  if (!move) {
+  // El equipo del consultorio puede dar también lo que da solo el consultorio.
+  const asClinic = Boolean(ctx.staff);
+  if (!move && !asClinic) {
     assertAgentCanBook(type);
     if (next) assertAgentCanBook(next);
-  } else if (move.follower && !next) {
+  } else if (move?.follower && !next) {
     throw new ToolError("Una práctica de esta visita ya no está disponible. El cambio lo tiene que coordinar recepción.");
   }
   const visit = next ? [type, next] : [type];
   // Lo que pide una prestación antes (por ejemplo, la consulta de implantes antes de la colocación).
   const patient = move ? move.patient : await currentPatient(ctx);
-  if (!move) await assertPrerequisites(catalog, patient, visit);
+  if (!move && !asClinic) await assertPrerequisites(catalog, patient, visit);
 
   const selectedPro = input.profesional_id || move?.appt.professional_id;
   const otherPro = move?.appt.second_professional_id;
@@ -332,7 +340,8 @@ export async function checkAvailability(
   let professionals = capable;
   let coverageNotice: string | undefined;
   const coverageNotes = new Map<string, string>();
-  const wanted = move ? null : input.cobertura?.trim() || patient?.coverage?.trim() || null;
+  // El consultorio decide la cobertura: al equipo se le muestran todos los horarios.
+  const wanted = move || asClinic ? null : input.cobertura?.trim() || patient?.coverage?.trim() || null;
   if (wanted) {
     const otherCoverage = input.cobertura?.trim() && patient?.coverage && coverageKey(input.cobertura) !== coverageKey(patient.coverage);
     const plan = otherCoverage ? null : patient?.coverage_plan;
@@ -388,9 +397,9 @@ export async function checkAvailability(
   const usable = agentSchedules(
     catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
     visit.map((t) => t.id),
-    { urgent, released: releaseUntil !== null },
+    { urgent: urgent || asClinic, released: releaseUntil !== null },
   );
-  const releasedOk = (start: Date, block: ScheduleBlock) => urgent || !block.urgent_only || (releaseUntil !== null && start.getTime() <= releaseUntil);
+  const releasedOk = (start: Date, block: ScheduleBlock) => urgent || asClinic || !block.urgent_only || (releaseUntil !== null && start.getTime() <= releaseUntil);
   const slots = computeSlots({
     schedules: usable,
     busy: [...busy, ...calendar],
@@ -791,7 +800,8 @@ export function appointmentTitle(raw: string | undefined, typeName: string): str
 
 export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {}) {
   const clinic = await getClinic(ctx.clinicId);
-  const byPanel = ctx.channel === "panel";
+  // El panel y el equipo del consultorio por WhatsApp reservan como el consultorio.
+  const byPanel = ctx.channel === "panel" || Boolean(ctx.staff);
   const patient = await ensurePatient(ctx, input.nombre_completo);
   if (!patient.full_name) throw new ToolError("Antes de reservar necesito el nombre y apellido del paciente (registrar_paciente).");
 
@@ -967,6 +977,8 @@ export async function listPatientAppointments(ctx: ToolContext) {
 }
 
 async function getOwnAppointment(ctx: ToolContext, appointmentId: string) {
+  // El equipo del consultorio puede tocar cualquier turno de la clínica.
+  if (ctx.staff) return getClinicAppointment(ctx.clinicId, appointmentId);
   const patient = await appointmentPatient(ctx);
   if (!patient) throw new ToolError("No encontré al paciente.");
   const [appt] = isUuid(appointmentId)
@@ -1035,13 +1047,13 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
   const { patient, appt } = await getOwnAppointment(ctx, input.turno_id);
   assertNotOver(appt);
   const notice = clinic.cancel_notice_hours;
-  if (notice && Date.parse(appt.starts_at) - Date.now() < notice * 3600_000) {
+  if (notice && !ctx.staff && Date.parse(appt.starts_at) - Date.now() < notice * 3600_000) {
     throw new ToolError(
       `Faltan menos de ${notice} ${notice === 1 ? "hora" : "horas"} para el turno: según las reglas del consultorio, la cancelación la gestiona recepción. Creá una tarea de derivacion_humana con el pedido y aclarale al paciente que el turno sigue reservado hasta que recepción le confirme.`,
     );
   }
   const follower = await followerOf(appt);
-  const { when, offered } = await cancelLoaded(clinic, patient, appt, input.motivo, "paciente");
+  const { when, offered } = await cancelLoaded(clinic, patient, appt, input.motivo, ctx.staff ? "clinica" : "paciente");
   const [next] = follower ? await sql<Array<{ name: string }>>`select name from appointment_types where id = ${follower.appointment_type_id}` : [];
   return {
     ok: true,
@@ -1244,6 +1256,8 @@ async function followerOf(appt: Appointment, opts: { movable?: { move_panel_only
 async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
   const { patient, appt } = await getOwnAppointment(ctx, id);
   assertNotOver(appt);
+  // El equipo del consultorio es recepción: mueve la visita entera, sin las reglas de abajo.
+  if (ctx.staff) return { patient, appt, follower: await followerOf(appt) };
   // La práctica que sigue en la misma visita se mueve con este turno, si Sofi la puede mover.
   const follower = await followerOf(appt, { movable: clinic });
   const parts = follower ? [appt, follower] : [appt];
@@ -1281,7 +1295,10 @@ async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
 export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id: string; nuevo_inicio: string; profesional_id?: string }) {
   const clinic = await getClinic(ctx.clinicId);
   const { patient, appt, follower } = await loadReschedule(ctx, clinic, input.turno_id);
-  const r = await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, follower);
+  // El equipo mueve como el consultorio: el turno conserva por dónde lo pidió el paciente.
+  const r = ctx.staff
+    ? await rescheduleLoaded(clinic, patient, appt, input, appt.source, false, follower, true)
+    : await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, follower);
   return { ok: true, ...r };
 }
 

@@ -7,6 +7,7 @@ import { householdOf, patientForPhone } from "./patients";
 import { agentCanMove, coverageRuleText, durationPhrase, parseTerms, receptionOnlyTerm } from "./booking-rules";
 import { DENTAL_PROTOCOL, isDentalSpecialty } from "./agent/modules/odontologia";
 import { wahaConnections } from "./waha-connections";
+import { staffContextText, staffForPhone } from "./staff";
 import type { Appointment, AppointmentType, Clinic, CoverageRule, Patient, Professional, ProfessionalType, Schedule, ScheduleBlock, Task } from "./types";
 
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
@@ -358,14 +359,17 @@ export const INBOUND_CONTEXT = "El paciente inició la conversación.";
 export async function buildDynamicVariables(
   clinic: Clinic,
   phone: string,
-  opts: { context?: string; campaignId?: string } = {},
+  /** `verifiedPhone`: el número lo garantiza el canal (WhatsApp), así que puede ser del equipo. */
+  opts: { context?: string; campaignId?: string; verifiedPhone?: boolean } = {},
 ): Promise<Record<string, string>> {
   const now = new Date();
-  const [catalog, patient, blocks] = await Promise.all([
+  const [catalog, patient, blocks, staff] = await Promise.all([
     getCatalog(clinic.id),
     findPatientByPhone(clinic.id, phone),
     getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 60 * 86400_000)),
+    opts.verifiedPhone ? staffForPhone(clinic.id, phone) : null,
   ]);
+  const patientContext = await patientContextText(clinic, patient, phone);
   const proIds = catalog.professionals.map((p) => p.id);
   const openNow = isOpenAt(catalog.schedules, expandBlocks(blocks, proIds), now, clinic.timezone);
   const urgency =
@@ -381,7 +385,8 @@ export async function buildDynamicVariables(
       : urgency,
     patient_phone: phone || "desconocido",
     patient_name: patient?.full_name || "desconocido",
-    patient_context: await patientContextText(clinic, patient, phone),
+    // Alguien del equipo del consultorio: primero lo que puede hacer, después su ficha si tiene.
+    patient_context: staff ? `${staffContextText(staff.name)}\n\nSu ficha como paciente:\n${patientContext}` : patientContext,
     conversation_context: opts.context ?? INBOUND_CONTEXT,
     campaign_id: opts.campaignId ?? "ninguna",
   };

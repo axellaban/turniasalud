@@ -9,7 +9,7 @@ const parse = (value: string) => value.split(",").map((c) => c.trim()).filter(Bo
  * Coberturas como etiquetas que se agregan y quitan. Se envían igual que antes:
  * un campo `accepted_coverages` separado por comas.
  */
-export function CoverageInput({ name, defaultValue }: { name: string; defaultValue: string[] }) {
+export function CoverageInput({ name, defaultValue, list, label = "Agregar cobertura" }: { name: string; defaultValue: string[]; list?: string; label?: string }) {
   const [items, setItems] = useState(defaultValue);
   const [draft, setDraft] = useState("");
   const hidden = useRef<HTMLInputElement>(null);
@@ -53,7 +53,7 @@ export function CoverageInput({ name, defaultValue }: { name: string; defaultVal
         </li>)}
       </ul>}
       <div className="flex gap-2">
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} onBlur={add} placeholder="Escribí una cobertura y tocá Enter (ej.: OSDE)" aria-label="Agregar cobertura" className={inputClass} />
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} onBlur={add} placeholder="Escribí una cobertura y tocá Enter (ej.: OSDE)" aria-label={label} list={list} className={inputClass} />
         <button type="button" onClick={add} className="shrink-0 rounded-xl px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-50">Agregar</button>
       </div>
     </div>

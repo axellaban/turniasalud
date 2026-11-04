@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { getCatalog } from "@/lib/clinic";
 import { sql } from "@/lib/db";
@@ -28,7 +29,7 @@ export default async function TeamPage() {
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion/equipo" />
-      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">El agente solo ofrece turnos dentro de estos horarios. Para feriados o vacaciones usá «Feriados y bloqueos».</p>
+      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">{clinic.agent_name || "Sofi"} solo ofrece turnos dentro de estos horarios. Para feriados o vacaciones usá «Feriados y bloqueos».</p>
       <div className="space-y-4">
         {professionals.map((p) => {
           const ranges = catalog.schedules.filter((s) => s.professional_id === p.id);
@@ -38,8 +39,10 @@ export default async function TeamPage() {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h2 className="font-semibold text-brand-950">{p.full_name} {!p.active && <Badge>Inactivo</Badge>}</h2>
-                  <p className="text-sm text-brand-900/60">{p.specialty}{p.accepted_coverages?.length ? ` · Solo: ${p.accepted_coverages.join(", ")}` : ""}</p>
-                  <p className="text-sm text-brand-900/60">{own.length ? `Hace: ${own.map((id) => typeName.get(id)).filter(Boolean).join(", ")}` : `Hace todas las prestaciones de ${p.specialty}`}</p>
+                  <p className="text-sm text-brand-900/60">{p.specialty} · {own.length ? `hace ${own.map((id) => typeName.get(id)).filter(Boolean).join(", ")}` : "hace todas las prestaciones de su especialidad"}</p>
+                  {p.accepted_coverages?.length ? (
+                    <p className="text-sm text-brand-900/60">Solo atiende por {p.accepted_coverages.join(", ")} · <Link href="/panel/configuracion/coberturas#profesionales" className="font-medium text-brand-700 hover:underline">cambiar</Link></p>
+                  ) : null}
                 </div>
                 <form action={toggleProfessional}><input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={p.id} />
@@ -74,7 +77,7 @@ export default async function TeamPage() {
                     );
                   })}
                 </div>
-                {!ranges.length && <p className="mt-2 text-sm text-sun-700">Sin horarios: el agente no va a ofrecer turnos con este profesional.</p>}
+                {!ranges.length && <p className="mt-2 text-sm text-sun-700">Sin horarios: {clinic.agent_name || "Sofi"} no va a ofrecer turnos con este profesional.</p>}
 
                 <form action={addSchedule} className="mt-3 flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-brand-900/15 p-3">
                   <input type="hidden" name="clinic_id" value={clinic.id} />
@@ -116,7 +119,6 @@ export default async function TeamPage() {
                   <input type="hidden" name="id" value={p.id} />
                   <Field label="Nombre del profesional"><input name="full_name" required defaultValue={p.full_name} className={inputClass} /></Field>
                   <Field label="Especialidad del profesional"><input name="specialty" required defaultValue={p.specialty} list="specialties" className={inputClass} /></Field>
-                  <Field label="Coberturas del profesional" hint="Solo si atiende algunas. Separadas por coma."><input name="accepted_coverages" defaultValue={p.accepted_coverages?.join(", ") ?? ""} className={inputClass} /></Field>
                   <Field label="Descripción del profesional"><input name="bio" defaultValue={p.bio ?? ""} className={inputClass} /></Field>
                   {activeTypes.length > 0 && (
                     <fieldset className="sm:col-span-2">
@@ -142,8 +144,7 @@ export default async function TeamPage() {
           <h2 className="mb-4 font-semibold text-brand-950">Agregar profesional</h2>
           <form action={addProfessional} className="grid gap-3 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
             <Field label="Nombre"><input name="full_name" required placeholder="Dra. Ana López" className={inputClass} /></Field>
-            <Field label="Especialidad" hint="Tiene que coincidir con la de sus prestaciones."><input name="specialty" required list="specialties" placeholder="Dermatología" className={inputClass} /></Field>
-            <Field label="Coberturas (opcional)" hint="Solo si atiende algunas. Separadas por coma."><input name="accepted_coverages" className={inputClass} /></Field>
+            <Field label="Especialidad" hint="Hace las prestaciones de su especialidad, salvo que marques otras al editarlo."><input name="specialty" required list="specialties" placeholder="Odontología" className={inputClass} /></Field>
             <Field label="Descripción breve"><input name="bio" className={inputClass} /></Field>
             <div className="sm:col-span-2"><button className={buttonClass}>Agregar profesional</button></div>
           </form>

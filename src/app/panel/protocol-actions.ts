@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { applyDentalTemplate } from "@/lib/dental-template";
-import { getPanelClinic, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { getPanelClinic, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { normalizePhone } from "@/lib/phone";
 import { COVERAGE_MODES, type CoverageMode } from "@/lib/types";
 import type { FormState } from "./actions";
 
@@ -53,33 +54,65 @@ const isFormState = (value: unknown): value is FormState => typeof value === "ob
 // Turnos y urgencias
 // ---------------------------------------------------------------------------
 
-/** Reglas para mover y cancelar turnos, horas de urgencia y (solo Turnia) el protocolo odontológico. */
+/** Teléfono para derivar llamadas: +54 11 5555-0100 → +541155550100. Vacío vale; otra cosa, no. */
+function handoffPhone(raw: string | null): string | null | undefined {
+  if (!raw) return null;
+  const digits = raw.replace(/[^\d+]/g, "");
+  return /^\+?\d{8,15}$/.test(digits) ? raw.trim() : undefined;
+}
+
+/**
+ * Turnos y urgencias: reglas para mover y cancelar, otras condiciones, seguimiento de los que no
+ * contestan, urgencias, fuera de horario, derivación y (solo Turnia) el protocolo odontológico.
+ * Solo se guardan los campos que vienen en el formulario.
+ */
 export async function saveBookingRules(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await requirePanelSession();
   const clinic = await panelClinicOr(form);
   if (isFormState(clinic)) return clinic;
-  const reschedule = wholeNumber(form, "reschedule_notice_hours", 1, 720);
-  const cancel = wholeNumber(form, "cancel_notice_hours", 1, 720);
-  const longest = wholeNumber(form, "reschedule_max_minutes", 15, 600);
-  const release = wholeNumber(form, "urgent_release_hours", 1, 72);
-  if (reschedule === undefined || cancel === undefined) return { ok: false, message: "El aviso mínimo va en horas, de 1 a 720 (30 días)." };
-  if (longest === undefined) return { ok: false, message: "La visita más larga que mueve Sofi va en minutos, de 15 a 600." };
-  if (release === undefined) return { ok: false, message: "Las horas de urgencia se liberan entre 1 y 72 horas antes." };
-  const fields: Record<string, unknown> = {
-    reschedule_notice_hours: reschedule,
-    cancel_notice_hours: cancel,
-    reschedule_max_minutes: longest,
-    keep_duration_on_reschedule: form.get("keep_duration_on_reschedule") === "on",
-    move_panel_only: form.get("move_panel_only") === "on",
-    reception_only_terms: text(form, "reception_only_terms")?.slice(0, 500) ?? null,
-    urgent_release_hours: release,
-  };
-  // Prender el protocolo odontológico es una decisión de Turnia (primero lo valida un odontólogo).
+  const fields: Record<string, unknown> = {};
+  const numbers: Array<[string, number, number, string]> = [
+    ["reschedule_notice_hours", 1, 720, "El aviso mínimo va en horas, de 1 a 720 (30 días)."],
+    ["cancel_notice_hours", 1, 720, "El aviso mínimo va en horas, de 1 a 720 (30 días)."],
+    ["reschedule_max_minutes", 15, 600, "La visita más larga que mueve Sofi va en minutos, de 15 a 600."],
+    ["urgent_release_hours", 1, 72, "Las horas de urgencia se liberan entre 1 y 72 horas antes."],
+  ];
+  for (const [key, min, max, message] of numbers) {
+    if (!form.has(key)) continue;
+    const value = wholeNumber(form, key, min, max);
+    if (value === undefined) return { ok: false, message };
+    fields[key] = value;
+  }
+  if (form.has("followup_attempts")) {
+    const attempts = Number(text(form, "followup_attempts"));
+    if (![0, 1, 2].includes(attempts)) return { ok: false, message: "Elegí cuántas veces volver a escribir (ninguna, 1 o 2)." };
+    fields.followup_attempts = attempts;
+  }
+  if (form.has("followup_delay_hours")) {
+    const delay = Number(text(form, "followup_delay_hours"));
+    if (!Number.isInteger(delay) || delay < 1 || delay > 24) return { ok: false, message: "Elegí cuánto esperar antes de volver a escribir." };
+    fields.followup_delay_hours = delay;
+  }
+  if (form.has("handoff_phone")) {
+    const phone = handoffPhone(text(form, "handoff_phone"));
+    if (phone === undefined) return { ok: false, message: "Revisá el teléfono de recepción: con código de área, por ejemplo +54 223 555-0100." };
+    fields.handoff_phone = phone;
+  }
+  for (const key of ["policies", "urgency_instructions", "after_hours_instructions"]) {
+    if (form.has(key)) fields[key] = text(form, key)?.slice(0, 4000) ?? null;
+  }
+  if (form.has("reception_only_terms")) fields.reception_only_terms = text(form, "reception_only_terms")?.slice(0, 500) ?? null;
+  // Casillas: sin el marcador de la pantalla, no se tocan.
+  if (form.has("rules_form")) {
+    fields.keep_duration_on_reschedule = form.get("keep_duration_on_reschedule") === "on";
+    fields.move_panel_only = form.get("move_panel_only") === "on";
+  }
+  // Prender o apagar el protocolo odontológico es una decisión de Turnia.
   if (user.role === "admin" && form.has("dental_protocol_field")) fields.dental_protocol = form.get("dental_protocol") === "on";
-  await sql`update clinics set ${sql(fields)} where id = ${clinic.id}`;
+  if (Object.keys(fields).length) await sql`update clinics set ${sql(fields)} where id = ${clinic.id}`;
   await touchClinic(clinic.id, "Turnos y urgencias");
   revalidatePath("/panel/configuracion", "layout");
-  return { ok: true, message: "Reglas guardadas. Sofi las usa desde el próximo mensaje." };
+  return { ok: true, message: "Guardado. Sofi lo usa desde el próximo mensaje." };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +196,27 @@ export async function deleteCoverageRule(form: FormData): Promise<void> {
   revalidatePath("/panel/configuracion", "layout");
 }
 
+/** Coberturas que acepta el consultorio (lo que Sofi le dice al paciente) y las de cada profesional. */
+export async function saveCoverageLists(_previous: FormState, form: FormData): Promise<FormState> {
+  await requirePanelSession();
+  const clinic = await panelClinicOr(form);
+  if (isFormState(clinic)) return clinic;
+  const list = (key: string) => [...new Set((text(form, key) ?? "").split(",").map((c) => c.trim().slice(0, 80)).filter(Boolean))];
+  await sql.begin(async (tx) => {
+    if (form.has("accepted_coverages")) await tx`update clinics set accepted_coverages = ${list("accepted_coverages")} where id = ${clinic.id}`;
+    // Un campo por profesional («pro:<id>»); vacío: atiende todas.
+    for (const key of [...form.keys()].filter((k) => k.startsWith("pro:"))) {
+      const id = key.slice(4);
+      if (!isUuid(id)) continue;
+      const coverages = list(key);
+      await tx`update professionals set accepted_coverages = ${coverages.length ? coverages : null} where id = ${id} and clinic_id = ${clinic.id}`;
+    }
+  });
+  await touchClinic(clinic.id, "Coberturas");
+  revalidatePath("/panel/configuracion", "layout");
+  return { ok: true, message: "Coberturas guardadas. Sofi las usa desde el próximo mensaje." };
+}
+
 // ---------------------------------------------------------------------------
 // Plantilla odontológica
 // ---------------------------------------------------------------------------
@@ -180,3 +234,38 @@ export async function loadDentalTemplate(_previous: FormState, form: FormData): 
     : { ok: true, message: "Ya tenías todas las prestaciones de la plantilla." };
 }
 
+
+// ---------------------------------------------------------------------------
+// Acceso total por WhatsApp (equipo del consultorio)
+// ---------------------------------------------------------------------------
+
+/**
+ * Un celular del equipo con acceso total a través de Sofi por WhatsApp. Solo Turnia lo da, como los
+ * códigos de acceso al panel: quien lo tiene ve y cambia la agenda y los pacientes.
+ */
+export async function addStaffPhone(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireAdmin();
+  const clinic = await panelClinicOr(form);
+  if (isFormState(clinic)) return clinic;
+  const name = text(form, "name")?.slice(0, 80);
+  const phone = normalizePhone(text(form, "phone"));
+  if (!name) return { ok: false, message: "Escribí de quién es (por ejemplo, Dr. Mininni)." };
+  if (!/^\d{10,15}$/.test(phone)) return { ok: false, message: "Revisá el celular: con código de área, por ejemplo 11 5555-0100." };
+  const [row] = await sql`
+    insert into clinic_staff_phones (clinic_id, phone, name) values (${clinic.id}, ${phone}, ${name})
+    on conflict (clinic_id, phone) do update set name = excluded.name
+    returning (xmax = 0) as created`;
+  // Las conversaciones abiertas de ese número arrancan de nuevo con el acceso del equipo.
+  await touchClinic(clinic.id, "Acceso total por WhatsApp");
+  revalidatePath("/panel/configuracion", "layout");
+  return { ok: true, message: row.created ? `Listo: ${name} ya tiene acceso total por WhatsApp.` : `Actualizado: ese celular es de ${name}.` };
+}
+
+export async function removeStaffPhone(form: FormData): Promise<void> {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (id) await sql`delete from clinic_staff_phones where id = ${id} and clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id, "Acceso total por WhatsApp");
+  revalidatePath("/panel/configuracion", "layout");
+}
