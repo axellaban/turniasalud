@@ -707,6 +707,16 @@ export async function toggleAppointmentType(form: FormData) {
   revalidatePath("/panel/configuracion", "layout");
 }
 
+/**
+ * Después de actualizar un agente, las conversaciones abiertas siguen con el agente con el que
+ * empezaron. Subir la revisión de la ficha hace que el próximo mensaje arranque una conversación
+ * nueva con el agente actual y un resumen de lo hablado (ver forwardToAgent). Sin ids: todas.
+ */
+async function restartOpenConversations(clinicIds?: string[]): Promise<void> {
+  if (clinicIds) await sql`update clinics set context_revision = context_revision + 1 where id = any(${clinicIds}::uuid[])`;
+  else await sql`update clinics set context_revision = context_revision + 1 where id in (select clinic_id from channel_conversations where closed_at is null)`;
+}
+
 export type AgentSetupState = { ok?: boolean; message?: string };
 
 export async function runAgentSetup(): Promise<AgentSetupState> {
@@ -715,6 +725,8 @@ export async function runAgentSetup(): Promise<AgentSetupState> {
     // El agente compartido es el de la clínica principal, sin importar la clínica elegida en el panel.
     const clinic = await getClinic();
     const result = await setupAgent(clinic);
+    // El general atiende el WhatsApp de todas las clínicas: sus charlas abiertas toman el agente nuevo.
+    await restartOpenConversations();
     revalidatePath("/panel/configuracion", "layout");
     revalidatePath("/panel/sistema");
     return {
@@ -736,6 +748,7 @@ export async function runClinicAgentSetup(_previous: AgentSetupState | undefined
   if (clinic.id === main.id) return { ok: false, message: "El agente general se administra desde Sistema." };
   try {
     const result = await setupAgent(clinic);
+    await restartOpenConversations([clinic.id]);
     revalidatePath("/panel/configuracion", "layout");
     return {
       ok: true,
@@ -761,6 +774,8 @@ export async function runStaffAgentSetup(_previous: AgentSetupState | undefined,
     await setupAgent(main);
     const own = clinic.id !== main.id && clinic.elevenlabs_agent_id && clinic.elevenlabs_agent_id !== main.elevenlabs_agent_id;
     if (own) await setupAgent(clinic);
+    // ElevenLabs fija el agente al empezar cada conversación: las abiertas arrancan de nuevo con el actual.
+    await restartOpenConversations(clinic.id === main.id ? [main.id] : [main.id, clinic.id]);
     revalidatePath("/panel/configuracion", "layout");
     revalidatePath("/panel/sistema");
     return {

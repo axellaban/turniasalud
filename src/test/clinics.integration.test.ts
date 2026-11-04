@@ -98,6 +98,10 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await sql`update clinics set elevenlabs_agent_id = 'agent-own' where id = ${a}`;
     expect((await actions.runStaffAgentSetup(undefined, form({ clinic_id: a }))).message).toContain("en las llamadas");
     expect((mocks.setup.mock.calls as unknown as Array<[{ id: string }]>).map(([c]) => c.id)).toEqual([MAIN, a]);
+    // Las conversaciones abiertas arrancan de nuevo con el agente actualizado.
+    const before = (await clinic(a)).context_revision;
+    await actions.runStaffAgentSetup(undefined, form({ clinic_id: a }));
+    expect((await clinic(a)).context_revision).toBe(before + 1);
     mocks.setup.mockClear();
   });
   it("edita profesionales y prestaciones con pertenencia a la clínica", async () => {
