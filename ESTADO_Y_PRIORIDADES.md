@@ -52,7 +52,8 @@ Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendie
   - **Agenda → turno:** «Ficha de salud: Completa (4/11)» o «Sin completar», y «Imprimir ficha de salud».
   - **La hoja** (`/panel/pacientes/<id>/ficha`) reproduce la de papel en A4 y entra en una página. Lleva logo y profesionales, odontograma vacío, datos, las 32 preguntas con SI o NO encerrado en un círculo, lo que agregó, bioseguridad, fecha y firma. Sin completar, sale con sus datos y el resto se completa a mano.
 - **Pruebas:** `src/lib/health-form.test.ts`, `src/test/health-form.integration.test.ts` y una más en `waha.integration.test.ts` (dos mensajes). Suite completa, con lo último de `main`: 466 tests.
-- **Falta:** actualizar los dos agentes después del deploy y probarlo por WhatsApp (ver `PENDIENTES.md`).
+- **Con el acceso total por WhatsApp del equipo** (#114–#116): si reserva alguien del consultorio, Sofi no le manda la plantilla a él ni la da por enviada; se la ofrece al paciente cuando escriba.
+- **Falta:** probarlo por WhatsApp (ver `PENDIENTES.md`). Los dos agentes ya se actualizaron.
 
 ## Protocolos odontológicos y reglas del panel — 04/11/2026
 

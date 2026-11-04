@@ -119,7 +119,7 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] **Piloto de prospección telefónica**: destinatarios revisados, reglas de contacto/No Llame, baja persistente y probada, autorización manual, límite efectivo de duración/consumo y resultados. Validar que el agente pueda colgar y no afirme registrar una baja sin haberlo hecho. No reutilizar el destino de la prueba que pidió no recibir más llamadas. No activar llamadas en frío ni campañas automáticamente.
 
 - [x] **Ficha de salud de Guerra–Mininni por chat** (04/11): hecha con la hoja en blanco que pasó el usuario. Detalle en `ESTADO_Y_PRIORIDADES.md`.
-  - [ ] Después del deploy, actualizar los dos agentes (Sistema → «Crear / actualizar agente» y Configuración → «Crear / actualizar Sofi de esta clínica»): suman la herramienta `guardar_ficha_salud` y las reglas del prompt.
+  - [x] Agentes actualizados por el usuario después del deploy (04/11): Sistema y Configuración.
   - [ ] Probar por WhatsApp con datos ficticios: paciente nuevo, reservar una consulta, recibir la plantilla en un mensaje aparte, devolverla completa y ver la ficha en Pacientes y en «Imprimir para firmar». Cancelar el turno y borrar la ficha de prueba.
   - [ ] Acordar con Mariano: ¿a los pacientes que ya venían (tienen la ficha de papel) se les ofrece una vez? Hoy no. Y si la actualización anual le sirve.
   - [ ] Más adelante: pasar las respuestas a Smile Connect, si tiene una vía soportada.

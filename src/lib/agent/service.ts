@@ -920,8 +920,9 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   const other = !same && mine.find((a) => a.appointment_type_id === parts[0].type.id);
   // Paciente nuevo (o ficha vencida): ofrecerle completar la ficha de salud por chat.
   // El turno ya quedó reservado: si esto falla, se confirma igual.
+  // Lo reserva el consultorio (panel o equipo por WhatsApp): la ficha se la ofrece Sofi al paciente, no a quien reserva.
   const healthForm =
-    ctx.channel === "panel"
+    byPanel
       ? null
       : await healthFormOffer(clinic.id, patient, sourceFromChannel(ctx.channel, ctx.patientPhone), ctx.conversationId).catch((e) => {
           console.error("Ficha de salud: no se pudo preparar la oferta", e);
@@ -1406,8 +1407,9 @@ export async function saveHealthForm(ctx: ToolContext, input: HealthFormInput & 
     }
     const open = latest && !latest.completed_at ? latest : null;
     const data = open?.data ?? {};
-    if (open) await markHealthFormInvited(open.id);
-    else {
+    // Si la pide el equipo del consultorio, no cuenta como enviada al paciente.
+    if (!ctx.staff && open) await markHealthFormInvited(open.id);
+    else if (!ctx.staff) {
       await sql`
         insert into patient_health_forms (clinic_id, patient_id, source, conversation_id, invited_at)
         values (${clinic.id}, ${patient.id}, ${sourceFromChannel(ctx.channel, ctx.patientPhone)}, ${ctx.conversationId ?? null}, now())`;
