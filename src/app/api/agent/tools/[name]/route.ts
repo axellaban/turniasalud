@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { syncCalendarLater } from "@/lib/calendar/sync";
+import { readAppointmentAccess } from "@/lib/agent/appointment-access";
 import { hasValidSecret } from "@/lib/agent/auth";
 import { contextSchema, getToolDefinition } from "@/lib/agent/tools";
 import {
@@ -34,6 +35,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
 };
 
 const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
+const TEMPORARY_TOOLS = new Set(["ver_turnos_paciente", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 
 export async function POST(request: Request, { params }: { params: Promise<{ name: string }> }) {
   if (!hasValidSecret(request)) {
@@ -70,15 +72,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
   const log = (resultado: string, extra: Record<string, unknown> = {}) =>
     console.log(JSON.stringify({ evento: "herramienta", herramienta: name, resultado, ms: Date.now() - started, conversacion: ctx.data.conversation_id, canal: ctx.data.canal, ...extra }));
   try {
-    const result = await handler(
-      {
-        clinicId: ctx.data.clinic_id,
-        patientPhone: ctx.data.patient_phone,
-        conversationId: ctx.data.conversation_id,
-        channel: ctx.data.canal,
-      },
-      input.data,
-    );
+    const context: ToolContext = {
+      clinicId: ctx.data.clinic_id,
+      patientPhone: ctx.data.patient_phone,
+      conversationId: ctx.data.conversation_id,
+      channel: ctx.data.canal,
+    };
+    if (name !== "buscar_paciente") {
+      const access = await readAppointmentAccess(context);
+      const receptionTask = name === "crear_tarea" && ["derivacion_humana", "urgencia"].includes(String(input.data.tipo));
+      if (access && !access.active && !receptionTask) {
+        throw new ToolError("La verificación temporal venció. Volvé a verificar la identidad para gestionar el turno.");
+      }
+      if (access?.active) {
+        const searchingMove = name === "consultar_disponibilidad" && Boolean(input.data.turno_id);
+        if (!TEMPORARY_TOOLS.has(name) && !searchingMove && !receptionTask) {
+          throw new ToolError("Esta verificación solo permite gestionar turnos existentes. Para otros trámites, ofrecé que recepción lo revise.");
+        }
+        context.appointmentPatientId = access.patient_id;
+      }
+    }
+    const result = await handler(context, input.data);
     log("ok");
     // Los turnos nuevos o cambiados se escriben en Google Calendar sin demorar la respuesta.
     if (CHANGES_AGENDA.has(name)) syncCalendarLater(ctx.data.clinic_id);

@@ -1,3 +1,4 @@
+import { readAppointmentAccess } from "./agent/appointment-access";
 import "server-only";
 import { json, sql, type Sql, type TransactionSql } from "./db";
 import { INBOUND_CONTEXT, buildDynamicVariables, findPatientByPhone, getClinic } from "./clinic";
@@ -348,7 +349,10 @@ async function sendVoiceReply(conv: ChannelConversation, text: string, requested
  */
 async function savePanelConversation(conv: ChannelConversation, ended: boolean): Promise<void> {
   if (!conv.elevenlabs_conversation_id) return;
-  const patient = await findPatientByPhone(conv.clinic_id, conv.phone);
+  const temporaryAccess = await readAppointmentAccess({
+    clinicId: conv.clinic_id, patientPhone: conv.phone, conversationId: conv.elevenlabs_conversation_id,
+  });
+  const patient = temporaryAccess ? null : await findPatientByPhone(conv.clinic_id, conv.phone);
   const started = new Date(conv.created_at).getTime();
   const transcript = conv.transcript.map((t) => ({
     role: t.role,
@@ -359,7 +363,7 @@ async function savePanelConversation(conv: ChannelConversation, ended: boolean):
   const row = {
     clinic_id: conv.clinic_id,
     patient_id: patient?.id ?? null,
-    campaign_id: conv.campaign_id,
+    campaign_id: temporaryAccess ? null : conv.campaign_id,
     elevenlabs_conversation_id: conv.elevenlabs_conversation_id,
     channel: channelForChat(conv.chat_id),
     direction,
@@ -370,7 +374,8 @@ async function savePanelConversation(conv: ChannelConversation, ended: boolean):
   await sql`
     insert into conversations ${sql(row)}
     on conflict (elevenlabs_conversation_id) do update set
-      patient_id = coalesce(conversations.patient_id, excluded.patient_id),
+      patient_id = case when ${Boolean(temporaryAccess)} then null else coalesce(conversations.patient_id, excluded.patient_id) end,
+      campaign_id = case when ${Boolean(temporaryAccess)} then null else conversations.campaign_id end,
       status = excluded.status,
       transcript = excluded.transcript
     where conversations.summary is null`;

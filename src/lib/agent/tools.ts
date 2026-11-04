@@ -26,15 +26,17 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "buscar_paciente",
     description:
-      "Busca la ficha de alguien que dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Si los datos coinciden, la conversación queda unida a su ficha y te devuelve lo que ya sabemos de él.",
+      "Busca la ficha de alguien que dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
     params: {
       dni: { type: "string", description: "DNI, solo números.", required: true },
       fecha_nacimiento: { type: "string", description: isoDate },
+      para_turno_existente: { type: "boolean", description: "true si busca confirmar, mover o cancelar un turno que ya existe. Repetilo si te pide verificar otro dato." },
       nombre_completo: { type: "string", description: "Nombre y apellido, si te lo dijo." },
     },
     schema: z.object({
       dni: z.string().min(1),
       fecha_nacimiento: z.string().optional(),
+      para_turno_existente: z.boolean().optional(),
       nombre_completo: z.string().optional(),
     }),
   },
