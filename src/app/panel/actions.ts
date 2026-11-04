@@ -736,7 +736,10 @@ export async function runClinicAgentSetup(_previous: AgentSetupState | undefined
     revalidatePath("/panel/configuracion", "layout");
     return {
       ok: true,
-      message: `Sofi de ${clinic.name}: agente ${result.created ? "creado" : "actualizado"} (${result.agentId}). Falta asignarle la línea entrante en el proveedor telefónico y comprobar una llamada real.`,
+      // Recién creado, todavía no tiene número; actualizado, la línea que ya atiende toma los cambios.
+      message: result.created
+        ? `Sofi de ${clinic.name}: agente creado (${result.agentId}). Falta asignarle la línea entrante en el proveedor telefónico y comprobar una llamada real.`
+        : `Sofi de ${clinic.name}: agente actualizado (${result.agentId}). Las llamadas ya toman las instrucciones y herramientas nuevas.`,
     };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : "No se pudo preparar el agente de esta clínica." };

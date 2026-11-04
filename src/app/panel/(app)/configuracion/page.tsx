@@ -88,7 +88,11 @@ export default async function SettingsPage() {
             <p className="mt-1 text-sm text-brand-900/60">Un agente propio para atender las llamadas con las reglas y la agenda de {clinic.name}.</p>
             <p className="mt-3 text-sm text-brand-900/70">{clinic.elevenlabs_agent_id ? <>Agente preparado: <code className="break-all text-xs">{clinic.elevenlabs_agent_id}</code>.</> : "Todavía no tiene un agente propio preparado."}</p>
             <ClinicAgentSetup key={clinic.id} clinicId={clinic.id} disabled={!process.env.ELEVENLABS_API_KEY} />
-            <p className="mt-3 text-xs text-brand-900/65">Preparar el agente no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante.</p>
+            <p className="mt-3 text-xs text-brand-900/65">
+              {clinic.elevenlabs_agent_id
+                ? "Actualizalo después de cada cambio de Turnia en Sofi, para que las llamadas lo tomen. No toca el número ni el desvío de la línea."
+                : "Prepararlo no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante."}
+            </p>
           </Card>}
         </div>
         <div className="min-w-0 xl:col-start-1 xl:row-span-2 xl:row-start-1">
