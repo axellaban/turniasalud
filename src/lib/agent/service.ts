@@ -1105,10 +1105,13 @@ async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
   const refer = "Creá una tarea de derivacion_humana para que recepción coordine el cambio. El turno original sigue reservado.";
   if (parts.some((a) => {
     const name = types.find((t) => t.id === a.appointment_type_id)?.name ?? "";
-    return [name, a.title, a.source === "smile_connect" ? a.notes : null].some((label) => label && isRestrictedDentalProcedure(label));
+    return [name, a.title, (a.source === "smile_connect" || a.source === "panel") ? a.notes : null].some((label) => label && isRestrictedDentalProcedure(label));
   })) throw new ToolError(`El cambio de turno de implante, regeneración o extracción lo coordina recepción. ${refer}`);
   if (Date.parse((follower ?? appt).ends_at) - Date.parse(appt.starts_at) > 120 * 60_000) {
     throw new ToolError(`El cambio de una visita de más de dos horas lo coordina recepción. ${refer}`);
+  }
+  if (Date.parse(appt.starts_at) - Date.now() < 24 * 3600_000) {
+    throw new ToolError(`Faltan menos de 24 horas para el turno. ${refer}`);
   }
   return { patient, appt, follower };
 }

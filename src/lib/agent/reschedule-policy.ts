@@ -12,4 +12,4 @@ export function isRestrictedDentalProcedure(label: string): boolean {
 export const RESCHEDULE_GUIDANCE =
   "Para mover un turno ya reservado, usá su turno_id en consultar_disponibilidad, aunque el catálogo diga que solo lo reserva el consultorio. " +
   "Recepción debe mover las colocaciones de implantes, cirugías de regeneración, extracciones y visitas de más de 120 minutos. " +
-  "Una consulta o control de implantes sí puede cambiarse. Si la herramienta indica que el cambio lo coordina recepción, creá una tarea de derivacion_humana y aclarale al paciente que conserva el turno original.";
+  "Una consulta o control de implantes sí puede cambiarse, respetando las 24 horas de aviso de la clínica. Si la herramienta indica que el cambio lo coordina recepción, creá una tarea de derivacion_humana y aclarale al paciente que conserva el turno original.";

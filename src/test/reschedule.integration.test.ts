@@ -102,7 +102,7 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
   it.each([
     ["colocación de implante", 60, () => ({ type: implant })],
     ["cirugía de regeneración", 90, () => ({ type: fallback, source: "smile_connect", notes: "Cirugía de regeneración ósea" })],
-    ["extracción dental", 45, () => ({ type: fallback, source: "smile_connect", notes: "Extracción dental" })],
+    ["extracción dental", 45, () => ({ notes: "Extracción dental" })],
     ["extracción dental (exodoncia)", 45, () => ({ type: fallback, source: "smile_connect", notes: "EXODONCIA de pieza 18" })],
     ["más de dos horas", 121, () => ({ type: fallback, source: "smile_connect" })],
   ] as const)("deriva %s sin tocar el turno, tanto en WhatsApp como por teléfono", async (_label, minutes, opts) => {
@@ -182,6 +182,14 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
     const moved = await tool("reprogramar_turno", { turno_id: id, nuevo_inicio: result.turnos[0].inicio });
     expect(moved.ok).toBe(true);
     expect(await search(moved.turno_id, 22)).toMatchObject({ ok: true, duracion_min: 55 });
+  });
+
+  it("deriva un cambio con menos de 24 horas de aviso y el turno original queda activo", async () => {
+    const id = await seed(23, 30);
+    await sql`update appointments set starts_at = now() + interval '12 hours', ends_at = now() + interval '12.5 hours' where id = ${id}`;
+    expect(await search(id, 24)).toMatchObject({ ok: false, error: expect.stringContaining("menos de 24 horas") });
+    expect(await tool("reprogramar_turno", { turno_id: id, nuevo_inicio: at(24, "10:00") })).toMatchObject({ ok: false });
+    expect((await sql`select status from appointments where id = ${id}`)[0].status).toBe("confirmado");
   });
 
   it("rechaza IDs ajenos y horarios que se ocuparon sin soltar el original; dos cambios simultáneos solo crean un turno", async () => {
