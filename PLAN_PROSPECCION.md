@@ -115,6 +115,44 @@ Se editan en Panel → Prospección → Mensajes y metas. Los de fábrica:
 
 > Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia. Una pregunta rápida: cuando estás atendiendo, ¿quién le contesta el WhatsApp a los pacientes que escriben para pedir turno? Armé una asistente que lo hace sola, con tu agenda. Si querés, te paso una demo con tu consultorio: es un minuto.
 
+## Audios de seguimiento (05/11, en curso con otra IA)
+
+La idea es mandar un audio a cada grupo del funnel de demos de Chapa Labs (`/prospecting/turnia` → Odontólogos). Al 05/11, con «Todo», los grupos son:
+
+- **No abrieron la demo:** 137.
+- **La abrieron sin hablar con Sofi:** 26.
+- **Hablaron con Sofi:** 12.
+
+El usuario lo sigue con otra IA; acá queda lo decidido hasta ahora.
+
+**Guiones (15 a 20 segundos; el link va como texto debajo del audio):**
+
+1. **No abrieron la demo:** «Hola Dra. [nombre], soy Axel, de Turnia. Te armé una recepcionista virtual que contesta el WhatsApp de tu consultorio y da turnos cuando estás atendiendo. Ya está lista con tu nombre: tocá el link y escribile como si fueras un paciente. Es un minuto.»
+2. **La abrieron sin hablar con Sofi:** «Hola Dra. [nombre], Axel de Turnia. Lo bueno de la demo es escribirle a Sofi: probá mandarle "¿me dan un turno para mañana?" y mirá cómo contesta. Si querés, la probamos juntos en diez minutos.»
+3. **Hablaron con Sofi:** «Hola Dra. [nombre], Axel de Turnia. ¿Qué te pareció Sofi? Estoy sumando los primeros consultorios de Mar del Plata como fundadores, con lugares limitados. ¿Lo charlamos 15 minutos esta semana?»
+
+**Reglas que siguen valiendo:**
+- El audio cuenta como uno de los tres mensajes.
+- No se le escribe a quien pidió la baja.
+- Nunca se dice «vi que la abriste».
+- Registrar cada envío en el panel, para medir en el funnel qué audio funcionó.
+
+**Grabar una vez y mandarlo a muchos.** Desde la app de WhatsApp no se puede sin que se note:
+- Si se reenvía desde otro chat (aunque sea el chat con uno mismo), sale «Reenviado».
+- Si se adjunta como archivo, llega como archivo de audio y no como nota de voz.
+
+Como nota de voz nativa solo sale por API: WAHA permite mandar un `.ogg` (Opus) como nota de voz. Condiciones:
+- Tiene que salir del mismo número desde el que se prospectó; si no, llega a un chat nuevo. Eso exige conectar ese número a WAHA, escaneando el QR.
+- WAHA no es oficial y mandar el mismo audio a muchos expone al bloqueo. Hay que espaciarlo (unos 20 por día, con minutos entre cada uno).
+- Una sola grabación no puede decir el nombre: saluda en general, y el nombre y el link van en un texto antes.
+
+**Recomendación que se le dio al usuario:**
+- Grupos 2 y 3 (38 personas): grabarlos a mano.
+- Grupo 1: una sola grabación por WAHA, o solo texto.
+- Posible siguiente paso, todavía sin construir: un botón «Mandar audio» en el panel que suba la grabación una vez, la mande de a poco como nota de voz y la registre en el embudo.
+
+Respetar las reglas de WAHA de `PENDIENTES.md`: no tocar las instancias existentes.
+
 ## Panel → Prospección
 
 - **Para hoy:** tres bloques. «Esperan la demo»: los que saludaste, con «Mandar la demo» para cuando te respondan; viene plegado. «Seguimientos de hoy»: a quienes les mandaste la demo y no respondieron (arriba, quienes la abrieron o probaron). «Nuevos para hoy»: por prioridad, hasta la meta del día (50). Los dos primeros se pliegan y despliegan tocando el título, y el panel recuerda cómo los dejaste. «Saludar por WhatsApp» abre WhatsApp Web (o la app en el celular) con el saludo escrito y queda registrado; ese mismo día pasa a «Esperan la demo». Desde «Mandar la demo» se programa el seguimiento. Si dos personas comparten número, el mensaje sale una sola vez.
