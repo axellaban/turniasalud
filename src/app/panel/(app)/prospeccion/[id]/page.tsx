@@ -161,6 +161,12 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
               <a href={`/p/${p.code}?vista=panel`} target="_blank" rel="noreferrer" className={smallButtonClass}>
                 Ver lo que recibe
               </a>
+              {p.demo_at && (
+                // Después de hablar con Sofi su página cambia; esta es la que vio la primera vez.
+                <a href={`/p/${p.code}?vista=inicial`} target="_blank" rel="noreferrer" className={smallButtonClass}>
+                  Ver la primera versión
+                </a>
+              )}
             </div>
             <ul className="mt-3 space-y-1 text-sm text-brand-900/75">
               <li>{p.opened_at ? `La abrió ${p.opens === 1 ? "una vez" : `${p.opens} veces`}; la primera, el ${formatDateTime(p.opened_at)}.` : "Todavía no la abrió."}</li>
