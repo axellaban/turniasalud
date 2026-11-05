@@ -8,6 +8,7 @@ import { sql } from "@/lib/db";
 import { findPatientByPhone, getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { resolveTask } from "@/lib/tasks";
+import { unmuteNumber } from "@/lib/chat-guard";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError, type ToolContext } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
@@ -308,6 +309,16 @@ export async function setTaskStatus(form: FormData) {
     where id = ${id} and clinic_id = ${clinic.id}`;
   revalidatePath("/panel/tareas");
   revalidatePath("/panel");
+}
+
+/** Conversaciones → Números en pausa → «Reactivar»: Sofi le vuelve a contestar a ese número. */
+export async function reactivateChatNumber(form: FormData) {
+  await requireSession();
+  const phone = text(form, "phone");
+  if (!phone) return;
+  const clinic = await getPanelClinic(form);
+  await unmuteNumber(clinic.id, phone);
+  revalidatePath("/panel/conversaciones");
 }
 
 export async function setContactOptOut(form: FormData) {

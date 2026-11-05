@@ -2,6 +2,24 @@
 
 Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Límites de Sofi contra bots, abusos y llamadas eternas — 05/11/2026
+
+- **Pedido del usuario:** un chatbot que vendía algo le escribió al WhatsApp de Guerra–Mininni y se quedó respondiéndose con Sofi en bucle. Que no pase más, que nadie se quede 15 minutos hablando por voz, y que valga para todas las clínicas. Aprobó todos los valores propuestos («todo ok»).
+- **Chat (WhatsApp y Telegram), por clínica y número** (valores en `src/lib/chat-limits.ts`, lógica en `src/lib/chat-guard.ts`, aplicado en `forwardToAgent`):
+  - **Bot:** si contesta a Sofi en menos de 3 s, 4 veces seguidas, o manda el mismo mensaje largo por tercera vez, queda en silencio 7 días sin aviso. La charla se cierra, así no sale ni la respuesta que estaba en camino.
+  - **Vendedores y publicidad:** herramienta nueva `silenciar_numero`. Sofi contesta una vez «Este WhatsApp es para turnos de pacientes» y silencia 7 días. Nunca a un paciente con turnos o visitas, ni al equipo, ni en llamadas. A un proveedor o colega le ofrece una tarea para recepción.
+  - **Exceso:** más de 25 mensajes en 30 minutos o más de 60 en el día → un aviso fijo («te va a escribir alguien del equipo»), pausa de 12 h y tarea `derivacion_humana` para recepción.
+  - **Mensajes de más de 4.000 caracteres** llegan recortados (la ficha de salud completa ocupa unos 2.800). **Audios de más de 3 minutos** no se transcriben. **Fotos o PDF:** 10 por día por número.
+  - **El equipo del consultorio no tiene topes.** Un número en silencio no gasta nada: ni transcripción, ni lectura de fotos, ni agente.
+  - **Panel → Conversaciones → «Números en pausa»:** muestra quién está en silencio, por qué y hasta cuándo, con «Reactivar».
+- **Voz:**
+  - **Agente propio de cada clínica** (llamadas): corta a los **8 minutos** con una despedida fija y deja una tarea a recepción para llamar al paciente. También corta tras 20 s de silencio.
+  - **Agente general:** sigue en 20 minutos y sin corte por silencio, porque también atiende los chats de WhatsApp. ElevenLabs aplica la misma duración máxima a los chats y no permite cambiarla por conversación. Con 8 minutos, un chat largo (por ejemplo, completando la ficha de salud) perdería el hilo.
+  - **Demo web por voz** (la de la página y el link de llamada de la demo por WhatsApp): se corta a los **3 minutos** en el navegador.
+- **Fusible por clínica:** si una clínica pasa en el día 400 mensajes de chat o 120 minutos de llamadas, Axel recibe un WhatsApp desde la línea de Turnia (una vez por día y tipo), y sale el evento `clinica.fusible` a n8n. No corta a nadie.
+- **Verificado:** tipos, lint, 501 pruebas (8 unitarias y 12 de integración nuevas: bot rápido, mensaje repetido, exceso por ráfaga y por día, equipo sin topes, recorte, audio largo, tope de fotos, `silenciar_numero`, fusibles de chat y de llamadas, tarea al cortar a los 8 minutos) y captura de «Números en pausa» en computadora y celular con «Reactivar» andando.
+- **Para que Sofi use `silenciar_numero` y las llamadas corten a los 8 minutos**, después del deploy hay que actualizar los dos agentes (ver `PENDIENTES.md`). Los topes de chat, audios, fotos, fusibles y la demo web de 3 minutos andan solos con el deploy.
+
 ## Las demos ya no se borran solas — 05/11/2026
 
 - **Pedido del usuario:** no perder las conversaciones de los interesados con Sofi. Hasta ahora, cada vez que se armaba una demo nueva se borraban las temporales de más de 7 días, con sus conversaciones.

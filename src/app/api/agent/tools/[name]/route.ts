@@ -12,6 +12,7 @@ import {
   findPatientByDni,
   joinWaitlist,
   listPatientAppointments,
+  muteSender,
   registerPatient,
   rescheduleAppointment,
   saveHealthForm,
@@ -40,6 +41,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   crear_tarea: createTask,
   anotar_lista_espera: joinWaitlist,
   guardar_ficha_salud: saveHealthForm,
+  silenciar_numero: muteSender,
   // Equipo del consultorio (acceso total por WhatsApp).
   ver_agenda: viewAgenda,
   buscar_pacientes: searchPatients,

@@ -53,7 +53,8 @@ export type ParsedMessage =
       /** Teléfono si ya se conoce por el chat; null si el chat es un @lid sin teléfono a la vista. */
       phone: string | null;
       text: string;
-      audio: { url: string | null; mimetype: string } | null;
+      /** `seconds`: la duración, si el motor de WAHA la informa (si no, se mide el archivo). */
+      audio: { url: string | null; mimetype: string; seconds: number | null } | null;
       /** Imagen, documento, video o sticker. Las fotos y los PDF se leen con Claude; lo demás, el agente no lo ve. */
       otherMedia: boolean;
       /** El archivo de otherMedia (sin url si WAHA no lo descargó). */
@@ -75,6 +76,18 @@ function phoneFromEngineData(data: Record<string, unknown> | undefined): string 
   for (const candidate of [key.remoteJidAlt, key.senderPn, info.SenderAlt, info.RecipientAlt, data.senderPn]) {
     const phone = phoneFromJid(candidate);
     if (phone) return phone;
+  }
+  return null;
+}
+
+/** Duración de una nota de voz según el motor de WAHA (WEBJS: duration; NOWEB/GOWS: audioMessage.seconds). */
+function audioSecondsFromEngineData(data: Record<string, unknown> | undefined): number | null {
+  if (!data) return null;
+  const message = (data.message ?? data.Message ?? {}) as Record<string, unknown>;
+  const audio = (message.audioMessage ?? {}) as Record<string, unknown>;
+  for (const candidate of [data.duration, audio.seconds]) {
+    const n = typeof candidate === "string" ? Number(candidate) : candidate;
+    if (typeof n === "number" && Number.isFinite(n) && n > 0) return n;
   }
   return null;
 }
@@ -107,7 +120,7 @@ export function parseWahaEvent(event: WahaEvent, expectedSession?: string): Pars
     chatId,
     phone: phoneFromJid(from) ?? phoneFromEngineData(p._data),
     text,
-    audio: isAudio ? { url: p.media?.url ?? null, mimetype } : null,
+    audio: isAudio ? { url: p.media?.url ?? null, mimetype, seconds: audioSecondsFromEngineData(p._data) } : null,
     otherMedia,
     media: otherMedia ? { url: p.media?.url ?? null, mimetype } : null,
   };

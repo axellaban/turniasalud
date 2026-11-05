@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { track } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
+import { TOPE_LLAMADA_AVISO, useTopeDeVoz } from "@/components/demo/tope-voz";
 
 type Info = { token: string; dynamicVariables: Record<string, string>; userId: string; clinicName: string; agentName: string; error?: string };
 
@@ -20,6 +21,7 @@ function Llamada({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [tope, setTope] = useState(false);
   // PostHog: la llamada de la demo de WhatsApp (el link que se manda cuando no se puede llamar al teléfono).
   const startedAt = useRef<number | null>(null);
   const cortar = useCallback((reason: string, beacon = false) => {
@@ -40,10 +42,15 @@ function Llamada({ token }: { token: string }) {
     },
   });
   const connected = conversation.status === "connected";
+  useTopeDeVoz(connected, () => {
+    setTope(true);
+    conversation.endSession();
+  });
 
   async function llamar() {
     setError(null);
     setEnded(false);
+    setTope(false);
     setLoading(true);
     try {
       await requestMicrophone();
@@ -96,7 +103,7 @@ function Llamada({ token }: { token: string }) {
           </button>
         )}
         <p className="mt-5 h-6 text-sm text-brand-700" aria-live="polite">
-          {connected ? (conversation.isSpeaking ? `🔊 ${info?.agentName ?? "Sofi"} está hablando…` : "🎙️ Te escucho…") : ended ? "Llamada terminada." : ""}
+          {connected ? (conversation.isSpeaking ? `🔊 ${info?.agentName ?? "Sofi"} está hablando…` : "🎙️ Te escucho…") : ended ? (tope ? TOPE_LLAMADA_AVISO : "Llamada terminada.") : ""}
         </p>
       </div>
 

@@ -45,6 +45,11 @@ export function withWahaConnection<T>(connection: WahaConnection, work: () => T)
   return scope.run(connection, work);
 }
 
+/** Usa el WAHA general (la línea de Turnia) aunque se esté atendiendo la línea propia de una clínica. */
+export function withGeneralWaha<T>(work: () => T): T {
+  return scope.exit(work);
+}
+
 export function withClinicWaha<T>(clinicId: string, work: () => T): T {
   const connection = wahaConnectionForClinic(clinicId);
   return connection ? withWahaConnection(connection, work) : work();

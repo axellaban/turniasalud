@@ -2,7 +2,10 @@ import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
-import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, StatusBadge } from "@/components/ui";
+import { Badge, Card, CHANNEL_LABEL, Empty, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
+import { activeMutes, type ChatMute } from "@/lib/chat-guard";
+import { displayPhone } from "@/lib/phone";
+import { reactivateChatNumber } from "../../actions";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Conversaciones · Panel" };
@@ -39,10 +42,12 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
     where c.clinic_id = ${clinic.id} ${channel ? sql`and c.channel = ${channel}` : sql``}
     order by c.started_at desc
     limit 100`;
+  const mutes = await activeMutes(clinic.id);
 
   return (
     <>
       <PageHeader title="Conversaciones" description={`Cada conversación de ${clinic.agent_name || "Sofi"}, con resumen, motivo y resultado.`} />
+      {mutes.length > 0 && <MutedNumbers mutes={mutes} clinicId={clinic.id} timezone={clinic.timezone} agent={clinic.agent_name || "Sofi"} />}
       <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <Link
@@ -88,5 +93,44 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
         </Empty>
       )}
     </>
+  );
+}
+
+const MUTE_LABEL: Record<ChatMute["reason"], string> = { bot: "Posible bot", vendedor: "Vendedor o publicidad", exceso: "Exceso de mensajes" };
+
+/** Números a los que Sofi no les contesta por un tiempo (bots, vendedores o exceso de mensajes). */
+async function MutedNumbers({ mutes, clinicId, timezone, agent }: { mutes: ChatMute[]; clinicId: string; timezone: string; agent: string }) {
+  const names = new Map(
+    (await sql<{ phone: string; full_name: string | null }[]>`
+      select phone, full_name from patients where clinic_id = ${clinicId} and phone = any(${mutes.map((m) => m.phone)})`).map((p) => [p.phone, p.full_name]),
+  );
+  return (
+    <Card className="mb-6 p-0">
+      <div className="px-5 pt-4">
+        <h2 className="font-medium text-brand-950">Números en pausa</h2>
+        <p className="mt-1 text-sm text-brand-900/60">
+          {agent} no les contesta por un tiempo: bots que se responden solos, vendedores o alguien que escribió sin parar. Si es un paciente, reactivalo.
+        </p>
+      </div>
+      <ul className="mt-3 divide-y divide-brand-900/5 border-t border-brand-900/5">
+        {mutes.map((m) => (
+          <li key={m.phone} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-brand-950">
+                {names.get(m.phone) ?? displayPhone(m.phone)} <Badge tone={m.reason === "exceso" ? "yellow" : "gray"}>{MUTE_LABEL[m.reason]}</Badge>
+              </p>
+              <p className="text-sm text-brand-900/60">
+                {m.detail ? `${m.detail} ` : ""}Hasta el {formatDateTime(m.until, timezone)}.
+              </p>
+            </div>
+            <form action={reactivateChatNumber}>
+              <input type="hidden" name="clinic_id" value={clinicId} />
+              <input type="hidden" name="phone" value={m.phone} />
+              <button className={smallButtonClass}>Reactivar</button>
+            </form>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

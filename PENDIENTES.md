@@ -44,6 +44,7 @@ Actualizado: 03/11/2026 (Argentina). Este archivo junta, en un solo lugar y por 
 
 ## 2. Prueba en vivo
 
+- [ ] **Límites de Sofi (05/11), después del deploy:** actualizar los dos agentes: Sistema → «Crear / actualizar agente», para que Sofi tenga `silenciar_numero`, y Configuración (Guerra–Mininni) → «Crear / actualizar Sofi de esta clínica», para que las llamadas corten a los 8 minutos y tras 20 s de silencio. Probar desde otro teléfono escribiendo como vendedor («Hola, ofrecemos software para consultorios»): Sofi contesta una vez y el número aparece en Conversaciones → Números en pausa; reactivarlo al final. Detalle en `ESTADO_Y_PRIORIDADES.md` → «Límites de Sofi».
 - [ ] **Turno completo por llamada en Guerra–Mininni:** el 03/11 se verificó que Sofi atiende las llamadas al número habitual, con el desvío de Movistar al destino interno de Twilio y el agente propio en ElevenLabs. Queda probar una reserva ficticia por llamada, verla en la agenda del consultorio y cancelarla.
 
 - [ ] **Notas de voz en WhatsApp (03/11):** desde otro teléfono, mandarle un **audio** a la línea de Guerra–Mininni y confirmar que Sofi contesta con **nota de voz** que se escucha bien (y, si hay link, también por escrito); escribirle «mandámelo en audio» y confirmar lo mismo; después escribirle texto común y confirmar que vuelve a contestar con texto. Si llega texto en vez de audio, mirar en Vercel el log «No se pudo mandar la nota de voz; se entrega el texto» (voz del agente, Text to Speech o `sendVoice` de WAHA). Cada respuesta en voz consume Text to Speech de ElevenLabs.
