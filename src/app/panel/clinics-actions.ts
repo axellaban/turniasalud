@@ -81,7 +81,7 @@ export type ProfileTestState = FormState & { url?: string; qr?: string };
 /**
  * Enlace para probar esta ficha por chat: abre Telegram o el WhatsApp general con la ficha de la
  * clínica (chat, audios o que lo llame). Sirve para las demos y para los consultorios: con un
- * consultorio, lo que reserve queda en su agenda real. Vale 7 días y se puede usar varias veces.
+ * consultorio, lo que reserve queda en su agenda real. No vence nunca y se puede usar varias veces.
  */
 export async function prepareTestLink(_previous: ProfileTestState, form: FormData): Promise<ProfileTestState> {
   const clinic = await getPanelClinic(form);
@@ -101,7 +101,7 @@ export async function prepareTestLink(_previous: ProfileTestState, form: FormDat
     ? `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${token}`
     : `https://wa.me/${wa}?text=${encodeURIComponent(`¡Hola! Quiero probar este perfil de Turnia: ${token}`)}`;
   revalidatePath("/panel/configuracion", "layout");
-  return { ok: true, url, qr: await qrSvg(url), message: "Enlace listo: vale 7 días y lo podés usar varias veces." };
+  return { ok: true, url, qr: await qrSvg(url), message: "Enlace listo: no vence y lo podés usar las veces que quieras." };
 }
 
 /** Prueba por el canal de chat que esté activo (Telegram o el WhatsApp general). */

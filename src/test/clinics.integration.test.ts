@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
@@ -180,8 +181,8 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     // El enlace del perfil sigue sirviendo después de usarlo, también desde otro chat.
     expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:999")).toBe(a);
     expect(await session.handleDemoMessage({ ...input, messageId: "saved-again", text: `Probar perfil de Turnia: ${token}` })).toEqual({ handled: true, status: "eligiendo" });
-    const [{ days }] = await sql`select extract(epoch from expires_at - created_at) / 86400 as days from demo_handoffs where token = ${token}`;
-    expect(Number(days)).toBeCloseTo(7, 1);
+    // No vence: sirve mientras exista la clínica.
+    expect((await sql`select expires_at = 'infinity' as forever from demo_handoffs where token = ${token}`)[0].forever).toBe(true);
   });
   it("el consultorio de verdad también se prueba por Telegram, con su agenda real y sin tocar su ficha", async () => {
     const selected = mocks.cookies.get("turnia_clinic");
@@ -221,6 +222,18 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect((await sql`select id from clinics order by is_demo`).map((c) => c.id)).toEqual([MAIN, a]);
     mocks.cookies.delete("turnia_session");
     await expect(clinics.deleteClinic(form({ clinic_id: a }))).rejects.toThrow("redirect:/panel/login");
+  });
+  it("los enlaces de prueba no vencen: generar otro no desactiva los anteriores, tampoco al reaplicar el esquema", async () => {
+    const handoffs = await import("@/lib/demo/handoff");
+    const first = await handoffs.createProfileHandoff(a, null);
+    const second = await handoffs.createProfileHandoff(a, null);
+    // Un enlace de antes, creado con los 7 días que duraban.
+    const old = `p_${"b".repeat(24)}`;
+    await sql`insert into demo_handoffs (token, website, requester_hash, clinic_id, created_at, expires_at)
+      values (${old}, 'https://clinica.example', 'admin-profile', ${a}, now() - interval '3 days', now() + interval '4 days')`;
+    await sql.unsafe(readFileSync("supabase/schema.sql", "utf8"));
+    for (const token of [first, second, old]) expect(await handoffs.claimProfileHandoff(token, "telegram:301")).toBe(a);
+    expect((await sql`select count(*)::int as n from demo_handoffs where clinic_id = ${a} and expires_at <> 'infinity'`)[0].n).toBe(0);
   });
   it("los enlaces de perfil aceptan tokens que terminan en guion y verifican vencimiento", async () => {
     const token = `p_${"a".repeat(23)}-`;
