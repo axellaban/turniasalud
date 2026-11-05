@@ -182,7 +182,7 @@ export async function startWebConversation(token: string, mode: WebDemoMode) {
     update demo_sessions set call_attempts = call_attempts + 1, status = ${status}, updated_at = now()
     where id = ${session.id} and call_attempts < ${MAX_CONVERSATIONS}
     returning lead_id`;
-  if (!claimed) throw new WebDemoError(`Ya usaste las ${MAX_CONVERSATIONS} conversaciones de esta demo. Si querés seguir, escribile a Axel por WhatsApp y te la muestra con tu agenda real.`, 429);
+  if (!claimed) throw new WebDemoError(`Ya usaste las ${MAX_CONVERSATIONS} conversaciones de esta demo. Si querés seguir, escribile a Axel por WhatsApp y te la muestra en tu consultorio.`, 429);
   if (claimed.lead_id) {
     await sql`update leads set message = concat_ws(' · ', message, ${`Eligió: ${mode === "voz" ? "voz" : "chat"} en el navegador`}::text), updated_at = now() where id = ${claimed.lead_id}`;
   }

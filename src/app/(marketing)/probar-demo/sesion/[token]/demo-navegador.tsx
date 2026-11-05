@@ -305,6 +305,10 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
   const conWeb = Boolean(state.website);
   const clinic: Clinic = state.clinic;
   const persona = state.persona;
+  // En el celular arranca en voz (es lo que más impacta y ahí la elegían); en la computadora, en chat:
+  // desde el escritorio del consultorio todos pasaban al chat en los primeros segundos. Lista se arma
+  // solo en el navegador (después de leer el estado), así que se puede mirar el dispositivo.
+  const [modoInicial] = useState<WebDemoMode>(() => (window.matchMedia("(pointer: coarse)").matches ? "voz" : "chat"));
   return (
     <ConversacionDemo
       clinic={clinic}
@@ -315,11 +319,10 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
         ? "Lo que tu web no dice (horarios, coberturas) es de prueba: en tu cuenta lo cargás vos."
         : "Los horarios y las coberturas son de prueba: en tu cuenta los cargás vos."}
       remaining={state.remaining}
-      // Arranca en chat: en las demos de los consultorios, 6 de cada 8 pasaban al chat en los primeros segundos.
-      modoInicial="chat"
+      modoInicial={modoInicial}
       cta={
         <>
-          ¿La querés con tu agenda real?{" "}
+          ¿La querés en tu consultorio?{" "}
           <BotonAxel
             variante="enlace"
             donde="demo"
