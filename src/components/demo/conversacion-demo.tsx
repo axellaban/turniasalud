@@ -6,6 +6,7 @@ import { Chevron, Icono } from "@/components/site/iconos";
 import { track, trackMilestone } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
 import { OrbeVoz } from "./orbe-voz";
+import { TOPE_VOZ_AVISO, useTopeDeVoz } from "./tope-voz";
 
 type Line = { id: number; role: "user" | "agent" | "system"; text: string };
 
@@ -205,6 +206,10 @@ export function ConversacionDemo({
   });
   const connected = conversation.status === "connected";
   const connecting = conversation.status === "connecting" || loading;
+  useTopeDeVoz(connected && mode === "voz", () => {
+    setAviso(TOPE_VOZ_AVISO);
+    conversation.endSession();
+  });
   // Para que la esfera siga la voz: la de Sofi cuando habla, la del micrófono cuando escucha.
   const { getInputVolume, getOutputVolume } = conversation;
 

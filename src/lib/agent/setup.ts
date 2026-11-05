@@ -3,6 +3,7 @@ import { sql } from "../db";
 import { env } from "../env";
 import { agentVoiceId, elevenlabs } from "../elevenlabs";
 import { getClinic } from "../clinic";
+import { CALL_LIMITS, CALL_LIMIT_MESSAGE } from "../chat-limits";
 import { CONTEXT_PARAMS, TOOL_DEFINITIONS, type ToolDefinition } from "./tools";
 import { FIRST_MESSAGE, SYSTEM_PROMPT } from "./prompt";
 import type { Clinic } from "../types";
@@ -106,7 +107,23 @@ export function handoffNumber(raw: string | null | undefined): string | null {
   return /^\+\d{8,15}$/.test(digits) ? digits : null;
 }
 
-function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, baseUrl: string, secret: string) {
+/**
+ * Topes de la conversación. El agente general atiende también los chats de WhatsApp (Custom Channel)
+ * y ElevenLabs aplica la misma duración máxima a los chats: ahí queda en 20 minutos y sin corte por
+ * silencio, para no cortar a quien tarda en contestar. El agente propio de una clínica solo atiende
+ * llamadas: corta a los 8 minutos (con un mensaje de despedida y una tarea para recepción, ver
+ * conversations.ts) y tras 20 segundos de silencio.
+ */
+export function callLimits(general: boolean) {
+  return general
+    ? { conversation: { max_duration_seconds: 1200 } }
+    : {
+        conversation: { max_duration_seconds: CALL_LIMITS.maxSeconds },
+        turn: { silence_end_call_timeout: CALL_LIMITS.silenceSeconds },
+      };
+}
+
+function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, baseUrl: string, secret: string, general: boolean) {
   const handoffPhone = handoffNumber(clinic.handoff_phone);
   return {
     name: `Turnia · ${clinic.name}`,
@@ -115,6 +132,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
       agent: {
         first_message: FIRST_MESSAGE,
         language: "es",
+        ...(!general && { max_conversation_duration_message: CALL_LIMIT_MESSAGE }),
         prompt: {
           prompt: SYSTEM_PROMPT,
           llm: env.agentLlm(),
@@ -148,7 +166,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
         },
       },
       tts: voiceId ? { voice_id: voiceId, model_id: "eleven_v4_turbo" } : { model_id: "eleven_v4_turbo" },
-      conversation: { max_duration_seconds: 1200 },
+      ...callLimits(general),
     },
     platform_settings: {
       auth: { enable_auth: true },
@@ -215,14 +233,14 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
   const secret = env.agentToolsSecret();
   const toolIds = await upsertTools(baseUrl, secret);
   let voiceId = clinic.elevenlabs_voice_id;
+  const main = await getClinic();
   if (!voiceId) {
-    const main = await getClinic();
     // La voz de generación de audios puede no admitir agentes en vivo. Para una clínica nueva,
     // heredar primero la voz que realmente usa Sofi, sin cambiar la del agente general.
     if (main.id !== clinic.id && main.elevenlabs_agent_id) voiceId = await agentVoiceId(main.elevenlabs_agent_id);
     voiceId ||= process.env.ELEVENLABS_VOICE_ID || (await pickArgentineVoice());
   }
-  const body = agentBody(clinic, toolIds, voiceId, baseUrl, secret);
+  const body = agentBody(clinic, toolIds, voiceId, baseUrl, secret, main.id === clinic.id);
 
   let agentId = clinic.elevenlabs_agent_id;
   if (agentId) {

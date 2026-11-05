@@ -1,13 +1,16 @@
 import "server-only";
 import { json, sql } from "./db";
-import { INBOUND_CONTEXT, findPatientByPhone, isUuid, resolveClinic } from "./clinic";
+import { INBOUND_CONTEXT, findPatientByPhone, getClinic, isUuid, resolveClinic } from "./clinic";
+import { checkCallFuse } from "./chat-guard";
+import { CALL_LIMITS } from "./chat-limits";
+import { env } from "./env";
 import { readAppointmentAccess } from "./agent/appointment-access";
 import { findOrCreatePatientForPhone } from "./patients";
 import { normalizePhone } from "./phone";
 import { formatDate } from "./time";
 import { mergeMemory } from "./memory";
 import { notifyN8n } from "./n8n";
-import type { Conversation, Patient } from "./types";
+import type { Clinic, Conversation, Patient, Task } from "./types";
 
 export { mergeMemory };
 
@@ -126,6 +129,11 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
 
   if (campaignId && patient) await updateCampaignRecipient(campaignId, patient.id, data);
 
+  if (row.channel === "telefono") {
+    await afterCall(clinic, clinicId, data, patient, phone).catch((e) =>
+      console.error("Límites de llamadas: no se pudo revisar la llamada", e instanceof Error ? e.message : e));
+  }
+
   await notifyN8n("conversacion.finalizada", {
     clinic_id: clinicId,
     conversation_id: data.conversation_id,
@@ -136,6 +144,37 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
     outcome: row.outcome,
     satisfaction: row.satisfaction,
   });
+}
+
+/**
+ * Después de cada llamada: si el agente propio de la clínica la cortó al llegar al tope de minutos,
+ * recepción recibe una tarea para llamar al paciente; y se revisa el fusible de minutos del día.
+ * El agente general no corta a los 8 minutos (también atiende chats), así que ahí no hay tarea.
+ */
+async function afterCall(agentClinic: Clinic, clinicId: string, data: PostCallPayload, patient: Patient | null, phone: string): Promise<void> {
+  const clinic = clinicId === agentClinic.id ? agentClinic : await getClinic(clinicId);
+  const ownAgent = agentClinic.elevenlabs_agent_id === data.agent_id && agentClinic.id !== (await getClinic()).id;
+  const reachedLimit = (data.metadata?.call_duration_secs ?? 0) >= CALL_LIMITS.maxSeconds - 10;
+  if (ownAgent && reachedLimit && !clinic.is_demo) {
+    const [first] = await sql`insert into channel_events (key) values (${`tope-llamada:${data.conversation_id}`}) on conflict do nothing returning key`;
+    if (first) {
+      const who = patient?.full_name ?? (phone ? `+${phone}` : "quien llamó");
+      const summary = data.analysis?.transcript_summary?.trim();
+      const [task] = await sql<Task[]>`
+        insert into tasks ${sql({
+          clinic_id: clinic.id,
+          patient_id: patient?.id ?? null,
+          conversation_id: data.conversation_id,
+          type: "derivacion_humana",
+          priority: "normal",
+          title: `Llamar a ${who}: la llamada llegó al tope de ${CALL_LIMITS.maxSeconds / 60} minutos`,
+          details: `${clinic.agent_name || "Sofi"} cortó la llamada al llegar a los ${CALL_LIMITS.maxSeconds / 60} minutos y le dijo que lo iban a contactar.${summary ? ` Resumen: ${summary}` : ""}`,
+        })}
+        returning *`;
+      await notifyN8n("tarea.creada", { clinic_id: clinic.id, task, panel_url: `${env.appUrl().replace(/\/$/, "")}/panel/tareas` });
+    }
+  }
+  await checkCallFuse(clinic);
 }
 
 /** Marca si el destinatario de una campaña respondió o sacó turno. */

@@ -9,11 +9,14 @@ import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
 import { attachLeadEmail, claimDemoHandoff } from "@/lib/demo/handoff";
 import { demoRequestText } from "@/lib/demo/flow";
 import { env } from "@/lib/env";
+import { getClinic } from "@/lib/clinic";
+import { claimDocumentRead } from "@/lib/chat-guard";
+import { DOCUMENTS_LIMIT_REPLY, LONG_AUDIO_REPLY, audioTooLong } from "@/lib/chat-limits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const media = z.object({ file_id: z.string().min(1).max(300), file_size: z.number().optional(), mime_type: z.string().max(100).optional() });
+const media = z.object({ file_id: z.string().min(1).max(300), file_size: z.number().optional(), mime_type: z.string().max(100).optional(), duration: z.number().optional() });
 const updateSchema = z.object({
   update_id: z.number().int().nonnegative().safe(),
   message: z.object({
@@ -62,6 +65,10 @@ export async function POST(request: Request) {
       }
     }
     const audio = msg.voice ?? msg.audio;
+    if (audio && audioTooLong(audio.duration)) {
+      await telegramSendText(chatId, LONG_AUDIO_REPLY);
+      return NextResponse.json({ ok: true, audio: "muy_largo" });
+    }
     if (audio) {
       const heard = (audio.file_size ?? 0) > 20 * 1024 * 1024 ? "" : await telegramDownloadAudio(audio.file_id)
         .then((blob) => transcribeAudio(blob, audio.mime_type ?? "audio/ogg")).catch(() => "");
@@ -74,6 +81,10 @@ export async function POST(request: Request) {
     // Credencial, orden o receta: Claude la lee y el agente recibe lo que dice.
     const photo = msg.photo?.filter((p) => (p.file_size ?? 0) <= MAX_DOCUMENT_BYTES).at(-1);
     const file = photo ? { id: photo.file_id, type: "image/jpeg" } : msg.document && readableMimetype(msg.document.mime_type ?? "") ? { id: msg.document.file_id, type: msg.document.mime_type! } : null;
+    if (file && !(await claimDocumentRead((await getClinic()).id, phone))) {
+      await telegramSendText(chatId, DOCUMENTS_LIMIT_REPLY);
+      return NextResponse.json({ ok: true, media: "tope_del_dia" });
+    }
     if (file) {
       const read = await telegramDownloadFile(file.id, MAX_DOCUMENT_BYTES, file.type)
         .then((blob) => readPatientDocument(blob, file.type, text)).catch(() => null);

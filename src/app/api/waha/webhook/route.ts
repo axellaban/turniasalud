@@ -11,6 +11,9 @@ import { readPatientDocument, type DocumentRead } from "@/lib/documents";
 import { currentWahaConnection } from "@/lib/waha-connections";
 import { getClinic } from "@/lib/clinic";
 import { phoneFromJid } from "@/lib/waha";
+import { claimDocumentRead, isMuted } from "@/lib/chat-guard";
+import { DOCUMENTS_LIMIT_REPLY, LONG_AUDIO_REPLY, audioTooLong } from "@/lib/chat-limits";
+import { staffForPhone } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
 // La demo del lead magnet lee la web del interesado después de responder (after).
@@ -51,6 +54,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ignored: "sin teléfono" });
   }
 
+  // Un número en silencio (bot, vendedor o exceso de mensajes) no gasta nada: ni audio, ni foto, ni Sofi.
+  // En la línea general se mira la clínica que la atiende; las demos se frenan después, en forwardToAgent.
+  const lineClinicId = own?.clinicId ?? (await whatsappClinic()).id;
+  if (await isMuted(lineClinicId, phone)) return NextResponse.json({ ignored: "número en silencio" });
+  const staff = Boolean(await staffForPhone(lineClinicId, phone));
+
   const key = own ? `in:${own.id}:${parsed.id}` : `in:${parsed.id}`;
   if (!(await claimEvent(key))) return NextResponse.json({ duplicate: true });
 
@@ -59,6 +68,10 @@ export async function POST(request: Request) {
     let document: DocumentRead | null = null;
     if (parsed.audio) {
       const audio = await wahaDownloadMedia(parsed.audio.url);
+      if (audio && audioTooLong(parsed.audio.seconds, new Uint8Array(await audio.arrayBuffer()))) {
+        await wahaSendText(parsed.chatId, LONG_AUDIO_REPLY);
+        return NextResponse.json({ ok: true, audio: "muy_largo" });
+      }
       const heard = audio ? await transcribeAudio(audio, parsed.audio.mimetype).catch((e) => {
         console.error("No se pudo transcribir el audio", e instanceof Error ? e.message : e);
         return "";
@@ -70,6 +83,10 @@ export async function POST(request: Request) {
       text = `${text ? `${text}\n` : ""}(audio) ${heard}`;
     }
     if (parsed.otherMedia) {
+      if (!staff && !(await claimDocumentRead(lineClinicId, phone))) {
+        await wahaSendText(parsed.chatId, DOCUMENTS_LIMIT_REPLY);
+        return NextResponse.json({ ok: true, media: "tope_del_dia" });
+      }
       // Fotos y PDF (credencial, orden, receta): Claude los lee y el agente recibe lo que dicen.
       const file = parsed.media ? await wahaDownloadMedia(parsed.media.url) : null;
       document = file ? await readPatientDocument(file, parsed.media!.mimetype, text) : null;
@@ -95,7 +112,7 @@ export async function POST(request: Request) {
       // Nota de voz si habló por audio, o si la pidió en una línea propia con voz configurada.
       voiceForMessage: Boolean(parsed.audio) || Boolean(own && clinic.elevenlabs_voice_id && !parsed.otherMedia && requestsVoiceReply(text)),
     });
-    return NextResponse.json({ ok: true, conversation_id: res.conversation_id, continued: res.continued });
+    return NextResponse.json({ ok: true, conversation_id: res.conversation_id, continued: res.continued, ...(res.blocked && { limite: res.blocked }) });
   } catch (e) {
     // Sin marcar como procesado: si WAHA reintenta, se vuelve a intentar.
     await releaseEvent(key);

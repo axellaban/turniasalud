@@ -1203,3 +1203,29 @@ alter table demo_sessions add column if not exists outreach_code text;
 alter table sales_outreach_events drop constraint if exists sales_outreach_events_kind_check;
 alter table sales_outreach_events add constraint sales_outreach_events_kind_check
   check (kind in ('mensaje', 'llamada', 'visita', 'estado', 'nota', 'abrio', 'demo', 'pidio_hablar'));
+
+-- ---------------------------------------------------------------------------
+-- Límites de Sofi por chat (05/11): números en silencio (bots, vendedores o exceso de mensajes)
+-- y el registro de mensajes y archivos por número, para los topes y el fusible diario por clínica.
+-- ---------------------------------------------------------------------------
+create table if not exists chat_mutes (
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  phone text not null,
+  until timestamptz not null,
+  reason text not null check (reason in ('bot', 'vendedor', 'exceso')),
+  detail text,
+  created_at timestamptz not null default now(),
+  primary key (clinic_id, phone)
+);
+alter table chat_mutes enable row level security;
+
+create table if not exists chat_usage (
+  id bigint generated always as identity primary key,
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  phone text not null,
+  kind text not null check (kind in ('mensaje', 'documento')),
+  created_at timestamptz not null default now()
+);
+create index if not exists chat_usage_phone_idx on chat_usage (clinic_id, phone, kind, created_at desc);
+create index if not exists chat_usage_day_idx on chat_usage (clinic_id, kind, created_at);
+alter table chat_usage enable row level security;

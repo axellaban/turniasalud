@@ -259,6 +259,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       email: z.string().optional(),
     }),
   },
+  {
+    name: "silenciar_numero",
+    description:
+      "Solo por chat. Para quien no es paciente y escribe para vender algo al consultorio, publicidad no pedida, bots y mensajes automáticos (menús numerados, «soy un asistente virtual»). Contestale una sola vez que este WhatsApp es para turnos de pacientes y usá esto: no te llegan sus mensajes por 7 días. Nunca con un paciente ni si tenés dudas.",
+    params: {
+      motivo: { type: "string", description: "vendedor (ofrece algo al consultorio) o bot (mensajes automáticos).", enum: ["vendedor", "bot"], required: true },
+      detalle: { type: "string", description: "Qué ofrecía o qué decía, en pocas palabras." },
+    },
+    schema: z.object({ motivo: z.enum(["vendedor", "bot"]), detalle: z.string().max(300).optional() }),
+  },
   // Equipo del consultorio (acceso total por WhatsApp).
   {
     name: "ver_agenda",

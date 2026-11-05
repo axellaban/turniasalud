@@ -67,7 +67,7 @@ ElevenLabs Agent ──(1) webhook de inicio──► POST /api/elevenlabs/initi
         │                                    → guarda conversación, resumen, intent/outcome, memoria; actualiza campañas
         ▼
 Panel /panel (Next.js, server components + server actions)
-n8n ◄── eventos (N8N_WEBHOOK_URL): turno.reservado/confirmado/cancelado/reprogramado, tarea.creada/resuelta, conversacion.finalizada
+n8n ◄── eventos (N8N_WEBHOOK_URL): turno.reservado/confirmado/cancelado/reprogramado, tarea.creada/resuelta, conversacion.finalizada, clinica.fusible
 n8n ──► POST /api/automations/:job  (recordatorios | recall | reactivacion | ausentes | lista-espera | encuestas)
 Demo web /demo ──► POST /api/elevenlabs/token → conversation token (voz, WebRTC) o signed URL (chat, WebSocket) + dynamic variables
 ```

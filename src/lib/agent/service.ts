@@ -15,6 +15,8 @@ import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, 
 
 import { healthFormSheet, healthFormTemplate, type HealthFormInput } from "../health-form";
 import { HEALTH_FORM_VALID_DAYS, healthFormOffer, latestHealthForm, markHealthFormInvited, saveHealthFormAnswers } from "../health-forms";
+import { muteNumber } from "../chat-guard";
+import { CHAT_LIMITS } from "../chat-limits";
 
 export type ToolContext = {
   clinicId: string;
@@ -1359,6 +1361,30 @@ export async function createTask(
       ? "Tarea creada para el equipo. Avisale al paciente que lo van a contactar a la brevedad."
       : "Tarea creada para el equipo. Ahora estamos fuera del horario de atención: avisale al paciente que lo contactan apenas abramos, y si es urgente repetí las indicaciones de urgencia.",
   };
+}
+
+// ---------------------------------------------------------------------------
+// silenciar_numero (vendedores, publicidad y bots que escriben al WhatsApp)
+// ---------------------------------------------------------------------------
+export async function muteSender(ctx: ToolContext, input: { motivo: "vendedor" | "bot"; detalle?: string }) {
+  if (ctx.staff) throw new ToolError("Es alguien del equipo del consultorio: no se silencia.");
+  const source = sourceFromChannel(ctx.channel, ctx.patientPhone);
+  if (source !== "whatsapp" && source !== "telegram") {
+    return { ok: false, error: "Solo sirve en el chat. En una llamada, despedite amablemente y cortá." };
+  }
+  // Un paciente con turnos o visitas nunca se silencia, aunque escriba algo raro.
+  const patient = await currentPatient(ctx);
+  if (patient) {
+    const [known] = await sql`
+      select 1 from appointments where patient_id = ${patient.id}
+      union all select 1 from patient_visits where patient_id = ${patient.id}
+      limit 1`;
+    if (known) throw new ToolError("Es un paciente del consultorio (tiene turnos o visitas): no lo silencies, atendelo normalmente.");
+  }
+  const phone = ctx.patientPhone.startsWith("telegram:") ? ctx.patientPhone : normalizePhone(ctx.patientPhone);
+  await muteNumber(ctx.clinicId, phone, input.motivo, input.detalle?.trim() || (input.motivo === "bot" ? "Mensajes automáticos." : "Ofrecía algo al consultorio."), CHAT_LIMITS.muteDays * 24);
+  console.warn(JSON.stringify({ evento: "limite_chat", tipo: input.motivo, clinica: ctx.clinicId, conversacion: ctx.conversationId }));
+  return { ok: true, mensaje: `Listo: este número queda en silencio ${CHAT_LIMITS.muteDays} días. Si todavía no le contestaste, mandale la respuesta de una línea y no sigas la charla.` };
 }
 
 // ---------------------------------------------------------------------------

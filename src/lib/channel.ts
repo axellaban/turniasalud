@@ -7,6 +7,8 @@ import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
 import { isHealthFormText, splitHealthFormMessage } from "./health-form";
 import { sendChatText, sendChatVoice } from "./messaging";
+import { announcePause, checkChatFuse, guardIncoming } from "./chat-guard";
+import { staffForPhone } from "./staff";
 import { channelForChat, chatIsActive, requireActiveChannel, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
 import { currentWahaConnection, wahaConnectionById, withWahaConnection } from "./waha-connections";
@@ -126,16 +128,26 @@ export async function forwardToAgent(
   clinic: Clinic,
   input: { messageId: string; chatId: string; phone: string; text: string },
   opts: { context?: string; replyWithVoice?: boolean; voiceForMessage?: boolean } = {},
-): Promise<{ conversation_id: string; continued: boolean }> {
+): Promise<ForwardResult> {
   if (currentWahaConnection() && currentWahaConnection()!.clinicId !== clinic.id) throw new Error("La línea de WhatsApp no corresponde a esta clínica.");
   const settings = await requireActiveChannel(channelForChat(input.chatId));
+  // Cuándo llegó: sirve para notar a un bot que contesta al instante (ver chat-limits.ts).
+  const receivedAt = new Date().toISOString();
   // Fuera de la transacción: son varias consultas y no conviene retener la conexión.
   // WhatsApp garantiza el número: si es del equipo del consultorio, Sofi lo sabe.
   const vars = await buildDynamicVariables(clinic, input.phone, { verifiedPhone: true });
-  return sql.begin(async (tx) => {
+  const staff = Boolean(await staffForPhone(clinic.id, input.phone));
+  const result = await sql.begin(async (tx): Promise<ForwardResult> => {
     // Dos mensajes seguidos del mismo paciente no pueden abrir dos conversaciones.
     await tx`select pg_advisory_xact_lock(hashtextextended(${`${clinic.id}:${input.phone}`}, 0))`;
     const open = await findOpen(tx, clinic.id, input.phone);
+    // Topes de Sofi: un número en silencio, un bot o alguien que escribe sin parar no le llega.
+    // La charla abierta se cierra, así tampoco se entrega una respuesta que estaba en camino.
+    const guard = await guardIncoming(tx, clinic, input, open?.transcript ?? [], { staff });
+    if (!guard.ok) {
+      if (open) await tx`update channel_conversations set closed_at = now() where id = ${open.id}`;
+      return { conversation_id: null, continued: false, blocked: guard.reason };
+    }
     // Si la ficha de la clínica cambió durante la charla (alguien editó reglas, horarios o
     // prestaciones), el agente arranca una conversación nueva con los datos actuales y un
     // resumen de lo que ya se habló. ElevenLabs fija las variables al empezar cada conversación.
@@ -153,8 +165,8 @@ export async function forwardToAgent(
     // El webhook decide: un audio del paciente, o un pedido de audio en una línea propia con voz.
     const voiceForMessage = Boolean(opts.voiceForMessage) && channelForChat(input.chatId) === "whatsapp";
     const text = voiceForMessage
-      ? `${input.text}\n[Canal: esta respuesta se enviará como nota de voz. Respondé a lo que pide con frases breves para escuchar.]`
-      : input.text;
+      ? `${guard.text}\n[Canal: esta respuesta se enviará como nota de voz. Respondé a lo que pide con frases breves para escuchar.]`
+      : guard.text;
     const res = await sendChannelMessage({
       messageId: input.messageId,
       text,
@@ -163,7 +175,7 @@ export async function forwardToAgent(
       dynamicVariables: vars,
     });
 
-    const userLine = json([{ ...line("user", input.text), ...(voiceForMessage && { voiceReplyFor: input.messageId }) }]);
+    const userLine = json([{ role: "user", message: guard.text, at: receivedAt, ...(voiceForMessage && { voiceReplyFor: input.messageId }) }]);
     if (open) {
       await tx`
         update channel_conversations set
@@ -193,7 +205,17 @@ export async function forwardToAgent(
     }
     return { conversation_id: res.conversation_id, continued: Boolean(open?.elevenlabs_conversation_id) && !stale };
   });
+  if (result.blocked === "exceso") await announcePause(clinic, input.phone, input.chatId, sendChatText);
+  if (!result.blocked) await checkChatFuse(clinic).catch((e) => console.error("Fusible de chat: no se pudo revisar", e instanceof Error ? e.message : e));
+  return result;
 }
+
+export type ForwardResult = {
+  conversation_id: string | null;
+  continued: boolean;
+  /** Sofi no recibió el mensaje por un límite (ver chat-guard.ts). */
+  blocked?: "silenciado" | "bot" | "exceso";
+};
 
 // ---------------------------------------------------------------------------
 // Respuestas del agente (webhook del Custom Channel)
