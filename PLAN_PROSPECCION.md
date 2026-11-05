@@ -115,7 +115,7 @@ Se editan en Panel → Prospección → Mensajes y metas. Los de fábrica:
 
 > Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia. Una pregunta rápida: cuando estás atendiendo, ¿quién le contesta el WhatsApp a los pacientes que escriben para pedir turno? Armé una asistente que lo hace sola, con tu agenda. Si querés, te paso una demo con tu consultorio: es un minuto.
 
-## Audios de seguimiento (05/11, en curso con otra IA)
+## Audios de seguimiento (05/11)
 
 La idea es mandar un audio a cada grupo del funnel de demos de Chapa Labs (`/prospecting/turnia` → Odontólogos). Al 05/11, con «Todo», los grupos son:
 
@@ -123,7 +123,7 @@ La idea es mandar un audio a cada grupo del funnel de demos de Chapa Labs (`/pro
 - **La abrieron sin hablar con Sofi:** 26.
 - **Hablaron con Sofi:** 12.
 
-El usuario lo sigue con otra IA; acá queda lo decidido hasta ahora.
+Lo decidido, y abajo la herramienta para mandarlos.
 
 **Guiones (15 a 20 segundos; el link va como texto debajo del audio):**
 
@@ -149,9 +149,20 @@ Como nota de voz nativa solo sale por API: WAHA permite mandar un `.ogg` (Opus) 
 **Recomendación que se le dio al usuario:**
 - Grupos 2 y 3 (38 personas): grabarlos a mano.
 - Grupo 1: una sola grabación por WAHA, o solo texto.
-- Posible siguiente paso, todavía sin construir: un botón «Mandar audio» en el panel que suba la grabación una vez, la mande de a poco como nota de voz y la registre en el embudo.
+- Hecho como MVP el 05/11: Panel → Prospección → **Mandar audio** (ver abajo).
 
 Respetar las reglas de WAHA de `PENDIENTES.md`: no tocar las instancias existentes.
+
+### Panel → Prospección → Mandar audio (MVP, 05/11)
+
+`/panel/prospeccion/audio`. Código en `src/lib/sales/voice-outreach.ts`; tablas `sales_voice_notes` y `sales_voice_sends`.
+
+- **El audio:** se sube una vez. Lo mejor es grabarlo como nota de voz en el chat con uno mismo, exportarlo y subir el `.opus`/`.ogg`: sale tal cual (`convert: false`). Un `.m4a`, `.mp3` o `.webm` sale con `convert: true`, que depende de que ese WAHA convierta. Por eso primero «Mandármelo» a un número propio (no cuenta en el embudo ni en el tope).
+- **A quién:** los tres grupos con las definiciones del embudo (no abrió = sin `opened_at` ni `demo_at`; abrió = `opened_at` sin `demo_at`; habló con Sofi = `demo_at`). Solo «Contactado», con 1 o 2 mensajes, celular y sin baja. Quien respondió se atiende a mano.
+- **Cómo sale:** texto opcional antes (`{saludo}`, `{link}`), visto, unos segundos de «grabando audio…» y la nota de voz. De a uno, con una pausa al azar de 3 a 6 minutos que lleva la página (hay que dejar la pestaña abierta). Frena con dos errores seguidos.
+- **Límites del servidor:** de 8 a 21 (Buenos Aires), 20 por día, y el mismo audio una sola vez por persona (índice único; un error permite reintentar).
+- **Registro:** cada envío suma un mensaje (`recordTouch`, programa el seguimiento), deja la nota «Audio de seguimiento: «nombre»» en la historia y manda `prospect_followup_sent` con `message_format: "audio"` a PostHog.
+- **Conexión (la hace el usuario):** una sesión de WAHA **nueva y sin webhooks**, vinculada por QR al WhatsApp con el que se prospectó (queda como dispositivo vinculado; el celular sigue andando). Sin webhooks, porque si no Sofi contestaría los chats personales. En Vercel: `WAHA_PROSPECCION` = `{"url":"https://…","apiKey":"…","session":"…","phone":"549223…"}`. Con `phone`, si la sesión está en otro número no sale nada. No usa `WAHA_URL` ni `WAHA_CONNECTIONS`, ni el selector de canal de Sofi. No tocar `n8n/waha`, `n8n/turnia-waha` ni `n8n/turnia-guerra-mininni-waha`: WAHA Core tiene una sola sesión por instancia, así que hace falta una instancia nueva (pedir autorización antes de crearla).
 
 ## Panel → Prospección
 

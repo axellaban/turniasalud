@@ -1164,3 +1164,33 @@ create table if not exists clinic_staff_phones (
   unique (clinic_id, phone)
 );
 alter table clinic_staff_phones enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Audios de seguimiento de la prospección (MVP, 05/11): Axel graba una vez y el panel lo manda
+-- como nota de voz desde su número (WAHA_PROSPECCION), de a uno y con pausas. Cada envío cuenta
+-- como un mensaje de los tres y queda en la historia del contacto.
+-- ---------------------------------------------------------------------------
+create table if not exists sales_voice_notes (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  mimetype text not null,
+  audio bytea not null,
+  created_at timestamptz not null default now()
+);
+alter table sales_voice_notes enable row level security;
+
+create table if not exists sales_voice_sends (
+  id uuid primary key default gen_random_uuid(),
+  voice_note_id uuid not null references sales_voice_notes(id) on delete cascade,
+  -- null en las pruebas a un número propio: no cuentan en el embudo ni en el tope del día.
+  outreach_id uuid references sales_outreach(id) on delete cascade,
+  phone text not null,
+  status text not null check (status in ('enviando', 'enviado', 'error')),
+  error text,
+  created_at timestamptz not null default now()
+);
+-- El mismo audio sale una sola vez por persona (un error permite reintentar).
+create unique index if not exists sales_voice_sends_once on sales_voice_sends (voice_note_id, outreach_id)
+  where outreach_id is not null and status <> 'error';
+create index if not exists sales_voice_sends_day_idx on sales_voice_sends (created_at) where outreach_id is not null;
+alter table sales_voice_sends enable row level security;

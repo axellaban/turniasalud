@@ -89,7 +89,7 @@ PostHog suma solo `$pageview`, `$pageleave`, autocaptura, `$device_type`, UTM y 
 | --- | --- | --- |
 | `prospect_greeting_sent` | «Saludar por WhatsApp» (el saludo sin link) | `channel`, `touch_number` = 0 |
 | `prospect_pitch_sent` | El primer mensaje con la demo | `channel`, `touch_number` = 1, `opened_demo`, `tried_demo` |
-| `prospect_followup_sent` | Seguimientos (2.º y 3.º mensaje) | ídem |
+| `prospect_followup_sent` | Seguimientos (2.º y 3.º mensaje). Si salió como nota de voz desde Prospección → Mandar audio, trae `message_format: "audio"` y `voice_note` (el nombre de la grabación) | ídem |
 | `prospect_offline_contact_logged` | Llamada o visita registrada | `channel` |
 | `prospect_prior_contact_logged` | «Ya le había escrito» | `channel` |
 | `prospect_status_changed` | Cambio de estado | `status_from`, `status_to` (`respondio`, `reunion`, `cliente`, `no_interesa`, `sin_canal`, `baja`, …) |

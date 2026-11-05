@@ -267,7 +267,11 @@ const GREETING = "saludo";
  * email) suma un toque y programa el seguimiento; una llamada o una visita quedan en la historia sin
  * consumir los mensajes. `before`: le había escrito antes de usar el panel (no cuenta para la meta de hoy).
  */
-export async function recordTouch(id: string, channel: OutreachChannel, opts: { before?: boolean } = {}): Promise<Outreach> {
+export async function recordTouch(
+  id: string,
+  channel: OutreachChannel,
+  opts: { before?: boolean; properties?: Record<string, string | number | boolean | null> } = {},
+): Promise<Outreach> {
   const today = todayKey();
   const message = channel === "whatsapp" || channel === "instagram" || channel === "email";
   const updated = await sql.begin(async (tx) => {
@@ -315,6 +319,7 @@ export async function recordTouch(id: string, channel: OutreachChannel, opts: { 
     touch_number: person.touches,
     opened_demo: Boolean(person.opened_at),
     tried_demo: Boolean(person.demo_at),
+    ...opts.properties,
   });
   return person;
 }
