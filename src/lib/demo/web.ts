@@ -34,6 +34,8 @@ export type WebDemoState =
       nombre?: string;
       clinic: { name: string; agentName: string; specialty: string; address: string | null; professionals: string[]; types: string[] };
       remaining: number;
+      /** Llegó desde el link de su demo (/p/<código>): su código y cómo se lo saluda, para el «Escribirle a Axel». */
+      persona?: { codigo: string; saludo: string };
     };
 
 /**
@@ -48,6 +50,8 @@ export async function startWebDemo(input: {
   ip: string;
   /** La persona de PostHog del navegador que la pidió (opcional). */
   analyticsId?: string | null;
+  /** La persona de la prospección, si llegó desde el link de su demo. */
+  outreachCode?: string | null;
 }): Promise<{ token: string; sessionId: string; leadId: string } | null> {
   const manual = input.website ? null : input.manual;
   if (!input.website && !manual) return null;
@@ -90,10 +94,10 @@ export async function startWebDemo(input: {
       values (${label}, ${input.email}, ${label}, ${note}, 'demo-web')
       returning id`)[0];
     const [session] = await tx<{ id: string }[]>`
-      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty, manual_professional, manual_services, analytics_id)
+      insert into demo_sessions (phone, chat_id, website, lead_id, request_message_id, call_token, channel_revision, manual_name, manual_address, manual_specialty, manual_professional, manual_services, analytics_id, outreach_code)
       values (${id}, ${id}, ${input.website ?? ""}, ${lead.id}, ${handoff}, ${token}, ${settings.revision},
               ${manual?.nombre ?? null}, ${manual?.direccion ?? null}, ${manual?.especialidad ?? null}, ${manual?.profesional ?? null}, ${manual?.servicios ?? null},
-              ${input.analyticsId ?? null})
+              ${input.analyticsId ?? null}, ${input.outreachCode ?? null})
       returning id`;
     return { sessionId: session.id, leadId: lead.id, createdLead: !existing };
   });
@@ -132,10 +136,14 @@ export async function webDemoState(token: string): Promise<WebDemoState | null> 
   if (session.status === "terminada") return { status: "terminada", website, ...sinWeb };
   const clinic = await demoClinic(session.clinic_id);
   if (!clinic) return { status: "error", website, ...sinWeb };
-  const [professionals, types, [quota]] = await Promise.all([
+  const [professionals, types, [quota], [persona]] = await Promise.all([
     sql<{ full_name: string }[]>`select full_name from professionals where clinic_id = ${clinic.id} and active order by full_name limit 8`,
     sql<{ name: string }[]>`select name from appointment_types where clinic_id = ${clinic.id} and active order by name limit 8`,
     sql<{ used: number }[]>`select call_attempts as used from demo_sessions where id = ${session.id}`,
+    session.outreach_code
+      ? sql<{ codigo: string; saludo: string }[]>`
+          select code as codigo, coalesce(nullif(greeting, ''), split_part(name, ' ', 1)) as saludo from sales_outreach where code = ${session.outreach_code}`
+      : [],
   ]);
   return {
     status: "lista",
@@ -150,6 +158,7 @@ export async function webDemoState(token: string): Promise<WebDemoState | null> 
       types: types.map((t) => t.name),
     },
     remaining: Math.max(0, MAX_CONVERSATIONS - quota.used),
+    ...(persona ? { persona } : {}),
   };
 }
 
@@ -173,7 +182,7 @@ export async function startWebConversation(token: string, mode: WebDemoMode) {
     update demo_sessions set call_attempts = call_attempts + 1, status = ${status}, updated_at = now()
     where id = ${session.id} and call_attempts < ${MAX_CONVERSATIONS}
     returning lead_id`;
-  if (!claimed) throw new WebDemoError(`Ya usaste las ${MAX_CONVERSATIONS} conversaciones de esta demo. Si querés seguir, pedí una demo guiada.`, 429);
+  if (!claimed) throw new WebDemoError(`Ya usaste las ${MAX_CONVERSATIONS} conversaciones de esta demo. Si querés seguir, escribile a Axel por WhatsApp y te la muestra con tu agenda real.`, 429);
   if (claimed.lead_id) {
     await sql`update leads set message = concat_ws(' · ', message, ${`Eligió: ${mode === "voz" ? "voz" : "chat"} en el navegador`}::text), updated_at = now() where id = ${claimed.lead_id}`;
   }

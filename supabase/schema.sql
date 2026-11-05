@@ -1194,3 +1194,12 @@ create unique index if not exists sales_voice_sends_once on sales_voice_sends (v
   where outreach_id is not null and status <> 'error';
 create index if not exists sales_voice_sends_day_idx on sales_voice_sends (created_at) where outreach_id is not null;
 alter table sales_voice_sends enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Cierre de la demo (05/11): de qué persona de la prospección es cada demo del navegador (para el
+-- «Escribirle a Axel» con su nombre) y el aviso de que tocó ese botón, que queda en su historia.
+-- ---------------------------------------------------------------------------
+alter table demo_sessions add column if not exists outreach_code text;
+alter table sales_outreach_events drop constraint if exists sales_outreach_events_kind_check;
+alter table sales_outreach_events add constraint sales_outreach_events_kind_check
+  check (kind in ('mensaje', 'llamada', 'visita', 'estado', 'nota', 'abrio', 'demo', 'pidio_hablar'));

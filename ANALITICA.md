@@ -101,7 +101,7 @@ Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propi
 
 | Evento | Propiedades |
 | --- | --- |
-| `personal_demo_viewed` | `prospect_*`, `with_web`, `demo_ready` (si la demo estaba disponible), `preview` (vista desde el panel) |
+| `personal_demo_viewed` | `prospect_*`, `with_web`, `demo_ready` (si la demo estaba disponible), `preview` (vista desde el panel), `talked_to_sofi` (ya conversó con Sofi: ve la versión «¿dejamos a Sofi atendiendo…?») |
 | `demo_started` | `source` = `personal`, `via`, `with_web`. Toca «Probar la demo». Sale por beacon |
 | `demo_start_failed` | `error_kind` (`api_<status>`, `network`) |
 | `demo_active_time` | Por tramos; el total de la visita es la suma. `active_ms`, `visible_ms`, `max_scroll_pct`, `end_reason`, `demo_kind` |
@@ -132,7 +132,8 @@ Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propi
 | `demo_conversation_ended` | navegador | `mode`, `duration_ms`, `user_messages`, `agent_messages`, `end_reason` (`disconnect` si la cortó la persona, `disconnect_agent` o `disconnect_error` si la cortó ElevenLabs), `end_detail` (motivo técnico del corte, sin datos personales) |
 | `demo_conversation_failed` | navegador | `error_kind`: `mic_denied`, `mic_missing`, `start_error` |
 | `demo_conversation_error` | navegador | Se cortó durante la conversación |
-| `demo_mode_switched` | navegador | `to` |
+| `demo_mode_switched` | navegador | `to`; `auto` = true cuando pasó solo al chat porque no hay micrófono |
+| `demo_closing_viewed` | navegador | Terminó una charla en la que Sofi contestó y apareció el cierre con «Escribirle a Axel». `mode`, `end_reason` (`user`, `agent`, `error`) |
 | `demo_suggestion_used` | navegador | `suggestion` (índice de la idea), `connected` |
 | `demo_active_time` | navegador | Igual que en la demo personal, con `demo_kind` = `web` |
 
@@ -171,6 +172,7 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `pricing_plan` | `core`, `growth` o `enterprise` | `pricing_card`: elige el plan y baja al formulario |
 | `pricing_join` | formulario de `/pricing` | `pricing_hero` |
 | `pricing_see_plans` | los planes | `pricing_hero`. Navegación |
+| `talk_axel` | `whatsapp` (abre el WhatsApp de Axel con el mensaje escrito) | `cierre` (al terminar una charla con Sofi), `demo` (arriba de la demo, durante la charla), `pagina` (la página de su demo, `/p/<código>`). Si la demo es de una persona de la prospección, también queda en su ficha |
 
 Para medir un botón nuevo: `{...cta("id", "zona", "destino")}` de `@/lib/analytics-shared`.
 

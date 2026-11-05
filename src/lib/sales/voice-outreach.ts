@@ -4,7 +4,7 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { DEFAULT_TZ, localDateKey, zonedParts } from "@/lib/time";
 import { MAX_TOUCHES, outreachPhone, renderTemplate, type OutreachPerson } from "./outreach-messages";
-import { OutreachError, outreachDemoUrl, recordTouch } from "./outreach";
+import { OutreachError, conversoSql, outreachDemoUrl, recordTouch } from "./outreach";
 
 // Audios de seguimiento (MVP): Axel graba una vez y el panel lo manda como nota de voz nativa
 // (sin «Reenviado») desde SU número, el mismo con el que prospectó, conectado a una sesión de
@@ -31,11 +31,12 @@ export const VOICE_DEFAULT_TEXT: Record<VoiceGroup, string> = {
   hablo: "Hola {saludo}!",
 };
 
-// Mismas definiciones que el embudo de Chapa Labs: abrió = opened_at, habló con Sofi = demo_at.
+// Mismas definiciones que el embudo de Chapa Labs: abrió = entró a su /p/… (o tocó «Probar»),
+// habló con Sofi = conversó con ella (no alcanza con tocar «Probar la demo»).
 const groupFilter = (g: VoiceGroup) =>
-  g === "hablo" ? sql`o.demo_at is not null`
-  : g === "abrio" ? sql`o.opened_at is not null and o.demo_at is null`
-  : sql`o.opened_at is null and o.demo_at is null`;
+  g === "hablo" ? conversoSql()
+  : g === "abrio" ? sql`(o.opened_at is not null or o.demo_at is not null) and not ${conversoSql()}`
+  : sql`o.opened_at is null and o.demo_at is null and not ${conversoSql()}`;
 
 /**
  * A quién se le puede mandar: ya recibió la demo (al menos un mensaje), sigue «Contactado» (quien

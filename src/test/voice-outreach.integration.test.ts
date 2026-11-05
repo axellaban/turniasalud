@@ -59,6 +59,15 @@ describe.runIf(base)("audios de seguimiento", () => {
                 values (${code}, ${name}, ${name.split(" ")[0]}, ${phone}, 'movil', 'contactado', ${touches}, now() - interval '5 days', ${opened}, ${demo})`;
     }
     await sql`insert into sales_outreach (code, name, phone, phone_kind, status, touches) values ('baja-e5', 'Eva Baja', '+5492236000005', 'movil', 'contactado', 1)`;
+    // «Habló con Sofi» es haber conversado en su demo (como en Chapa Labs), no solo tocar «Probar».
+    const [clinic] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Demo Caro', true) returning id`;
+    const [lead] = await sql<Array<{ id: string }>>`insert into leads (name, email, source) values ('Demo Caro', 'caro@example.com', 'demo-web') returning id`;
+    await sql`insert into demo_sessions (phone, chat_id, website, lead_id, clinic_id, status) values ('web:c3', 'web:c3', '', ${lead.id}, ${clinic.id}, 'eligiendo')`;
+    await sql`insert into conversations (clinic_id, channel) values (${clinic.id}, 'web')`;
+    await sql`update sales_outreach set lead_id = ${lead.id} where code = 'hablo-c3'`;
+    // Tocó «Probar» pero no llegó a hablar: sigue en «la abrió».
+    await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, opened_at, demo_at)
+              values ('toco-f6', 'Fede Seis', 'Fede', '+5492236000006', 'movil', 'contactado', 1, now(), now())`;
     await sql`insert into sales_suppressions (phone, reason) values ('+5492236000005', 'prueba')`;
   }, 60000);
 
@@ -76,7 +85,8 @@ describe.runIf(base)("audios de seguimiento", () => {
   });
 
   it("arma los tres grupos con las definiciones del embudo, sin baja ni quien ya usó los tres mensajes", async () => {
-    expect(await voice.voiceGroupCounts()).toEqual({ no_abrio: 1, abrio: 1, hablo: 1 });
+    expect(await voice.voiceGroupCounts()).toEqual({ no_abrio: 1, abrio: 2, hablo: 1 });
+    expect((await voice.voiceCandidates("hablo", null)).map((c) => c.name)).toEqual(["Caro Tres"]);
     expect((await voice.voiceCandidates("no_abrio", null)).map((c) => c.name)).toEqual(["Ana Uno"]);
   });
 

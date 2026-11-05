@@ -164,6 +164,20 @@ Respetar las reglas de WAHA de `PENDIENTES.md`: no tocar las instancias existent
 - **Registro:** cada envío suma un mensaje (`recordTouch`, programa el seguimiento), deja la nota «Audio de seguimiento: «nombre»» en la historia y manda `prospect_followup_sent` con `message_format: "audio"` a PostHog.
 - **Conexión (la hace el usuario):** una sesión de WAHA **nueva y sin webhooks**, vinculada por QR al WhatsApp con el que se prospectó (queda como dispositivo vinculado; el celular sigue andando). Sin webhooks, porque si no Sofi contestaría los chats personales. En Vercel: `WAHA_PROSPECCION` = `{"url":"https://…","apiKey":"…","session":"…","phone":"549223…"}`. Con `phone`, si la sesión está en otro número no sale nada. No usa `WAHA_URL` ni `WAHA_CONNECTIONS`, ni el selector de canal de Sofi. No tocar `n8n/waha`, `n8n/turnia-waha` ni `n8n/turnia-guerra-mininni-waha`: WAHA Core tiene una sola sesión por instancia, así que hace falta una instancia nueva (pedir autorización antes de crearla).
 
+## Después de la demo: «Escribirle a Axel» (05/11)
+
+Hasta el 05/11, al terminar la charla con Sofi solo aparecía «Conversación terminada.»: de 8 personas que hablaron con Sofi, ninguna pidió una llamada desde la demo. Lo que se cambió, con los datos de PostHog del 30/10 al 05/11:
+
+- **Cierre de cada charla:** cuando termina una conversación en la que Sofi contestó (la corte la persona, Sofi o el tiempo), aparece en el chat una nota de Axel: «{Nombre}, ¿la dejamos atendiendo en {consultorio}?», con un solo botón, **Escribirle a Axel**. Abre el WhatsApp de Axel (+54 9 11 3023-5483, en `src/lib/sales/contacto-axel.ts`) con el mensaje escrito. Volver a llamar o escribir sigue a mano, en segundo plano.
+- **Sofi entrega la posta:** en la demo del navegador, al final (después del turno de prueba o al despedirse) dice una vez «Esto fue la demo… tocá Escribirle a Axel en la pantalla». En las demos por WhatsApp o Telegram sigue «el equipo lo va a contactar».
+- **Su página cambia cuando ya habló con Sofi:** `/p/<código>` pasa a «{Nombre}, ¿dejamos a Sofi atendiendo el WhatsApp de tu consultorio?», con Escribirle a Axel primero, Probar de nuevo al lado y los tres pasos de lo que sigue. Antes de probarla, lo principal sigue siendo «Probar la demo», con «¿Preferís que te la muestre yo?» y el botón de WhatsApp abajo. Si la demo está pausada, el botón reemplaza al aviso.
+- **Arranca en chat:** 6 de cada 8 pasaban de voz a chat en los primeros segundos. Sin micrófono (permiso denegado), pasa sola al chat en vez de mostrar un error.
+- **Sin caminos que compitan:** en `/p/<código>` y en la demo ya armada, el header no muestra «Pedí una demo» ni «Probá con tu web», y la página no cierra con el bloque «¿Listo para transformar…?».
+- **En la ficha:** cada toque en «Escribirle a Axel» queda en su historia («Tocó «Escribirle a Axel» · WhatsApp · al terminar la demo») y su seguimiento pasa a hoy, aunque no haya mandado el mensaje. Uno cada 6 horas.
+- **«Hablaron con Sofi» = conversaron:** la herramienta de audios usa la misma definición que Chapa Labs (`conversoSql` en `outreach.ts`: una conversación en la clínica de su demo), no el toque en «Probar la demo».
+
+Qué mirar: `demo_closing_viewed` → `cta_clicked` con `cta_id = talk_axel` (por `cta_location`) → respuestas en el WhatsApp de Axel.
+
 ## Panel → Prospección
 
 - **Para hoy:** tres bloques. «Esperan la demo»: los que saludaste, con «Mandar la demo» para cuando te respondan; viene plegado. «Seguimientos de hoy»: a quienes les mandaste la demo y no respondieron (arriba, quienes la abrieron o probaron). «Nuevos para hoy»: por prioridad, hasta la meta del día (50). Los dos primeros se pliegan y despliegan tocando el título, y el panel recuerda cómo los dejaste. «Saludar por WhatsApp» abre WhatsApp Web (o la app en el celular) con el saludo escrito y queda registrado; ese mismo día pasa a «Esperan la demo». Desde «Mandar la demo» se programa el seguimiento. Si dos personas comparten número, el mensaje sale una sola vez.

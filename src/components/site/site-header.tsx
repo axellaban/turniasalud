@@ -122,6 +122,10 @@ export function SiteHeader() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   const sobreVideo = pathname === "/" && arriba && !movil;
+  // La demo de cada consultorio (/p/<código>) y la demo ya armada (/probar-demo/sesion/…) tienen su propio
+  // paso siguiente (probarla, escribirle a Axel): el header no lo compite con «Pedí una demo» ni «Probá
+  // con tu web». El menú sigue igual.
+  const demoPersonal = pathname.startsWith("/p/") || pathname.startsWith("/probar-demo/sesion/");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (setAbierto(null), setMovil(false));
@@ -186,15 +190,19 @@ export function SiteHeader() {
         </ul>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <Link href="/probar-demo" {...cta("try_demo", "header", "probar_demo")} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:text-brand-900 md:inline-block">
-            Probá con tu web
-          </Link>
+          {!demoPersonal && (
+            <Link href="/probar-demo" {...cta("try_demo", "header", "probar_demo")} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-700 hover:text-brand-900 md:inline-block">
+              Probá con tu web
+            </Link>
+          )}
           <Link href="/panel" {...cta("panel_login", "header", "panel", "navigation")} className="hidden rounded-lg px-3 py-2 text-sm font-medium text-brand-950/80 hover:text-brand-700 sm:inline-block">
             Ingresar
           </Link>
-          <Link href="/pedi-una-demo" {...cta("guided_demo", "header", "pedi_una_demo")} className={`whitespace-nowrap rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 sm:px-4 ${sobreVideo ? "max-lg:hidden" : ""}`}>
-            Pedí una demo
-          </Link>
+          {!demoPersonal && (
+            <Link href="/pedi-una-demo" {...cta("guided_demo", "header", "pedi_una_demo")} className={`whitespace-nowrap rounded-lg bg-brand-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-brand-700 sm:px-4 ${sobreVideo ? "max-lg:hidden" : ""}`}>
+              Pedí una demo
+            </Link>
+          )}
           <button
             type="button"
             className={`grid h-10 w-9 place-items-center rounded-lg sm:w-10 lg:hidden ${sobreVideo ? "text-white hover:bg-white/10" : "text-brand-950 hover:bg-brand-50"}`}

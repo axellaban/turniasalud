@@ -6,6 +6,7 @@ import { json, sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { DEFAULT_TZ, localDateKey } from "@/lib/time";
 import type { OutreachImportRow } from "./outreach-import";
+import { TALK_PLACES, type TalkPlace } from "./outreach-places";
 import {
   CLOSED,
   DEFAULT_TEMPLATES,
@@ -224,14 +225,46 @@ export async function getOutreach(id: string): Promise<Outreach | null> {
   return row ?? null;
 }
 
-/** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. */
-export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website" | "priority" | "phone_kind" | "status">;
+/**
+ * Conversó con Sofi en su demo (no solo tocó «Probar la demo»): hubo una conversación en la clínica
+ * de alguna demo de su pedido. Es «Conversó en la demo» de la planilla y «Hablaron con Sofi» en Chapa Labs.
+ */
+export const conversoSql = () => sql`exists (
+  select 1 from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
+  where o.lead_id is not null and s.lead_id = o.lead_id)`;
+
+/** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. `converso`: ya habló con Sofi. */
+export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website" | "priority" | "phone_kind" | "status"> & {
+  converso: boolean;
+};
 
 export async function publicOutreach(code: string): Promise<PublicOutreach | null> {
   if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code)) return null;
   const [row] = await sql<PublicOutreach[]>`
-    select code, name, greeting, title, business_name, zone, address, specialty, website, priority, phone_kind, status from sales_outreach where code = ${code}`;
+    select o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.website, o.priority, o.phone_kind, o.status,
+      ${conversoSql()} as converso
+    from sales_outreach o where o.code = ${code}`;
   return row ?? null;
+}
+
+
+/**
+ * Tocó «Escribirle a Axel» desde su demo: queda en su historia y su seguimiento pasa a hoy (si
+ * no mandó el mensaje, igual conviene escribirle). Uno cada 6 horas: los toques repetidos no suman.
+ */
+export async function recordTalkRequest(code: string, place: TalkPlace): Promise<boolean> {
+  if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code) || !Object.hasOwn(TALK_PLACES, place)) return false;
+  const today = todayKey();
+  const [row] = await sql<Array<{ id: string }>>`
+    update sales_outreach set next_action_on = case when status = 'contactado' then ${today}::date else next_action_on end, updated_at = now()
+    where code = ${code} returning id`;
+  if (!row) return false;
+  const inserted = await sql`
+    insert into sales_outreach_events (outreach_id, kind, channel, detail)
+    select ${row.id}, 'pidio_hablar', 'whatsapp', ${TALK_PLACES[place]} where not exists (
+      select 1 from sales_outreach_events where outreach_id = ${row.id} and kind = 'pidio_hablar' and created_at > now() - interval '6 hours')
+    returning id`;
+  return inserted.length > 0;
 }
 
 export async function outreachEvents(id: string): Promise<OutreachEvent[]> {

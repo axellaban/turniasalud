@@ -6,9 +6,11 @@ import { usePathname } from "next/navigation";
 import { Flecha } from "./iconos";
 
 // Cierre de cada página: la acción principal (probar con la web) y la secundaria (demo guiada).
-// En /probar-demo no se muestra: competiría con el formulario, que es la única acción de esa página.
+// En /probar-demo y en la demo de cada consultorio (/p/<código>) no se muestra: competiría con la única
+// acción de esa página (el formulario, o probar la demo y escribirle a Axel).
 export function FooterCta() {
-  if (usePathname().startsWith("/probar-demo")) return null;
+  const pathname = usePathname();
+  if (pathname.startsWith("/probar-demo") || pathname.startsWith("/p/")) return null;
   return (
     <div className="mx-auto max-w-[1240px] px-4 pb-16 pt-24 text-center sm:px-6">
       <h2 className="mx-auto max-w-2xl text-3xl font-medium tracking-tight sm:text-5xl">¿Listo para transformar la atención de tus pacientes con Turnia?</h2>

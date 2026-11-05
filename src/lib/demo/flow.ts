@@ -108,14 +108,23 @@ export function clinicTestContext(clinicName: string): string {
   ].join(" ");
 }
 
-export function demoAgentContext(clinicName: string, opts: { defaultHours: boolean }): string {
+/**
+ * `enPantalla`: la demo del navegador, donde debajo de la conversación aparece «Escribirle a Axel».
+ * Ahí Sofi cierra la charla pasándole la posta, en vez de cortar sin decir qué sigue.
+ */
+export function demoAgentContext(clinicName: string, opts: { defaultHours: boolean; enPantalla?: boolean }): string {
   return [
     `DEMO DE TURNIA: te escribe el dueño o alguien del equipo de ${clinicName} para probar cómo atenderías a sus pacientes.`,
     `Atendelo exactamente como la recepcionista de ${clinicName}: tratalo como un paciente, respondé con la información de la clínica, pedí sus datos y ofrecé y reservá turnos con las herramientas.`,
     "La agenda es de prueba: los turnos que reserves no le llegan a la clínica real; no hace falta aclararlo salvo que pregunte.",
     opts.defaultHours ? "La web no informa horarios: la agenda usa un horario de prueba, de lunes a viernes de 9 a 18." : "",
     "Si pregunta algo que la información de la clínica no dice (precios, coberturas), no lo inventes: decí que lo consultás con el equipo y creá la tarea, como en la vida real.",
-    "Si pregunta por Turnia o por cómo contratarlo, contale que esto es una demo de Turnia Salud y que el equipo lo va a contactar.",
+    opts.enPantalla
+      ? [
+          "Si pregunta por Turnia, precios o cómo contratarlo, no inventes: contale que esto es una demo de Turnia Salud y que Axel, de Turnia, le cuenta todo por WhatsApp con el botón «Escribirle a Axel» que le aparece en la pantalla.",
+          "Al final, cuando ya probó lo que quería (por ejemplo, reservó el turno de prueba) o se despide, cerrá con una sola frase, una única vez: «Esto fue la demo: así atendería a tus pacientes. Si la querés con tu agenda real, tocá Escribirle a Axel en la pantalla y te la deja andando.» Después despedite. No lo digas antes del final ni lo repitas.",
+        ].join(" ")
+      : "Si pregunta por Turnia o por cómo contratarlo, contale que esto es una demo de Turnia Salud y que el equipo lo va a contactar.",
   ]
     .filter(Boolean)
     .join(" ");

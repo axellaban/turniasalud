@@ -83,6 +83,8 @@ export function ConversacionDemo({
   extraFicha,
   extraBoton,
   cta,
+  modoInicial = "voz",
+  cierre,
 }: {
   clinic: DemoClinic;
   titulo: React.ReactNode;
@@ -99,12 +101,19 @@ export function ConversacionDemo({
   extraBoton?: string;
   /** El llamado al costado del título y al pie de la ficha en el celular. */
   cta?: React.ReactNode;
+  /** Con qué arranca. La demo de los consultorios arranca en chat: 6 de cada 8 pasaban al chat enseguida. */
+  modoInicial?: DemoMode;
+  /** Lo que aparece en la conversación cuando termina una charla en la que el agente llegó a contestar: el paso siguiente. */
+  cierre?: React.ReactNode;
 }) {
-  // Arranca en voz: es lo que más impresiona. El chat queda a un toque.
-  const [mode, setMode] = useState<DemoMode>("voz");
+  const [mode, setMode] = useState<DemoMode>(modoInicial);
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** Un aviso que no es un error (por ejemplo, que seguimos por chat porque no hay micrófono). */
+  const [aviso, setAviso] = useState<string | null>(null);
+  /** Terminó una charla en la que el agente contestó: se muestra el cierre. */
+  const [cerrada, setCerrada] = useState(false);
   const [loading, setLoading] = useState(false);
   const [remaining, setRemaining] = useState(initialRemaining);
   const counter = useRef(0);
@@ -170,6 +179,7 @@ export function ConversacionDemo({
       // Si se corta antes de que el agente diga algo y no la cortó la persona, se muestra
       // el motivo que da ElevenLabs: sin esto solo se veía «Conversación terminada».
       const sinRespuesta = charla.current?.agent === 0 && details.reason !== "user";
+      const contesto = (charla.current?.agent ?? 0) > 0;
       const motivo =
         details.reason === "user"
           ? ""
@@ -178,6 +188,10 @@ export function ConversacionDemo({
               .join(" · ")
               .slice(0, 160);
       terminarCharla(details.reason === "user" ? "disconnect" : `disconnect_${details.reason}`, false, motivo);
+      if (contesto && cierre) {
+        setCerrada(true);
+        track("demo_closing_viewed", { mode, end_reason: details.reason });
+      }
       if (sinRespuesta) {
         setError(`No se pudo conectar con ${clinic.agentName}. Probá de nuevo en unos segundos.`);
         return;
@@ -206,14 +220,16 @@ export function ConversacionDemo({
     push("user", text);
   }, [connected, conversation, push]);
 
-  // Baja hasta el último mensaje dentro de la conversación, sin mover la página.
+  // Baja hasta el último mensaje (o hasta el cierre) dentro de la conversación, sin mover la página.
   useEffect(() => {
     const list = listRef.current;
     if (list && lines.length > 0) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
-  }, [lines]);
+  }, [lines, cerrada]);
 
   async function start(first?: string) {
     setError(null);
+    setAviso(null);
+    setCerrada(false);
     setLines([]);
     setLoading(true);
     try {
@@ -234,19 +250,17 @@ export function ConversacionDemo({
     } catch (e) {
       pendiente.current = null;
       const microfono = e instanceof DOMException ? e.name : "";
+      const sinMicrofono = microfono === "NotAllowedError" || microfono === "NotFoundError" || microfono === "NotReadableError";
       track("demo_conversation_failed", {
         mode,
-        error_kind: microfono === "NotAllowedError" ? "mic_denied" : microfono === "NotFoundError" || microfono === "NotReadableError" ? "mic_missing" : "start_error",
+        error_kind: microfono === "NotAllowedError" ? "mic_denied" : sinMicrofono ? "mic_missing" : "start_error",
       });
-      setError(
-        microfono === "NotAllowedError"
-          ? "Necesitamos permiso para usar el micrófono. Si preferís, probala por chat."
-          : microfono === "NotFoundError" || microfono === "NotReadableError"
-            ? "No encontramos un micrófono disponible. Conectá uno o probala por chat."
-            : e instanceof Error
-              ? e.message
-              : "No se pudo iniciar la conversación.",
-      );
+      if (sinMicrofono) {
+        // Sin micrófono no se frena: pasa al chat, que es lo que hacía casi todos a mano.
+        track("demo_mode_switched", { to: "chat", auto: true });
+        setMode("chat");
+        setAviso("Sin micrófono, seguimos por chat: escribile acá abajo.");
+      } else setError(e instanceof Error ? e.message : "No se pudo iniciar la conversación.");
       // Lo que escribió no se pierde: queda en el campo para reintentar.
       if (first) setDraft(first);
     } finally {
@@ -443,6 +457,7 @@ export function ConversacionDemo({
                   className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-3 pt-4 text-[15px] [mask-image:linear-gradient(to_bottom,transparent,#000_24px)] sm:px-4"
                 >
                   {burbujas}
+                  {cerrada && cierre}
                 </div>
               )}
             </div>
@@ -475,12 +490,18 @@ export function ConversacionDemo({
               <div className={lines.length > 0 ? "mt-auto space-y-2" : undefined} aria-live="polite">
                 {burbujas}
               </div>
+              {cerrada && cierre}
             </div>
           )}
 
           {error && (
             <p role="alert" className="mx-3 mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 sm:mx-4">
               {error}
+            </p>
+          )}
+          {aviso && !error && (
+            <p role="status" className="mx-3 mt-3 rounded-lg bg-brand-50 p-3 text-sm text-brand-900 sm:mx-4">
+              {aviso}
             </p>
           )}
 
@@ -538,7 +559,12 @@ export function ConversacionDemo({
                   type="button"
                   onClick={() => start()}
                   disabled={connecting}
-                  className="inline-flex h-11 items-center gap-2 rounded-full bg-brand-600 px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgb(33_87_225/0.3)] hover:bg-brand-700 disabled:opacity-60"
+                  className={
+                    cerrada
+                      ? // Después del cierre, el paso principal es escribirle a Axel: volver a llamar queda en segundo plano.
+                        "inline-flex h-11 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-brand-800 ring-1 ring-brand-950/10 hover:bg-brand-50 disabled:opacity-60"
+                      : "inline-flex h-11 items-center gap-2 rounded-full bg-brand-600 px-6 text-sm font-semibold text-white shadow-[0_10px_24px_rgb(33_87_225/0.3)] hover:bg-brand-700 disabled:opacity-60"
+                  }
                 >
                   <Icono nombre="telefono" className="h-4 w-4" /> {connecting ? "Conectando…" : enCharla ? "Llamar de nuevo" : `Llamar a ${agent}`}
                 </button>

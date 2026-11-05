@@ -290,7 +290,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
 
   it("su link de demo registra que la abrió y que la probó, con su nombre como profesional", async () => {
     const pub = await outreach.publicOutreach("lopez-j7k");
-    expect(pub).toEqual({ code: "lopez-j7k", name: "María Elvira López Sánchez", greeting: "María", title: "Dra.", business_name: "Consultorio Odontológico López", zone: "Mar del Plata", address: "Saavedra 3527", specialty: "Ortodoncia", website: null, priority: 2, phone_kind: "movil", status: "respondio" });
+    expect(pub).toEqual({ code: "lopez-j7k", name: "María Elvira López Sánchez", greeting: "María", title: "Dra.", business_name: "Consultorio Odontológico López", zone: "Mar del Plata", address: "Saavedra 3527", specialty: "Ortodoncia", website: null, priority: 2, phone_kind: "movil", status: "respondio", converso: false });
     expect(await outreach.publicOutreach("NO VALE")).toBeNull();
 
     const abrir = (await import("@/app/api/p/[code]/route")).POST;
@@ -314,6 +314,23 @@ describe.runIf(base)("prospección a odontólogos", () => {
     // Sin tratamientos reconocidos, el ejemplo es la limpieza de siempre.
     const pirera = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "pirera-g6h" }), searchParams: Promise.resolve({ vista: "panel" }) }));
     expect(pirera).toContain("Soy Sofi, del Consultorio Odontológico Pirera");
+    // Antes de probarla, lo principal es probarla; escribirle a Axel queda abajo, con el mensaje escrito.
+    expect(html).toContain("Probar la demo");
+    expect(html).toContain("¿Preferís que te la muestre yo?");
+    expect(html).toContain(`wa.me/5491130235483?text=${encodeURIComponent("Hola Axel! Soy María. Prefiero que me muestres a Sofi funcionando en Consultorio Odontológico López.")}`);
+    expect(html).toContain('data-cta="talk_axel"');
+
+    // Tocó «Escribirle a Axel»: queda en su historia y su seguimiento pasa a hoy, una vez cada 6 horas.
+    await sql`update sales_outreach set status = 'contactado', next_action_on = '2030-01-01' where id = ${lopez}`;
+    const escribir = (donde: string) => abrir(new Request(`https://turnia.example/api/p/lopez-j7k?accion=whatsapp&donde=${donde}`, { method: "POST" }), ctx);
+    expect((await escribir("cierre")).status).toBe(204);
+    await escribir("pagina");
+    await escribir("toString");
+    const pidio = (await outreach.outreachEvents(lopez)).filter((e) => e.kind === "pidio_hablar");
+    expect(pidio).toEqual([expect.objectContaining({ channel: "whatsapp", detail: "al terminar la demo" })]);
+    [row] = await sql`select opens, next_action_on::text as next from sales_outreach where id = ${lopez}`;
+    expect(row).toEqual({ opens: 2, next: outreach.todayKey() });
+    await sql`update sales_outreach set status = 'respondio' where id = ${lopez}`;
 
     // Empieza la demo desde su link (con el profesional): queda en su ficha y el seguimiento pasa a hoy.
     await sql`update messaging_settings set active_channel = 'pausado' where id`;
@@ -347,6 +364,29 @@ describe.runIf(base)("prospección a odontólogos", () => {
     [row] = await sql`select demo_at is not null as demo, lead_id, next_action_on from sales_outreach where id = ${lopez}`;
     expect(row).toEqual({ demo: true, lead_id: session.lead_id, next_action_on: outreach.todayKey() });
     expect((await outreach.outreachEvents(lopez))[0].kind).toBe("demo");
+
+    // La demo sabe de quién es: el cierre le escribe a Axel con su nombre.
+    const [web] = await sql<Array<{ id: string; call_token: string; outreach_code: string }>>`
+      select id, call_token, outreach_code from demo_sessions order by created_at desc limit 1`;
+    expect(web.outreach_code).toBe("lopez-j7k");
+    const [clinic] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Consultorio Odontológico López', true) returning id`;
+    await sql`update demo_sessions set status = 'eligiendo', clinic_id = ${clinic.id} where id = ${web.id}`;
+    const { webDemoState } = await import("@/lib/demo/web");
+    expect(await webDemoState(web.call_token)).toMatchObject({ status: "lista", persona: { codigo: "lopez-j7k", saludo: "María" } });
+    // En el navegador, Sofi cierra pasándole la posta a Axel; por WhatsApp, no hay botón que nombrar.
+    const { demoDynamicVariables } = await import("@/lib/demo/session");
+    const full = (await sql`select * from clinics where id = ${clinic.id}`)[0] as unknown as import("@/lib/types").Clinic;
+    expect(JSON.stringify(await demoDynamicVariables(full, "web:abc"))).toContain("Escribirle a Axel");
+    expect(JSON.stringify(await demoDynamicVariables(full, "5492230000000@c.us"))).not.toContain("Escribirle a Axel");
+
+    // Ya habló con Sofi: su página pasa a «¿dejamos a Sofi atendiendo…?», con escribirle a Axel primero.
+    await sql`insert into conversations (clinic_id, channel) values (${clinic.id}, 'web')`;
+    expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(true);
+    const despues = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
+    expect(despues).toContain("María, ¿dejamos a Sofi atendiendo");
+    expect(despues).toContain("Probar de nuevo");
+    expect(despues).toContain(encodeURIComponent("Hola Axel! Soy María. Probé a Sofi con Consultorio Odontológico López y quiero verla funcionando en mi consultorio."));
+    expect(despues.indexOf("talk_axel")).toBeLessThan(despues.indexOf("Probar de nuevo"));
   }, 30000);
 
   it("muestra el panel: cola del día, ficha, importar y mensajes", async () => {

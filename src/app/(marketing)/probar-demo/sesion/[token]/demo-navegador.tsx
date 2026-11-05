@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
+import { BotonAxel, CierreDemo } from "@/components/demo/axel";
 import { ConversacionDemo, type DemoCredential } from "@/components/demo/conversacion-demo";
+import { mensajeParaAxel } from "@/lib/sales/contacto-axel";
 import { track } from "@/lib/analytics";
 import { cta } from "@/lib/analytics-shared";
 import { startDemoEngagement } from "@/lib/interaction-tracking";
@@ -302,17 +304,31 @@ type Clinic = Extract<WebDemoState, { status: "lista" }>["clinic"];
 function Lista({ token, state }: { token: string; state: Extract<WebDemoState, { status: "lista" }> }) {
   const conWeb = Boolean(state.website);
   const clinic: Clinic = state.clinic;
+  const persona = state.persona;
   return (
     <ConversacionDemo
       clinic={clinic}
       titulo={<>{clinic.agentName} ya atiende como la recepción de <span className="text-brand-600">{clinic.name}</span></>}
-      bajada="Hablale o escribile como si fueras un paciente. Los turnos que reserves son de prueba y no llegan a tu agenda real."
+      bajada="Escribile o hablale como si fueras un paciente. Los turnos que reserves son de prueba y no llegan a tu agenda real."
       tituloFicha={conWeb ? "Lo que leímos de tu web" : "La ficha de tu consultorio"}
       notaFicha={conWeb
         ? "Lo que tu web no dice (horarios, coberturas) es de prueba: en tu cuenta lo cargás vos."
         : "Los horarios y las coberturas son de prueba: en tu cuenta los cargás vos."}
       remaining={state.remaining}
-      cta={<>¿Lo querés con tu agenda real?{" "}<Link href="/pedi-una-demo" {...cta("guided_demo", "demo_web", "pedi_una_demo")} className="font-medium text-brand-600 hover:underline">Pedí una demo guiada</Link></>}
+      // Arranca en chat: en las demos de los consultorios, 6 de cada 8 pasaban al chat en los primeros segundos.
+      modoInicial="chat"
+      cta={
+        <>
+          ¿La querés con tu agenda real?{" "}
+          <BotonAxel
+            variante="enlace"
+            donde="demo"
+            codigo={persona?.codigo}
+            texto={mensajeParaAxel({ saludo: persona?.saludo, consultorio: clinic.name, probo: true })}
+          />
+        </>
+      }
+      cierre={<CierreDemo consultorio={clinic.name} saludo={persona?.saludo} codigo={persona?.codigo} />}
       pedirCredencial={async (mode: WebDemoMode) => {
         const res = await fetch(`/api/demo/web/${token}`, {
           method: "POST",
