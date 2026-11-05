@@ -116,12 +116,13 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await actions.saveAppointmentType(form({ clinic_id: a, id: type.id, name: "Control editado", specialty: "Odontología", duration_min: "45", price: "45.000", recall_months: "6", instructions: "Traer DNI", is_first_visit: "on" }));
     expect((await sql`select * from appointment_types where id = ${type.id}`)[0]).toMatchObject({ name: "Control editado", duration_min: 45, price: "45000.00", instructions: "Traer DNI", recall_months: 6, is_first_visit: true });
   });
-  it("conservar una demo evita la limpieza de siete días y mantiene el modo de prueba", async () => {
-    await sql`update clinics set created_at = now() - interval '8 days' where id in (${a}, ${b})`;
+  it("las demos no se borran solas, ni las conservadas ni las temporales viejas", async () => {
+    await sql`update clinics set created_at = now() - interval '30 days' where id in (${a}, ${b})`;
     await clinics.retainClinic(form({ clinic_id: a }));
     await session.createDemoClinic(PROFILE, "https://new.example/");
     expect((await clinic(a)).is_demo).toBe(true);
-    expect(await clinic(b)).toBeUndefined();
+    // Temporal y de hace un mes: sigue, con sus conversaciones (se borra solo a mano).
+    expect((await clinic(b)).is_demo).toBe(true);
     expect((await clinic(MAIN)).id).toBe(MAIN);
   });
   it("archiva el texto original y la ficha al crear una demo desde la web", async () => {

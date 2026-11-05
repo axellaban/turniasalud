@@ -61,7 +61,7 @@ export default async function SettingsPage() {
     admin ? listStaffPhones(clinic.id) : [],
   ]);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
-  const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: se borra sola a los 7 días si no la conservás.";
+  const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
 
   return (
     <>
