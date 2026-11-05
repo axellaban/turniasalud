@@ -40,13 +40,14 @@ export async function POST(request: Request) {
   if (body.via === "navegador" || manual) {
     const ready = isConfigured();
     if (!ready.database || !ready.elevenlabs) return NextResponse.json({ error: "La demo en el navegador no está disponible por el momento." }, { status: 409 });
-    const started = await startWebDemo({ website, manual, email, ip, analyticsId: cleanAnalyticsId(body.ph) });
+    // Llegó desde el link de su demo (/p/<código>): la demo sabe de quién es.
+    const ref = typeof body.ref === "string" && /^[a-z0-9][a-z0-9-]{2,39}$/.test(body.ref) ? body.ref : null;
+    const started = await startWebDemo({ website, manual, email, ip, analyticsId: cleanAnalyticsId(body.ph), outreachCode: ref });
     if (!started) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
     after(() => analyzeDemo(started.sessionId));
     after(() => syncLeadsToSheet([started.leadId]));
     // Llegó desde el link de su demo (/p/<código>): queda en su ficha de la prospección. Después,
     // la planilla de Google (con el pedido nuevo y, si vino de su link, «Probó la demo»).
-    const ref = typeof body.ref === "string" ? body.ref : null;
     after(async () => {
       if (ref) await recordDemo(ref, started.leadId);
       await syncTurniaSheet();

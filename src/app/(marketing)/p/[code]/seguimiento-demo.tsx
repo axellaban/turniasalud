@@ -6,7 +6,7 @@ import { prospectDistinctId } from "@/lib/analytics-shared";
 import { isInternal, markInternal, startDemoEngagement } from "@/lib/interaction-tracking";
 
 /**
- * PostHog en la demo de cada odontólogo: este navegador pasa a ser esa persona de la prospección
+ * Avisa que abrió su demo y arma PostHog en la demo de cada odontólogo: este navegador pasa a ser esa persona de la prospección
  * (la misma a la que el panel le suma el saludo, la demo enviada y los seguimientos), registra la
  * visita y el tiempo activo. Cuando la mira Axel desde el panel (?vista=panel) o un dispositivo del
  * equipo, solo queda marcado como interno y no se identifica.
@@ -17,6 +17,15 @@ export function SeguimientoDemo({ code, facts, contar }: { code: string; facts: 
     if (started.current) return;
     started.current = true;
     if (!contar) markInternal("vista_panel");
+    // Abrió su demo: queda en su ficha (salvo cuando la mira Axel desde el panel). Va acá y no en el
+    // botón para que cuente también si la demo está pausada o si ya la probó.
+    else {
+      try {
+        navigator.sendBeacon(`/api/p/${code}`);
+      } catch {
+        void fetch(`/api/p/${code}`, { method: "POST", keepalive: true }).catch(() => {});
+      }
+    }
     // Atribución: lo que haga después este navegador (probar la demo, pedir una guiada) queda con su código.
     registerSuperProperties({ outreach_code: code });
     registerSuperPropertiesOnce({ first_demo_kind: "personal", first_outreach_code: code });

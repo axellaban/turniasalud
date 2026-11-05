@@ -20,6 +20,7 @@ const EVENT_LABEL: Record<string, string> = {
   nota: "Nota",
   abrio: "Abrió su demo",
   demo: "Probó la demo",
+  pidio_hablar: "Tocó «Escribirle a Axel»",
 };
 
 /** «Mensaje · WhatsApp · seguimiento», «Estado · Respondió», «Nota · …». */

@@ -54,6 +54,8 @@ export type DemoSession = {
   reused_profile?: boolean;
   /** La persona de PostHog que la empezó en el navegador (src/lib/analytics-server.ts). */
   analytics_id: string | null;
+  /** La persona de la prospección, si la empezó desde el link de su demo (/p/<código>). */
+  outreach_code?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -392,7 +394,9 @@ async function sendCallLink(session: DemoSession, agent: string, clinicName: str
 
 /** Variables del agente para la clínica de la demo (llamadas por teléfono o por la web). */
 export async function demoDynamicVariables(clinic: Clinic, phone: string): Promise<Record<string, string>> {
-  const context = clinic.is_demo ? demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text }) : clinicTestContext(clinic.name);
+  const context = clinic.is_demo
+    ? demoAgentContext(clinic.name, { defaultHours: !clinic.hours_text, enPantalla: isWebChat(phone) })
+    : clinicTestContext(clinic.name);
   return buildDynamicVariables(clinic, phone, { context });
 }
 

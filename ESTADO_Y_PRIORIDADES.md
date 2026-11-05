@@ -2,6 +2,13 @@
 
 Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Después de la demo: «Escribirle a Axel» — 05/11/2026
+
+- **Pedido del usuario:** que quien termina la llamada o el chat con Sofi en su demo tenga a dónde ir para agendar una charla, con conversación por WhatsApp (sin Calendly ni Google Calendar).
+- **Lo que mostraban los datos (PostHog, 30/10 al 05/11):** 13 abrieron su demo, 8 hablaron con Sofi y ninguno pidió una llamada desde la demo. Al terminar solo aparecía «Conversación terminada.»; 5 de 8 volvían atrás a `/p/<código>`, que tampoco tenía un botón. 6 de 8 pasaban de voz a chat enseguida; la mitad prueba de noche.
+- **Hecho:** nota de cierre con «Escribirle a Axel» (WhatsApp +54 9 11 3023-5483 con el mensaje escrito), Sofi que entrega la posta al final de la demo del navegador, `/p/<código>` distinto cuando ya habló con Sofi, demo que arranca en chat y pasa sola al chat sin micrófono, header y pie sin caminos que compitan en esas páginas, toque registrado en la ficha (seguimiento a hoy) y eventos `demo_closing_viewed` y `talk_axel`. La herramienta de audios usa la definición de Chapa Labs para «Hablaron con Sofi». Detalle en `PLAN_PROSPECCION.md` → «Después de la demo».
+- **Verificado:** tipos, lint, 481+ pruebas (nuevas: toque en «Escribirle a Axel», demo con dueño, contexto de Sofi, página antes y después de hablar con Sofi) y capturas en celular y computadora con datos locales. **Falta:** la prueba en producción con una conversación real (ver `PENDIENTES.md`).
+
 ## Panel sin repetidos y acceso total por WhatsApp para el equipo — 05/11/2026
 
 - **Pedido del usuario:** que el panel quede limpio, sin datos repetidos e intuitivo (la duda que lo disparó: «Coberturas aceptadas» en Reglas del consultorio y, además, la pestaña Coberturas). Y que el celular del Dr. Mininni tenga «superpoderes» con Sofi.

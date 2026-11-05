@@ -7,6 +7,8 @@ import { TAMANO } from "@/lib/og";
 import { demoPreviewVersion } from "@/lib/sales/demo-preview";
 import { publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
 import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
+import { BotonAxel } from "@/components/demo/axel";
+import { mensajeParaAxel } from "@/lib/sales/contacto-axel";
 import { EmpezarDemo } from "./empezar-demo";
 import { SeguimientoDemo } from "./seguimiento-demo";
 
@@ -16,6 +18,8 @@ export const dynamic = "force-dynamic";
 /** «Dra. Myriam Moreta» si sabemos cómo se presenta; si no, su nombre. */
 const profesional = (p: PublicOutreach) => (p.title ? `${p.title} ${p.name}` : p.name);
 const consultorio = (p: PublicOutreach) => p.business_name || `Consultorio de ${p.name}`;
+/** Qué pasa después de escribirle a Axel: saberlo baja la duda de escribir. */
+const PASOS = ["Me escribís por WhatsApp.", "Te muestro en 15 minutos cómo queda con tu agenda real.", "Si te sirve, Sofi empieza a atender a tus pacientes."];
 
 export async function generateMetadata({ params }: PageProps<"/p/[code]">): Promise<Metadata> {
   const p = await publicOutreach((await params).code);
@@ -55,45 +59,95 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
     prospect_status: p.status,
     with_web: Boolean(p.website),
     demo_ready: lista,
+    talked_to_sofi: p.converso,
   };
+
+  const saludo = p.greeting || p.name.split(" ")[0];
+  // «Escribirle a Axel» solo queda en su ficha cuando la abre la persona, no cuando la mira Axel.
+  const codigo = contar ? p.code : null;
 
   return (
     <section className="bg-gradient-to-b from-[#eef2ff] to-white">
       <SeguimientoDemo code={p.code} facts={facts} contar={contar} />
       <div className="mx-auto max-w-[760px] px-4 pb-24 pt-16 text-center sm:px-6 md:pt-24">
         <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Demo para {consultorio(p)}</p>
-        <h1 className="mx-auto mt-4 max-w-[680px] text-[34px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:text-[50px]">
-          Hola {p.greeting || p.name.split(" ")[0]}: así atendería Sofi <span className="text-brand-600">el WhatsApp de tu consultorio</span>
-        </h1>
-        <p className="mx-auto mt-5 max-w-[560px] text-[17px] leading-relaxed text-tinta">
-          Probala como si fueras un paciente: pedile un turno, preguntale algo o cancelá. Contesta al instante, también a la noche y el fin de semana, y
-          da los turnos con {withArticle(p.title, p.name)}
-          {services.length ? `, también para ${servicesPhrase(services)}` : ""}.
-        </p>
 
-        {lista ? (
-          <EmpezarDemo code={p.code} datos={datos} contar={contar} />
+        {p.converso ? (
+          // Ya habló con Sofi: lo que sigue es charlarlo con Axel. Probar de nuevo queda a mano, en segundo plano.
+          <>
+            <h1 className="mx-auto mt-4 max-w-[680px] text-[34px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:text-[50px]">
+              {saludo}, ¿dejamos a Sofi atendiendo <span className="text-brand-600">el WhatsApp de tu consultorio</span>?
+            </h1>
+            <p className="mx-auto mt-5 max-w-[540px] text-[17px] leading-relaxed text-tinta">
+              Ya la probaste. Escribime y en 15 minutos te muestro cómo queda con tus horarios, tus tratamientos y tu agenda real.
+            </p>
+            <div className="mx-auto mt-9 flex max-w-[460px] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
+              <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: consultorio(p), probo: true })} donde="pagina" codigo={codigo} />
+              {lista && (
+                <EmpezarDemo code={p.code} datos={datos} contar={contar} variante="secundario">
+                  Probar de nuevo
+                </EmpezarDemo>
+              )}
+            </div>
+            <ol className="mx-auto mt-12 grid max-w-[640px] gap-3 text-left sm:grid-cols-3">
+              {PASOS.map((paso, i) => (
+                <li key={paso} className="flex gap-3 rounded-2xl bg-white p-4 ring-1 ring-brand-950/5 sm:flex-col sm:gap-2">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-50 text-sm font-semibold text-brand-700">{i + 1}</span>
+                  <span className="text-[15px] leading-snug text-brand-950">{paso}</span>
+                </li>
+              ))}
+            </ol>
+          </>
         ) : (
-          <p className="mx-auto mt-9 max-w-[520px] rounded-2xl bg-white p-5 text-sm text-tinta ring-1 ring-brand-950/5">
-            La demo está pausada por unos minutos. Respondé el mensaje de WhatsApp y te la muestro yo.
-          </p>
+          <>
+            <h1 className="mx-auto mt-4 max-w-[680px] text-[34px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:text-[50px]">
+              Hola {saludo}: así atendería Sofi <span className="text-brand-600">el WhatsApp de tu consultorio</span>
+            </h1>
+            <p className="mx-auto mt-5 max-w-[560px] text-[17px] leading-relaxed text-tinta">
+              Probala como si fueras un paciente: pedile un turno, preguntale algo o cancelá. Contesta al instante, también a la noche y el fin de semana, y
+              da los turnos con {withArticle(p.title, p.name)}
+              {services.length ? `, también para ${servicesPhrase(services)}` : ""}.
+            </p>
+
+            {lista ? (
+              <>
+                <div className="mx-auto mt-9 max-w-[460px] sm:max-w-none">
+                  <EmpezarDemo code={p.code} datos={datos} contar={contar} />
+                </div>
+                <p className="mx-auto mt-4 max-w-[520px] text-sm text-tinta">
+                  Tarda unos segundos en prepararse. Es una prueba: los turnos que reserves no llegan a ningún paciente ni a tu agenda.
+                </p>
+              </>
+            ) : (
+              <div className="mx-auto mt-9 max-w-[520px] rounded-2xl bg-white p-5 ring-1 ring-brand-950/5">
+                <p className="text-[15px] text-tinta">La demo está pausada por unos minutos. Escribime y te la muestro yo.</p>
+                <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: consultorio(p), probo: false })} donde="pagina" codigo={codigo} className="mt-4 w-full sm:w-auto" />
+              </div>
+            )}
+
+            {/* Ejemplo ilustrativo, para saber qué esperar antes de tocar el botón. */}
+            <figure className="mx-auto mt-12 max-w-[460px] rounded-2xl bg-[#f5f7fc] p-4 text-left ring-1 ring-brand-950/5">
+              <figcaption className="mb-3 text-xs font-medium text-tinta">Ejemplo de una conversación</figcaption>
+              <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3.5 py-2 text-[15px] text-white">{ejemplo.paciente}</p>
+              <p className="mt-2 w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-white px-3.5 py-2 text-[15px] text-brand-950 ring-1 ring-brand-950/5">
+                {ejemplo.agente}
+              </p>
+            </figure>
+
+            {lista && (
+              <div className="mx-auto mt-10 max-w-[560px]">
+                <p className="text-sm leading-relaxed text-tinta">¿Preferís que te la muestre yo? Son 15 minutos, en persona o por videollamada.</p>
+                <BotonAxel
+                  variante="secundario"
+                  className="mt-3"
+                  texto={mensajeParaAxel({ saludo, consultorio: consultorio(p), probo: false })}
+                  donde="pagina"
+                  codigo={codigo}
+                />
+              </div>
+            )}
+          </>
         )}
-        <p className="mx-auto mt-4 max-w-[520px] text-sm text-tinta">
-          Tarda unos segundos en prepararse. Es una prueba: los turnos que reserves no llegan a ningún paciente ni a tu agenda.
-        </p>
-
-        {/* Ejemplo ilustrativo, para saber qué esperar antes de tocar el botón. */}
-        <figure className="mx-auto mt-12 max-w-[460px] rounded-2xl bg-[#f5f7fc] p-4 text-left ring-1 ring-brand-950/5">
-          <figcaption className="mb-3 text-xs font-medium text-tinta">Ejemplo de una conversación</figcaption>
-          <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3.5 py-2 text-[15px] text-white">{ejemplo.paciente}</p>
-          <p className="mt-2 w-fit max-w-[85%] rounded-2xl rounded-bl-md bg-white px-3.5 py-2 text-[15px] text-brand-950 ring-1 ring-brand-950/5">
-            {ejemplo.agente}
-          </p>
-        </figure>
-
-        <p className="mx-auto mt-10 max-w-[560px] text-sm leading-relaxed text-tinta">
-          ¿Preferís que te la muestre? Respondé el mensaje de WhatsApp y coordinamos 15 minutos, en persona o por videollamada.
-        </p>
       </div>
     </section>
   );
