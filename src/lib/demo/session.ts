@@ -28,7 +28,6 @@ import { ScrapeError, scrapeSite } from "./scraper";
 const ACTIVE_HOURS = 24;
 /** Si el análisis no terminó en este tiempo (la función se cortó), se avisa y se puede reintentar. */
 const STUCK_MINUTES = 4;
-const KEEP_DEMO_CLINICS_DAYS = 7;
 /** Horario de prueba cuando la web no dice cuándo atienden. */
 const DEFAULT_HOURS = [1, 2, 3, 4, 5].map((dia) => ({ dia, desde: "09:00", hasta: "18:00" }));
 
@@ -472,8 +471,8 @@ export async function createDemoClinic(profile: DemoProfile, website: string, se
       const [active] = await tx`select id from demo_sessions where id = ${session.id} and status = 'analizando' for update`;
       if (!active) return null;
     }
-    // Las demos viejas no se acumulan: se borran con todo lo que tengan.
-    await tx`delete from clinics where is_demo and retained_at is null and created_at < now() - make_interval(days => ${KEEP_DEMO_CLINICS_DAYS})`;
+    // Las demos no se borran solas: guardan las conversaciones con cada interesado (pedido del
+    // usuario, 05/11). Se borran a mano desde Clínicas o al borrar su pedido.
     const [clinic] = await tx<Clinic[]>`
       insert into clinics ${tx({
         name: profile.nombre,

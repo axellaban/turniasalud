@@ -2,6 +2,12 @@
 
 Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Las demos ya no se borran solas — 05/11/2026
+
+- **Pedido del usuario:** no perder las conversaciones de los interesados con Sofi. Hasta ahora, cada vez que se armaba una demo nueva se borraban las temporales de más de 7 días, con sus conversaciones.
+- **Hecho:** se sacó ese borrado automático (`createDemoClinic` en `src/lib/demo/session.ts`). Las demos, temporales o conservadas, se borran solo a mano: «Borrar ficha» o «Borrar demos temporales» en Clínicas, o al borrar su pedido en Pedidos de demo. Los textos de Clínicas y Configuración ya no dicen «se borra sola a los 7 días».
+- **Por qué apareció «Centro odontologico integral» como conservada:** es la demo que armó GP Odontología Integral (Dra. Pescatori) desde la demo pública. «Preparar el enlace» en «Probar a Sofi» conserva la demo seleccionada sin avisar.
+
 ## Después de la demo: «Escribirle a Axel» — 05/11/2026
 
 - **Pedido del usuario:** que quien termina la llamada o el chat con Sofi en su demo tenga a dónde ir para agendar una charla, con conversación por WhatsApp (sin Calendly ni Google Calendar).

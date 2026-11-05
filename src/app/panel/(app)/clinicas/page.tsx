@@ -34,7 +34,7 @@ export default async function ClinicsPage({ searchParams }: PageProps<"/panel/cl
   const filterHref = (key: string) => `/panel/clinicas?${new URLSearchParams({ ...(q ? { q } : {}), ...(key ? { estado: key } : {}) })}`;
 
   return <>
-    <PageHeader title="Clínicas" description="Elegí una ficha para configurarla y probarla. Las demos temporales se borran solas a los 7 días." actions={<DeleteTemporaryDemosButton count={temporary} />} />
+    <PageHeader title="Clínicas" description="Elegí una ficha para configurarla y probarla. Las demos no se borran solas: guardan las conversaciones con cada interesado." actions={<DeleteTemporaryDemosButton count={temporary} />} />
     <form className="mb-3 flex gap-2">
       {estado && <input type="hidden" name="estado" value={estado} />}
       <input aria-label="Buscar clínica" name="q" defaultValue={q} placeholder="Buscar por nombre, especialidad o web" className={inputClass} />
