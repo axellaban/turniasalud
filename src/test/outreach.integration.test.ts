@@ -387,6 +387,10 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(despues).toContain("Probar de nuevo");
     expect(despues).toContain(encodeURIComponent("Hola Axel! Soy María. Probé a Sofi con Consultorio Odontológico López y quiero verla funcionando en mi consultorio."));
     expect(despues.indexOf("talk_axel")).toBeLessThan(despues.indexOf("Probar de nuevo"));
+    // Axel puede volver a ver la primera versión, la de antes de hablar con Sofi.
+    const inicial = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({ vista: "inicial" }) }));
+    expect(inicial).toContain("Hola María: así atendería Sofi");
+    expect(inicial).not.toContain("¿dejamos a Sofi atendiendo");
   }, 30000);
 
   it("muestra el panel: cola del día, ficha, importar y mensajes", async () => {

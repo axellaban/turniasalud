@@ -36,7 +36,10 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
   const p = await publicOutreach(code);
   if (!p) notFound();
   // Axel la abre desde el panel para ver lo que recibe el odontólogo: no cuenta como visita.
-  const contar = (await searchParams).vista !== "panel";
+  // Con `?vista=inicial`, además, ve la versión de antes de que hablara con Sofi.
+  const { vista } = await searchParams;
+  const contar = vista !== "panel" && vista !== "inicial";
+  const converso = p.converso && vista !== "inicial";
   const status = await demoStatus();
   const lista = status.base && isConfigured().elevenlabs;
   // Los tratamientos que declara (Doctoralia) arman los turnos de su demo y el ejemplo de abajo.
@@ -72,7 +75,7 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
       <div className="mx-auto max-w-[760px] px-4 pb-24 pt-16 text-center sm:px-6 md:pt-24">
         <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Demo para {consultorio(p)}</p>
 
-        {p.converso ? (
+        {converso ? (
           // Ya habló con Sofi: lo que sigue es charlarlo con Axel. Probar de nuevo queda a mano, en segundo plano.
           <>
             <h1 className="mx-auto mt-4 max-w-[680px] text-[34px] font-medium leading-[1.08] tracking-tight text-brand-950 sm:text-[50px]">
