@@ -101,7 +101,7 @@ export function ConversacionDemo({
   extraBoton?: string;
   /** El llamado al costado del título y al pie de la ficha en el celular. */
   cta?: React.ReactNode;
-  /** Con qué arranca. La demo de los consultorios arranca en chat: 6 de cada 8 pasaban al chat enseguida. */
+  /** Con qué arranca (voz por defecto). La demo de los consultorios elige según el dispositivo: voz en el celular, chat en la computadora. */
   modoInicial?: DemoMode;
   /** Lo que aparece en la conversación cuando termina una charla en la que el agente llegó a contestar: el paso siguiente. */
   cierre?: React.ReactNode;

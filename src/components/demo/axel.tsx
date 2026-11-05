@@ -84,7 +84,7 @@ export function CierreDemo({ consultorio, saludo, codigo }: { consultorio: strin
         {saludo ? `${saludo}, ¿la` : "¿La"} dejamos atendiendo en {consultorio}?
       </p>
       <p className="mt-1.5 text-[15px] leading-relaxed text-tinta">
-        Escribime y en 15 minutos te muestro cómo queda con tus horarios, tus tratamientos y tu agenda real.
+        Escribime y en 15 minutos te la muestro funcionando con tus horarios y tus tratamientos.
       </p>
       <BotonAxel texto={mensajeParaAxel({ saludo, consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-4 w-full" />
       <p className="mt-2 text-center text-xs text-tinta">Te contesto yo, por WhatsApp.</p>

@@ -122,7 +122,7 @@ export function demoAgentContext(clinicName: string, opts: { defaultHours: boole
     opts.enPantalla
       ? [
           "Si pregunta por Turnia, precios o cómo contratarlo, no inventes: contale que esto es una demo de Turnia Salud y que Axel, de Turnia, le cuenta todo por WhatsApp con el botón «Escribirle a Axel» que le aparece en la pantalla.",
-          "Al final, cuando ya probó lo que quería (por ejemplo, reservó el turno de prueba) o se despide, cerrá con una sola frase, una única vez: «Esto fue la demo: así atendería a tus pacientes. Si la querés con tu agenda real, tocá Escribirle a Axel en la pantalla y te la deja andando.» Después despedite. No lo digas antes del final ni lo repitas.",
+          "Al final, cuando ya probó lo que quería (por ejemplo, reservó el turno de prueba) o se despide, cerrá con una sola frase, una única vez: «Esto fue la demo: así atendería a tus pacientes. Si la querés en tu consultorio, tocá Escribirle a Axel en la pantalla.» Después despedite. No lo digas antes del final ni lo repitas.",
         ].join(" ")
       : "Si pregunta por Turnia o por cómo contratarlo, contale que esto es una demo de Turnia Salud y que el equipo lo va a contactar.",
   ]

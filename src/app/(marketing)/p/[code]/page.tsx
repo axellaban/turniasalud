@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 const profesional = (p: PublicOutreach) => (p.title ? `${p.title} ${p.name}` : p.name);
 const consultorio = (p: PublicOutreach) => p.business_name || `Consultorio de ${p.name}`;
 /** Qué pasa después de escribirle a Axel: saberlo baja la duda de escribir. */
-const PASOS = ["Me escribís por WhatsApp.", "Te muestro en 15 minutos cómo queda con tu agenda real.", "Si te sirve, Sofi empieza a atender a tus pacientes."];
+const PASOS = ["Me escribís por WhatsApp.", "En 15 minutos te la muestro con tus horarios y tus tratamientos.", "Si te sirve, la dejamos atendiendo a tus pacientes."];
 
 export async function generateMetadata({ params }: PageProps<"/p/[code]">): Promise<Metadata> {
   const p = await publicOutreach((await params).code);
@@ -79,7 +79,7 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
               {saludo}, ¿dejamos a Sofi atendiendo <span className="text-brand-600">el WhatsApp de tu consultorio</span>?
             </h1>
             <p className="mx-auto mt-5 max-w-[540px] text-[17px] leading-relaxed text-tinta">
-              Ya la probaste. Escribime y en 15 minutos te muestro cómo queda con tus horarios, tus tratamientos y tu agenda real.
+              Ya la probaste. Escribime y en 15 minutos te la muestro funcionando con tus horarios y tus tratamientos.
             </p>
             <div className="mx-auto mt-9 flex max-w-[460px] flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center">
               <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: consultorio(p), probo: true })} donde="pagina" codigo={codigo} />

@@ -171,7 +171,7 @@ Hasta el 05/11, al terminar la charla con Sofi solo aparecía «Conversación te
 - **Cierre de cada charla:** cuando termina una conversación en la que Sofi contestó (la corte la persona, Sofi o el tiempo), aparece en el chat una nota de Axel: «{Nombre}, ¿la dejamos atendiendo en {consultorio}?», con un solo botón, **Escribirle a Axel**. Abre el WhatsApp de Axel (+54 9 11 3023-5483, en `src/lib/sales/contacto-axel.ts`) con el mensaje escrito. Volver a llamar o escribir sigue a mano, en segundo plano.
 - **Sofi entrega la posta:** en la demo del navegador, al final (después del turno de prueba o al despedirse) dice una vez «Esto fue la demo… tocá Escribirle a Axel en la pantalla». En las demos por WhatsApp o Telegram sigue «el equipo lo va a contactar».
 - **Su página cambia cuando ya habló con Sofi:** `/p/<código>` pasa a «{Nombre}, ¿dejamos a Sofi atendiendo el WhatsApp de tu consultorio?», con Escribirle a Axel primero, Probar de nuevo al lado y los tres pasos de lo que sigue. Antes de probarla, lo principal sigue siendo «Probar la demo», con «¿Preferís que te la muestre yo?» y el botón de WhatsApp abajo. Si la demo está pausada, el botón reemplaza al aviso.
-- **Arranca en chat:** 6 de cada 8 pasaban de voz a chat en los primeros segundos. Sin micrófono (permiso denegado), pasa sola al chat en vez de mostrar un error.
+- **Voz en el celular, chat en la computadora:** en el celular 3 de 5 eligieron voz (y la única que respondió usó voz); desde la computadora los 3 pasaron al chat en segundos. Sin micrófono (permiso denegado), pasa sola al chat en vez de mostrar un error.
 - **Sin caminos que compitan:** en `/p/<código>` y en la demo ya armada, el header no muestra «Pedí una demo» ni «Probá con tu web», y la página no cierra con el bloque «¿Listo para transformar…?».
 - **En la ficha:** cada toque en «Escribirle a Axel» queda en su historia («Tocó «Escribirle a Axel» · WhatsApp · al terminar la demo») y su seguimiento pasa a hoy, aunque no haya mandado el mensaje. Uno cada 6 horas.
 - **«Hablaron con Sofi» = conversaron:** la herramienta de audios usa la misma definición que Chapa Labs (`conversoSql` en `outreach.ts`: una conversación en la clínica de su demo), no el toque en «Probar la demo».
@@ -191,9 +191,30 @@ Qué mirar: `demo_closing_viewed` → `cta_clicked` con `cta_id = talk_axel` (po
 
 ## Cuando responde
 
-1. **Reunión de 15 minutos**, en persona si es de Mar del Plata o Miramar (es la ventaja de ser de cerca) o por videollamada.
-2. **Antes de la reunión**, cargá su consultorio en una clínica del panel (profesionales, prestaciones, horarios, obras sociales): que se vea su agenda atendida por Sofi.
-3. **En la reunión:** que le escriba él a Sofi y vea aparecer el turno; después la cuenta con sus números (cuántos WhatsApp le entran fuera de horario y cuánto vale un paciente nuevo). Oferta vigente: demo personalizada y charla con Axel, sin cotizar antes (`COMERCIAL_AGUSTIN.md`).
+Lo que se promete en la demo («en 15 minutos te la muestro funcionando con tus horarios y tus tratamientos») es esto. **No** se promete su agenda real: si usa papel o un software que no integramos (Dentalink, Doctoralia), eso se resuelve en el setup.
+
+1. **Pedile los datos por WhatsApp y cerrá el horario** (copiar y pegar):
+
+   > ¡Genial, {nombre}! Para mostrarte a Sofi con tu consultorio, pasame:
+   > 1. Días y horarios de atención (si son varios profesionales, los de cada uno).
+   > 2. Los tratamientos que más te piden y cuánto dura cada turno (por ejemplo, consulta 30 min, limpieza 45).
+   > 3. Obras sociales y prepagas que tomás, o si es solo particular.
+   > 4. ¿Cómo llevás hoy la agenda? (papel, Google Calendar, un sistema…)
+   >
+   > ¿Te queda bien {día} a las {hora}? Son 15 minutos, por videollamada o paso por el consultorio.
+
+   Si no contesta todo, alcanza con los horarios: el resto sale de la plantilla odontológica.
+
+2. **Antes de la reunión (10 minutos, en el panel):**
+   - Clínicas → buscá la demo que armó desde su link (sale con el nombre de su consultorio) → «Abrir configuración» → «Conservar esta demo». Si no armó ninguna: «+ Crear una clínica manualmente», especialidad Odontología (carga sola las prestaciones de la plantilla).
+   - Configuración → Equipo y horarios (sus profesionales y horarios), Prestaciones (ajustá las duraciones que te pasó) y Coberturas.
+   - Probar a Sofi → «Preparar el enlace» de WhatsApp: tené el QR a mano.
+
+3. **En la reunión (15 minutos):**
+   - 2 min: cuántos WhatsApp le entran fuera de horario y quién los contesta hoy.
+   - 5 min: escanea el QR y le escribe a Sofi desde su celular, como un paciente («¿me das un turno para el jueves?», «¿atienden por OSDE?»). Ve que ofrece **sus** horarios y **sus** tratamientos, y el turno aparece en la Agenda del panel.
+   - 3 min: la cuenta con sus números (cuánto vale un paciente nuevo y cuántos se pierden de noche).
+   - 5 min: próximo paso. Programa Fundadores: queda operativa en 14 días (si no, se devuelve el setup); en el setup se conecta su WhatsApp y, si usa Google Calendar, su agenda. Oferta vigente: sin cotizar antes de la charla (`COMERCIAL_AGUSTIN.md`).
 
 | Te dice | Respondé |
 |---|---|
