@@ -282,7 +282,7 @@ const SYNC_MAX_CHATS = 5000;
  * Marca «Desde <línea>» a cada contacto de la prospección que tiene un chat en el WhatsApp emisor.
  * Lee la lista de chats de la sesión de WAHA (los @lid se resuelven con su teléfono) y no manda nada.
  */
-export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chats: number; matched: number; inserted: number }> {
+export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chats: number; matched: number; inserted: number; phones: number; kinds: Record<string, number> }> {
   const config = await requireChannel();
   if (!config.phone) throw new OutreachError("Agregá «phone» a WAHA_PROSPECCION para saber de qué línea son los chats.");
   const session = encodeURIComponent(config.session);
@@ -315,20 +315,40 @@ export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chat
     }
   }
 
+  // Los @lid que la lista general no trae se buscan de a uno (es una consulta local de WAHA).
+  const pending = [...new Set(ids.filter((id) => id.endsWith("@lid") && !lids.has(id)))];
+  for (let i = 0; i < pending.length; i += 10) {
+    await Promise.all(pending.slice(i, i + 10).map(async (lid) => {
+      try {
+        const res = await waha(config, `/api/${session}/lids/${encodeURIComponent(lid)}`, { signal: AbortSignal.timeout(5000) });
+        const { pn } = (await res.json()) as { pn?: string | null };
+        if (pn) lids.set(lid, pn);
+      } catch { /* sin número conocido */ }
+    }));
+  }
+
+  const kinds = { numero: 0, lid: 0, lidSinNumero: 0, grupos: 0, otros: 0 };
   const phones = [...new Set(ids.flatMap((id) => {
-    const phone = phoneFromChatId(id.endsWith("@lid") ? lids.get(id) : id);
+    const lid = id.endsWith("@lid");
+    if (lid) kinds.lid++;
+    else if (/@(c\.us|s\.whatsapp\.net)$/.test(id)) kinds.numero++;
+    else if (id.endsWith("@g.us")) kinds.grupos++;
+    else kinds.otros++;
+    if (lid && !lids.has(id)) kinds.lidSinNumero++;
+    const phone = phoneFromChatId(lid ? lids.get(id) : id);
     return phone ? [phone] : [];
   }))];
   const [result] = await sql<Array<{ matched: number; inserted: number }>>`
     with matched as (
       select o.id, o.phone from sales_outreach o
-      where o.phone = any(${phones}::text[]) and o.phone_kind is distinct from 'fijo'
+      where regexp_replace(o.phone, '[^0-9]', '', 'g') = any(${phones.map((phone) => phone.replace(/\D/g, ""))}::text[])
+        and o.phone_kind is distinct from 'fijo'
     ), saved as (
       insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
       select id, phone, ${config.phone} from matched on conflict do nothing returning outreach_id
     )
     select (select count(*)::int from matched) as matched, (select count(*)::int from saved) as inserted`;
-  return { sender: config.phone.slice(-4), chats: ids.length, ...result };
+  return { sender: config.phone.slice(-4), chats: ids.length, ...result, phones: phones.length, kinds };
 }
 
 function checkHours(now = new Date()) {
