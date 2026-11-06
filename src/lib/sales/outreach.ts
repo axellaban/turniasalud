@@ -442,6 +442,31 @@ export async function undoLastTouch(id: string): Promise<void> {
   prospectEvent("prospect_contact_undone", undone.row, { contact_kind: undone.greeting ? "saludo" : undone.kind, touch_number: undone.row.touches });
 }
 
+/**
+ * Desmarca el último audio de seguimiento (se tocó por error). Si ese audio sumó uno de los tres mensajes
+ * (no había salido otro ese día), también se deshace ese contacto, siempre que siga siendo el último.
+ */
+export async function undoAudio(id: string): Promise<void> {
+  const counted = await sql.begin(async (tx) => {
+    const [audio] = await tx<Array<{ id: string; detail: string; created_at: string }>>`
+      select id, detail, created_at from sales_outreach_events
+      where outreach_id = ${id} and kind = 'nota' and detail like 'Audio de seguimiento%' order by created_at desc limit 1 for update`;
+    if (!audio) throw new OutreachError("No hay un audio para desmarcar.");
+    await tx`delete from sales_outreach_events where id = ${audio.id}`;
+    await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', 'Se desmarcó un audio (error).')`;
+    if (audio.detail.includes("con el mensaje del día")) return false;
+    // El contacto del audio se registra justo antes que su nota: es el último contacto y salió en esos segundos.
+    const [last] = await tx<Array<{ created_at: string }>>`
+      select created_at from sales_outreach_events
+      where outreach_id = ${id} and kind in ('mensaje', 'llamada', 'visita') order by created_at desc limit 1`;
+    if (!last) return false;
+    const gap = new Date(audio.created_at).getTime() - new Date(last.created_at).getTime();
+    return gap >= 0 && gap <= 30_000;
+  });
+  if (counted) await undoLastTouch(id);
+  await sql`update sales_outreach set updated_at = now() where id = ${id}`;
+}
+
 export async function addOutreachNote(id: string, text: string): Promise<void> {
   const clean = text.trim();
   if (!clean) return;
