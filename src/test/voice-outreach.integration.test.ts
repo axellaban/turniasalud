@@ -26,6 +26,9 @@ async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   calls.push({ path: url.pathname, body: init.body ? JSON.parse(String(init.body)) : null });
   if (url.pathname === "/api/sessions/prospeccion") return Response.json(session);
   if (url.pathname === "/api/contacts/check-exists") return Response.json({ numberExists: exists, chatId: exists ? `${url.searchParams.get("phone")}@c.us` : null });
+  if (url.pathname === "/api/prospeccion/media/convert/voice") {
+    return Response.json({ data: Buffer.from("OggS...OpusHead").toString("base64") });
+  }
   return Response.json({ id: "msg" });
 }
 
@@ -152,6 +155,38 @@ describe.runIf(base)("audios de seguimiento", () => {
     vi.setSystemTime(new Date("2026-11-06T01:30:00Z")); // 22:30 en Buenos Aires
     expect(await actions.sendVoiceAction(noteId, await id("hablo-c3"), "", 12)).toMatchObject({ ok: false, message: expect.stringContaining("de 8 a 21") });
     vi.setSystemTime(new Date("2026-11-05T13:00:00Z"));
+  });
+
+  it("Chapa requiere autorización, convierte la grabación una vez y verifica la etapa del destinatario", async () => {
+    const { POST, OPTIONS } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const url = "https://turnia.example/api/prospeccion/audio";
+    const auth = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}` };
+    expect(OPTIONS(new Request(url, { headers: auth })).status).toBe(204);
+    expect((await POST(new Request(url, { method: "POST", headers: { ...auth, Origin: "https://otro.example" } }))).status).toBe(401);
+
+    const form = new FormData();
+    form.set("label", "Grabación WebM");
+    form.set("audio", new File(["WebM"], "nota.webm", { type: "audio/webm" }));
+    const upload = await POST(new Request(url, { method: "POST", headers: auth, body: form }));
+    expect(upload.status).toBe(201);
+    const { id: note } = await upload.json();
+    expect((await voice.voiceNoteAudio(note))?.mimetype).toBe("audio/ogg");
+    expect(calls.filter((call) => call.path.endsWith("/media/convert/voice"))).toHaveLength(1);
+
+    const send = (body: Record<string, unknown>) => POST(new Request(url, {
+      method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ note, ...body }),
+    }));
+    expect((await send({ action: "send", group: "no_abrio", person: await id("hablo-c3"), text: "" })).status).toBe(422);
+    expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
+
+    const count = await voice.voiceSentToday();
+    expect((await send({ action: "test" })).status).toBe(200);
+    expect(calls.find((call) => call.path === "/api/sendVoice")?.body).toMatchObject({
+      chatId: "5491130235483@c.us", convert: false, file: { mimetype: "audio/ogg; codecs=opus" },
+    });
+    expect(await voice.voiceSentToday()).toBe(count);
   });
 
   it("frena al llegar al tope del día", async () => {

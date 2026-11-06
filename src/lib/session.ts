@@ -20,7 +20,7 @@ function passwordFingerprint(): string {
 }
 
 function sign(payload: string): string {
-  const bound = payload.startsWith("panel.") ? `${payload}|${passwordFingerprint()}` : payload;
+  const bound = (payload.startsWith("panel.") || payload.startsWith("prospecting-voice.")) ? `${payload}|${passwordFingerprint()}` : payload;
   return createHmac("sha256", secret()).update(bound).digest("base64url");
 }
 
@@ -92,7 +92,22 @@ export const sessionCookieOptions = {
   maxAge: MAX_AGE_SECS,
 };
 
-const PANEL_SECTIONS = ["agenda", "conversaciones", "tareas", "pacientes", "campanas", "configuracion", "clinicas", "demos", "sistema", "comercial"];
+/** Acceso breve y exclusivo a los audios del panel comercial de Chapa. */
+export function createProspectingVoiceToken(now = Date.now()): string {
+  return signed(`prospecting-voice.${Math.floor(now / 1000) + 2 * 60 * 60}`);
+}
+
+export function verifyProspectingVoiceToken(token: string | null, now = Date.now()): boolean {
+  const match = /^prospecting-voice\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(token ?? "");
+  if (!match || Number(match[1]) * 1000 <= now) return false;
+  try {
+    return timingSafeEqual(Buffer.from(match[2]), Buffer.from(sign(`prospecting-voice.${match[1]}`)));
+  } catch {
+    return false;
+  }
+}
+
+const PANEL_SECTIONS = ["prospeccion", "agenda", "conversaciones", "tareas", "pacientes", "campanas", "configuracion", "clinicas", "demos", "sistema", "comercial"];
 
 /** Destino después de ingresar: una sección real del panel o la demo; si no, el inicio. */
 export function safeNext(value: unknown): string {
