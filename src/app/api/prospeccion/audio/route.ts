@@ -8,6 +8,7 @@ import {
   sendVoiceTest,
   sendVoiceToProspect,
   setVoiceSender,
+  syncVoiceSendersFromWaha,
   voiceCandidates,
   voiceChannelStatus,
   voiceNoteAudio,
@@ -34,6 +35,7 @@ const noteSchema = z.uuid();
 const secondsSchema = z.number().min(1).max(180).default(15);
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("source"), person: z.uuid(), sender: z.string().regex(/^\d{4}$/), confirmed: z.boolean() }),
+  z.object({ action: z.literal("detect") }),
   z.object({ action: z.literal("test"), note: noteSchema, seconds: secondsSchema }),
   z.object({ action: z.literal("send"), note: noteSchema, person: z.uuid(), group: groupSchema, text: z.string().max(500), seconds: secondsSchema }),
 ]);
@@ -100,6 +102,7 @@ export async function POST(request: Request) {
       await setVoiceSender(data.person, data.sender, data.confirmed);
       return json({ ok: true });
     }
+    if (data.action === "detect") return json(await syncVoiceSendersFromWaha());
     if (data.action === "test") {
       await sendVoiceTest(data.note, AXEL_WHATSAPP, "", data.seconds);
       return json({ ok: true });
