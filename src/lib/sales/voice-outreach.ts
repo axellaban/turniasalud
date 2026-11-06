@@ -327,7 +327,28 @@ export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chat
     }));
   }
 
-  const kinds = { numero: 0, lid: 0, lidSinNumero: 0, grupos: 0, otros: 0 };
+  // Si quedan @lid sin número, al revés: el @lid de cada contacto que puede recibir el audio
+  // (WAHA lo averigua por su teléfono) y si coincide con un chat, es ese contacto.
+  const unknown = new Set(ids.filter((id) => id.endsWith("@lid") && !lids.has(id)));
+  if (unknown.size) {
+    const people = await sql<Array<{ phone: string }>>`
+      select distinct o.phone from sales_outreach o where ${eligible()}
+        and not exists (select 1 from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone and w.sender_phone = ${config.phone})
+      limit 1500`;
+    const deadline = Date.now() + 60_000;
+    for (let i = 0; i < people.length && unknown.size && Date.now() < deadline; i += 10) {
+      await Promise.all(people.slice(i, i + 10).map(async ({ phone }) => {
+        const pn = `${phone.replace(/\D/g, "")}@c.us`;
+        try {
+          const res = await waha(config, `/api/${session}/lids/pn/${encodeURIComponent(pn)}`, { signal: AbortSignal.timeout(5000) });
+          const { lid } = (await res.json()) as { lid?: string | null };
+          if (lid && unknown.delete(lid)) lids.set(lid, pn);
+        } catch { /* sin @lid conocido */ }
+      }));
+    }
+  }
+
+  const kinds ={ numero: 0, lid: 0, lidSinNumero: 0, grupos: 0, otros: 0 };
   const phones = [...new Set(ids.flatMap((id) => {
     const lid = id.endsWith("@lid");
     if (lid) kinds.lid++;
