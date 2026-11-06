@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createClinicSessionToken, createSessionToken, isAdminSessionToken, passwordMatches, readSessionToken, verifySessionToken } from "./session";
+import { createClinicSessionToken, createProspectingVoiceToken, createSessionToken, isAdminSessionToken, passwordMatches, readSessionToken, safeNext, verifyProspectingVoiceToken, verifySessionToken } from "./session";
 
 beforeAll(() => {
   process.env.SESSION_SECRET = "test-secret";
@@ -48,6 +48,23 @@ describe("sesión del panel", () => {
     expect(verifySessionToken(clinic)).toBe(true);
     process.env.PANEL_PASSWORD = "clave-de-prueba";
     expect(verifySessionToken(admin)).toBe(true);
+  });
+
+  it("limita el acceso de Chapa a los audios y lo vence o revoca junto a la contraseña", () => {
+    const now = Date.now();
+    const voice = createProspectingVoiceToken(now);
+    expect(verifyProspectingVoiceToken(voice, now)).toBe(true);
+    expect(verifySessionToken(voice, now)).toBe(false);
+    expect(verifyProspectingVoiceToken(createSessionToken(now), now)).toBe(false);
+    expect(verifyProspectingVoiceToken(voice, now + 2 * 60 * 60_000)).toBe(false);
+    expect(verifyProspectingVoiceToken(voice + "x", now)).toBe(false);
+    try {
+      process.env.PANEL_PASSWORD = "clave-nueva";
+      expect(verifyProspectingVoiceToken(voice, now)).toBe(false);
+    } finally {
+      process.env.PANEL_PASSWORD = "clave-de-prueba";
+    }
+    expect(safeNext("/panel/prospeccion/audio/acceso")).toBe("/panel/prospeccion/audio/acceso");
   });
 
   it("compara la contraseña", () => {

@@ -1,7 +1,7 @@
 import "server-only";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
-import { sql } from "@/lib/db";
+import { sql, type Sql, type TransactionSql } from "@/lib/db";
 import { DEFAULT_TZ, zonedParts } from "@/lib/time";
 import { MAX_TOUCHES, outreachPhone, renderTemplate, type OutreachPerson } from "./outreach-messages";
 import { OutreachError, conversoSql, outreachDemoUrl, recordTouch } from "./outreach";
@@ -231,13 +231,29 @@ function checkHours(now = new Date()) {
   if (hour < HOURS.from || hour >= HOURS.to) throw new OutreachError(`Los audios salen de ${HOURS.from} a ${HOURS.to} (hora de Argentina).`);
 }
 
-export async function voiceSentToday(): Promise<number> {
+export async function voiceSentToday(db: Sql | TransactionSql = sql): Promise<number> {
   // «Hoy» según el reloj de la base, el mismo que fecha cada envío.
-  const [{ count }] = await sql<Array<{ count: number }>>`
+  const [{ count }] = await db<Array<{ count: number }>>`
     select count(*)::int as count from sales_voice_sends
     where outreach_id is not null and status <> 'error'
       and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
   return count;
+}
+
+/** Normaliza una grabación del navegador una sola vez, antes de guardarla. */
+export async function saveBrowserVoiceNote(label: string, audio: Buffer): Promise<string> {
+  if (!label.trim()) throw new OutreachError("Ponele un nombre al audio.");
+  if (!audio.length || audio.length > VOICE_MAX_BYTES) throw new OutreachError("Elegí un audio de hasta 3 MB.");
+  const isOpus = (bytes: Buffer) => bytes.toString("ascii", 0, 4) === "OggS" && bytes.subarray(0, 256).includes("OpusHead");
+  if (isOpus(audio)) return saveVoiceNote(label, "audio/ogg", audio);
+  const config = await requireChannel();
+  const result = await post(config, `/api/${encodeURIComponent(config.session)}/media/convert/voice`, { data: audio.toString("base64") });
+  const converted = (await result.json()) as { data?: string };
+  const ogg = Buffer.from(converted.data ?? "", "base64");
+  if (!isOpus(ogg)) {
+    throw new OutreachError("WAHA no pudo convertir la grabación a una nota de voz.");
+  }
+  return saveVoiceNote(label, "audio/ogg", ogg);
 }
 
 /** Prueba: el audio a un número propio. No toca el embudo ni el tope del día. */
@@ -266,24 +282,29 @@ export async function sendVoiceTest(noteId: string, rawPhone: string, text: stri
  * Un envío de la cola. Se reserva antes de mandar (el índice único impide el doble envío aunque
  * se toque dos veces), y al salir suma el mensaje y programa el seguimiento como cualquier WhatsApp.
  */
-export async function sendVoiceToProspect(noteId: string, outreachId: string, template: string, seconds: number): Promise<{ name: string }> {
+export async function sendVoiceToProspect(noteId: string, outreachId: string, template: string, seconds: number, group?: VoiceGroup): Promise<{ name: string }> {
   checkHours();
   const note = await voiceNoteAudio(noteId);
   if (!note) throw new OutreachError("No encontramos ese audio.");
   if (!/^[0-9a-f-]{36}$/i.test(outreachId)) throw new OutreachError("No encontramos ese contacto.");
   const [person] = await sql<Array<OutreachPerson & { id: string; ok: boolean }>>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
-      o.instagram, o.website, o.touches, o.greeted_at, (${eligible()}) as ok
+      o.instagram, o.website, o.touches, o.greeted_at, (${eligible()} and ${group ? groupFilter(group) : sql`true`}) as ok
     from sales_outreach o where o.id = ${outreachId}`;
   if (!person) throw new OutreachError("No encontramos ese contacto.");
-  if (!person.ok || !person.phone) throw new OutreachError(`A ${person.name} ya no le toca: respondió, pidió la baja o ya recibió los tres mensajes.`);
-  if ((await voiceSentToday()) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya salieron ${VOICE_DAILY_LIMIT} audios hoy. Seguí mañana: más que eso desde un número es lo que hace que WhatsApp lo bloquee.`);
+  if (!person.ok || !person.phone) throw new OutreachError(`A ${person.name} ya no le toca en este grupo o ya no puede recibir el seguimiento.`);
   const config = await requireChannel();
 
-  const claim = await sql<Array<{ id: string }>>`
-    insert into sales_voice_sends (voice_note_id, outreach_id, phone, status) values (${noteId}, ${outreachId}, ${person.phone}, 'enviando')
-    on conflict do nothing returning id`;
-  if (!claim.length) throw new OutreachError(`${person.name} ya recibió este audio.`);
+  const claim = await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-quota', 0))`;
+    if ((await voiceSentToday(tx)) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya se reservaron ${VOICE_DAILY_LIMIT} envíos de audio para hoy.`);
+    return tx<Array<{ id: string }>>`
+      insert into sales_voice_sends (voice_note_id, outreach_id, phone, status)
+      select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando'
+      where not exists (select 1 from sales_voice_sends where outreach_id = ${outreachId} and status = 'enviando')
+      on conflict do nothing returning id`;
+  });
+  if (!claim.length) throw new OutreachError(`${person.name} ya recibió este audio o tiene otro envío en curso.`);
   const sendId = claim[0].id;
   try {
     const chatId = await chatFor(config, person.phone.replace(/\D/g, ""));
