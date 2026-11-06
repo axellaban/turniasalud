@@ -30,10 +30,12 @@ async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   if (url.pathname === "/api/prospeccion/chats") {
     if (!chatsStore) return new Response("Enable NOWEB store", { status: 400 });
     return url.searchParams.get("offset") === "0"
-      ? Response.json([{ id: "5492236000001@c.us" }, { id: "99887766@lid" }, { id: "120363000000@g.us" }, { id: "5492236999999@c.us" }])
+      ? Response.json([{ id: "5492236000001@c.us" }, { id: "99887766@lid" }, { id: "55443322@lid" }, { id: "120363000000@g.us" }, { id: "5492236999999@c.us" }])
       : Response.json([]);
   }
   if (url.pathname === "/api/prospeccion/lids") return Response.json([{ lid: "99887766@lid", pn: "5492236000002@c.us" }]);
+  // Uno que la lista general no trae: se resuelve de a uno.
+  if (url.pathname === "/api/prospeccion/lids/55443322%40lid") return Response.json({ lid: "55443322@lid", pn: "5492236000777@c.us" });
   if (url.pathname === "/api/prospeccion/media/convert/voice") {
     return Response.json({ data: Buffer.from("OggS...OpusHead").toString("base64") });
   }
@@ -99,7 +101,10 @@ describe.runIf(base)("audios de seguimiento", () => {
   it("marca la línea emisora a quienes tienen chat en ese WhatsApp, también los @lid, sin mandar nada", async () => {
     expect(voice.phoneFromChatId("5492236000001@c.us")).toBe("+5492236000001");
     expect(voice.phoneFromChatId("120363000000@g.us")).toBeNull();
-    expect(await voice.syncVoiceSendersFromWaha()).toEqual({ sender: "0000", chats: 4, matched: 2, inserted: 2 });
+    expect(await voice.syncVoiceSendersFromWaha()).toEqual({
+      sender: "0000", chats: 5, matched: 2, inserted: 2, phones: 4,
+      kinds: { numero: 2, lid: 2, lidSinNumero: 0, grupos: 1, otros: 0 },
+    });
     expect(await voice.syncVoiceSendersFromWaha()).toMatchObject({ matched: 2, inserted: 0 });
     expect((await voice.voiceCandidates("no_abrio", null))[0].senders).toEqual(["5492235000000"]);
     expect((await voice.voiceCandidates("abrio", null)).find((c) => c.name === "Beto Dos")?.senders).toEqual(["5492235000000"]);
