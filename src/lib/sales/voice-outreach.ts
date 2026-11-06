@@ -2,7 +2,7 @@ import "server-only";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { sql } from "@/lib/db";
-import { DEFAULT_TZ, localDateKey, zonedParts } from "@/lib/time";
+import { DEFAULT_TZ, zonedParts } from "@/lib/time";
 import { MAX_TOUCHES, outreachPhone, renderTemplate, type OutreachPerson } from "./outreach-messages";
 import { OutreachError, conversoSql, outreachDemoUrl, recordTouch } from "./outreach";
 
@@ -232,10 +232,11 @@ function checkHours(now = new Date()) {
 }
 
 export async function voiceSentToday(): Promise<number> {
-  const today = localDateKey(new Date(), DEFAULT_TZ);
+  // «Hoy» según el reloj de la base, el mismo que fecha cada envío.
   const [{ count }] = await sql<Array<{ count: number }>>`
     select count(*)::int as count from sales_voice_sends
-    where outreach_id is not null and status <> 'error' and (created_at at time zone ${DEFAULT_TZ})::date = ${today}::date`;
+    where outreach_id is not null and status <> 'error'
+      and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
   return count;
 }
 

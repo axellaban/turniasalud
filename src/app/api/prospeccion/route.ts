@@ -23,6 +23,7 @@ import {
   type OutreachEdit,
 } from "@/lib/sales/outreach";
 import { json, sql } from "@/lib/db";
+import { DEFAULT_TZ } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,8 @@ type Action = {
   template?: string;
   step?: number;
   channel?: string;
+  /** «audio»: el mensaje salió como audio (se marca en «Audio enviado»). */
+  format?: string;
   outcome?: string;
   detail?: string;
   text?: string;
@@ -105,6 +108,16 @@ async function apply(id: string, a: Action): Promise<void> {
     case "sent": {
       const channel = SENT_CHANNEL[a.channel ?? "whatsapp"];
       if (!channel) throw new BadRequest("Canal desconocido.");
+      if (a.format === "audio") {
+        // Un audio de seguimiento mandado a mano. Cuenta como uno de los tres mensajes, salvo que ese
+        // día ya se haya registrado un mensaje (el texto y el audio salieron juntos: es uno solo).
+        const [today] = await sql`
+          select 1 from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and detail <> 'saludo'
+            and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
+        if (!today) await recordTouch(id, channel, { properties: { message_format: "audio" } });
+        await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'nota', ${channel}, 'Audio de seguimiento (a mano)')`;
+        return;
+      }
       // Un reintento (o un doble clic, o un agente que confirma dos veces) no suma otro mensaje: si ya
       // hay uno por el mismo canal en los últimos 2 minutos, se toma como el mismo envío.
       // El saludo y la demo pueden salir con segundos de diferencia: solo es reintento si es el mismo paso

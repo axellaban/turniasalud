@@ -262,7 +262,7 @@ describe.runIf(base)("planilla de Turnia en Google Sheets", () => {
     const { pedirDemo } = await import("@/app/(marketing)/pedi-una-demo/actions");
     expect(await pedirDemo(undefined, form({ nombre: "Pablo Ruiz", email: "pablo@odonto.com.ar", organizacion: "Odonto Ruiz", origen: "pedi-una-demo" }))).toEqual({ ok: true });
     await runAfter();
-    expect(tab("Prospección").find((r) => r[0] === "moreta-ab3")![21]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(tab("Prospección").find((r) => r[0] === "moreta-ab3")![sheet.OUTREACH_COLUMNS.indexOf("Abrió su demo")]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     expect(tab("Pedidos de demo").map((r) => r[2])).toEqual(["Nombre", "Laura Gómez", "Pablo Ruiz"]);
   });
 

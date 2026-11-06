@@ -207,7 +207,7 @@ function stamp(iso: string | null): string {
 
 export const OUTREACH_COLUMNS = [
   "Código", "Nombre", "Trato", "Saludo", "Consultorio", "Zona", "Dirección", "Especialidad", "Teléfono", "De quién es el teléfono",
-  "Instagram", "Email", "Web", "Prioridad", "Estado", "Mensajes", "Saludo enviado", "Primer contacto", "Último contacto", "Último canal", "Próximo paso",
+  "Instagram", "Email", "Web", "Prioridad", "Estado", "Mensajes", "Saludo enviado", "Primer contacto", "Último contacto", "Último canal", "Audio enviado", "Próximo paso",
   "Abrió su demo", "Veces que la abrió", "Probó la demo", "Clínica de la demo", "Conversó en la demo", "Cuenta creada", "Clínica de la cuenta", "Cuenta activa", "Cliente desde", "Operativa desde", "Interacciones del primer mes", "Link de su demo", "Señales", "Fuente", "Notas", "Actualizado",
 ];
 
@@ -215,6 +215,8 @@ type OutreachRow = Omit<Outreach, "shared" | "suppressed"> & {
   updated_at: string;
   demo_clinic_at: string | null;
   demo_chat_at: string | null;
+  /** El último audio de seguimiento (a mano desde Chapa Labs o con «Mandar audio»). */
+  audio_at: string | null;
   account_at: string | null;
   account_clinic: string | null;
   account_active_at: string | null;
@@ -235,6 +237,8 @@ export async function outreachSheetRows(id?: string): Promise<Cell[][]> {
       (select min(s.created_at) from demo_sessions s where o.lead_id is not null and s.lead_id = o.lead_id and s.clinic_id is not null) as demo_clinic_at,
       (select min(v.started_at) from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
         where o.lead_id is not null and s.lead_id = o.lead_id) as demo_chat_at,
+      (select max(e.created_at) from sales_outreach_events e
+        where e.outreach_id = o.id and e.kind = 'nota' and e.detail like 'Audio de seguimiento%') as audio_at,
       (select c.name from clinics c where c.id = o.clinic_id) as account_clinic,
       -- Activa: su clínica tuvo turnos en los últimos 30 días (lo mismo que «clínicas activas» en /api/metricas).
       (select max(a.created_at) from appointments a where o.clinic_id is not null and a.clinic_id = o.clinic_id
@@ -251,7 +255,7 @@ export async function outreachSheetRows(id?: string): Promise<Cell[][]> {
     p.code, p.name, p.title, p.greeting, p.business_name, p.zone, p.address, p.specialty,
     p.phone ? displayOutreachPhone(p.phone) : "", p.phone_kind ? PHONE_KIND_LABEL[p.phone_kind] : "",
     p.instagram ? `@${p.instagram}` : "", p.email ?? "", p.website ?? "", p.priority, STATUS_LABEL[p.status] ?? p.status, p.touches,
-    stamp(p.greeted_at), stamp(p.first_contact_at), stamp(p.last_contact_at), p.last_channel ? (CHANNEL_LABEL[p.last_channel] ?? p.last_channel) : "", p.next_action_on ?? "",
+    stamp(p.greeted_at), stamp(p.first_contact_at), stamp(p.last_contact_at), p.last_channel ? (CHANNEL_LABEL[p.last_channel] ?? p.last_channel) : "", stamp(p.audio_at), p.next_action_on ?? "",
     stamp(p.opened_at), p.opens, stamp(p.demo_at), stamp(p.demo_clinic_at), stamp(p.demo_chat_at), stamp(p.account_at), p.account_clinic ?? "", stamp(p.account_active_at), stamp(p.client_at), stamp(p.operational_at), p.clinic_id ? p.first_month ?? 0 : "", demoUrl(env.appUrl(), p.code), p.signals, p.source, p.notes, stamp(p.updated_at),
   ]);
 }
