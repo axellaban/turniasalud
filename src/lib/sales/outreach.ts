@@ -226,12 +226,19 @@ export async function getOutreach(id: string): Promise<Outreach | null> {
 }
 
 /**
- * Conversó con Sofi en su demo (no solo tocó «Probar la demo»): hubo una conversación en la clínica
- * de alguna demo de su pedido. Es «Conversó en la demo» de la planilla y «Hablaron con Sofi» en Chapa Labs.
+ * La persona escribió o habló en la conversación `v`. Sofi saluda primero: si abre la llamada o el chat
+ * y se va sin decir nada, la conversación queda guardada solo con el saludo, y eso no es conversar.
+ */
+export const userSpokeSql = () => sql`jsonb_path_exists(coalesce(v.transcript, '[]'::jsonb), '$[*] ? (@.role == "user" && @.message != null && @.message != "")')`;
+
+/**
+ * Conversó con Sofi en su demo (no solo tocó «Probar la demo»): en la clínica de alguna demo de su pedido
+ * hubo una conversación en la que escribió o habló. Es «Conversó en la demo» de la planilla y «Hablaron
+ * con Sofi» en Chapa Labs.
  */
 export const conversoSql = () => sql`exists (
   select 1 from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
-  where o.lead_id is not null and s.lead_id = o.lead_id)`;
+  where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()})`;
 
 /** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. `converso`: ya habló con Sofi. */
 export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website" | "priority" | "phone_kind" | "status"> & {

@@ -63,7 +63,7 @@ describe.runIf(base)("audios de seguimiento", () => {
     const [clinic] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo) values ('Demo Caro', true) returning id`;
     const [lead] = await sql<Array<{ id: string }>>`insert into leads (name, email, source) values ('Demo Caro', 'caro@example.com', 'demo-web') returning id`;
     await sql`insert into demo_sessions (phone, chat_id, website, lead_id, clinic_id, status) values ('web:c3', 'web:c3', '', ${lead.id}, ${clinic.id}, 'eligiendo')`;
-    await sql`insert into conversations (clinic_id, channel) values (${clinic.id}, 'web')`;
+    await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }, { role: "user", message: "Quiero un turno" }])})`;
     await sql`update sales_outreach set lead_id = ${lead.id} where code = 'hablo-c3'`;
     // Tocó «Probar» pero no llegó a hablar: sigue en «la abrió».
     await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, opened_at, demo_at)

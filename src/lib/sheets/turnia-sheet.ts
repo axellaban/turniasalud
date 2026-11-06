@@ -5,7 +5,7 @@ import { env } from "@/lib/env";
 import { decryptSecret, encryptSecret } from "@/lib/calendar/crypto";
 import { GoogleError, accountEmail, exchangeCode, refreshAccessToken, revokeGrant } from "@/lib/calendar/google";
 import { LEAD_COLUMNS, leadsForSheet } from "@/lib/leads-sheet";
-import type { Outreach } from "@/lib/sales/outreach";
+import { userSpokeSql, type Outreach } from "@/lib/sales/outreach";
 import { CHANNEL_LABEL, PHONE_KIND_LABEL, STATUS_LABEL, demoUrl, displayOutreachPhone } from "@/lib/sales/outreach-messages";
 import { DEFAULT_TZ, zonedParts } from "@/lib/time";
 import { SheetsApiError, createSpreadsheet, spreadsheetInfo, writeTabs, type Cell, type Tab } from "./google-sheets";
@@ -236,7 +236,7 @@ export async function outreachSheetRows(id?: string): Promise<Cell[][]> {
     select o.*,
       (select min(s.created_at) from demo_sessions s where o.lead_id is not null and s.lead_id = o.lead_id and s.clinic_id is not null) as demo_clinic_at,
       (select min(v.started_at) from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
-        where o.lead_id is not null and s.lead_id = o.lead_id) as demo_chat_at,
+        where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()}) as demo_chat_at,
       (select max(e.created_at) from sales_outreach_events e
         where e.outreach_id = o.id and e.kind = 'nota' and e.detail like 'Audio de seguimiento%') as audio_at,
       (select c.name from clinics c where c.id = o.clinic_id) as account_clinic,

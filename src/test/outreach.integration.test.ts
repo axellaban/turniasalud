@@ -380,7 +380,10 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(JSON.stringify(await demoDynamicVariables(full, "5492230000000@c.us"))).not.toContain("Escribirle a Axel");
 
     // Ya habló con Sofi: su página pasa a «¿dejamos a Sofi atendiendo…?», con escribirle a Axel primero.
-    await sql`insert into conversations (clinic_id, channel) values (${clinic.id}, 'web')`;
+    // Si solo saludó Sofi (abrió y se fue sin decir nada), todavía no habló.
+    await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }])})`;
+    expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(false);
+    await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }, { role: "user", message: "Quiero un turno" }])})`;
     expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(true);
     const despues = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
     expect(despues).toContain("María, ¿dejamos a Sofi atendiendo");
