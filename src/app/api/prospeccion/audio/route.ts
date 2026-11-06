@@ -7,10 +7,12 @@ import {
   saveBrowserVoiceNote,
   sendVoiceTest,
   sendVoiceToProspect,
+  setVoiceSender,
   voiceCandidates,
   voiceChannelStatus,
   voiceNoteAudio,
   voiceSentToday,
+  voiceSenderPhones,
   VOICE_DAILY_LIMIT,
   VOICE_GROUPS,
   VOICE_MAX_BYTES,
@@ -31,6 +33,7 @@ const groupSchema = z.enum(VOICE_GROUPS);
 const noteSchema = z.uuid();
 const secondsSchema = z.number().min(1).max(180).default(15);
 const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("source"), person: z.uuid(), sender: z.string().regex(/^\d{4}$/), confirmed: z.boolean() }),
   z.object({ action: z.literal("test"), note: noteSchema, seconds: secondsSchema }),
   z.object({ action: z.literal("send"), note: noteSchema, person: z.uuid(), group: groupSchema, text: z.string().max(500), seconds: secondsSchema }),
 ]);
@@ -70,8 +73,9 @@ export async function GET(request: Request) {
     ready: status.configured && status.ok,
     sender: status.configured && status.ok ? status.me?.slice(-4) : null,
     testTo: AXEL_WHATSAPP.slice(-4),
+    senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
     notes: notes.map(({ id, label }) => ({ id, label })),
-    people: people.map(({ id, name, business_name, phone, sent }) => ({ id, name, practice: business_name, last4: phone?.slice(-4), sent })),
+    people: people.map(({ id, name, business_name, phone, sent, senders }) => ({ id, name, practice: business_name, last4: phone?.slice(-4), sent, senders: senders.map((number) => number.slice(-4)) })),
     remaining: Math.max(0, VOICE_DAILY_LIMIT - used),
   });
 }
@@ -92,6 +96,10 @@ export async function POST(request: Request) {
     const input = actionSchema.safeParse(await request.json().catch(() => null));
     if (!input.success) return json({ error: "Revisá el audio, el destino y la etapa." }, 400);
     const { data } = input;
+    if (data.action === "source") {
+      await setVoiceSender(data.person, data.sender, data.confirmed);
+      return json({ ok: true });
+    }
     if (data.action === "test") {
       await sendVoiceTest(data.note, AXEL_WHATSAPP, "", data.seconds);
       return json({ ok: true });

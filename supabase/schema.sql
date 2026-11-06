@@ -1195,6 +1195,17 @@ create unique index if not exists sales_voice_sends_once on sales_voice_sends (v
 create index if not exists sales_voice_sends_day_idx on sales_voice_sends (created_at) where outreach_id is not null;
 alter table sales_voice_sends enable row level security;
 
+-- Un contacto puede tener un chat iniciado desde cada una de las líneas de prospección.
+-- Se guarda también el teléfono del contacto: un cambio en su ficha no hereda esa verificación.
+create table if not exists sales_outreach_whatsapp_senders (
+  outreach_id uuid not null references sales_outreach(id) on delete cascade,
+  phone text not null,
+  sender_phone text not null check (sender_phone ~ '^[0-9]{8,15}$'),
+  created_at timestamptz not null default now(),
+  primary key (outreach_id, phone, sender_phone)
+);
+alter table sales_outreach_whatsapp_senders enable row level security;
+
 -- ---------------------------------------------------------------------------
 -- Cierre de la demo (05/11): de qué persona de la prospección es cada demo del navegador (para el
 -- «Escribirle a Axel» con su nombre) y el aviso de que tocó ese botón, que queda en su historia.

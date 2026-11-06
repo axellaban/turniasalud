@@ -181,6 +181,22 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect((await send({ action: "send", group: "no_abrio", person: await id("hablo-c3"), text: "" })).status).toBe(422);
     expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
 
+    const followup = { action: "send", group: "abrio", person: await id("toco-f6"), text: "" };
+    const unverified = await send(followup);
+    expect(await unverified.json()).toMatchObject({ error: expect.stringContaining("WhatsApp emisor") });
+    expect((await send({ action: "source", person: followup.person, sender: "5483", confirmed: true })).status).toBe(200);
+    expect((await send(followup)).status).toBe(422);
+    expect(await voice.importVoiceSenders("0000", [
+      { code: "toco-f6", phone: "+5492236000006" },
+      { code: "hablo-c3", phone: "+5492236000006" },
+    ])).toEqual({ matched: 1, inserted: 1 });
+    expect(await voice.importVoiceSenders("0000", [{ code: "toco-f6", phone: "+5492236000006" }])).toEqual({ matched: 1, inserted: 0 });
+    expect((await voice.voiceCandidates("abrio", note)).find((person) => person.id === followup.person)?.senders).toEqual([
+      "5491130235483", "5492235000000",
+    ]);
+    expect((await send(followup)).status).toBe(200);
+    calls.length = 0;
+
     const count = await voice.voiceSentToday();
     expect((await send({ action: "test" })).status).toBe(200);
     expect(calls.find((call) => call.path === "/api/sendVoice")?.body).toMatchObject({
