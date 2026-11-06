@@ -1,3 +1,4 @@
+import { AXEL_WHATSAPP } from "@/lib/sales/contacto-axel";
 import "server-only";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
@@ -47,7 +48,7 @@ const eligible = () => sql`
   and o.phone is not null and o.phone_kind is distinct from 'fijo'
   and not exists (select 1 from sales_suppressions s where s.phone = o.phone)`;
 
-export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean };
+export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; senders: string[] };
 
 export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
   const [row] = await sql<Array<Record<VoiceGroup, number>>>`
@@ -62,7 +63,8 @@ export async function voiceCandidates(group: VoiceGroup, noteId: string | null):
   return sql<VoiceCandidate[]>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
       o.instagram, o.website, o.touches, o.greeted_at, o.opened_at, o.demo_at,
-      exists (select 1 from sales_voice_sends v where v.outreach_id = o.id and v.voice_note_id = ${noteId} and v.status <> 'error') as sent
+      exists (select 1 from sales_voice_sends v where v.outreach_id = o.id and v.voice_note_id = ${noteId} and v.status <> 'error') as sent,
+      array(select w.sender_phone from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone order by w.sender_phone) as senders
     from sales_outreach o
     where ${eligible()} and ${groupFilter(group)}
     order by o.priority, o.last_contact_at nulls first, o.name
@@ -138,6 +140,47 @@ export function prospectWaha(): ProspectWaha | null {
   const result = configSchema.safeParse(parsed);
   if (!result.success) throw new OutreachError("Revisá WAHA_PROSPECCION: necesita url (https), apiKey y, si no es «default», session.");
   return result.data;
+}
+
+export function voiceSenderPhones(): string[] {
+  let primary: string | undefined;
+  try { primary = prospectWaha()?.phone; } catch { /* el estado del canal muestra el error de configuración */ }
+  return [...new Set(primary ? [primary, AXEL_WHATSAPP] : [AXEL_WHATSAPP])];
+}
+
+export async function setVoiceSender(person: string, ending: string, confirmed: boolean): Promise<void> {
+  const sender = voiceSenderPhones().find((phone) => phone.endsWith(ending));
+  if (!sender) throw new OutreachError("No encontramos esa línea de prospección.");
+  if (confirmed) {
+    await sql`
+      insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
+      select id, phone, ${sender} from sales_outreach where id = ${person} and phone is not null and phone_kind is distinct from 'fijo'
+      on conflict do nothing`;
+  } else {
+    await sql`
+      delete from sales_outreach_whatsapp_senders w using sales_outreach o
+      where w.outreach_id = o.id and o.id = ${person} and w.phone = o.phone and w.sender_phone = ${sender}`;
+  }
+}
+
+export async function importVoiceSenders(ending: string, rows: Array<{ code: string; phone: string }>): Promise<{ matched: number; inserted: number }> {
+  const sender = voiceSenderPhones().find((phone) => phone.endsWith(ending));
+  if (!sender) throw new OutreachError("No encontramos esa línea de prospección.");
+  const list = rows.flatMap(({ code, phone }) => {
+    const mobile = outreachPhone(phone, "movil");
+    return mobile ? [{ code, phone: mobile.phone }] : [];
+  });
+  const [result] = await sql<Array<{ matched: number; inserted: number }>>`
+    with matched as (
+      select distinct o.id, o.phone from sales_outreach o
+      join jsonb_to_recordset(${sql.json(list)}::jsonb) as evidence(code text, phone text) on o.code = evidence.code and o.phone = evidence.phone
+      where o.phone_kind is distinct from 'fijo'
+    ), saved as (
+      insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
+      select id, phone, ${sender} from matched on conflict do nothing returning outreach_id
+    )
+    select (select count(*)::int from matched) as matched, (select count(*)::int from saved) as inserted`;
+  return result;
 }
 
 async function waha(config: ProspectWaha, path: string, init: RequestInit = {}): Promise<Response> {
@@ -297,6 +340,14 @@ export async function sendVoiceToProspect(noteId: string, outreachId: string, te
 
   const claim = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-quota', 0))`;
+    if (group) {
+      const [verified] = await tx`
+        select 1 from sales_outreach_whatsapp_senders w
+        join sales_outreach o on o.id = w.outreach_id and o.phone = w.phone
+        where w.outreach_id = ${outreachId} and w.phone = ${person.phone} and w.sender_phone = ${config.phone ?? ""}
+      `;
+      if (!verified) throw new OutreachError("Confirmá primero que ya le escribiste desde el WhatsApp emisor.");
+    }
     if ((await voiceSentToday(tx)) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya se reservaron ${VOICE_DAILY_LIMIT} envíos de audio para hoy. Seguí mañana.`);
     return tx<Array<{ id: string }>>`
       insert into sales_voice_sends (voice_note_id, outreach_id, phone, status)
