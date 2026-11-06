@@ -18,6 +18,7 @@ import {
   recordTouch,
   saveOutreachSettings,
   setOutreachStatus,
+  undoAudio,
   undoLastTouch,
   updateOutreach,
   type OutreachEdit,
@@ -115,7 +116,9 @@ async function apply(id: string, a: Action): Promise<void> {
           select 1 from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and detail <> 'saludo'
             and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
         if (!today) await recordTouch(id, channel, { properties: { message_format: "audio" } });
-        await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'nota', ${channel}, 'Audio de seguimiento (a mano)')`;
+        // La nota dice si sumó un mensaje: así, si se desmarca, se sabe si hay que descontarlo.
+        const detail = today ? "Audio de seguimiento (a mano, con el mensaje del día)" : "Audio de seguimiento (a mano)";
+        await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'nota', ${channel}, ${detail})`;
         return;
       }
       // Un reintento (o un doble clic, o un agente que confirma dos veces) no suma otro mensaje: si ya
@@ -158,6 +161,10 @@ async function apply(id: string, a: Action): Promise<void> {
       return;
     case "undo":
       await undoLastTouch(id);
+      return;
+    case "unaudio":
+      // «🎤 ✓» tocado otra vez: el audio se había marcado por error.
+      await undoAudio(id);
       return;
     case "note":
       if (!String(a.text ?? "").trim()) throw new BadRequest("La nota está vacía.");

@@ -71,6 +71,10 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
   it("un audio a mano cuenta como mensaje, salvo que ese día ya haya salido uno, y queda en «Audio enviado»", async () => {
     await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, greeted_at, first_contact_at)
               values ('audio-444', 'Audio Prueba', 'Audio', '+5492235000044', 'movil', 'contactado', 1, now() - interval '3 days', now() - interval '3 days')`;
+    // Su historia: el saludo y el primer mensaje, hace tres días.
+    await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail, created_at)
+              select id, 'mensaje', 'whatsapp', d, now() - interval '3 days' + o * interval '1 minute'
+              from sales_outreach, (values ('saludo', 0), ('primero', 1)) as v(d, o) where code = 'audio-444'`;
     let r = await post({ code: "audio-444", action: { type: "sent", channel: "whatsapp", format: "audio" } });
     expect(r.status).toBe(200);
     expect(col(r.body, "Mensajes")).toBe(2);
@@ -78,6 +82,16 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     // El mismo día, otro audio (o el texto ya registrado) no suma otro mensaje.
     r = await post({ code: "audio-444", action: { type: "sent", channel: "whatsapp", format: "audio" } });
     expect(col(r.body, "Mensajes")).toBe(2);
+    // Desmarcar: el segundo audio no había sumado, así que el contador queda y sigue el primero.
+    r = await post({ code: "audio-444", action: { type: "unaudio" } });
+    expect(r.status).toBe(200);
+    expect(col(r.body, "Mensajes")).toBe(2);
+    expect(col(r.body, "Audio enviado")).not.toBe("");
+    // El primero sí había sumado: al desmarcarlo vuelve a 1 mensaje y la columna queda vacía.
+    r = await post({ code: "audio-444", action: { type: "unaudio" } });
+    expect(col(r.body, "Mensajes")).toBe(1);
+    expect(col(r.body, "Audio enviado")).toBe("");
+    expect((await post({ code: "audio-444", action: { type: "unaudio" } })).status).toBe(422);
     // Sin audio, la columna queda vacía.
     r = await post({ code: "beto-222", action: { type: "note", text: "sin audio" } });
     expect(col(r.body, "Audio enviado")).toBe("");
