@@ -68,6 +68,21 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect(r.body.header).toContain("Conversó en la demo");
   });
 
+  it("un audio a mano cuenta como mensaje, salvo que ese día ya haya salido uno, y queda en «Audio enviado»", async () => {
+    await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, greeted_at, first_contact_at)
+              values ('audio-444', 'Audio Prueba', 'Audio', '+5492235000044', 'movil', 'contactado', 1, now() - interval '3 days', now() - interval '3 days')`;
+    let r = await post({ code: "audio-444", action: { type: "sent", channel: "whatsapp", format: "audio" } });
+    expect(r.status).toBe(200);
+    expect(col(r.body, "Mensajes")).toBe(2);
+    expect(col(r.body, "Audio enviado")).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    // El mismo día, otro audio (o el texto ya registrado) no suma otro mensaje.
+    r = await post({ code: "audio-444", action: { type: "sent", channel: "whatsapp", format: "audio" } });
+    expect(col(r.body, "Mensajes")).toBe(2);
+    // Sin audio, la columna queda vacía.
+    r = await post({ code: "beto-222", action: { type: "note", text: "sin audio" } });
+    expect(col(r.body, "Audio enviado")).toBe("");
+  });
+
   it("en lote, con «step», registrar el mismo paso dos veces no suma nada", async () => {
     await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status) values ('lote-333', 'Lote Prueba', 'Lote', '+5492235000033', 'movil', 'por_contactar')`;
     for (const step of [0, 1, 2, 0, 1, 2]) {

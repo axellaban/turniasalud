@@ -153,6 +153,8 @@ Como nota de voz nativa solo sale por API: WAHA permite mandar un `.ogg` (Opus) 
 
 Respetar las reglas de WAHA de `PENDIENTES.md`: no tocar las instancias existentes.
 
+**Audios a mano (06/11):** en Chapa Labs (`/prospecting/turnia?vista=odontologos`), el botón «🎤 Audio» de cada fila registra que le mandaste un audio desde tu celular. Cuenta como uno de los tres mensajes, salvo que ese día ya hayas registrado un mensaje (el texto y el audio que salen juntos son uno solo). Queda la nota «Audio de seguimiento (a mano)» y la fecha en la columna «Audio enviado» de la planilla. API: `POST /api/prospeccion` con `{ type: "sent", channel: "whatsapp", format: "audio" }`.
+
 ### Panel → Prospección → Mandar audio (MVP, 05/11)
 
 `/panel/prospeccion/audio`. Código en `src/lib/sales/voice-outreach.ts`; tablas `sales_voice_notes` y `sales_voice_sends`.
