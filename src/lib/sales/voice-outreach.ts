@@ -297,7 +297,7 @@ export async function sendVoiceToProspect(noteId: string, outreachId: string, te
 
   const claim = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-quota', 0))`;
-    if ((await voiceSentToday(tx)) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya se reservaron ${VOICE_DAILY_LIMIT} envíos de audio para hoy.`);
+    if ((await voiceSentToday(tx)) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya se reservaron ${VOICE_DAILY_LIMIT} envíos de audio para hoy. Seguí mañana.`);
     return tx<Array<{ id: string }>>`
       insert into sales_voice_sends (voice_note_id, outreach_id, phone, status)
       select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando'
