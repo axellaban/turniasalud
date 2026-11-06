@@ -269,6 +269,37 @@ async function deliver(config: ProspectWaha, chatId: string, note: { mimetype: s
   await post(config, `/api/${encodeURIComponent(config.session)}/presence`, { chatId, presence: "paused" }).catch(() => {});
 }
 
+/** Guarda la línea emisora a cada contacto (celular) cuyo teléfono está en la lista. */
+async function markSenderPhones(sender: string, phones: string[]): Promise<{ matched: number; inserted: number }> {
+  const digits = [...new Set(phones.map((phone) => phone.replace(/\D/g, "")))];
+  const [result] = await sql<Array<{ matched: number; inserted: number }>>`
+    with matched as (
+      select o.id, o.phone from sales_outreach o
+      where regexp_replace(o.phone, '[^0-9]', '', 'g') = any(${digits}::text[])
+        and o.phone_kind is distinct from 'fijo'
+    ), saved as (
+      insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
+      select id, phone, ${sender} from matched on conflict do nothing returning outreach_id
+    )
+    select (select count(*)::int from matched) as matched, (select count(*)::int from saved) as inserted`;
+  return result;
+}
+
+/**
+ * Los números de los chats de un WhatsApp, copiados desde WhatsApp Web (el código de Chapa Labs):
+ * marca esa línea a cada contacto de la prospección que está entre ellos. No manda nada.
+ */
+export async function importSenderChats(ending: string, raw: string[]): Promise<{ sender: string; received: number; phones: number; matched: number; inserted: number }> {
+  const sender = voiceSenderPhones().find((phone) => phone.endsWith(ending));
+  if (!sender) throw new OutreachError("No encontramos esa línea de prospección.");
+  const phones = [...new Set(raw.flatMap((value) => {
+    const phone = outreachPhone(value, "movil")?.phone;
+    return phone ? [phone] : [];
+  }))];
+  if (!phones.length) throw new OutreachError("No encontramos teléfonos de la Argentina en lo que pegaste.");
+  return { sender: ending, received: raw.length, phones: phones.length, ...(await markSenderPhones(sender, phones)) };
+}
+
 /** El teléfono (+549…) de un chat individual de WhatsApp, o null si es un grupo, un canal o no es de la Argentina. */
 export function phoneFromChatId(id: string | null | undefined): string | null {
   const match = /^(\d{8,15})@(c\.us|s\.whatsapp\.net)$/.exec(id ?? "");
@@ -359,16 +390,7 @@ export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chat
     const phone = phoneFromChatId(lid ? lids.get(id) : id);
     return phone ? [phone] : [];
   }))];
-  const [result] = await sql<Array<{ matched: number; inserted: number }>>`
-    with matched as (
-      select o.id, o.phone from sales_outreach o
-      where regexp_replace(o.phone, '[^0-9]', '', 'g') = any(${phones.map((phone) => phone.replace(/\D/g, ""))}::text[])
-        and o.phone_kind is distinct from 'fijo'
-    ), saved as (
-      insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
-      select id, phone, ${config.phone} from matched on conflict do nothing returning outreach_id
-    )
-    select (select count(*)::int from matched) as matched, (select count(*)::int from saved) as inserted`;
+  const result = await markSenderPhones(config.phone, phones);
   return { sender: config.phone.slice(-4), chats: ids.length, ...result, phones: phones.length, kinds };
 }
 

@@ -113,6 +113,15 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect(calls.some((c) => c.path.startsWith("/api/send"))).toBe(false);
     await sql`delete from sales_outreach_whatsapp_senders`;
 
+    // Los números copiados desde WhatsApp Web del otro teléfono (con o sin 9, con @c.us o sueltos).
+    expect(await voice.importSenderChats("5483", ["5492236000004", "54 223 600-0006@c.us", "120363000000", "5491100000000"])).toEqual({
+      sender: "5483", received: 4, phones: 3, matched: 2, inserted: 2,
+    });
+    expect((await voice.voiceCandidates("abrio", null)).find((c) => c.name === "Fede Seis")?.senders).toEqual(["5491130235483"]);
+    await expect(voice.importSenderChats("5483", ["hola"])).rejects.toThrow("teléfonos");
+    await expect(voice.importSenderChats("1234", ["5492236000004"])).rejects.toThrow("línea");
+    await sql`delete from sales_outreach_whatsapp_senders`;
+
     chatsStore = false;
     await expect(voice.syncVoiceSendersFromWaha()).rejects.toThrow("store");
   });
