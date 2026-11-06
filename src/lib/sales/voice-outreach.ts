@@ -269,6 +269,68 @@ async function deliver(config: ProspectWaha, chatId: string, note: { mimetype: s
   await post(config, `/api/${encodeURIComponent(config.session)}/presence`, { chatId, presence: "paused" }).catch(() => {});
 }
 
+/** El teléfono (+549…) de un chat individual de WhatsApp, o null si es un grupo, un canal o no es de la Argentina. */
+export function phoneFromChatId(id: string | null | undefined): string | null {
+  const match = /^(\d{8,15})@(c\.us|s\.whatsapp\.net)$/.exec(id ?? "");
+  return match ? (outreachPhone(match[1], "movil")?.phone ?? null) : null;
+}
+
+const SYNC_PAGE = 500;
+const SYNC_MAX_CHATS = 5000;
+
+/**
+ * Marca «Desde <línea>» a cada contacto de la prospección que tiene un chat en el WhatsApp emisor.
+ * Lee la lista de chats de la sesión de WAHA (los @lid se resuelven con su teléfono) y no manda nada.
+ */
+export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chats: number; matched: number; inserted: number }> {
+  const config = await requireChannel();
+  if (!config.phone) throw new OutreachError("Agregá «phone» a WAHA_PROSPECCION para saber de qué línea son los chats.");
+  const session = encodeURIComponent(config.session);
+  const ids: string[] = [];
+  try {
+    for (let offset = 0; offset < SYNC_MAX_CHATS; offset += SYNC_PAGE) {
+      const res = await waha(config, `/api/${session}/chats?limit=${SYNC_PAGE}&offset=${offset}`);
+      const page = (await res.json()) as Array<{ id?: string | { _serialized?: string } }>;
+      ids.push(...page.map((chat) => (typeof chat.id === "string" ? chat.id : chat.id?._serialized ?? "")).filter(Boolean));
+      if (page.length < SYNC_PAGE) break;
+    }
+  } catch (e) {
+    console.error("chats del WhatsApp emisor", e instanceof Error ? e.message : e);
+    throw new OutreachError(
+      "WAHA no devolvió la lista de chats del WhatsApp emisor. Con el motor NOWEB hace falta prender su historial (store) en la sesión. Mientras tanto, confirmá cada contacto con «+ " + config.phone.slice(-4) + "».",
+    );
+  }
+
+  const lids = new Map<string, string>();
+  if (ids.some((id) => id.endsWith("@lid"))) {
+    try {
+      for (let offset = 0; offset < SYNC_MAX_CHATS; offset += SYNC_PAGE) {
+        const res = await waha(config, `/api/${session}/lids?limit=${SYNC_PAGE}&offset=${offset}`);
+        const page = (await res.json()) as Array<{ lid?: string; pn?: string | null }>;
+        for (const { lid, pn } of page) if (lid && pn) lids.set(lid, pn);
+        if (page.length < SYNC_PAGE) break;
+      }
+    } catch (e) {
+      console.error("lids del WhatsApp emisor", e instanceof Error ? e.message : e); // se siguen los chats con número
+    }
+  }
+
+  const phones = [...new Set(ids.flatMap((id) => {
+    const phone = phoneFromChatId(id.endsWith("@lid") ? lids.get(id) : id);
+    return phone ? [phone] : [];
+  }))];
+  const [result] = await sql<Array<{ matched: number; inserted: number }>>`
+    with matched as (
+      select o.id, o.phone from sales_outreach o
+      where o.phone = any(${phones}::text[]) and o.phone_kind is distinct from 'fijo'
+    ), saved as (
+      insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
+      select id, phone, ${config.phone} from matched on conflict do nothing returning outreach_id
+    )
+    select (select count(*)::int from matched) as matched, (select count(*)::int from saved) as inserted`;
+  return { sender: config.phone.slice(-4), chats: ids.length, ...result };
+}
+
 function checkHours(now = new Date()) {
   const { hour } = zonedParts(now, DEFAULT_TZ);
   if (hour < HOURS.from || hour >= HOURS.to) throw new OutreachError(`Los audios salen de ${HOURS.from} a ${HOURS.to} (hora de Argentina).`);

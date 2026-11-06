@@ -20,12 +20,20 @@ const base = testDatabaseUrl();
 const calls: Array<{ path: string; body: Record<string, unknown> | null }> = [];
 let session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
 let exists = true;
+let chatsStore = true;
 
 async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   const url = new URL(String(input));
   calls.push({ path: url.pathname, body: init.body ? JSON.parse(String(init.body)) : null });
   if (url.pathname === "/api/sessions/prospeccion") return Response.json(session);
   if (url.pathname === "/api/contacts/check-exists") return Response.json({ numberExists: exists, chatId: exists ? `${url.searchParams.get("phone")}@c.us` : null });
+  if (url.pathname === "/api/prospeccion/chats") {
+    if (!chatsStore) return new Response("Enable NOWEB store", { status: 400 });
+    return url.searchParams.get("offset") === "0"
+      ? Response.json([{ id: "5492236000001@c.us" }, { id: "99887766@lid" }, { id: "120363000000@g.us" }, { id: "5492236999999@c.us" }])
+      : Response.json([]);
+  }
+  if (url.pathname === "/api/prospeccion/lids") return Response.json([{ lid: "99887766@lid", pn: "5492236000002@c.us" }]);
   if (url.pathname === "/api/prospeccion/media/convert/voice") {
     return Response.json({ data: Buffer.from("OggS...OpusHead").toString("base64") });
   }
@@ -85,6 +93,21 @@ describe.runIf(base)("audios de seguimiento", () => {
     calls.length = 0;
     session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
     exists = true;
+    chatsStore = true;
+  });
+
+  it("marca la línea emisora a quienes tienen chat en ese WhatsApp, también los @lid, sin mandar nada", async () => {
+    expect(voice.phoneFromChatId("5492236000001@c.us")).toBe("+5492236000001");
+    expect(voice.phoneFromChatId("120363000000@g.us")).toBeNull();
+    expect(await voice.syncVoiceSendersFromWaha()).toEqual({ sender: "0000", chats: 4, matched: 2, inserted: 2 });
+    expect(await voice.syncVoiceSendersFromWaha()).toMatchObject({ matched: 2, inserted: 0 });
+    expect((await voice.voiceCandidates("no_abrio", null))[0].senders).toEqual(["5492235000000"]);
+    expect((await voice.voiceCandidates("abrio", null)).find((c) => c.name === "Beto Dos")?.senders).toEqual(["5492235000000"]);
+    expect(calls.some((c) => c.path.startsWith("/api/send"))).toBe(false);
+    await sql`delete from sales_outreach_whatsapp_senders`;
+
+    chatsStore = false;
+    await expect(voice.syncVoiceSendersFromWaha()).rejects.toThrow("store");
   });
 
   it("arma los tres grupos con las definiciones del embudo, sin baja ni quien ya usó los tres mensajes", async () => {
