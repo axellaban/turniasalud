@@ -3,6 +3,7 @@ import { AXEL_WHATSAPP } from "@/lib/sales/contacto-axel";
 import { CHAPA_PROSPECTING_ORIGIN } from "@/lib/sales/chapa-voice";
 import { OutreachError } from "@/lib/sales/outreach";
 import {
+  importSenderChats,
   listVoiceNotes,
   saveBrowserVoiceNote,
   sendVoiceTest,
@@ -36,6 +37,7 @@ const secondsSchema = z.number().min(1).max(180).default(15);
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("source"), person: z.uuid(), sender: z.string().regex(/^\d{4}$/), confirmed: z.boolean() }),
   z.object({ action: z.literal("detect") }),
+  z.object({ action: z.literal("import"), sender: z.string().regex(/^\d{4}$/), phones: z.array(z.string().max(40)).min(1).max(20000) }),
   z.object({ action: z.literal("test"), note: noteSchema, seconds: secondsSchema }),
   z.object({ action: z.literal("send"), note: noteSchema, person: z.uuid(), group: groupSchema, text: z.string().max(500), seconds: secondsSchema }),
 ]);
@@ -103,6 +105,7 @@ export async function POST(request: Request) {
       return json({ ok: true });
     }
     if (data.action === "detect") return json(await syncVoiceSendersFromWaha());
+    if (data.action === "import") return json(await importSenderChats(data.sender, data.phones));
     if (data.action === "test") {
       await sendVoiceTest(data.note, AXEL_WHATSAPP, "", data.seconds);
       return json({ ok: true });
