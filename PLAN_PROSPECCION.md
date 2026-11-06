@@ -176,7 +176,7 @@ Hasta el 05/11, al terminar la charla con Sofi solo aparecía «Conversación te
 - **Voz en el celular, chat en la computadora:** en el celular 3 de 5 eligieron voz (y la única que respondió usó voz); desde la computadora los 3 pasaron al chat en segundos. Sin micrófono (permiso denegado), pasa sola al chat en vez de mostrar un error.
 - **Sin caminos que compitan:** en `/p/<código>` y en la demo ya armada, el header no muestra «Pedí una demo» ni «Probá con tu web», y la página no cierra con el bloque «¿Listo para transformar…?».
 - **En la ficha:** cada toque en «Escribirle a Axel» queda en su historia («Tocó «Escribirle a Axel» · WhatsApp · al terminar la demo») y su seguimiento pasa a hoy, aunque no haya mandado el mensaje. Uno cada 6 horas.
-- **«Hablaron con Sofi» = conversaron:** la herramienta de audios usa la misma definición que Chapa Labs (`conversoSql` en `outreach.ts`: una conversación en la clínica de su demo), no el toque en «Probar la demo».
+- **«Hablaron con Sofi» = conversaron:** la herramienta de audios usa la misma definición que Chapa Labs (`conversoSql` en `outreach.ts`: una conversación en la clínica de su demo en la que **la persona escribió o habló**), no el toque en «Probar la demo». Desde el 06/11 no cuenta la conversación que solo tiene el saludo de Sofi (abrió la llamada o el chat y se fue sin decir nada): antes contaba y marcaba «Interactuó» a quien no había interactuado.
 
 Qué mirar: `demo_closing_viewed` → `cta_clicked` con `cta_id = talk_axel` (por `cta_location`) → respuestas en el WhatsApp de Axel.
 

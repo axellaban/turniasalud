@@ -127,9 +127,13 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
               values ('+5492235000001', 'c-ana', 'https://ana.example', 'chat', ${clinic.id}, ${lead.id}, '2026-11-03T13:00:00Z')`;
     let r = await post({ code: "ana-111", action: { type: "note", text: "probó" } });
     expect(col(r.body, "Clínica de la demo")).toBe("2026-11-03 10:00");
-    await sql`insert into conversations (clinic_id, started_at) values (${clinic.id}, '2026-11-03T13:05:00Z')`;
+    // Abrió la llamada y Sofi saludó, pero no dijo nada: no conversó.
+    await sql`insert into conversations (clinic_id, started_at, transcript) values (${clinic.id}, '2026-11-03T13:05:00Z', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }, { role: "user", message: "" }])})`;
+    r = await post({ code: "ana-111", action: { type: "note", text: "solo el saludo" } });
+    expect(col(r.body, "Conversó en la demo")).toBe("");
+    await sql`insert into conversations (clinic_id, started_at, transcript) values (${clinic.id}, '2026-11-03T13:08:00Z', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }, { role: "user", message: "Quiero un turno" }])})`;
     r = await post({ code: "ana-111", action: { type: "note", text: "conversó" } });
-    expect(col(r.body, "Conversó en la demo")).toBeTruthy();
+    expect(col(r.body, "Conversó en la demo")).toBe("2026-11-03 10:08");
   });
 
   it("lee y guarda los mensajes, sin tocar los demás ni las metas", async () => {
