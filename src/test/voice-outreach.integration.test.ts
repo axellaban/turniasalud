@@ -277,6 +277,48 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
   });
 
+  it("guarda reglas sin vincular una línea y aplica el cupo y la pausa configurados", async () => {
+    const rules = await import("@/lib/sales/voice-rules");
+    const original = await rules.voiceRules();
+    const { GET, POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}`, "Content-Type": "application/json" };
+    const request = (body: Record<string, unknown>) => POST(new Request("https://turnia.example/api/prospeccion/audio", {
+      method: "POST", headers, body: JSON.stringify(body),
+    }));
+    try {
+      session = { status: "SCAN_QR_CODE", me: null as unknown as { id: string } };
+      const custom = { dailyLimit: 75, batchSize: 7, pauseMinMinutes: 7, pauseMaxMinutes: 9 };
+      expect((await request({ action: "rules", rules: custom })).status).toBe(200);
+      expect(calls).toHaveLength(0);
+      const current = await GET(new Request("https://turnia.example/api/prospeccion/audio?group=abrio&sender=0000", { headers }));
+      expect(await current.json()).toMatchObject({ ready: false, rules: custom });
+      expect(await rules.voiceRules()).toEqual(custom);
+
+      session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
+      const [{ id: note }] = await sql<Array<{ id: string }>>`
+        insert into sales_voice_notes (label, mimetype, audio) values ('Reglas configurables', 'audio/ogg', ${Buffer.from("ogg")}) returning id`;
+      const person = await id("toco-f6");
+      await voice.setVoiceSender(person, "0000", true);
+      await sql`update sales_voice_sends set created_at = now() - interval '1 minute' where outreach_id is not null`;
+      calls.length = 0;
+      const payload = { action: "send", note, person, sender: "0000", group: "abrio", text: "" };
+      const pause = await request(payload);
+      expect(pause.status).toBe(429);
+      expect((await pause.json()).retryAfter).toBeGreaterThan(300);
+      expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
+
+      await rules.saveVoiceRules({ ...custom, dailyLimit: 1, batchSize: 1 });
+      const capped = await request(payload);
+      expect(capped.status).toBe(422);
+      expect(await capped.json()).toMatchObject({ error: expect.stringContaining("1 envíos") });
+      expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
+    } finally {
+      await rules.saveVoiceRules(original);
+    }
+  });
+
   it("frena al llegar al tope del día", async () => {
     const [{ id: noteId }] = await sql<Array<{ id: string }>>`insert into sales_voice_notes (label, mimetype, audio) values ('v3', 'audio/ogg', ${Buffer.from("ogg")}) returning id`;
     const filler = await id("tres-d4");

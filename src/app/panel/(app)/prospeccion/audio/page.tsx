@@ -4,7 +4,6 @@ import { requireAdmin } from "@/lib/panel-clinic";
 import { displayOutreachPhone } from "@/lib/sales/outreach-messages";
 import { Card, Notice, PageHeader, Tabs, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import {
-  VOICE_DAILY_LIMIT,
   VOICE_DEFAULT_TEXT,
   VOICE_GROUPS,
   VOICE_GROUP_LABEL,
@@ -15,6 +14,7 @@ import {
   voiceSentToday,
   type VoiceGroup,
 } from "@/lib/sales/voice-outreach";
+import { voiceRules } from "@/lib/sales/voice-rules";
 import { deleteVoiceAction } from "./actions";
 import { UploadVoice, VoiceSender } from "./voice-sender";
 
@@ -26,7 +26,7 @@ export default async function AudioPage({ searchParams }: PageProps<"/panel/pros
   await requireAdmin();
   const params = await searchParams;
   const group = (VOICE_GROUPS as readonly string[]).includes(one(params.grupo) ?? "") ? (one(params.grupo) as VoiceGroup) : "no_abrio";
-  const [status, notes, counts, sentToday] = await Promise.all([voiceChannelStatus(), listVoiceNotes(), voiceGroupCounts(), voiceSentToday()]);
+  const [status, notes, counts, sentToday, rules] = await Promise.all([voiceChannelStatus(), listVoiceNotes(), voiceGroupCounts(), voiceSentToday(), voiceRules()]);
   const note = notes.find((n) => n.id === one(params.audio)) ?? notes[0] ?? null;
   const candidates = await voiceCandidates(group, note?.id ?? null);
   const href = (extra: Record<string, string>) => `/panel/prospeccion/audio?${new URLSearchParams({ grupo: group, ...(note ? { audio: note.id } : {}), ...extra })}`;
@@ -45,7 +45,7 @@ export default async function AudioPage({ searchParams }: PageProps<"/panel/pros
           {" "}<code>WAHA_PROSPECCION</code> = <code>{`{"url":"https://…","apiKey":"…","session":"default","phone":"549223…"}`}</code>. Mientras tanto podés subir el audio.
         </Notice>
       ) : status.ok ? (
-        <Notice tone="success" className="mt-4">Conectado: sale desde el {status.me}. Hoy van {sentToday} de {VOICE_DAILY_LIMIT} audios.</Notice>
+        <Notice tone="success" className="mt-4">Conectado: sale desde el {status.me}. Hoy van {sentToday} de {rules.dailyLimit} audios.</Notice>
       ) : (
         <Notice tone="error" className="mt-4">{status.problem}</Notice>
       )}
@@ -91,8 +91,11 @@ export default async function AudioPage({ searchParams }: PageProps<"/panel/pros
             audioUrl={`/panel/prospeccion/audio/archivo/${note.id}`}
             defaultText={VOICE_DEFAULT_TEXT[group]}
             ready={status.configured && status.ok}
-            dailyLimit={VOICE_DAILY_LIMIT}
-            remainingToday={Math.max(0, VOICE_DAILY_LIMIT - sentToday)}
+            dailyLimit={rules.dailyLimit}
+            batchSize={rules.batchSize}
+            pauseMin={rules.pauseMinMinutes * 60}
+            pauseMax={rules.pauseMaxMinutes * 60}
+            remainingToday={Math.max(0, rules.dailyLimit - sentToday)}
             people={candidates.map((c) => ({ id: c.id, name: c.name, phone: displayOutreachPhone(c.phone), greeting: c.greeting || c.name.split(/\s+/)[0], touches: c.touches, sent: c.sent, needsReview: c.needs_review }))}
           />
         ) : (

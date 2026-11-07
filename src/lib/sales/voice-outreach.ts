@@ -6,6 +6,7 @@ import { sql, type Sql, type TransactionSql } from "@/lib/db";
 import { DEFAULT_TZ, zonedParts } from "@/lib/time";
 import { MAX_TOUCHES, outreachPhone, renderTemplate, type OutreachPerson } from "./outreach-messages";
 import { OutreachError, conversoSql, outreachDemoUrl, recordTouch } from "./outreach";
+import { DEFAULT_VOICE_RULES, voiceRules } from "./voice-rules";
 
 // Audios de seguimiento (MVP): Axel graba una vez y el panel lo manda como nota de voz nativa
 // (sin «Reenviado») desde SU número, el mismo con el que prospectó, conectado a una sesión de
@@ -13,8 +14,8 @@ import { OutreachError, conversoSql, outreachDemoUrl, recordTouch } from "./outr
 // se controla el tope del día, el horario, la baja y que nadie reciba el mismo audio dos veces.
 // No usa el WAHA de las clínicas ni el selector de canal de Sofi: es otra sesión, sin webhooks.
 
-export const VOICE_DAILY_LIMIT = 20;
-const MIN_VOICE_PAUSE = 180;
+export const VOICE_DAILY_LIMIT = DEFAULT_VOICE_RULES.dailyLimit;
+const VOICE_RESERVATION_TIMEOUT = 180;
 
 export class VoicePaceError extends OutreachError {
   constructor(readonly retryAfter: number) {
@@ -75,7 +76,7 @@ export async function voiceCandidates(group: VoiceGroup, noteId: string | null):
     from sales_outreach o
     left join lateral (
       select bool_or(v.status <> 'error') as reserved,
-        bool_or(v.status = 'enviando' and (v.error is not null or v.created_at < now() - ${MIN_VOICE_PAUSE} * interval '1 second')) as needs_review
+        bool_or(v.status = 'enviando' and (v.error is not null or v.created_at < now() - ${VOICE_RESERVATION_TIMEOUT} * interval '1 second')) as needs_review
       from sales_voice_sends v
       where v.outreach_id is not null and v.voice_note_id = ${noteId} and (v.outreach_id = o.id or v.phone = o.phone)
     ) delivery on true
@@ -476,11 +477,13 @@ export async function sendVoiceToProspect(noteId: string, outreachId: string, te
       `;
       if (!verified) throw new OutreachError("Confirmá primero que ya le escribiste desde el WhatsApp emisor.");
     }
-    if ((await voiceSentToday(tx)) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya se reservaron ${VOICE_DAILY_LIMIT} envíos de audio para hoy. Seguí mañana.`);
+    const rules = await voiceRules(tx);
+    if ((await voiceSentToday(tx)) >= rules.dailyLimit) throw new OutreachError(`Ya se reservaron ${rules.dailyLimit} envíos de audio para hoy. Seguí mañana.`);
     if (group) {
+      const pauseSeconds = rules.pauseMinMinutes * 60;
       const [{ seconds }] = await tx<Array<{ seconds: number }>>`
-        select coalesce(ceil(extract(epoch from (max(created_at) + ${MIN_VOICE_PAUSE} * interval '1 second' - now())))::int, 0) as seconds
-        from sales_voice_sends where outreach_id is not null and created_at > now() - ${MIN_VOICE_PAUSE} * interval '1 second'`;
+        select coalesce(ceil(extract(epoch from (max(created_at) + ${pauseSeconds} * interval '1 second' - now())))::int, 0) as seconds
+        from sales_voice_sends where outreach_id is not null and created_at > now() - ${pauseSeconds} * interval '1 second'`;
       if (seconds > 0) throw new VoicePaceError(seconds);
     }
     return tx<Array<{ id: string }>>`
@@ -489,7 +492,7 @@ export async function sendVoiceToProspect(noteId: string, outreachId: string, te
       where not exists (
         select 1 from sales_voice_sends
         where outreach_id is not null and (outreach_id = ${outreachId} or phone = ${person.phone}) and status <> 'error'
-          and (voice_note_id = ${noteId} or (status = 'enviando' and created_at > now() - ${MIN_VOICE_PAUSE} * interval '1 second'))
+          and (voice_note_id = ${noteId} or (status = 'enviando' and created_at > now() - ${VOICE_RESERVATION_TIMEOUT} * interval '1 second'))
       )
       on conflict do nothing returning id`;
   });

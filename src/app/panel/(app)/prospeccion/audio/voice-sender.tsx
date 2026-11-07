@@ -6,7 +6,6 @@ import { Field, Notice, buttonClass, dangerButtonClass, inputClass, secondaryBut
 import { sendVoiceAction, testVoiceAction, uploadVoiceAction, type VoiceResult } from "./actions";
 
 /** Pausa al azar entre audios: de 3 a 6 minutos, como alguien que los manda a mano. */
-const PAUSE = { min: 180, max: 360 };
 
 export function UploadVoice() {
   const [state, action, pending] = useActionState(uploadVoiceAction, undefined);
@@ -38,6 +37,9 @@ export function VoiceSender({
   defaultText,
   ready,
   dailyLimit,
+  batchSize,
+  pauseMin,
+  pauseMax,
   remainingToday,
   people,
 }: {
@@ -47,6 +49,9 @@ export function VoiceSender({
   defaultText: string;
   ready: boolean;
   dailyLimit: number;
+  batchSize: number;
+  pauseMin: number;
+  pauseMax: number;
   remainingToday: number;
   people: Person[];
 }) {
@@ -56,7 +61,7 @@ export function VoiceSender({
   const [testPhone, setTestPhone] = useState("");
   const [test, setTest] = useState<VoiceResult & { pending?: boolean }>();
   const pendingPeople = people.filter((p) => !p.sent);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(pendingPeople.slice(0, remainingToday).map((p) => p.id)));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(pendingPeople.slice(0, Math.min(batchSize, remainingToday)).map((p) => p.id)));
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [running, setRunning] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -95,6 +100,7 @@ export function VoiceSender({
   }
 
   async function run() {
+    if (count > Math.min(batchSize, remainingToday)) return;
     stop.current = false;
     setRunning(true);
     const queue = pendingPeople.filter((p) => selected.has(p.id) && rows[p.id]?.kind !== "ok");
@@ -111,7 +117,7 @@ export function VoiceSender({
         setLog(`Frené después de dos errores seguidos: ${result.message}`);
         break;
       }
-      if (i < queue.length - 1) await wait(Math.round(PAUSE.min + Math.random() * (PAUSE.max - PAUSE.min)));
+      if (i < queue.length - 1) await wait(Math.round(pauseMin + Math.random() * (pauseMax - pauseMin)));
     }
     setRunning(false);
     router.refresh();
@@ -150,8 +156,8 @@ export function VoiceSender({
             {pendingPeople.length} sin este audio · elegidos {count} · quedan {remainingToday} hoy
           </p>
           <div className="flex gap-2">
-            <button type="button" disabled={running} onClick={() => setSelected(new Set(pendingPeople.slice(0, remainingToday).map((p) => p.id)))} className={secondaryButtonClass}>
-              Los primeros {Math.min(remainingToday, pendingPeople.length)}
+            <button type="button" disabled={running} onClick={() => setSelected(new Set(pendingPeople.slice(0, Math.min(batchSize, remainingToday)).map((p) => p.id)))} className={secondaryButtonClass}>
+              Los primeros {Math.min(batchSize, remainingToday, pendingPeople.length)}
             </button>
             <button type="button" disabled={running} onClick={() => setSelected(new Set())} className={secondaryButtonClass}>
               Ninguno
@@ -183,7 +189,7 @@ export function VoiceSender({
         {running ? (
           <button type="button" onClick={() => (stop.current = true)} className={dangerButtonClass}>Frenar</button>
         ) : (
-          <button type="button" onClick={run} disabled={!ready || count === 0 || remainingToday === 0} className={buttonClass}>
+          <button type="button" onClick={run} disabled={!ready || count === 0 || count > Math.min(batchSize, remainingToday)} className={buttonClass}>
             Mandar a {count}, de a uno
           </button>
         )}
@@ -191,7 +197,7 @@ export function VoiceSender({
         {!running && log && <span className="text-sm text-brand-900/70">{log}</span>}
       </div>
       <p className="text-xs text-brand-900/60">
-        Entre uno y otro espera de 3 a 6 minutos al azar. Antes del audio, WhatsApp muestra «grabando audio…» unos segundos. De 8 a 21, hasta {dailyLimit} por día.
+        Cada tanda tiene hasta {batchSize} contactos. Entre envíos espera de {pauseMin / 60} a {pauseMax / 60} minutos. De 8 a 21 h de Buenos Aires, hasta {dailyLimit} por día. Dejá la pestaña abierta durante la tanda.
       </p>
     </div>
   );
