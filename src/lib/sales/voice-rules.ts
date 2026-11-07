@@ -13,8 +13,8 @@ export const DEFAULT_VOICE_RULES = {
 export const voiceRulesSchema = z.object({
   dailyLimit: z.number().int().min(1),
   batchSize: z.number().int().min(1),
-  pauseMinMinutes: z.number().int().min(1).max(60),
-  pauseMaxMinutes: z.number().int().min(1).max(60),
+  pauseMinMinutes: z.number().min(1 / 60).max(60),
+  pauseMaxMinutes: z.number().min(1 / 60).max(60),
 }).refine((rules) => rules.batchSize <= rules.dailyLimit, {
   message: "La tanda debe ser igual o menor que el cupo diario.", path: ["batchSize"],
 }).refine((rules) => rules.pauseMaxMinutes >= rules.pauseMinMinutes, {

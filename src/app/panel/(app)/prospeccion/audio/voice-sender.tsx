@@ -197,7 +197,7 @@ export function VoiceSender({
         {!running && log && <span className="text-sm text-brand-900/70">{log}</span>}
       </div>
       <p className="text-xs text-brand-900/60">
-        Cada tanda tiene hasta {batchSize} contactos. Entre envíos espera de {pauseMin / 60} a {pauseMax / 60} minutos. De 8 a 21 h de Buenos Aires, hasta {dailyLimit} por día. Dejá la pestaña abierta durante la tanda.
+        Cada tanda tiene hasta {batchSize} contactos. Entre envíos espera de {Math.round(pauseMin)} a {Math.round(pauseMax)} segundos. De 8 a 21 h de Buenos Aires, hasta {dailyLimit} por día. Dejá la pestaña abierta durante la tanda.
       </p>
     </div>
   );
