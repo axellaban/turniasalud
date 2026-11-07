@@ -132,13 +132,18 @@ const configSchema = z.object({
 });
 type ProspectWaha = z.infer<typeof configSchema>;
 
-export function prospectWaha(): ProspectWaha | null {
-  const raw = process.env.WAHA_PROSPECCION;
+export function prospectWaha(ending?: string): ProspectWaha | null {
+  const secondary = ending === AXEL_WHATSAPP.slice(-4);
+  const variable = secondary ? "WAHA_PROSPECCION_5483" : "WAHA_PROSPECCION";
+  const raw = process.env[variable];
   if (!raw) return null;
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); } catch { throw new OutreachError("WAHA_PROSPECCION no contiene JSON válido."); }
+  try { parsed = JSON.parse(raw); } catch { throw new OutreachError(`${variable} no contiene JSON válido.`); }
   const result = configSchema.safeParse(parsed);
-  if (!result.success) throw new OutreachError("Revisá WAHA_PROSPECCION: necesita url (https), apiKey y, si no es «default», session.");
+  if (!result.success) throw new OutreachError(`Revisá ${variable}: necesita url (https), apiKey y, si no es «default», session.`);
+  if ((ending && !result.data.phone?.endsWith(ending)) || (secondary && result.data.phone !== AXEL_WHATSAPP)) {
+    throw new OutreachError(`El teléfono configurado en ${variable} no coincide con la línea seleccionada.`);
+  }
   return result.data;
 }
 
@@ -204,10 +209,10 @@ export type VoiceChannelStatus =
   | { configured: false }
   | { configured: true; ok: boolean; status: string; me: string | null; problem: string | null };
 
-export async function voiceChannelStatus(): Promise<VoiceChannelStatus> {
+export async function voiceChannelStatus(ending?: string): Promise<VoiceChannelStatus> {
   let config: ProspectWaha | null;
   try {
-    config = prospectWaha();
+    config = prospectWaha(ending);
   } catch (e) {
     return { configured: true, ok: false, status: "CONFIG", me: null, problem: e instanceof Error ? e.message : String(e) };
   }
@@ -219,7 +224,7 @@ export async function voiceChannelStatus(): Promise<VoiceChannelStatus> {
     const status = body.status ?? "?";
     const problem =
       status !== "WORKING" ? `La sesión «${config.session}» está en ${status}: abrí el dashboard de WAHA y escaneá el QR con tu WhatsApp.`
-      : config.phone && me !== config.phone ? `La sesión está conectada a ${me ?? "otro número"}, no al ${config.phone} de WAHA_PROSPECCION.`
+      : config.phone && me !== config.phone ? `La sesión está conectada a ${me ?? "otro número"}, no al ${config.phone} configurado para esta línea.`
       : null;
     return { configured: true, ok: !problem, status, me, problem };
   } catch (e) {
@@ -227,11 +232,11 @@ export async function voiceChannelStatus(): Promise<VoiceChannelStatus> {
   }
 }
 
-async function requireChannel(): Promise<ProspectWaha> {
-  const status = await voiceChannelStatus();
-  if (!status.configured) throw new OutreachError("Falta conectar tu número: cargá WAHA_PROSPECCION en Vercel.");
+async function requireChannel(ending?: string): Promise<ProspectWaha> {
+  const status = await voiceChannelStatus(ending);
+  if (!status.configured) throw new OutreachError(ending ? `Falta conectar el WhatsApp terminado en ${ending}.` : "Falta conectar tu número: cargá WAHA_PROSPECCION en Vercel.");
   if (!status.ok) throw new OutreachError(status.problem ?? "WAHA no está listo.");
-  return prospectWaha()!;
+  return prospectWaha(ending)!;
 }
 
 const between = (min: number, max: number) => min + Math.random() * (max - min);
@@ -282,8 +287,8 @@ const SYNC_MAX_CHATS = 5000;
  * Marca «Desde <línea>» a cada contacto de la prospección que tiene un chat en el WhatsApp emisor.
  * Lee la lista de chats de la sesión de WAHA (los @lid se resuelven con su teléfono) y no manda nada.
  */
-export async function syncVoiceSendersFromWaha(): Promise<{ sender: string; chats: number; matched: number; inserted: number; phones: number; kinds: Record<string, number> }> {
-  const config = await requireChannel();
+export async function syncVoiceSendersFromWaha(ending?: string): Promise<{ sender: string; chats: number; matched: number; inserted: number; phones: number; kinds: Record<string, number> }> {
+  const config = await requireChannel(ending);
   if (!config.phone) throw new OutreachError("Agregá «phone» a WAHA_PROSPECCION para saber de qué línea son los chats.");
   const session = encodeURIComponent(config.session);
   const ids: string[] = [];
@@ -387,12 +392,12 @@ export async function voiceSentToday(db: Sql | TransactionSql = sql): Promise<nu
 }
 
 /** Normaliza una grabación del navegador una sola vez, antes de guardarla. */
-export async function saveBrowserVoiceNote(label: string, audio: Buffer): Promise<string> {
+export async function saveBrowserVoiceNote(label: string, audio: Buffer, ending?: string): Promise<string> {
   if (!label.trim()) throw new OutreachError("Ponele un nombre al audio.");
   if (!audio.length || audio.length > VOICE_MAX_BYTES) throw new OutreachError("Elegí un audio de hasta 3 MB.");
   const isOpus = (bytes: Buffer) => bytes.toString("ascii", 0, 4) === "OggS" && bytes.subarray(0, 256).includes("OpusHead");
   if (isOpus(audio)) return saveVoiceNote(label, "audio/ogg", audio);
-  const config = await requireChannel();
+  const config = await requireChannel(ending);
   const result = await post(config, `/api/${encodeURIComponent(config.session)}/media/convert/voice`, { data: audio.toString("base64") });
   const converted = (await result.json()) as { data?: string };
   const ogg = Buffer.from(converted.data ?? "", "base64");
@@ -403,12 +408,12 @@ export async function saveBrowserVoiceNote(label: string, audio: Buffer): Promis
 }
 
 /** Prueba: el audio a un número propio. No toca el embudo ni el tope del día. */
-export async function sendVoiceTest(noteId: string, rawPhone: string, text: string, seconds: number): Promise<string> {
+export async function sendVoiceTest(noteId: string, rawPhone: string, text: string, seconds: number, ending?: string): Promise<string> {
   const phone = outreachPhone(rawPhone, "movil")?.phone;
   if (!phone) throw new OutreachError("Ese número no parece un celular argentino (probá con 223 6123456).");
   const note = await voiceNoteAudio(noteId);
   if (!note) throw new OutreachError("No encontramos ese audio.");
-  const config = await requireChannel();
+  const config = await requireChannel(ending);
   const digits = phone.replace(/\D/g, "");
   const chatId = await chatFor(config, digits);
   if (!chatId) throw new OutreachError("Ese número no tiene WhatsApp.");
@@ -428,7 +433,7 @@ export async function sendVoiceTest(noteId: string, rawPhone: string, text: stri
  * Un envío de la cola. Se reserva antes de mandar (el índice único impide el doble envío aunque
  * se toque dos veces), y al salir suma el mensaje y programa el seguimiento como cualquier WhatsApp.
  */
-export async function sendVoiceToProspect(noteId: string, outreachId: string, template: string, seconds: number, group?: VoiceGroup): Promise<{ name: string }> {
+export async function sendVoiceToProspect(noteId: string, outreachId: string, template: string, seconds: number, group?: VoiceGroup, ending?: string): Promise<{ name: string }> {
   checkHours();
   const note = await voiceNoteAudio(noteId);
   if (!note) throw new OutreachError("No encontramos ese audio.");
@@ -439,7 +444,7 @@ export async function sendVoiceToProspect(noteId: string, outreachId: string, te
     from sales_outreach o where o.id = ${outreachId}`;
   if (!person) throw new OutreachError("No encontramos ese contacto.");
   if (!person.ok || !person.phone) throw new OutreachError(`A ${person.name} ya no le toca en este grupo o ya no puede recibir el seguimiento.`);
-  const config = await requireChannel();
+  const config = await requireChannel(ending);
 
   const claim = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-quota', 0))`;
