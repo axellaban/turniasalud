@@ -1,6 +1,6 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-Actualizado: 03/11/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
+Actualizado: 07/11/2026 (Argentina). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
 
@@ -92,6 +92,12 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] Mejoras posibles: roles por persona dentro de la clínica, admisión digital y cobranzas. Son ampliaciones, no arreglos.
 - [x] **Campañas para activar la base** (25/10): oportunidades con valor, controles por prestación y por paciente, reglas de contacto, lista que se revisa, envío desde el WhatsApp de la clínica o con Sofi, e importación de pacientes desde Excel o CSV. Ver [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md).
 - [ ] Que el usuario pruebe Campañas con la planilla real de Guerra–Mininni (ya se puede importar completa) y el envío desde su WhatsApp. Antes conviene cargar en Configuración → Prestaciones las que tienen control periódico: las prestaciones de esa planilla son texto libre («control», «instalar corona», «Control de Exodoncia»…) y solo cuentan para inactivos hasta que coincidan con una prestación de la clínica. Siguientes pasos de campañas (secuencias, respuestas marcadas a mano, automáticas por clínica, segmentos por edad) en `PLAN_CAMPANAS.md`.
+
+- [ ] **Follow-up, traído de habita. (07/11).** habita. sumó `/admin/follow-up` (amoblaia, PRs [#187](https://github.com/axellaban/amoblaia/pull/187) y [#188](https://github.com/axellaban/amoblaia/pull/188); detalle en `docs/FOLLOWUP.md` de amoblaia): una next best action por etapa del embudo, con versiones que no se editan (una activa y otra a prueba 50/50), la lista de quienes esperan en cada etapa, «Ejecutar» (mensaje armado con su WhatsApp y su link, abrir `wa.me`, «Confirmar envío») y, por versión, ejecuciones, conversiones (pasó de etapa después del envío) y tasa. Falta llevarlo a Turnia adaptado, no copiado:
+  - **Etapas:** las de [`EMBUDO.md`](EMBUDO.md), con quienes se quedaron en cada una: sin saludar, saludo enviado sin demo, demo enviada sin visitar, visitada sin conversar con Sofi, con conversación sin cuenta, cuenta sin actividad (criterio de cuenta activa de `EMBUDO.md`) y activa sin pago. Mismas definiciones que `npm run embudo`, para que los números coincidan.
+  - **Variables:** `{{demo}}` es su demo personal `/p/<código>`; el panel es el acceso del consultorio (`clinic_access`).
+  - **Registro:** confirmar debe mover lo mismo que hoy «Saludar» y «Mandar demo» en Panel → Prospección (`sales_outreach_events` y los eventos `prospect_greeting_sent` / `prospect_pitch_sent`).
+  - **Dónde:** en Panel → Prospección (`/panel/prospeccion`) y en chapa-labs, `/prospecting/turnia`, usando la unidad `TURNIA` de `prospecting/agencies.js`.
 
 ## 4. Web pública (estado: home terminada)
 
