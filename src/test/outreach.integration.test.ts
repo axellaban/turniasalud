@@ -307,18 +307,15 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const page = (await import("@/app/(personal)/p/[code]/page")).default;
     const html = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
     expect(html).toContain("Hablame como si fueras un paciente");
-    expect(html).toContain('aria-label="Escribirle por chat"');
+    expect(html).toContain("Tocá para hablar");
+    expect(html).toContain('aria-label="Cómo querés probarla"');
     expect(html).toContain("La ficha de tu consultorio");
     expect(html).toContain("Consultorio Odontológico López");
     expect(html).toContain("Dra. María Elvira López Sánchez");
     expect(html).toContain("Saavedra 3527, Mar del Plata");
     expect(html).toContain("Consulta de ortodoncia");
-    // Lo primero que se le sugiere decir es sobre su tratamiento (ortodoncia).
-    expect(html).toContain("«Hola, ¿atienden ortodoncia? Es para mi hija.»");
-    // Sin tratamientos reconocidos, la sugerencia es la limpieza de siempre.
     const pirera = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "pirera-g6h" }), searchParams: Promise.resolve({ vista: "panel" }) }));
     expect(pirera).toContain("Consultorio Odontológico Pirera");
-    expect(pirera).toContain("«Hola, ¿tienen turno para una limpieza esta semana?»");
     // Escribirle a Axel queda en la ficha, con el mensaje escrito.
     expect(html).toContain("¿Preferís que te la muestre yo?");
     expect(html).toContain(`wa.me/5491130235483?text=${encodeURIComponent("Hola Axel! Soy María. Prefiero que me muestres a Sofi funcionando en Consultorio Odontológico López.")}`);

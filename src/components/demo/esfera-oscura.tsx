@@ -28,14 +28,32 @@ const HUMO = [
   { radio: 59, grosor: 14, semilla: 27, frecuencia: 0.022, desvio: 38, difuso: 3.2, vel: 0.03, opacidad: 0.14 },
 ];
 
+/** Forma de la esfera: cada esquina oscila apenas alrededor del círculo, como algo vivo. */
+function forma(t: number, amplitud: number): string {
+  const r = (k: number, f: number) => `${(50 + Math.sin(t * k + f) * amplitud).toFixed(2)}%`;
+  return `${r(1.3, 0)} ${r(1.7, 1.1)} ${r(1.1, 2.3)} ${r(1.9, 3.7)} / ${r(1.5, 4.2)} ${r(1.2, 5.3)} ${r(1.8, 0.7)} ${r(1.4, 2.9)}`;
+}
+
 /** Un latido: dos golpes (el segundo más suave) y una pausa. φ va de 0 a 1 en cada período. */
 function latido(fase: number): number {
   const golpe = (centro: number, ancho: number) => Math.exp(-(((fase - centro) / ancho) ** 2));
   return golpe(0.05, 0.045) + 0.6 * golpe(0.25, 0.05);
 }
 
-export function EsferaOscura({ estado, leerVolumen, className = "" }: { estado: EstadoOrbe; leerVolumen?: () => number; className?: string }) {
+export function EsferaOscura({
+  estado,
+  leerVolumen,
+  className = "",
+  children,
+}: {
+  estado: EstadoOrbe;
+  leerVolumen?: () => number;
+  className?: string;
+  /** Lo que va escrito adentro (en cqw, relativo al ancho de la esfera): late con ella. */
+  children?: React.ReactNode;
+}) {
   const cuerpo = useRef<HTMLSpanElement>(null);
+  const esfera = useRef<HTMLSpanElement>(null);
   const sombra = useRef<HTMLSpanElement>(null);
   const luz = useRef<HTMLSpanElement>(null);
   const materia = useRef<(HTMLSpanElement | null)[]>([]);
@@ -102,6 +120,7 @@ export function EsferaOscura({ estado, leerVolumen, className = "" }: { estado: 
       const flota = Math.sin(ahora / 1700) * 1.2;
       const escala = 1 + pulso * 0.055 + nivel * (est === "habla" ? 0.13 : 0.09);
       if (cuerpo.current) cuerpo.current.style.transform = `translateY(${flota.toFixed(2)}%) scale(${escala.toFixed(4)})`;
+      if (esfera.current) esfera.current.style.borderRadius = forma(ahora / 1000 + giro * 0.5, (est === "conectando" ? 2.4 : 1.5) + pulso * 1.2 + nivel * 4);
       if (sombra.current) {
         sombra.current.style.transform = `translateX(-50%) scale(${(1 - flota * 0.02 + pulso * 0.04).toFixed(3)})`;
         sombra.current.style.opacity = (0.5 - flota * 0.04).toFixed(3);
@@ -171,7 +190,9 @@ export function EsferaOscura({ estado, leerVolumen, className = "" }: { estado: 
           />
         ))}
         {/* La esfera: vidrio negro con materia que gira y una luz que late adentro. */}
+        {/* La máscara opaca fuerza a Safari a recortar lo de adentro con el borde que se mueve. */}
         <span
+          ref={esfera}
           className="absolute inset-0 isolate overflow-hidden rounded-full [mask-image:radial-gradient(white,black)]"
           style={{ background: "radial-gradient(circle at 50% 38%, #1a1e36 0%, #0a0c18 48%, #020308 100%)" }}
         >
@@ -196,12 +217,13 @@ export function EsferaOscura({ estado, leerVolumen, className = "" }: { estado: 
             style={{ background: `radial-gradient(circle at 50% 56%, rgba(${tono},.95) 0%, rgba(${tono},.42) 26%, rgba(${tono},0) 60%)` }}
           />
           {/* Borde con luz y sombra abajo: se lee como una esfera de vidrio. */}
-          <span className="absolute inset-0 rounded-full shadow-[inset_0_0_0_0.35cqw_rgba(170,185,255,.16),inset_0_-8cqw_14cqw_-4cqw_rgba(0,0,0,.7),inset_0_4cqw_10cqw_-3cqw_rgba(150,170,255,.22)]" />
+          <span className="absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_0.35cqw_rgba(170,185,255,.16),inset_0_-8cqw_14cqw_-4cqw_rgba(0,0,0,.7),inset_0_4cqw_10cqw_-3cqw_rgba(150,170,255,.22)]" />
           <span
             className="absolute left-[22%] top-[9%] h-[22%] w-[40%] -rotate-12 rounded-[50%]"
             style={{ background: "radial-gradient(closest-side, rgba(255,255,255,.34), rgba(255,255,255,.06) 60%, rgba(255,255,255,0))" }}
           />
         </span>
+        {children && <span className="absolute inset-0 grid place-items-center text-center">{children}</span>}
       </span>
     </span>
   );

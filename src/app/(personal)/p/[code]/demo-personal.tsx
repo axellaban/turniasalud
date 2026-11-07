@@ -112,6 +112,8 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
   });
   const voz = mode === "voz";
   const enCharla = lines.length > 0;
+  // Antes de hablar, la esfera ocupa la pantalla; en la llamada y después, deja lugar para lo de abajo.
+  const compacta = enCharla || pausada || connected || cerrada;
   const estado = connecting ? "conectando" : connected ? (conversation.isSpeaking ? "habla" : "escucha") : "inactiva";
   const { getInputVolume, getOutputVolume } = conversation;
   const leerVolumen = connected ? (conversation.isSpeaking ? getOutputVolume : getInputVolume) : undefined;
@@ -157,17 +159,29 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
       <style>{CSS}</style>
       <header className="flex shrink-0 items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6">
         <Logo />
-        <button
-          type="button"
-          onClick={() => cambiarModo(voz ? "chat" : "voz")}
-          disabled={connected || connecting}
-          aria-label={voz ? "Escribirle por chat" : "Hablarle por voz"}
+        {/* Voz o chat: mientras hay una conversación abierta no se cambia. */}
+        <div
+          role="group"
+          aria-label="Cómo querés probarla"
           title={connected ? "Terminá la conversación para cambiar" : undefined}
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-white/80 px-4 text-sm font-medium text-brand-900 shadow-sm ring-1 ring-brand-950/10 backdrop-blur transition-colors hover:bg-white disabled:opacity-50"
+          className="grid grid-cols-2 gap-1 rounded-full bg-white/80 p-1 text-sm shadow-sm ring-1 ring-brand-950/10 backdrop-blur"
         >
-          {voz ? <Icono nombre="chat" className="h-4 w-4" /> : <Microfono className="h-4 w-4" />}
-          {voz ? "Chat" : "Voz"}
-        </button>
+          {(["voz", "chat"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              disabled={connected || connecting}
+              onClick={() => cambiarModo(m)}
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-3.5 font-medium transition-colors disabled:cursor-not-allowed ${
+                mode === m ? "bg-brand-950 text-white" : "text-brand-900 hover:bg-white disabled:opacity-60"
+              }`}
+            >
+              {m === "voz" ? <Microfono className="h-4 w-4" /> : <Icono nombre="chat" className="h-4 w-4" />}
+              {m === "voz" ? "Voz" : "Chat"}
+            </button>
+          ))}
+        </div>
       </header>
 
       {voz ? (
@@ -183,12 +197,30 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
               estado={estado}
               leerVolumen={leerVolumen}
               className={`transition-[width,height] duration-700 ${
-                enCharla || pausada ? "h-[min(52cqw,34cqh,320px)] w-[min(52cqw,34cqh,320px)]" : "h-[min(68cqw,48cqh,420px)] w-[min(68cqw,48cqh,420px)]"
+                compacta ? "h-[min(56cqw,38cqh,330px)] w-[min(56cqw,38cqh,330px)]" : "h-[min(84cqw,62cqh,480px)] w-[min(84cqw,62cqh,480px)]"
               }`}
-            />
+            >
+              {/* Adentro de la esfera, lo que te pide: le habla al que llega. */}
+              {pausada || connected ? null : connecting ? (
+                <span className="text-[5cqw] font-light text-white/80">Conectando…</span>
+              ) : enCharla ? (
+                <span className="flex flex-col items-center gap-[2.5cqw] text-[5.4cqw] font-light text-white/85">
+                  <Microfono className="h-[8cqw] w-[8cqw]" />
+                  Tocá para volver a hablar
+                </span>
+              ) : (
+                <span className="flex max-w-[74%] flex-col items-center">
+                  <span className="susurro text-balance text-[8.6cqw] font-light leading-[1.08] tracking-tight text-[#eef0ff]">Hablame como si fueras un paciente</span>
+                  <span className="mt-[5.5cqw] inline-flex items-center gap-[1.6cqw] text-[3.4cqw] font-medium uppercase tracking-[0.16em] text-white/55">
+                    <Microfono className="h-[4cqw] w-[4cqw]" />
+                    Tocá para hablar
+                  </span>
+                </span>
+              )}
+            </EsferaOscura>
           </button>
 
-          <div className="mt-[min(7cqh,3.5rem)] w-full max-w-md text-center" aria-live="polite">
+          <div className={`w-full max-w-md text-center ${compacta || avisos ? "mt-[min(7cqh,3.5rem)]" : ""}`} aria-live="polite">
             {pausada ? (
               enPausa
             ) : connected ? (
@@ -202,18 +234,9 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
                   </p>
                 )}
               </>
-            ) : connecting ? (
-              <p className="text-sm font-medium text-brand-800">Conectando con {AGENTE}…</p>
             ) : cerrada ? (
               cierre
-            ) : enCharla ? (
-              <p className="text-sm text-tinta">Llamada terminada. Tocá la esfera para volver a hablar.</p>
-            ) : (
-              <>
-                <p className="susurro text-balance text-[24px] font-light leading-tight tracking-tight text-brand-950 sm:text-[30px]">Hablame como si fueras un paciente</p>
-                <Ejemplos ejemplos={ejemplos} />
-              </>
-            )}
+            ) : null}
             {avisos}
           </div>
 
@@ -411,20 +434,6 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
         </div>
       </dialog>
     </div>
-  );
-}
-
-/** Lo que podría decirle, de a uno, para que sepa por dónde empezar. */
-function Ejemplos({ ejemplos }: { ejemplos: string[] }) {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setI((n) => (n + 1) % ejemplos.length), 4600);
-    return () => clearInterval(t);
-  }, [ejemplos.length]);
-  return (
-    <p key={i} className="animar-aparecer mt-3 text-[15px] italic text-tinta">
-      «{ejemplos[i]}»
-    </p>
   );
 }
 
