@@ -154,13 +154,13 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
       style={{ background: "radial-gradient(120% 80% at 50% 42%, #ffffff 0%, #f7f9fd 60%, #eef2fa 100%)" }}
     >
       <header className="flex shrink-0 items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6">
-        <Logo />
+        <Logo chico />
         {/* Voz o chat: mientras hay una conversación abierta no se cambia. */}
         <div
           role="group"
           aria-label="Cómo querés probarla"
           title={connected ? "Terminá la conversación para cambiar" : undefined}
-          className="grid grid-cols-2 gap-1 rounded-full bg-white/80 p-1 text-sm shadow-sm ring-1 ring-brand-950/10 backdrop-blur"
+          className="grid grid-cols-2 gap-0.5 rounded-full bg-white/80 p-0.5 text-[13px] shadow-sm ring-1 ring-brand-950/10 backdrop-blur"
         >
           {(["voz", "chat"] as const).map((m) => (
             <button
@@ -169,11 +169,11 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
               aria-pressed={mode === m}
               disabled={connected || connecting}
               onClick={() => cambiarModo(m)}
-              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-3.5 font-medium transition-colors disabled:cursor-not-allowed ${
+              className={`inline-flex h-7 items-center justify-center gap-1 rounded-full px-2.5 font-medium transition-colors disabled:cursor-not-allowed ${
                 mode === m ? "bg-brand-600 text-white shadow-sm" : "text-brand-900 hover:bg-white disabled:opacity-60"
               }`}
             >
-              {m === "voz" ? <Microfono className="h-4 w-4" /> : <Icono nombre="chat" className="h-4 w-4" />}
+              {m === "voz" ? <Microfono className="h-3.5 w-3.5" /> : <Icono nombre="chat" className="h-3.5 w-3.5" />}
               {m === "voz" ? "Voz" : "Chat"}
             </button>
           ))}
@@ -357,16 +357,16 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
           type="button"
           onClick={() => fichaRef.current?.showModal()}
           aria-haspopup="dialog"
-          className="mx-auto flex w-full max-w-[420px] items-center gap-3 rounded-2xl bg-white/80 px-4 py-3 text-left shadow-[0_8px_30px_rgb(8_24_63/0.08)] ring-1 ring-brand-950/10 backdrop-blur transition-colors hover:bg-white"
+          className="mx-auto flex w-full max-w-[320px] items-center gap-2.5 rounded-xl bg-white/80 px-3 py-2 text-left shadow-[0_6px_24px_rgb(8_24_63/0.07)] ring-1 ring-brand-950/10 backdrop-blur transition-colors hover:bg-white"
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600">
-            <Icono nombre="diente" className="h-[18px] w-[18px]" />
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-600">
+            <Icono nombre="diente" className="h-4 w-4" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-xs text-tinta">La ficha de tu consultorio</span>
-            <span className="block truncate text-[15px] font-semibold text-brand-950">{ficha.consultorio}</span>
+            <span className="block text-[11px] leading-tight text-tinta">La ficha de tu consultorio</span>
+            <span className="block truncate text-[13px] font-semibold leading-tight text-brand-950">{ficha.consultorio}</span>
           </span>
-          <Chevron className="h-4 w-4 shrink-0 rotate-180 text-brand-900/60" />
+          <Chevron className="h-3.5 w-3.5 shrink-0 rotate-180 text-brand-900/50" />
         </button>
       </div>
 
