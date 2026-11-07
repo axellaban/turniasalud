@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
 import { BotonAxel } from "@/components/demo/axel";
@@ -156,7 +157,9 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
       style={{ background: "radial-gradient(120% 80% at 50% 42%, #ffffff 0%, #f7f9fd 60%, #eef2fa 100%)" }}
     >
       <header className="flex shrink-0 items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6">
-        <Logo chico />
+        <Link href="/" aria-label="Turnia Salud, ir al inicio" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-500">
+          <Logo chico />
+        </Link>
         {/* Voz o chat: mientras hay una conversación abierta no se cambia. */}
         <div
           role="group"
