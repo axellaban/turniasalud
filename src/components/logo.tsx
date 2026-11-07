@@ -25,12 +25,12 @@ export function LogoMark({ className = "h-8 w-8" }: { className?: string }) {
   );
 }
 
-/** Logo completo: isotipo y «Turnia» en negrita con «Salud» liviano, de un solo color. */
-export function Logo({ light = false }: { light?: boolean }) {
+/** Logo completo: isotipo y «Turnia» en negrita con «Salud» liviano, de un solo color. `chico`: para pantallas mínimas. */
+export function Logo({ light = false, chico = false }: { light?: boolean; chico?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-2 ${light ? "text-white" : "text-brand-950"}`}>
-      <TurniaMark className={`h-7 w-7 shrink-0 ${light ? "text-white" : "text-brand-600"}`} />
-      <span className="whitespace-nowrap text-[21px] leading-none tracking-[-0.035em]">
+    <span className={`inline-flex items-center ${chico ? "gap-1.5" : "gap-2"} ${light ? "text-white" : "text-brand-950"}`}>
+      <TurniaMark className={`${chico ? "h-5 w-5" : "h-7 w-7"} shrink-0 ${light ? "text-white" : "text-brand-600"}`} />
+      <span className={`whitespace-nowrap ${chico ? "text-[16px]" : "text-[21px]"} leading-none tracking-[-0.035em]`}>
         <span className="font-bold">Turnia</span> <span className="font-light">Salud</span>
       </span>
     </span>

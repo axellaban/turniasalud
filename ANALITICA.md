@@ -101,9 +101,9 @@ Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propi
 
 | Evento | Propiedades |
 | --- | --- |
-| `personal_demo_viewed` | `prospect_*`, `with_web`, `demo_ready` (si la demo estaba disponible), `preview` (vista desde el panel), `talked_to_sofi` (ya conversó con Sofi: ve la versión «¿dejamos a Sofi atendiendo…?») |
-| `demo_started` | `source` = `personal`, `via`, `with_web`. Toca «Probar la demo». Sale por beacon |
-| `demo_start_failed` | `error_kind` (`api_<status>`, `network`) |
+| `personal_demo_viewed` | `prospect_*`, `with_web`, `demo_ready` (si la demo estaba disponible), `preview` (vista desde el panel), `talked_to_sofi` (ya había conversado con Sofi; desde el 07/11 la página es la misma) |
+| `demo_started` | `source` = `personal`, `via`, `with_web`. Toca la esfera o manda el primer mensaje y se arma la demo (una vez por visita). Sale por beacon |
+| `demo_conversation_*`, `demo_mode_switched`, `demo_closing_viewed` | Los mismos que en `/probar-demo` (la charla es la misma, `use-charla-demo.ts`). Si no se pudo armar la demo, sale `demo_conversation_failed` con `error_kind = start_error` |
 | `demo_active_time` | Por tramos; el total de la visita es la suma. `active_ms`, `visible_ms`, `max_scroll_pct`, `end_reason`, `demo_kind` |
 
 ### `/probar-demo` (navegador)
