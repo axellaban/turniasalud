@@ -1240,3 +1240,82 @@ create table if not exists chat_usage (
 create index if not exists chat_usage_phone_idx on chat_usage (clinic_id, phone, kind, created_at desc);
 create index if not exists chat_usage_day_idx on chat_usage (clinic_id, kind, created_at);
 alter table chat_usage enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Follow-up (Panel → Follow-up, traído de habita.): una next best action por etapa del embudo de
+-- EMBUDO.md, con versiones medidas. Una versión no se edita ni se borra: cambiar el texto crea la
+-- siguiente, así sus números siguen valiendo. Por etapa, una activa y como mucho una a prueba
+-- (A/B 50/50). Cada ejecución guarda el paso del embudo en que estaba la persona: convierte si
+-- después pasó de ese paso. Ver PLAN_PROSPECCION.md → «Follow-up».
+-- ---------------------------------------------------------------------------
+create table if not exists sales_followup_versions (
+  id uuid primary key default gen_random_uuid(),
+  stage text not null check (stage in ('sin-saludo', 'saludo-sin-demo', 'demo-sin-abrir', 'abrio-sin-conversar', 'converso-sin-cuenta', 'cuenta-sin-actividad', 'activa-sin-pago')),
+  version integer not null check (version > 0),
+  channel text not null check (channel in ('whatsapp', 'tarea')),
+  trigger_label text not null default '' check (length(trigger_label) <= 120),
+  body text not null check (length(btrim(body)) between 1 and 1500),
+  ctas text[] not null default '{}' check (ctas <@ array['whatsapp', 'demo', 'panel', 'copy']::text[]),
+  status text not null default 'archived' check (status in ('active', 'test', 'archived')),
+  created_at timestamptz not null default now(),
+  status_at timestamptz not null default now(),
+  unique (stage, version)
+);
+create unique index if not exists sales_followup_versions_one_active on sales_followup_versions (stage) where status = 'active';
+create unique index if not exists sales_followup_versions_one_test on sales_followup_versions (stage) where status = 'test';
+alter table sales_followup_versions enable row level security;
+
+create or replace function sales_followup_version_frozen() returns trigger language plpgsql as $$
+begin
+  if tg_op = 'DELETE' then raise exception 'FOLLOWUP_VERSION_FROZEN'; end if;
+  if new.stage is distinct from old.stage or new.version is distinct from old.version or new.channel is distinct from old.channel
+     or new.trigger_label is distinct from old.trigger_label or new.body is distinct from old.body or new.ctas is distinct from old.ctas
+     or new.created_at is distinct from old.created_at then
+    raise exception 'FOLLOWUP_VERSION_FROZEN';
+  end if;
+  return new;
+end $$;
+drop trigger if exists sales_followup_versions_frozen on sales_followup_versions;
+create trigger sales_followup_versions_frozen before update or delete on sales_followup_versions
+  for each row execute function sales_followup_version_frozen();
+
+create table if not exists sales_followup_executions (
+  id uuid primary key default gen_random_uuid(),
+  version_id uuid not null references sales_followup_versions(id) on delete restrict,
+  stage text not null,
+  outreach_id uuid not null references sales_outreach(id) on delete cascade,
+  -- El paso del embudo al ejecutarla: -1 sin saludar, 0 saludado, 1 demo enviada, 2 la abrió,
+  -- 3 conversó con Sofi, 4 cuenta creada, 5 cuenta activa, 6 cliente pago.
+  from_step smallint not null check (from_step between -1 and 6),
+  status text not null check (status in ('opened', 'sent', 'failed')),
+  reason text check (reason is null or length(reason) <= 300),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  sent_at timestamptz,
+  unique (version_id, outreach_id)
+);
+create index if not exists sales_followup_executions_outreach_idx on sales_followup_executions (outreach_id);
+alter table sales_followup_executions enable row level security;
+
+-- La V1 de cada etapa, activa: las tres primeras son los mensajes de fábrica de Prospección.
+insert into sales_followup_versions (stage, version, channel, trigger_label, body, ctas, status) values
+  ('sin-saludo', 1, 'whatsapp', 'Al importarlo', '¡Buenas! ¿Hablo con {saludo}?', '{whatsapp,copy}', 'active'),
+  ('saludo-sin-demo', 1, 'whatsapp', 'Cuando responde el saludo',
+   E'Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia.\nTe armé una demo con tu consultorio: Sofi contesta el WhatsApp cuando estás atendiendo o fuera de horario, responde las consultas y da el turno.\nProbala en un minuto, como si fueras un paciente: {link}\nSi te interesa, te la muestro en 15 minutos. Y si no, avisame y no te escribo más.',
+   '{whatsapp,demo,copy}', 'active'),
+  ('demo-sin-abrir', 1, 'whatsapp', '2 días hábiles sin abrirla',
+   E'Hola {saludo}, te escribo de nuevo por si quedó tapado entre mensajes.\nSe viene la temporada y con los turistas aumentan las consultas por WhatsApp a cualquier hora. Sofi las contesta al instante y deja el turno dado.\nLa demo con tu consultorio sigue acá: {link}\n¿Te la muestro esta semana? Son 15 minutos.',
+   '{whatsapp,demo,copy}', 'active'),
+  ('abrio-sin-conversar', 1, 'whatsapp', '1 día después de abrirla',
+   E'Hola {saludo}, ¿llegaste a hablar con Sofi? Tocá «Probar la demo» y escribile como si fueras un paciente: en un minuto ves cómo da el turno.\n{link}',
+   '{whatsapp,demo,copy}', 'active'),
+  ('converso-sin-cuenta', 1, 'whatsapp', '1 día después de conversar',
+   E'Hola {saludo}, ¿qué te pareció Sofi?\nSi te sirve, la dejamos andando con tus horarios y tus tratamientos. Te muestro cómo en 15 minutos, ¿te queda bien esta semana?',
+   '{whatsapp,copy}', 'active'),
+  ('cuenta-sin-actividad', 1, 'whatsapp', 'Esta semana sin pacientes',
+   E'Hola {saludo}, tu panel de Turnia ya está listo: {panel}\nCargá tus horarios y conectá el WhatsApp del consultorio, y Sofi empieza a dar turnos. ¿Lo vemos juntos en 15 minutos?',
+   '{whatsapp,panel,copy}', 'active'),
+  ('activa-sin-pago', 1, 'whatsapp', 'Con la cuenta activa',
+   E'Hola {saludo}, Sofi ya está dando turnos en tu consultorio. ¿Te paso cómo seguir con el plan para que no se corte?',
+   '{whatsapp,copy}', 'active')
+on conflict (stage, version) do nothing;

@@ -192,6 +192,30 @@ Qué mirar: `demo_closing_viewed` → `cta_clicked` con `cta_id = talk_axel` (po
 - **Su demo:** «Ver lo que recibe» abre la página como la ve el odontólogo, sin contar como visita. Cuando él la abre o la prueba, queda en la ficha y el seguimiento pasa a hoy. Si la prueba, también aparece en Pedidos de demo.
 - **Estados:** Respondió, Reunión, Cliente, No le interesa, No tiene WhatsApp y **Pidió no recibir más**, que lo saca para siempre (también de las llamadas de Sofi).
 
+## Panel → Follow-up (07/11, traído de habita.)
+
+Una **next best action** por cada etapa del embudo de [`EMBUDO.md`](EMBUDO.md), con versiones medidas para ir mejorando los mensajes con datos. Está en el menú del equipo, debajo de Prospección.
+
+| Etapa | Quiénes | Convierte cuando… |
+| --- | --- | --- |
+| Sin saludar | Por contactar, con celular, sin baja y sin que otro del mismo número ya haya recibido el mensaje (como «Para hoy») | se le manda el saludo |
+| Saludado, sin demo | Recibieron el saludo, todavía sin la demo | se le manda la demo |
+| Demo enviada, sin abrir | Recibieron su demo `/p/<código>` y no la abrieron | la abre |
+| Abrió la demo, sin conversar con Sofi | La abrieron y no hablaron ni escribieron en la demo | conversa con Sofi |
+| Conversó con Sofi, sin cuenta | Conversaron, sin acceso propio al panel | tiene un código de «Acceso del consultorio» sin revocar |
+| Cuenta creada, sin actividad | Con cuenta, sin el criterio de cuenta activa en esta semana (3 pacientes y 1 turno de Sofi) | queda activa |
+| Cuenta activa, sin pago | Activas, todavía no en «Cliente» | pasa a Cliente |
+
+Cada persona está en su paso más alto; no se exige haber pasado por el anterior, como en `EMBUDO.md`. Quedan afuera los cerrados (No le interesa, No tiene WhatsApp, Pidió no recibir más), los que tienen la baja, los fijos sin respuesta y los clientes.
+
+- **Versiones:** texto (con las variables de Prospección y `{panel}`), canal (WhatsApp o tarea), cuándo se dispara y los call to actions (Abrir WhatsApp, Link demo, Link panel, Copiar mensaje). Una versión guardada no se edita ni se borra: cambiar algo crea la siguiente. Por etapa hay una activa y, como mucho, una a prueba: la recibe la mitad de las personas de la etapa, siempre la misma mitad. La V1 de las tres primeras etapas es el mensaje de fábrica de Prospección.
+- **Ejecutar:** arma el mensaje para esa persona. «Abrir WhatsApp con el mensaje» abre WhatsApp Web (o la app en el celular). «Confirmar envío» cuenta la ejecución y abre a la siguiente. «No se envió» pide el motivo y no cuenta.
+- **Qué registra:** en las tres primeras etapas, confirmar es el mismo contacto que en Prospección (`recordTouch`: saludo, demo o seguimiento, con sus eventos de PostHog y el límite de tres mensajes), así que cuenta igual en `npm run embudo`. En las etapas siguientes queda como nota en su historia.
+- **Números:** por versión, ejecuciones (envíos confirmados, una vez por persona), conversiones (hoy está en un paso más alto que al recibirla, sin plazo) y tasa. Con menos de 30 ejecuciones dice «muestra chica».
+- **Extensión:** las franjas tienen `data-testid="followup-stage"` (con `data-stage`) y cada persona `data-testid="followup-item"` (con `data-outreach`, `data-status` y `data-version`). Los botones son `followup-execute`, `followup-message`, `followup-open`, `followup-confirm`, `followup-failed`, `followup-failed-reason`, `followup-failed-save`, `followup-link-demo` y `followup-link-panel`.
+- **Datos:** `sales_followup_versions` y `sales_followup_executions` en `supabase/schema.sql`; la lógica, en `src/lib/sales/followup-stages.ts` (pura) y `src/lib/sales/followup.ts`.
+- **habita.:** lo mismo en amoblaia, `/admin/follow-up` (`docs/FOLLOWUP.md`). En Chapa Labs no hay Follow-up para ninguna de las dos unidades.
+
 ## Cuando responde
 
 Lo que se promete al terminar la demo («{Nombre}, escribime y en 15 minutos probamos a Sofi, sin costo, con los horarios, tratamientos y obras sociales de tu centro», desde el 07/11) es esto: probarla con sus horarios, sus tratamientos y sus casos. **No** se promete su agenda real: si usa papel o un software que no integramos (Dentalink, Doctoralia), eso se resuelve en el setup.
