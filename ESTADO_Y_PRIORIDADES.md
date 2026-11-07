@@ -1,6 +1,17 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 05/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 07/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## La demo personal pasa a ser una sola pantalla con la esfera — 07/11/2026
+
+- **Pedido del usuario:** que las dos versiones de `/p/<código>` (la de antes de probarla, con «Probar la demo», y la de después, con «¿dejamos a Sofi atendiendo…?») y la pantalla de la demo sean una sola, lo más simple posible: lo mágico tiene que venir de una esfera como la de la serie Dark, grande, que late como un corazón y le pide que le hable como si fuera un paciente. Arriba a la derecha, el chat como alternativa; abajo, solo la ficha de su consultorio; ni menú ni pie, solo el logo. Todos los links ya mandados caen en esta pantalla.
+- **Cómo quedó:** `src/app/(personal)/p/[code]` (grupo de rutas propio, sin el header ni el footer de la web).
+  - **La esfera** (`src/components/demo/esfera-oscura.tsx`): negra, con materia que gira adentro, hilos de humo alrededor (anillos deshilachados con un filtro de turbulencia SVG que giran) y un latido doble que larga una onda y le prende la luz de adentro. En la llamada, la luz y el tamaño siguen la voz: celeste cuando habla Sofi, violeta cuando habla la persona.
+  - **Debajo:** «Hablame como si fueras un paciente» y, de a uno, ejemplos de qué decir (el primero, sobre su tratamiento). En la llamada, lo último que se dijo como subtítulo, silenciar y cortar. Al terminar, «{Nombre}, ¿la dejamos atendiendo en {consultorio}?» con «Escribirle a Axel».
+  - **Arriba a la derecha:** «Chat» / «Voz». **Abajo:** «La ficha de tu consultorio · {consultorio}», que abre la ficha (profesional, dirección, turnos que puede dar, aviso de que es una prueba) y «¿Preferís que te la muestre yo?» con «Escribirle a Axel».
+- **La demo se arma al tocar la esfera** (o al mandar el primer mensaje), con los datos de su ficha, sin leer su web: tarda un segundo. Ninguno de la lista tiene web cargada, así que hoy no cambia nada. «Probó la demo» y el pedido de demo se registran en ese momento, como antes con el botón. Si la demo venció (24 h) o se usaron sus 6 conversaciones, se arma otra sola.
+- **La lógica de la charla** (voz/chat, tope de 3 minutos, cierre, eventos de PostHog) pasó a `src/components/demo/use-charla-demo.ts`, compartida con la demo de `/probar-demo` y `/demo`, que no cambian.
+- **Se sacó** «Ver la primera versión» del panel y `?vista=inicial` (del 05/11): ya no hay dos versiones. `?vista=panel` sigue igual: no cuenta como visita ni liga la demo a la persona.
 
 ## Límites de Sofi contra bots, abusos y llamadas eternas — 05/11/2026
 

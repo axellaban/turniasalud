@@ -176,7 +176,7 @@ export function fallbackProfile(site: ScrapeResult): DemoProfile {
 }
 
 /** Turnos habituales de un consultorio odontológico, para la demo sin web. */
-const DENTAL_TYPES: DemoProfile["prestaciones"] = [
+export const DENTAL_TYPES: DemoProfile["prestaciones"] = [
   { nombre: "Consulta de primera vez", especialidad: "Odontología", duracion_min: 30, precio: null, indicaciones: null, primera_vez: true },
   { nombre: "Limpieza dental", especialidad: "Odontología", duracion_min: 40, precio: null, indicaciones: null, primera_vez: false },
   { nombre: "Control", especialidad: "Odontología", duracion_min: 20, precio: null, indicaciones: null, primera_vez: false },

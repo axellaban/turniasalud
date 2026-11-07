@@ -302,20 +302,24 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(row).toEqual({ opens: 2, opened: true });
     expect((await outreach.outreachEvents(lopez)).filter((e) => e.kind === "abrio")).toHaveLength(1);
 
-    // La página arma la demo sin web con su consultorio y su nombre.
-    const page = (await import("@/app/(marketing)/p/[code]/page")).default;
+    // Una sola pantalla: la esfera que le pide que le hable, el chat arriba y la ficha de su consultorio
+    // abajo, armada sin web con su consultorio, su nombre y sus tratamientos.
+    const page = (await import("@/app/(personal)/p/[code]/page")).default;
     const html = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
-    expect(html).toContain("Hola María");
-    expect(html).toContain("Demo para Consultorio Odontológico López");
-    expect(html).toContain("con la Dra. María Elvira López Sánchez, también para ortodoncia.");
-    // El ejemplo es sobre su tratamiento (ortodoncia), con su nombre.
-    expect(html).toContain("Hola, ¿atienden ortodoncia? Es para mi hija.");
-    expect(html).toContain("Tengo el jueves a las 17 para la consulta con la Dra. María Elvira López Sánchez.");
-    // Sin tratamientos reconocidos, el ejemplo es la limpieza de siempre.
+    expect(html).toContain("Hablame como si fueras un paciente");
+    expect(html).toContain('aria-label="Escribirle por chat"');
+    expect(html).toContain("La ficha de tu consultorio");
+    expect(html).toContain("Consultorio Odontológico López");
+    expect(html).toContain("Dra. María Elvira López Sánchez");
+    expect(html).toContain("Saavedra 3527, Mar del Plata");
+    expect(html).toContain("Consulta de ortodoncia");
+    // Lo primero que se le sugiere decir es sobre su tratamiento (ortodoncia).
+    expect(html).toContain("«Hola, ¿atienden ortodoncia? Es para mi hija.»");
+    // Sin tratamientos reconocidos, la sugerencia es la limpieza de siempre.
     const pirera = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "pirera-g6h" }), searchParams: Promise.resolve({ vista: "panel" }) }));
-    expect(pirera).toContain("Soy Sofi, del Consultorio Odontológico Pirera");
-    // Antes de probarla, lo principal es probarla; escribirle a Axel queda abajo, con el mensaje escrito.
-    expect(html).toContain("Probar la demo");
+    expect(pirera).toContain("Consultorio Odontológico Pirera");
+    expect(pirera).toContain("«Hola, ¿tienen turno para una limpieza esta semana?»");
+    // Escribirle a Axel queda en la ficha, con el mensaje escrito.
     expect(html).toContain("¿Preferís que te la muestre yo?");
     expect(html).toContain(`wa.me/5491130235483?text=${encodeURIComponent("Hola Axel! Soy María. Prefiero que me muestres a Sofi funcionando en Consultorio Odontológico López.")}`);
     expect(html).toContain('data-cta="talk_axel"');
@@ -379,21 +383,15 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(JSON.stringify(await demoDynamicVariables(full, "web:abc"))).toContain("Escribirle a Axel");
     expect(JSON.stringify(await demoDynamicVariables(full, "5492230000000@c.us"))).not.toContain("Escribirle a Axel");
 
-    // Ya habló con Sofi: su página pasa a «¿dejamos a Sofi atendiendo…?», con escribirle a Axel primero.
-    // Si solo saludó Sofi (abrió y se fue sin decir nada), todavía no habló.
+    // Habló con Sofi (para la planilla y Chapa Labs). Si solo saludó Sofi (abrió y se fue sin decir nada), todavía no habló.
     await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }])})`;
     expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(false);
     await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }, { role: "user", message: "Quiero un turno" }])})`;
     expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(true);
+    // Su página es una sola: después de hablar con Sofi, la vuelve a encontrar igual.
     const despues = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
-    expect(despues).toContain("María, ¿dejamos a Sofi atendiendo");
-    expect(despues).toContain("Probar de nuevo");
-    expect(despues).toContain(encodeURIComponent("Hola Axel! Soy María. Probé a Sofi con Consultorio Odontológico López y quiero verla funcionando en mi consultorio."));
-    expect(despues.indexOf("talk_axel")).toBeLessThan(despues.indexOf("Probar de nuevo"));
-    // Axel puede volver a ver la primera versión, la de antes de hablar con Sofi.
-    const inicial = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({ vista: "inicial" }) }));
-    expect(inicial).toContain("Hola María: así atendería Sofi");
-    expect(inicial).not.toContain("¿dejamos a Sofi atendiendo");
+    expect(despues).toContain("Hablame como si fueras un paciente");
+    expect(despues).toContain("La ficha de tu consultorio");
   }, 30000);
 
   it("muestra el panel: cola del día, ficha, importar y mensajes", async () => {
@@ -430,7 +428,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
   it("la vista previa de WhatsApp queda guardada y sale al instante, también después de un deploy", async () => {
     await runAfter();
     const preview = await import("@/lib/sales/demo-preview");
-    const imagen = (await import("@/app/(marketing)/p/[code]/vista-previa/route")).GET;
+    const imagen = (await import("@/app/(personal)/p/[code]/vista-previa/route")).GET;
     const pedir = (code: string, v?: string) =>
       imagen(new Request(`https://turnia.example/p/${code}/vista-previa${v ? `?v=${v}` : ""}`), { params: Promise.resolve({ code }) });
     await sql`delete from sales_outreach_previews`;
@@ -441,7 +439,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(await preview.ensureDemoPreviews()).toBe(0);
 
     // La página apunta a la imagen guardada, con la versión en la dirección.
-    const generateMetadata = (await import("@/app/(marketing)/p/[code]/page")).generateMetadata;
+    const generateMetadata = (await import("@/app/(personal)/p/[code]/page")).generateMetadata;
     const meta = await generateMetadata({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) });
     const v = preview.demoPreviewVersion((await outreach.publicOutreach("lopez-j7k"))!);
     expect(meta.openGraph?.images).toEqual([expect.objectContaining({ url: `/p/lopez-j7k/vista-previa?v=${v}`, width: 1200, height: 630 })]);
