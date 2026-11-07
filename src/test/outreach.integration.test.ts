@@ -309,7 +309,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(html).toContain("Hablame como si fueras un paciente");
     // El logo lleva al inicio de la web.
     expect(html).toMatch(/<a aria-label="Turnia Salud, ir al inicio"[^>]*href="\/"/);
-    expect(html).toContain("Usá datos ficticios");
+    expect(html).toContain("(usá datos ficticios)");
     expect(html).toContain("Tocá para hablar");
     expect(html).toContain('aria-label="Cómo querés probarla"');
     expect(html).toContain("La ficha de tu consultorio");
