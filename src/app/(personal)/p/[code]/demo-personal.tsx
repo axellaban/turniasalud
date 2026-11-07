@@ -23,7 +23,7 @@ const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** El texto blanco adentro de la esfera se lee también sobre las nubes. */
 const SOMBRA_TEXTO = "0 1px 10px rgba(14,50,160,.28)";
 /** Lo que pide la esfera antes de hablar, de a uno. */
-const PEDIDOS = ["Hablame como si fueras un paciente", "Usá datos ficticios"];
+const PEDIDOS = ["Hablame como si fueras un paciente", "(usá datos ficticios)"];
 /** La demo armada en este navegador: si vuelve a la página, sigue con la misma. */
 const guardada = (code: string) => `turnia-demo:${code}`;
 
