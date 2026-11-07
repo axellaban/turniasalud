@@ -307,6 +307,7 @@ describe.runIf(base)("prospección a odontólogos", () => {
     const page = (await import("@/app/(personal)/p/[code]/page")).default;
     const html = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
     expect(html).toContain("Hablame como si fueras un paciente");
+    expect(html).toContain("Usá datos ficticios");
     expect(html).toContain("Tocá para hablar");
     expect(html).toContain('aria-label="Cómo querés probarla"');
     expect(html).toContain("La ficha de tu consultorio");

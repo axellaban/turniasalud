@@ -21,6 +21,8 @@ const AGENTE = "Sofi";
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** El texto blanco adentro de la esfera se lee también sobre las nubes. */
 const SOMBRA_TEXTO = "0 1px 10px rgba(14,50,160,.28)";
+/** Lo que pide la esfera antes de hablar, de a uno. */
+const PEDIDOS = ["Hablame como si fueras un paciente", "Usá datos ficticios"];
 /** La demo armada en este navegador: si vuelve a la página, sigue con la misma. */
 const guardada = (code: string) => `turnia-demo:${code}`;
 
@@ -196,21 +198,22 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
                 compacta ? "h-[min(56cqw,38cqh,330px)] w-[min(56cqw,38cqh,330px)]" : "h-[min(84cqw,62cqh,480px)] w-[min(84cqw,62cqh,480px)]"
               }`}
             >
-              {/* Adentro de la esfera, lo que te pide: le habla al que llega. */}
-              {pausada || connected ? null : connecting ? (
-                <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90" style={{ textShadow: SOMBRA_TEXTO }}>
-                  Conectando…
-                </span>
-              ) : enCharla ? (
-                <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90" style={{ textShadow: SOMBRA_TEXTO }}>
-                  Tocá para volver a hablar
-                </span>
-              ) : (
-                <span className="flex max-w-[70%] flex-col items-center" style={{ textShadow: SOMBRA_TEXTO }}>
-                  <span className="text-balance text-[6.4cqw] font-medium leading-[1.15] tracking-[-0.015em] text-white">Hablame como si fueras un paciente</span>
-                  <span className="mt-[2.6cqw] text-[3.6cqw] font-normal tracking-[-0.005em] text-white/75">Tocá para hablar</span>
-                </span>
-              )}
+              {/* Adentro de la esfera, lo que te pide. Se va con un fundido apenas empieza la llamada. */}
+              <span
+                className={`flex max-w-[70%] flex-col items-center transition-opacity duration-500 ${connected || pausada ? "opacity-0" : "opacity-100"}`}
+                style={{ textShadow: SOMBRA_TEXTO }}
+              >
+                {connecting || connected ? (
+                  <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90">Conectando…</span>
+                ) : enCharla ? (
+                  <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90">Tocá para volver a hablar</span>
+                ) : (
+                  <>
+                    <Alterna frases={PEDIDOS} className="text-balance text-[6.4cqw] font-medium leading-[1.15] tracking-[-0.015em] text-white" />
+                    <span className="mt-[2.6cqw] text-[3.6cqw] font-normal tracking-[-0.005em] text-white/75">Tocá para hablar</span>
+                  </>
+                )}
+              </span>
             </EsferaCielo>
           </button>
 
@@ -428,6 +431,28 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
         </div>
       </dialog>
     </div>
+  );
+}
+
+/** Frases que se turnan en el mismo lugar, con un fundido suave (todas ocupan la misma caja: no salta). */
+function Alterna({ frases, className }: { frases: string[]; className: string }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((n) => (n + 1) % frases.length), 3800);
+    return () => clearInterval(t);
+  }, [frases.length]);
+  return (
+    <span className="grid place-items-center">
+      {frases.map((f, k) => (
+        <span
+          key={f}
+          aria-hidden={k !== i}
+          className={`[grid-area:1/1] ${className} transition-[opacity,filter] duration-700 motion-reduce:transition-none ${k === i ? "opacity-100 blur-0" : "opacity-0 blur-[2px]"}`}
+        >
+          {f}
+        </span>
+      ))}
+    </span>
   );
 }
 
