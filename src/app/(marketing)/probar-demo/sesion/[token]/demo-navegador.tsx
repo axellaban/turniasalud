@@ -331,7 +331,7 @@ function Lista({ token, state }: { token: string; state: Extract<WebDemoState, {
           />
         </>
       }
-      cierre={<CierreDemo consultorio={clinic.name} saludo={persona?.saludo} codigo={persona?.codigo} />}
+      cierre={<CierreDemo consultorio={clinic.name} saludo={persona?.saludo} codigo={persona?.codigo} agente={clinic.agentName} />}
       pedirCredencial={async (mode: WebDemoMode) => {
         const res = await fetch(`/api/demo/web/${token}`, {
           method: "POST",
