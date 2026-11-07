@@ -28,7 +28,7 @@ export function UploadVoice() {
   );
 }
 
-type Person = { id: string; name: string; phone: string; greeting: string; touches: number; sent: boolean };
+type Person = { id: string; name: string; phone: string; greeting: string; touches: number; sent: boolean; needsReview: boolean };
 type RowState = { kind: "ok" | "error" | "sending"; message: string };
 
 export function VoiceSender({
@@ -167,7 +167,8 @@ export function VoiceSender({
                 <span className="min-w-40 font-medium text-brand-950">{p.name}</span>
                 <span className="text-xs text-brand-900/60">{p.phone} · {p.touches} de 3 mensajes</span>
                 <span className="ml-auto text-xs">
-                  {p.sent ? <span className="text-emerald-700">Ya lo recibió</span>
+                  {p.needsReview ? <span>Revisá el envío en WhatsApp</span>
+                    : p.sent ? <span className="text-emerald-700">Audio registrado o reservado</span>
                     : row ? <span className={row.kind === "error" ? "text-red-700" : row.kind === "ok" ? "text-emerald-700" : "text-brand-700"}>{row.message}</span>
                     : <span className="text-brand-900/50">{text ? `«${preview(p).slice(0, 50)}»` : ""}</span>}
                 </span>
