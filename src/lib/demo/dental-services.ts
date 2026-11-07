@@ -62,3 +62,15 @@ export function demoExample(services: DentalService[], professional: string, bus
       };
   }
 }
+
+/**
+ * Lo que se le sugiere escribirle a Sofi en el chat de su demo: lo que la demo resuelve de punta a
+ * punta. Su tratamiento (reserva el turno), una urgencia (la atiende con el protocolo) y un horario
+ * cercano (contesta con la agenda al instante). Ni obras sociales ni cambiar un turno: la demo no tiene
+ * coberturas cargadas ni turnos a su nombre, y Sofi terminaba diciendo lo que no sabe (07/11).
+ */
+export function chatSuggestions(treatment: string): string[] {
+  // Si su tratamiento ya es la urgencia (endodoncia), la segunda es la limpieza de siempre.
+  const urgency = /muela|duele/i.test(treatment) ? "¿Tienen turno para una limpieza esta semana?" : "Me duele una muela, ¿me pueden ver hoy?";
+  return [treatment, urgency, "¿Tienen algo para mañana a la tarde?"];
+}

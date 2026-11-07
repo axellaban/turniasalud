@@ -134,7 +134,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
     <div className="animar-aparecer mx-auto max-w-sm text-center">
       {/* Una sola frase, concreta: lo que ella reconoce como suyo (pedido del usuario, 07/11). */}
       <p className="text-balance text-[18px] font-medium leading-snug text-brand-950">
-        {saludo}, escribime y en 15 minutos probamos a {AGENTE} con los horarios, tratamientos y obras sociales de tu centro.
+        {saludo}, escribime y en 15 minutos probamos a {AGENTE}, sin costo, con los horarios, tratamientos y obras sociales de tu centro.
       </p>
       <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: ficha.consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-4" />
     </div>

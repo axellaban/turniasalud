@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 import { demoStatus } from "@/lib/demo/config";
-import { demoExample, dentalServices } from "@/lib/demo/dental-services";
+import { chatSuggestions, demoExample, dentalServices } from "@/lib/demo/dental-services";
 import { DENTAL_TYPES } from "@/lib/demo/profile";
 import { isConfigured } from "@/lib/env";
 import { TAMANO } from "@/lib/og";
@@ -78,7 +78,7 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
           direccion,
           turnos: [...DENTAL_TYPES.map((t) => t.nombre), ...services.map((s) => s.turno)],
         }}
-        ejemplos={[ejemplo.paciente, "¿Atienden por obra social?", "Necesito cambiar mi turno del jueves"]}
+        ejemplos={chatSuggestions(ejemplo.paciente)}
       />
     </>
   );

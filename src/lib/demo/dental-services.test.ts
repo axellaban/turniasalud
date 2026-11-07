@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoExample, dentalServices, servicesPhrase } from "./dental-services";
+import { chatSuggestions, demoExample, dentalServices, servicesPhrase } from "./dental-services";
 
 describe("tratamientos del odontólogo", () => {
   it("reconoce los de Doctoralia, en orden de peso y sin repetir", () => {
@@ -24,5 +24,16 @@ describe("tratamientos del odontólogo", () => {
       expect(demoExample(dentalServices(key), "la Dra. María de los Ángeles Alem Baraibar", "del Consultorio", true).agente.length).toBeLessThanOrEqual(150);
       expect(demoExample(dentalServices(key), "x", "y").agente).not.toMatch(/\$|precio/i);
     }
+  });
+});
+
+describe("chatSuggestions", () => {
+  it("sugiere lo que la demo resuelve: su tratamiento, una urgencia y un horario cercano", () => {
+    const implantes = demoExample(dentalServices("Implantes"), "la Dra. Paz", "del Consultorio Paz").paciente;
+    expect(chatSuggestions(implantes)).toEqual([implantes, "Me duele una muela, ¿me pueden ver hoy?", "¿Tienen algo para mañana a la tarde?"]);
+    // Si su tratamiento ya es la urgencia, no se repite.
+    const conducto = demoExample(dentalServices("Endodoncia"), "la Dra. Paz", "del Consultorio Paz").paciente;
+    expect(chatSuggestions(conducto)[1]).toBe("¿Tienen turno para una limpieza esta semana?");
+    expect(chatSuggestions(conducto).join(" ")).not.toMatch(/obra social|cambiar mi turno/);
   });
 });
