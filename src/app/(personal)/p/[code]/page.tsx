@@ -20,7 +20,7 @@ const profesional = (p: PublicOutreach) => (p.title ? `${p.title} ${p.name}` : p
 const consultorio = (p: PublicOutreach) => p.business_name || `Consultorio de ${p.name}`;
 
 // En Android, el teclado achica la pantalla en lugar de taparla: el chat queda entero arriba del teclado.
-export const viewport: Viewport = { interactiveWidget: "resizes-content", themeColor: "#eef1f8" };
+export const viewport: Viewport = { interactiveWidget: "resizes-content", themeColor: "#f7f9fd" };
 
 export async function generateMetadata({ params }: PageProps<"/p/[code]">): Promise<Metadata> {
   const p = await publicOutreach((await params).code);

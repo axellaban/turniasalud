@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
 import { BotonAxel } from "@/components/demo/axel";
-import { EsferaOscura } from "@/components/demo/esfera-oscura";
+import { EsferaCielo } from "@/components/demo/esfera-cielo";
 import { useCharlaDemo, type DemoCredential, type DemoMode } from "@/components/demo/use-charla-demo";
 import { Logo } from "@/components/logo";
 import { Chevron, Icono } from "@/components/site/iconos";
@@ -19,14 +19,11 @@ export type FichaPersonal = { consultorio: string; profesional: string; direccio
 
 const AGENTE = "Sofi";
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** El texto blanco adentro de la esfera se lee también sobre las nubes. */
+const SOMBRA_TEXTO = "0 1px 2px rgba(10,30,110,.35), 0 0 5cqw rgba(20,60,190,.55)";
 /** La demo armada en este navegador: si vuelve a la página, sigue con la misma. */
 const guardada = (code: string) => `turnia-demo:${code}`;
 
-const CSS = `
-@keyframes susurro { 0%, 100% { opacity: .62; letter-spacing: .005em } 50% { opacity: 1; letter-spacing: .018em } }
-.susurro { animation: susurro 4.6s ease-in-out infinite }
-@media (prefers-reduced-motion: reduce) { .susurro { animation: none } }
-`;
 
 export function DemoPersonal(props: {
   code: string;
@@ -154,9 +151,8 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
   return (
     <div
       className="relative flex h-dvh min-h-[480px] flex-col overflow-hidden"
-      style={{ background: "radial-gradient(120% 80% at 50% 42%, #ffffff 0%, #f1f3f9 55%, #e3e7f1 100%)" }}
+      style={{ background: "radial-gradient(120% 80% at 50% 42%, #ffffff 0%, #f7f9fd 60%, #eef2fa 100%)" }}
     >
-      <style>{CSS}</style>
       <header className="flex shrink-0 items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-8 sm:pt-6">
         <Logo />
         {/* Voz o chat: mientras hay una conversación abierta no se cambia. */}
@@ -174,7 +170,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
               disabled={connected || connecting}
               onClick={() => cambiarModo(m)}
               className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-full px-3.5 font-medium transition-colors disabled:cursor-not-allowed ${
-                mode === m ? "bg-brand-950 text-white" : "text-brand-900 hover:bg-white disabled:opacity-60"
+                mode === m ? "bg-brand-600 text-white shadow-sm" : "text-brand-900 hover:bg-white disabled:opacity-60"
               }`}
             >
               {m === "voz" ? <Microfono className="h-4 w-4" /> : <Icono nombre="chat" className="h-4 w-4" />}
@@ -193,7 +189,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
             aria-label={`Hablar con ${AGENTE}`}
             className="relative shrink-0 rounded-full outline-none focus-visible:ring-4 focus-visible:ring-brand-500/40 disabled:cursor-default"
           >
-            <EsferaOscura
+            <EsferaCielo
               estado={estado}
               leerVolumen={leerVolumen}
               className={`transition-[width,height] duration-700 ${
@@ -202,22 +198,26 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
             >
               {/* Adentro de la esfera, lo que te pide: le habla al que llega. */}
               {pausada || connected ? null : connecting ? (
-                <span className="text-[5cqw] font-light text-white/80">Conectando…</span>
+                <span className="text-[5cqw] text-white" style={{ textShadow: SOMBRA_TEXTO }}>
+                  Conectando…
+                </span>
               ) : enCharla ? (
-                <span className="flex flex-col items-center gap-[2.5cqw] text-[5.4cqw] font-light text-white/85">
+                <span className="flex flex-col items-center gap-[2.5cqw] text-[5.4cqw] text-white" style={{ textShadow: SOMBRA_TEXTO }}>
                   <Microfono className="h-[8cqw] w-[8cqw]" />
                   Tocá para volver a hablar
                 </span>
               ) : (
                 <span className="flex max-w-[74%] flex-col items-center">
-                  <span className="susurro text-balance text-[8.6cqw] font-light leading-[1.08] tracking-tight text-[#eef0ff]">Hablame como si fueras un paciente</span>
-                  <span className="mt-[5.5cqw] inline-flex items-center gap-[1.6cqw] text-[3.4cqw] font-medium uppercase tracking-[0.16em] text-white/55">
+                  <span className="text-balance text-[8.6cqw] font-normal leading-[1.08] tracking-tight text-white" style={{ textShadow: SOMBRA_TEXTO }}>
+                    Hablame como si fueras un paciente
+                  </span>
+                  <span className="mt-[5cqw] inline-flex items-center gap-[1.6cqw] rounded-full bg-[#2157e1]/45 px-[3.4cqw] py-[1.5cqw] text-[3.3cqw] font-semibold uppercase tracking-[0.14em] text-white ring-1 ring-white/30 backdrop-blur-sm">
                     <Microfono className="h-[4cqw] w-[4cqw]" />
                     Tocá para hablar
                   </span>
                 </span>
               )}
-            </EsferaOscura>
+            </EsferaCielo>
           </button>
 
           <div className={`w-full max-w-md text-center ${compacta || avisos ? "mt-[min(7cqh,3.5rem)]" : ""}`} aria-live="polite">
@@ -248,7 +248,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
                 aria-pressed={conversation.isMuted}
                 aria-label={conversation.isMuted ? "Activar el micrófono" : "Silenciar el micrófono"}
                 className={`grid h-11 w-11 place-items-center rounded-full ring-1 transition-colors ${
-                  conversation.isMuted ? "bg-brand-950 text-white ring-brand-950" : "bg-white text-brand-950 ring-brand-950/10 hover:bg-brand-50"
+                  conversation.isMuted ? "bg-brand-600 text-white ring-brand-600" : "bg-white text-brand-950 ring-brand-950/10 hover:bg-brand-50"
                 }`}
               >
                 <Microfono tachado={conversation.isMuted} className="h-5 w-5" />
@@ -256,7 +256,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
               <button
                 type="button"
                 onClick={() => conversation.endSession()}
-                className="inline-flex h-11 items-center gap-2 rounded-full bg-brand-950 px-6 text-sm font-semibold text-white hover:bg-black"
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-red-600 px-6 text-sm font-semibold text-white hover:bg-red-700"
               >
                 <Icono nombre="telefono" className="h-4 w-4 rotate-[135deg]" /> Cortar
               </button>
@@ -266,7 +266,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
       ) : (
         <section aria-label={`Chat con ${AGENTE}`} className="mx-auto flex min-h-0 w-full max-w-[620px] flex-1 flex-col px-4 pt-3">
           <div className="flex shrink-0 items-center gap-3">
-            <EsferaOscura estado={estado} className="h-11 w-11" />
+            <EsferaCielo estado={estado} className="h-11 w-11" />
             <p className="min-w-0 text-sm leading-tight">
               <span className="block font-semibold text-brand-950">{AGENTE}</span>
               <span className="block truncate text-xs text-tinta">{connected ? "En línea" : `Recepción de ${ficha.consultorio}`}</span>
@@ -279,7 +279,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
                   enPausa
                 ) : (
                   <>
-                    <p className="susurro text-balance text-[22px] font-light leading-tight tracking-tight text-brand-950 sm:text-[26px]">Escribile como si fueras un paciente</p>
+                    <p className="text-balance text-[22px] font-light leading-tight tracking-tight text-brand-950 sm:text-[26px]">Escribile como si fueras un paciente</p>
                     <ul className="mt-5 flex flex-wrap justify-center gap-2">
                       {ejemplos.map((idea, i) => (
                         <li key={idea}>
@@ -308,7 +308,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
                   <p
                     key={line.id}
                     className={`w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 ${
-                      line.role === "user" ? "ml-auto rounded-br-md bg-brand-950 text-white" : "rounded-bl-md bg-white text-brand-950 ring-1 ring-brand-950/5"
+                      line.role === "user" ? "ml-auto rounded-br-md bg-brand-600 text-white" : "rounded-bl-md bg-white text-brand-950 ring-1 ring-brand-950/5"
                     }`}
                   >
                     {line.text}
@@ -345,7 +345,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
               placeholder={`Escribile a ${AGENTE}…`}
               className="min-w-0 flex-1 rounded-full bg-white px-4 py-3 text-[16px] text-brand-950 shadow-sm outline-none ring-1 ring-brand-950/10 placeholder:text-tinta/85 focus:ring-2 focus:ring-brand-600"
             />
-            <button type="submit" disabled={connecting || !draft.trim()} className="rounded-full bg-brand-950 px-5 text-sm font-semibold text-white hover:bg-black disabled:opacity-40">
+            <button type="submit" disabled={connecting || !draft.trim()} className="rounded-full bg-brand-600 px-5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
               {connecting ? "Conectando…" : "Enviar"}
             </button>
           </form>
@@ -365,7 +365,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
           aria-haspopup="dialog"
           className="mx-auto flex w-full max-w-[420px] items-center gap-3 rounded-2xl bg-white/80 px-4 py-3 text-left shadow-[0_8px_30px_rgb(8_24_63/0.08)] ring-1 ring-brand-950/10 backdrop-blur transition-colors hover:bg-white"
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-950 text-white">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600">
             <Icono nombre="diente" className="h-[18px] w-[18px]" />
           </span>
           <span className="min-w-0 flex-1">
