@@ -194,7 +194,7 @@ Qué mirar: `demo_closing_viewed` → `cta_clicked` con `cta_id = talk_axel` (po
 
 ## Cuando responde
 
-Lo que se promete en la demo («en 15 minutos te la muestro funcionando con tus horarios y tus tratamientos») es esto. **No** se promete su agenda real: si usa papel o un software que no integramos (Dentalink, Doctoralia), eso se resuelve en el setup.
+Lo que se promete al terminar la demo («Escribime y en 15 minutos la probamos en el contexto real de tu centro», desde el 07/11) es esto: probarla con sus horarios, sus tratamientos y sus casos. **No** se promete su agenda real: si usa papel o un software que no integramos (Dentalink, Doctoralia), eso se resuelve en el setup.
 
 1. **Pedile los datos por WhatsApp y cerrá el horario** (copiar y pegar):
 

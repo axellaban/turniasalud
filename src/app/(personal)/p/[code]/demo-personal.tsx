@@ -133,9 +133,9 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
   const cierre = (
     <div className="animar-aparecer mx-auto max-w-sm text-center">
       <p className="text-[19px] font-medium leading-snug text-brand-950">
-        {saludo}, ¿la dejamos atendiendo en {ficha.consultorio}?
+        {saludo}, ¿la dejamos atendiendo en tu consultorio?
       </p>
-      <p className="mt-1.5 text-[15px] leading-relaxed text-tinta">Escribime y en 15 minutos te la muestro con tus horarios y tus tratamientos.</p>
+      <p className="mt-1.5 text-[15px] leading-relaxed text-tinta">Escribime y en 15 minutos la probamos en el contexto real de tu centro.</p>
       <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: ficha.consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-4" />
     </div>
   );
