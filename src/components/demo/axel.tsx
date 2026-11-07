@@ -68,7 +68,17 @@ export function BotonAxel({
  * Lo que aparece en el chat cuando termina una conversación con Sofi: una nota de Axel con un solo
  * paso, escribirle. La demo sigue a mano (escribir o llamar de nuevo), pero ya no es lo principal.
  */
-export function CierreDemo({ consultorio, saludo, codigo }: { consultorio: string; saludo?: string | null; codigo?: string | null }) {
+export function CierreDemo({
+  consultorio,
+  saludo,
+  codigo,
+  agente = "Sofi",
+}: {
+  consultorio: string;
+  saludo?: string | null;
+  codigo?: string | null;
+  agente?: string;
+}) {
   return (
     <div className="animar-aparecer mx-auto mt-4 w-full max-w-md rounded-2xl bg-white p-4 text-left shadow-[0_12px_32px_rgb(8_24_63/0.10)] ring-1 ring-brand-950/10 sm:p-5">
       <div className="flex items-center gap-2.5">
@@ -80,11 +90,9 @@ export function CierreDemo({ consultorio, saludo, codigo }: { consultorio: strin
           <span className="text-xs text-tinta">Turnia</span>
         </p>
       </div>
+      {/* Una sola frase, concreta: lo que ella reconoce como suyo (pedido del usuario, 07/11). */}
       <p className="mt-3 text-[17px] font-semibold leading-snug text-brand-950">
-        {saludo ? `${saludo}, ¿la` : "¿La"} dejamos atendiendo en {consultorio}?
-      </p>
-      <p className="mt-1.5 text-[15px] leading-relaxed text-tinta">
-        Escribime y en 15 minutos te la muestro funcionando con tus horarios y tus tratamientos.
+        {saludo ? `${saludo}, escribime` : "Escribime"} y en 15 minutos probamos a {agente} con los horarios, tratamientos y obras sociales de tu centro.
       </p>
       <BotonAxel texto={mensajeParaAxel({ saludo, consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-4 w-full" />
       <p className="mt-2 text-center text-xs text-tinta">Te contesto yo, por WhatsApp.</p>
