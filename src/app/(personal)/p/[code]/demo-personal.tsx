@@ -20,7 +20,7 @@ export type FichaPersonal = { consultorio: string; profesional: string; direccio
 const AGENTE = "Sofi";
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** El texto blanco adentro de la esfera se lee también sobre las nubes. */
-const SOMBRA_TEXTO = "0 1px 2px rgba(10,30,110,.35), 0 0 5cqw rgba(20,60,190,.55)";
+const SOMBRA_TEXTO = "0 1px 10px rgba(14,50,160,.28)";
 /** La demo armada en este navegador: si vuelve a la página, sigue con la misma. */
 const guardada = (code: string) => `turnia-demo:${code}`;
 
@@ -198,23 +198,17 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
             >
               {/* Adentro de la esfera, lo que te pide: le habla al que llega. */}
               {pausada || connected ? null : connecting ? (
-                <span className="text-[5cqw] text-white" style={{ textShadow: SOMBRA_TEXTO }}>
+                <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90" style={{ textShadow: SOMBRA_TEXTO }}>
                   Conectando…
                 </span>
               ) : enCharla ? (
-                <span className="flex flex-col items-center gap-[2.5cqw] text-[5.4cqw] text-white" style={{ textShadow: SOMBRA_TEXTO }}>
-                  <Microfono className="h-[8cqw] w-[8cqw]" />
+                <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90" style={{ textShadow: SOMBRA_TEXTO }}>
                   Tocá para volver a hablar
                 </span>
               ) : (
-                <span className="flex max-w-[74%] flex-col items-center">
-                  <span className="text-balance text-[8.6cqw] font-normal leading-[1.08] tracking-tight text-white" style={{ textShadow: SOMBRA_TEXTO }}>
-                    Hablame como si fueras un paciente
-                  </span>
-                  <span className="mt-[5cqw] inline-flex items-center gap-[1.6cqw] rounded-full bg-[#2157e1]/45 px-[3.4cqw] py-[1.5cqw] text-[3.3cqw] font-semibold uppercase tracking-[0.14em] text-white ring-1 ring-white/30 backdrop-blur-sm">
-                    <Microfono className="h-[4cqw] w-[4cqw]" />
-                    Tocá para hablar
-                  </span>
+                <span className="flex max-w-[70%] flex-col items-center" style={{ textShadow: SOMBRA_TEXTO }}>
+                  <span className="text-balance text-[6.4cqw] font-medium leading-[1.15] tracking-[-0.015em] text-white">Hablame como si fueras un paciente</span>
+                  <span className="mt-[2.6cqw] text-[3.6cqw] font-normal tracking-[-0.005em] text-white/75">Tocá para hablar</span>
                 </span>
               )}
             </EsferaCielo>
