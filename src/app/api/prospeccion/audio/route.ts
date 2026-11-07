@@ -8,12 +8,13 @@ import {
   sendVoiceTest,
   sendVoiceToProspect,
   setVoiceSender,
-  syncVoiceSendersFromWaha,
+  suggestVoiceSendersFromWaha,
   voiceCandidates,
   voiceChannelStatus,
   voiceNoteAudio,
   voiceSentToday,
   voiceSenderPhones,
+  VoicePaceError,
   VOICE_DAILY_LIMIT,
   VOICE_GROUPS,
   VOICE_MAX_BYTES,
@@ -84,7 +85,7 @@ export async function GET(request: Request) {
     testTo: testPhone(sender.data)?.slice(-4) ?? null,
     senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
     notes: notes.map(({ id, label }) => ({ id, label })),
-    people: people.map(({ id, name, business_name, phone, sent, senders }) => ({ id, name, practice: business_name, last4: phone?.slice(-4), sent, senders: senders.map((number) => number.slice(-4)) })),
+    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders }) => ({ id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)) })),
     remaining: Math.max(0, VOICE_DAILY_LIMIT - used),
   });
 }
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
       await setVoiceSender(data.person, data.sender, data.confirmed);
       return json({ ok: true });
     }
-    if (data.action === "detect") return json(await syncVoiceSendersFromWaha(data.sender));
+    if (data.action === "detect") return json(await suggestVoiceSendersFromWaha(data.sender));
     if (data.action === "test") {
       const phone = testPhone(data.sender);
       if (!phone) return json({ error: "Falta el otro WhatsApp para recibir la prueba." }, 422);
@@ -122,6 +123,7 @@ export async function POST(request: Request) {
     queueTurniaSheetSync();
     return json({ ok: true });
   } catch (error) {
+    if (error instanceof VoicePaceError) return json({ error: error.message, retryAfter: error.retryAfter }, 429);
     if (error instanceof OutreachError) return json({ error: error.message }, 422);
     console.error("chapa_prospecting_voice", error instanceof Error ? error.message : error);
     return json({ error: "No se pudo completar la operación." }, 500);

@@ -93,7 +93,7 @@ export default async function AudioPage({ searchParams }: PageProps<"/panel/pros
             ready={status.configured && status.ok}
             dailyLimit={VOICE_DAILY_LIMIT}
             remainingToday={Math.max(0, VOICE_DAILY_LIMIT - sentToday)}
-            people={candidates.map((c) => ({ id: c.id, name: c.name, phone: displayOutreachPhone(c.phone), greeting: c.greeting || c.name.split(/\s+/)[0], touches: c.touches, sent: c.sent }))}
+            people={candidates.map((c) => ({ id: c.id, name: c.name, phone: displayOutreachPhone(c.phone), greeting: c.greeting || c.name.split(/\s+/)[0], touches: c.touches, sent: c.sent, needsReview: c.needs_review }))}
           />
         ) : (
           <p className="mt-4 text-sm text-brand-900/70">Subí un audio para armar la cola.</p>

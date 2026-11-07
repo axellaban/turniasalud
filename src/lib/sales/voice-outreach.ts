@@ -14,6 +14,13 @@ import { OutreachError, conversoSql, outreachDemoUrl, recordTouch } from "./outr
 // No usa el WAHA de las clínicas ni el selector de canal de Sofi: es otra sesión, sin webhooks.
 
 export const VOICE_DAILY_LIMIT = 20;
+const MIN_VOICE_PAUSE = 180;
+
+export class VoicePaceError extends OutreachError {
+  constructor(readonly retryAfter: number) {
+    super("Esperando la pausa entre envíos.");
+  }
+}
 export const VOICE_MAX_BYTES = 3 * 1024 * 1024;
 /** De 8 a 21 en Buenos Aires: nunca un audio de un desconocido a la noche. */
 const HOURS = { from: 8, to: 21 };
@@ -48,7 +55,7 @@ const eligible = () => sql`
   and o.phone is not null and o.phone_kind is distinct from 'fijo'
   and not exists (select 1 from sales_suppressions s where s.phone = o.phone)`;
 
-export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; senders: string[] };
+export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[] };
 
 export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
   const [row] = await sql<Array<Record<VoiceGroup, number>>>`
@@ -63,9 +70,15 @@ export async function voiceCandidates(group: VoiceGroup, noteId: string | null):
   return sql<VoiceCandidate[]>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
       o.instagram, o.website, o.touches, o.greeted_at, o.opened_at, o.demo_at,
-      exists (select 1 from sales_voice_sends v where v.outreach_id = o.id and v.voice_note_id = ${noteId} and v.status <> 'error') as sent,
+      coalesce(delivery.reserved, false) as sent, coalesce(delivery.needs_review, false) as needs_review,
       array(select w.sender_phone from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone order by w.sender_phone) as senders
     from sales_outreach o
+    left join lateral (
+      select bool_or(v.status <> 'error') as reserved,
+        bool_or(v.status = 'enviando' and (v.error is not null or v.created_at < now() - ${MIN_VOICE_PAUSE} * interval '1 second')) as needs_review
+      from sales_voice_sends v
+      where v.outreach_id is not null and v.voice_note_id = ${noteId} and (v.outreach_id = o.id or v.phone = o.phone)
+    ) delivery on true
     where ${eligible()} and ${groupFilter(group)}
     order by o.priority, o.last_contact_at nulls first, o.name
     limit 300`;
@@ -257,15 +270,17 @@ async function chatFor(config: ProspectWaha, digits: string): Promise<string | n
  * Lo que ve la persona: el texto (si hay), unos segundos de «grabando audio…» como si se grabara en
  * el momento, y la nota de voz. La presencia es cosmética: si WAHA no la acepta, se sigue.
  */
-async function deliver(config: ProspectWaha, chatId: string, note: { mimetype: string; audio: Buffer }, text: string, seconds: number) {
+async function deliver(config: ProspectWaha, chatId: string, note: { mimetype: string; audio: Buffer }, text: string, seconds: number, onOutbound?: () => void) {
   await post(config, "/api/sendSeen", { chatId }).catch(() => {});
   if (text) {
+    onOutbound?.();
     await post(config, "/api/sendText", { chatId, text });
     await sleep(between(2000, 4000));
   }
   await post(config, `/api/${encodeURIComponent(config.session)}/presence`, { chatId, presence: "recording" }).catch(() => {});
   await sleep(Math.min(Math.max(seconds, 3), 15) * 1000 * between(0.6, 0.9));
   const ogg = isOgg(note.mimetype);
+  onOutbound?.();
   await post(config, "/api/sendVoice", {
     chatId,
     file: { mimetype: ogg ? "audio/ogg; codecs=opus" : note.mimetype, filename: ogg ? "audio.ogg" : "audio", data: note.audio.toString("base64") },
@@ -284,10 +299,10 @@ const SYNC_PAGE = 500;
 const SYNC_MAX_CHATS = 5000;
 
 /**
- * Marca «Desde <línea>» a cada contacto de la prospección que tiene un chat en el WhatsApp emisor.
- * Lee la lista de chats de la sesión de WAHA (los @lid se resuelven con su teléfono) y no manda nada.
+ * Sugiere contactos con un chat existente para que el operador compruebe qué envió y desde dónde.
+ * Los @lid se resuelven con su teléfono.
  */
-export async function syncVoiceSendersFromWaha(ending?: string): Promise<{ sender: string; chats: number; matched: number; inserted: number; phones: number; kinds: Record<string, number> }> {
+export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ sender: string; chats: number; matched: number; inserted: 0; phones: number; kinds: Record<string, number>; suggestions: string[] }> {
   const config = await requireChannel(ending);
   if (!config.phone) throw new OutreachError("Agregá «phone» a WAHA_PROSPECCION para saber de qué línea son los chats.");
   const session = encodeURIComponent(config.session);
@@ -364,17 +379,18 @@ export async function syncVoiceSendersFromWaha(ending?: string): Promise<{ sende
     const phone = phoneFromChatId(lid ? lids.get(id) : id);
     return phone ? [phone] : [];
   }))];
-  const [result] = await sql<Array<{ matched: number; inserted: number }>>`
-    with matched as (
-      select o.id, o.phone from sales_outreach o
-      where regexp_replace(o.phone, '[^0-9]', '', 'g') = any(${phones.map((phone) => phone.replace(/\D/g, ""))}::text[])
-        and o.phone_kind is distinct from 'fijo'
-    ), saved as (
-      insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone)
-      select id, phone, ${config.phone} from matched on conflict do nothing returning outreach_id
-    )
-    select (select count(*)::int from matched) as matched, (select count(*)::int from saved) as inserted`;
-  return { sender: config.phone.slice(-4), chats: ids.length, ...result, phones: phones.length, kinds };
+  const digits = phones.map((phone) => phone.replace(/\D/g, ""));
+  const matches = await sql<Array<{ id: string }>>`
+    select o.id from sales_outreach o
+    where ${eligible()} and regexp_replace(o.phone, '[^0-9]', '', 'g') = any(${digits}::text[])
+      and not exists (
+        select 1 from sales_outreach_whatsapp_senders w
+        where w.outreach_id = o.id and w.phone = o.phone and w.sender_phone = ${config.phone}
+      )`;
+  return {
+    sender: config.phone.slice(-4), chats: ids.length, matched: matches.length, inserted: 0,
+    phones: phones.length, kinds, suggestions: matches.map(({ id }) => id),
+  };
 }
 
 function checkHours(now = new Date()) {
@@ -449,30 +465,48 @@ export async function sendVoiceToProspect(noteId: string, outreachId: string, te
   const claim = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-quota', 0))`;
     if (group) {
+      const [current] = await tx`
+        select 1 from sales_outreach o
+        where o.id = ${outreachId} and o.phone = ${person.phone} and ${eligible()} and ${groupFilter(group)}
+      `;
+      if (!current) throw new OutreachError(`A ${person.name} ya no le toca en este grupo o cambió su teléfono.`);
       const [verified] = await tx`
         select 1 from sales_outreach_whatsapp_senders w
-        join sales_outreach o on o.id = w.outreach_id and o.phone = w.phone
         where w.outreach_id = ${outreachId} and w.phone = ${person.phone} and w.sender_phone = ${config.phone ?? ""}
       `;
       if (!verified) throw new OutreachError("Confirmá primero que ya le escribiste desde el WhatsApp emisor.");
     }
     if ((await voiceSentToday(tx)) >= VOICE_DAILY_LIMIT) throw new OutreachError(`Ya se reservaron ${VOICE_DAILY_LIMIT} envíos de audio para hoy. Seguí mañana.`);
+    if (group) {
+      const [{ seconds }] = await tx<Array<{ seconds: number }>>`
+        select coalesce(ceil(extract(epoch from (max(created_at) + ${MIN_VOICE_PAUSE} * interval '1 second' - now())))::int, 0) as seconds
+        from sales_voice_sends where outreach_id is not null and created_at > now() - ${MIN_VOICE_PAUSE} * interval '1 second'`;
+      if (seconds > 0) throw new VoicePaceError(seconds);
+    }
     return tx<Array<{ id: string }>>`
       insert into sales_voice_sends (voice_note_id, outreach_id, phone, status)
       select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando'
-      where not exists (select 1 from sales_voice_sends where outreach_id = ${outreachId} and status = 'enviando')
+      where not exists (
+        select 1 from sales_voice_sends
+        where outreach_id is not null and (outreach_id = ${outreachId} or phone = ${person.phone}) and status <> 'error'
+          and (voice_note_id = ${noteId} or (status = 'enviando' and created_at > now() - ${MIN_VOICE_PAUSE} * interval '1 second'))
+      )
       on conflict do nothing returning id`;
   });
   if (!claim.length) throw new OutreachError(`${person.name} ya recibió este audio o tiene otro envío en curso.`);
   const sendId = claim[0].id;
+  let outboundStarted = false;
   try {
     const chatId = await chatFor(config, person.phone.replace(/\D/g, ""));
     if (!chatId) throw new OutreachError(`${person.name}: ese número no tiene WhatsApp.`);
     const text = renderTemplate(template.trim(), person, outreachDemoUrl(person.code)).trim();
-    await deliver(config, chatId, note, text, seconds);
+    await deliver(config, chatId, note, text, seconds, () => { outboundStarted = true; });
     await sql`update sales_voice_sends set status = 'enviado' where id = ${sendId}`;
   } catch (e) {
-    await sql`update sales_voice_sends set status = 'error', error = ${String(e instanceof Error ? e.message : e).slice(0, 300)} where id = ${sendId}`;
+    const error = String(e instanceof Error ? e.message : e).slice(0, 300);
+    // Si hubo un intento de texto o audio, el proveedor pudo aceptarlo antes del error.
+    await sql`update sales_voice_sends set status = ${outboundStarted ? "enviando" : "error"}, error = ${error} where id = ${sendId}`;
+    if (outboundStarted) throw new OutreachError(`No se pudo confirmar el envío a ${person.name}. Revisá su chat antes de volver a escribirle.`);
     throw e;
   }
   // Ya salió: lo que sigue solo registra. Si falla, el envío no se repite (queda «enviado»).

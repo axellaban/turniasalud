@@ -21,10 +21,12 @@ const calls: Array<{ path: string; body: Record<string, unknown> | null }> = [];
 let session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
 let exists = true;
 let chatsStore = true;
+let sendVoiceFails = false;
 
 async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   const url = new URL(String(input));
   calls.push({ path: url.pathname, body: init.body ? JSON.parse(String(init.body)) : null });
+  if (url.pathname === "/api/sessions/secondary") return Response.json({ status: "WORKING", me: { id: "5491130235483@c.us" } });
   if (url.pathname === "/api/sessions/prospeccion") return Response.json(session);
   if (url.pathname === "/api/contacts/check-exists") return Response.json({ numberExists: exists, chatId: exists ? `${url.searchParams.get("phone")}@c.us` : null });
   if (url.pathname === "/api/prospeccion/chats") {
@@ -41,6 +43,7 @@ async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   if (url.pathname === "/api/prospeccion/media/convert/voice") {
     return Response.json({ data: Buffer.from("OggS...OpusHead").toString("base64") });
   }
+  if (url.pathname === "/api/sendVoice" && sendVoiceFails) return new Response("timeout", { status: 503 });
   return Response.json({ id: "msg" });
 }
 
@@ -98,23 +101,23 @@ describe.runIf(base)("audios de seguimiento", () => {
     session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
     exists = true;
     chatsStore = true;
+    sendVoiceFails = false;
   });
 
-  it("marca la línea emisora a quienes tienen chat en ese WhatsApp, también los @lid, sin mandar nada", async () => {
+  it("sugiere contactos con chats, también los @lid, sin confirmar líneas ni mandar nada", async () => {
     expect(voice.phoneFromChatId("5492236000001@c.us")).toBe("+5492236000001");
     expect(voice.phoneFromChatId("120363000000@g.us")).toBeNull();
-    expect(await voice.syncVoiceSendersFromWaha()).toEqual({
-      sender: "0000", chats: 6, matched: 3, inserted: 3, phones: 5,
+    const suggestions = await voice.suggestVoiceSendersFromWaha();
+    expect(suggestions).toMatchObject({
+      sender: "0000", chats: 6, matched: 3, inserted: 0, phones: 5,
       kinds: { numero: 2, lid: 3, lidSinNumero: 0, grupos: 1, otros: 0 },
     });
-    expect(await voice.syncVoiceSendersFromWaha()).toMatchObject({ inserted: 0 });
-    expect((await voice.voiceCandidates("no_abrio", null))[0].senders).toEqual(["5492235000000"]);
-    expect((await voice.voiceCandidates("abrio", null)).find((c) => c.name === "Beto Dos")?.senders).toEqual(["5492235000000"]);
+    expect(suggestions.suggestions.sort()).toEqual((await Promise.all([id("noabrio-a1"), id("abrio-b2"), id("hablo-c3")])).sort());
+    expect((await voice.voiceCandidates("no_abrio", null))[0].senders).toEqual([]);
     expect(calls.some((c) => c.path.startsWith("/api/send"))).toBe(false);
-    await sql`delete from sales_outreach_whatsapp_senders`;
 
     chatsStore = false;
-    await expect(voice.syncVoiceSendersFromWaha()).rejects.toThrow("store");
+    await expect(voice.suggestVoiceSendersFromWaha()).rejects.toThrow("store");
   });
 
   it("arma los tres grupos con las definiciones del embudo, sin baja ni quien ya usó los tres mensajes", async () => {
@@ -224,6 +227,7 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect((await voice.voiceCandidates("abrio", note)).find((person) => person.id === followup.person)?.senders).toEqual([
       "5491130235483", "5492235000000",
     ]);
+    await sql`update sales_voice_sends set created_at = now() - interval '4 minutes' where outreach_id is not null`;
     expect((await send(followup)).status).toBe(200);
     calls.length = 0;
 
@@ -233,6 +237,44 @@ describe.runIf(base)("audios de seguimiento", () => {
       chatId: "5491130235483@c.us", convert: false, file: { mimetype: "audio/ogg; codecs=opus" },
     });
     expect(await voice.voiceSentToday()).toBe(count);
+  });
+
+  it("comparte la pausa entre líneas y reserva para revisión una entrega sin confirmar", async () => {
+    const { POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    vi.stubEnv("WAHA_PROSPECCION_5483", JSON.stringify({
+      url: "https://waha-secondary.example", apiKey: "clave-secundaria", session: "secondary", phone: "5491130235483",
+    }));
+    const [{ id: note }] = await sql<Array<{ id: string }>>`
+      insert into sales_voice_notes (label, mimetype, audio) values ('Pausa y revisión', 'audio/ogg', ${Buffer.from("ogg")}) returning id`;
+    const other = await id("tres-d4");
+    const person = await id("hablo-c3");
+    await sql`insert into sales_voice_sends (voice_note_id, outreach_id, phone, status) values (${note}, ${other}, '+5492236000004', 'enviado')`;
+    await voice.setVoiceSender(person, "5483", true);
+    const send = () => POST(new Request("https://turnia.example/api/prospeccion/audio", {
+      method: "POST", headers: { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "send", note, person, sender: "5483", group: "hablo", text: "" }),
+    }));
+
+    const wait = await send();
+    expect(wait.status).toBe(429);
+    expect(await wait.json()).toMatchObject({ retryAfter: expect.any(Number) });
+    expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
+
+    await sql`update sales_voice_sends set created_at = now() - interval '4 minutes' where outreach_id is not null`;
+    sendVoiceFails = true;
+    const uncertain = await send();
+    expect(uncertain.status).toBe(422);
+    expect(await uncertain.json()).toMatchObject({ error: expect.stringContaining("Revisá su chat") });
+    expect(calls.find((call) => call.path === "/api/sendVoice")?.body).toMatchObject({ session: "secondary" });
+    expect((await voice.voiceCandidates("hablo", note)).find((c) => c.id === person)).toMatchObject({ sent: true, needs_review: true });
+
+    await sql`update sales_voice_sends set created_at = now() - interval '4 minutes' where outreach_id is not null`;
+    calls.length = 0;
+    sendVoiceFails = false;
+    expect((await send()).status).toBe(422);
+    expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
   });
 
   it("frena al llegar al tope del día", async () => {
