@@ -8,6 +8,13 @@ describe("reglas de audio de prospección", () => {
     });
   });
 
+  it("admite pausas expresadas en segundos", () => {
+    expect(voiceRulesSchema.parse({
+      ...DEFAULT_VOICE_RULES, pauseMinMinutes: 10 / 60, pauseMaxMinutes: 20 / 60,
+    })).toMatchObject({ pauseMinMinutes: 10 / 60, pauseMaxMinutes: 20 / 60 });
+    expect(voiceRulesSchema.safeParse({ ...DEFAULT_VOICE_RULES, pauseMinMinutes: 0 }).success).toBe(false);
+  });
+
   it("rechaza tandas mayores al cupo y pausas invertidas", () => {
     expect(voiceRulesSchema.safeParse({ ...DEFAULT_VOICE_RULES, dailyLimit: 3, batchSize: 5 }).success).toBe(false);
     expect(voiceRulesSchema.safeParse({ ...DEFAULT_VOICE_RULES, pauseMinMinutes: 8, pauseMaxMinutes: 3 }).success).toBe(false);

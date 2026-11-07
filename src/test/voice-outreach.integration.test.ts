@@ -309,6 +309,13 @@ describe.runIf(base)("audios de seguimiento", () => {
       expect((await pause.json()).retryAfter).toBeGreaterThan(300);
       expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
 
+      await rules.saveVoiceRules({ ...custom, pauseMinMinutes: 10 / 60, pauseMaxMinutes: 20 / 60 });
+      await sql`update sales_voice_sends set created_at = now() - interval '1 second' where outreach_id is not null`;
+      const shortPause = await request(payload);
+      expect(shortPause.status).toBe(429);
+      expect((await shortPause.json()).retryAfter).toBeLessThanOrEqual(10);
+      expect(calls.some((call) => call.path === "/api/sendVoice")).toBe(false);
+
       await rules.saveVoiceRules({ ...custom, dailyLimit: 1, batchSize: 1 });
       const capped = await request(payload);
       expect(capped.status).toBe(422);
