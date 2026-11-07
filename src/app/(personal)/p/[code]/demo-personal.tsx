@@ -209,8 +209,10 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
                   <span className="text-[4.4cqw] font-medium tracking-[-0.01em] text-white/90">Tocá para volver a hablar</span>
                 ) : (
                   <>
-                    <Alterna frases={PEDIDOS} className="text-balance text-[6.4cqw] font-medium leading-[1.15] tracking-[-0.015em] text-white" />
-                    <span className="mt-[2.6cqw] text-[3.6cqw] font-normal tracking-[-0.005em] text-white/75">Tocá para hablar</span>
+                    <Alterna frases={PEDIDOS} className="text-balance text-[7cqw] font-light leading-[1.12] tracking-[-0.035em] text-white" />
+                    <span className="mt-[2.6cqw] text-[3.6cqw] font-normal tracking-[-0.005em] text-white/85" style={{ textShadow: "0 1px 6px rgba(14,50,160,.5)" }}>
+                      Tocá para hablar
+                    </span>
                   </>
                 )}
               </span>
