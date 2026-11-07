@@ -92,7 +92,7 @@ export function CierreDemo({
       </div>
       {/* Una sola frase, concreta: lo que ella reconoce como suyo (pedido del usuario, 07/11). */}
       <p className="mt-3 text-[17px] font-semibold leading-snug text-brand-950">
-        {saludo ? `${saludo}, escribime` : "Escribime"} y en 15 minutos probamos a {agente} con los horarios, tratamientos y obras sociales de tu centro.
+        {saludo ? `${saludo}, escribime` : "Escribime"} y en 15 minutos probamos a {agente}, sin costo, con los horarios, tratamientos y obras sociales de tu centro.
       </p>
       <BotonAxel texto={mensajeParaAxel({ saludo, consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-4 w-full" />
       <p className="mt-2 text-center text-xs text-tinta">Te contesto yo, por WhatsApp.</p>
