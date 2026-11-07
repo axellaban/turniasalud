@@ -29,6 +29,7 @@ const PATHS = {
   telegram: ["M20.5 4.5 3.5 11.2l5.6 1.9 2 5.9 3-3.6 4.4 3.1z", "M9.1 13.1l11.4-8.6"],
   comercial: ["M6.5 4h3l1.5 4-2 1.3a10 10 0 0 0 5.7 5.7L16 13l4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.5 6.2 2 2 0 0 1 6.5 4z"],
   prospeccion: ["M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M12 12h.01"],
+  followup: ["M4 12a8 8 0 0 1 13.7-5.6", "M18 3v4h-4", "M20 12a8 8 0 0 1-13.7 5.6", "M6 21v-4h4"],
 } as const;
 
 export type PanelIconName = keyof typeof PATHS;

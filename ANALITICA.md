@@ -97,6 +97,8 @@ PostHog suma solo `$pageview`, `$pageleave`, autocaptura, `$device_type`, UTM y 
 
 Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propiedades de la persona.
 
+Si el saludo, la demo o el seguimiento salieron desde Panel → Follow-up, el evento trae también `followup_stage` (la etapa) y `followup_version` (el número de versión).
+
 ### Demo personal (`/p/<código>`, navegador)
 
 | Evento | Propiedades |

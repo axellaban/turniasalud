@@ -70,6 +70,9 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
         description="Odontólogos de Mar del Plata y Miramar, cada uno con su demo armada. Escribile a la persona que decide, de a uno, desde tu WhatsApp."
         actions={
           <>
+            <Link href="/panel/follow-up" className={secondaryButtonClass}>
+              Follow-up
+            </Link>
             <Link href="/panel/prospeccion/audio" className={secondaryButtonClass}>
               Mandar audio
             </Link>
