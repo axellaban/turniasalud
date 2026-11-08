@@ -77,15 +77,15 @@ Para la semana del 9/11, cuando a la base le quedaban 10 celulares sin contactar
 
 ## Volver a hablarles a los que pagan anuncios (Mar del Plata y Miramar, 08/11)
 
-Se entrega como `recontactar-ads-mdp-miramar.csv` (fuera del repo). Son los de la base de Mar del Plata y Miramar que **pagan anuncios**: 11 en total, 10 ya contactados. Quien paga por cada consulta es el más interesado en no perder las que llegan fuera de horario.
+Se entrega como `recontactar-ads-mdp-miramar.csv` (fuera del repo). Son los de la base de Mar del Plata y Miramar que **pagan anuncios**: 15 en total, 13 ya contactados. Quien paga por cada consulta es el más interesado en no perder las que llegan fuera de horario.
 
 - **Cómo se buscaron:**
-  - El [Centro de Transparencia de Anuncios de Google](https://adstransparency.google.com/?region=AR), por el dominio de cada web conocida (de la ficha o de Google Maps, cruzada por teléfono).
+  - El [Centro de Transparencia de Anuncios de Google](https://adstransparency.google.com/?region=AR) por SerpApi, por el dominio de cada web conocida: la de la ficha, o la de Google Maps cruzada por teléfono (54 fichas). Para los contactados sin web se buscó su ficha en Maps. SerpApi trae quién paga, cuántos días estuvieron al aire los anuncios y a qué web llevan.
   - La [Biblioteca de Anuncios de Meta](https://www.facebook.com/ads/library/), por palabras («odontología», «dentista», «implantes», «ortodoncia» con Mar del Plata y Miramar), cruzando las páginas con la base.
   - En sus webs, la etiqueta de conversiones de Google Ads y el píxel de Meta.
   - No se cuentan los anuncios de una clínica o una red donde la persona solo atiende (por ejemplo, un sanatorio).
-- **Qué hay:** 4 con Google Ads (uno, además, en Instagram), 5 con anuncios en Instagram y Facebook (varios son anuncios «Chateá con nosotros» que llevan a su WhatsApp) y 2 que solo tienen la etiqueta o el píxel en su web. Por estado: 5 saludados sin respuesta, 5 con la demo enviada (3 ya usaron los tres WhatsApp) y 1 por contactar.
-- **Qué falta:** buscarlos también por el nombre del anunciante verificado. Google frenó esas consultas por exceso de pedidos y no se pudo hacer ninguna; queda para cuando lo permita.
+- **Qué hay:** 11 con Google Ads (3 de ellos también en Instagram y Facebook), 3 solo con anuncios en Instagram y Facebook (varios son anuncios «Chateá con nosotros» que llevan a su WhatsApp) y 1 con el píxel de Meta en su web. Por estado: 5 saludados sin respuesta, 8 con la demo enviada (5 ya usaron los tres WhatsApp) y 2 por contactar. En dos casos el anuncio es de la clínica o la red donde atienden: ahí quien decide es el dueño, y figura en la nota.
+- **Qué falta:** SerpApi no busca por nombre de anunciante, solo por dominio, y el Centro de Transparencia frenó la búsqueda directa por nombre. Así que quien pauta sin web propia (con su ficha de Google) puede no aparecer. Las búsquedas de Google con anuncios («dentista Mar del Plata», etc.) no mostraron ninguno el domingo a la madrugada: se repiten el lunes 9/11 en horario de atención.
 - **El ángulo:** «ya pagás por cada consulta; las que llegan a la noche o el finde se enfrían hasta que alguien contesta». No es un cuarto WhatsApp: a quien ya usó los tres, se le habla por otro canal (llamada, Instagram de su consultorio, email o visita). La columna «otros_canales» trae el Instagram, el email o el WhatsApp de su web.
 - **Marcarlos en el panel:** `marcar-ads-en-turnia.csv` (código, nombre y señales) se importa en Panel → Prospección → Importar lista **con «Reemplazar» marcado**. Solo cambia «Señales»: queda «Hace Google Ads» o «Hace anuncios en Instagram y Facebook» con la fecha, delante de lo que ya decía. En Chapa Labs aparecen con la marca y se encuentran buscando «ads».
 
