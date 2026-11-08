@@ -236,6 +236,7 @@ export async function followupSnapshot(now = new Date()) {
   const changes = await sql<Array<{ outreach_id: string | null; subject: string; new_value: string | null; actor: string | null; created_at: string }>>`
     select outreach_id, subject, new_value, actor, created_at from sales_followup_audit order by created_at desc limit 20`;
   return {
+    labels: { situations: SITUATIONS, groups: GROUP_LABEL },
     summary: {
       ready: queue.filter((q) => !(q.claim && q.claim.until > live)).length,
       replies: all.filter((q) => ready(q) && q.group === "respuestas").length,
