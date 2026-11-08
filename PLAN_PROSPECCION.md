@@ -264,6 +264,7 @@ Chapa Labs (`/prospecting`, pestaña «Hoy» con Turnia y habita. juntas) opera 
 - **Quién:** cada ejecución guarda quién la hizo (`sales_followup_executions.actor`); situación, prioridad, reprogramación, responsable y respuestas quedan en `sales_followup_audit`.
 - **Resultados:** por versión (los de siempre), por quien ejecutó y el tiempo mediano entre saludo, demo enviada, demo visitada y demo probada.
 - **API:** `GET ?vista=followup`, `GET ?vista=filas` (la planilla «Prospección» leída de la base, con la historia) y `POST { by, followup: { op } }` con `claim`, `open`, `confirm`, `fail`, `release`, `situation`, `reply`, `replies`, `snooze`, `priority`, `owner`, `version-create` y `version-status`.
+- **Respuestas de WhatsApp:** una vez por día se leen los chats de las dos líneas de WAHA (0022 y 5483) y cada respuesta nueva pasa a «Respuestas para atender» sola (ver `CENTRO_COMERCIAL.md` → «Lectura diaria de WhatsApp»). Se puede seguir registrando a mano.
 - **Diferencias con habita.:** las esperas no se editan (son la cadencia de Prospección) y una versión no se edita (se crea la siguiente); no hay bandeja aparte de respuestas: una respuesta registrada queda en el grupo «Respuestas» con su texto. Panel → Follow-up sigue mostrando las etapas y las versiones como antes.
 
 ## Cuando responde

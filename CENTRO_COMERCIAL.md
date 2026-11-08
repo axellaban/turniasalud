@@ -16,7 +16,8 @@ El documento general del sistema está en Chapa Labs: [`docs/CENTRO_COMERCIAL.md
 | Etapas, versiones A/B y registro del envío (Panel → Follow-up) | `src/lib/sales/followup-stages.ts` y `src/lib/sales/followup.ts` |
 | API para Chapa | `src/app/api/prospeccion/route.ts`: `GET ?vista=filas`, `GET ?vista=followup`, `POST { by, followup: { op } }`, más las acciones, mensajes, metas e importación de antes |
 | Tablas | `sales_followup_state`, `sales_followup_claims`, `sales_followup_audit` y `sales_followup_executions.actor`, en `supabase/schema.sql` (el build las aplica) |
-| Pruebas | `src/test/followup-queue.integration.test.ts` (Postgres real) |
+| Lectura diaria de WhatsApp | `src/lib/sales/whatsapp-sync.ts`: lee los chats de las dos líneas de WAHA y registra las respuestas (ver abajo) |
+| Pruebas | `src/test/followup-queue.integration.test.ts` y `src/test/whatsapp-sync.integration.test.ts` (Postgres real) |
 | Explicación funcional | [`PLAN_PROSPECCION.md`](PLAN_PROSPECCION.md) → «La cola, operada desde Chapa Labs» |
 
 ### Cómo decide la cola
@@ -28,6 +29,16 @@ El documento general del sistema está en Chapa Labs: [`docs/CENTRO_COMERCIAL.md
   - El horario es de lunes a sábado, de 8:30 a 21; los contactos nuevos, hasta las 20. **Los domingos toda la cola aparece bloqueada: es lo esperado.**
 - **Programadas:** las tres primeras etapas siguen la cadencia de Prospección (días hábiles, tres mensajes como máximo). Las siguientes salen 48 h después del último mensaje.
 - **Tomas:** duran 10 minutos y se guardan con la hora del servidor de la app. Confirmar es idempotente, aunque la persona ya haya pasado de etapa.
+
+### Lectura diaria de WhatsApp (las respuestas entran solas)
+
+- **Qué hace:** una vez por día lee los chats de las dos líneas de la prospección: `WAHA_PROSPECCION` (el 0022) y `WAHA_PROSPECCION_5483` (el WhatsApp de Axel, desde donde sale la prospección). Cruza cada chat con la base por teléfono (los `@lid` se resuelven como en «Buscar sus chats») y lee los últimos 50 mensajes de cada persona de la base.
+- **Qué guarda:** por persona y línea, en `sales_whatsapp_chats`, cuántos mensajes le mandamos, si contestó, cuándo, su último texto («Audio», «Imagen» si no tiene) y si el último mensaje es de ella. Cada lectura queda en `sales_whatsapp_syncs` con su resumen.
+- **Qué cambia:** solo cuenta como respuesta lo que llegó **después de nuestro primer mensaje**. Si la persona estaba esperando (Por contactar, Contactado, o «Pide más adelante»), pasa a «Respondió» y a «Respuestas para atender» como Neutro, con su texto; quien la atienda la clasifica. Si ya se está hablando o está cerrada, la respuesta solo queda en la historia. Lo ya leído no se vuelve a aplicar.
+- **Qué no hace:** no manda nada, no marca como leído y no cambia nada en WAHA (respeta la regla de no tocar `n8n/waha`).
+- **Quién la dispara:** Chapa Labs, todos los días a las 8 de Argentina (cron de Vercel en chapa-labs), y su botón «Leer WhatsApp ahora». Por la API: `POST /api/prospeccion { by, followup: { op: "whatsapp-sync" } }`; si se pide antes de 10 minutos devuelve la última. La última lectura viene en `GET ?vista=followup` como `whatsapp` y en `GET ?vista=whatsapp`.
+- **Si una línea falla:** el resumen dice cuál y por qué (sin configurar, sesión caída, o NOWEB sin historial: hay que prender el store de la sesión en WAHA para que devuelva chats y mensajes).
+- **Lo que no ve:** lo que se mandó desde otro número que no esté en WAHA.
 
 ## La prospección al 08/11
 
@@ -57,7 +68,7 @@ El documento general del sistema está en Chapa Labs: [`docs/CENTRO_COMERCIAL.md
 
 1. **Tanda real de 10** desde Chapa (Hoy → Turnia), en horario. Comprobar que la otra persona ve «Lo tiene…» y que el contacto aparece en Panel → Prospección.
 2. **Login de Chapa.** Hoy está abierto por decisión del usuario; ver el documento de Chapa.
-3. **Respuestas desde WAHA**, para no registrarlas a mano.
+3. **Respuestas desde WAHA: hecho con la lectura diaria** (arriba). Falta mirar la primera lectura real y, si una línea dice «store», prender el historial de esa sesión en WAHA.
 4. **Reglas editables y edición de versiones**, como en habita.
 5. **Situaciones, tomas y bloqueos en Panel → Follow-up**, que sigue mostrando la versión anterior.
 6. **Retirar pantallas repetidas** solo después de dos semanas sin diferencias entre Chapa y este panel.

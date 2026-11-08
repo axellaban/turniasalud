@@ -6,6 +6,7 @@ import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
 import { FollowupError } from "@/lib/sales/followup";
 import { FollowupConflict, followupSnapshot, runFollowupOp } from "@/lib/sales/followup-queue";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
+import { lastWhatsappSync, syncWhatsappReplies } from "@/lib/sales/whatsapp-sync";
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABEL,
@@ -51,6 +52,10 @@ export const dynamic = "force-dynamic";
 //   POST { followup: { op, ... }, by }  opera esa cola: claim, open, confirm, fail, release, situation, reply,
 //                                snooze, priority, owner, version-create, version-status (los mismos campos que
 //                                habita.; `inmobiliaria` es la persona, por id o código). `by` es quien opera.
+//   GET ?vista=whatsapp          la última lectura de WhatsApp (también va en ?vista=followup como `whatsapp`).
+//   POST { followup: { op: "whatsapp-sync" }, by }  lee los chats de las dos líneas de WAHA de la prospección
+//                                y registra las respuestas nuevas (src/lib/sales/whatsapp-sync.ts). Chapa lo
+//                                dispara una vez por día; si se pide antes de 10 minutos, devuelve la última.
 //   POST { import: { csv, overwrite } }  importa una lista como Panel → Prospección → Importar lista (las
 //                                mismas columnas y reglas; overwrite = «Reemplazar los datos de los que ya
 //                                están»). Devuelve cuántas personas nuevas y cuántas actualizadas.
@@ -242,7 +247,11 @@ export async function GET(request: Request) {
     const [rows, events] = await Promise.all([outreachSheetRows(), activity()]);
     return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events }, { headers: NO_STORE });
   }
-  if (vista === "followup") return NextResponse.json(await followupSnapshot(), { headers: NO_STORE });
+  if (vista === "followup") {
+    const [snapshot, whatsapp] = await Promise.all([followupSnapshot(), lastWhatsappSync()]);
+    return NextResponse.json({ ...snapshot, whatsapp }, { headers: NO_STORE });
+  }
+  if (vista === "whatsapp") return NextResponse.json({ whatsapp: await lastWhatsappSync() }, { headers: NO_STORE });
   const [settings, clinics, [funnel]] = await Promise.all([
     outreachSettings(),
     sql<Array<{ id: string; name: string }>>`select id, name from clinics where not is_demo order by name`,
@@ -337,6 +346,19 @@ async function followupOp(body: { followup?: unknown; by?: unknown }) {
   const f = body.followup && typeof body.followup === "object" ? (body.followup as Record<string, unknown>) : null;
   if (!f) return NextResponse.json({ error: "Falta la operación." }, { status: 400 });
   const actor = (typeof body.by === "string" ? body.by.trim().slice(0, 80) : "") || "Chapa Labs";
+  if (f.op === "whatsapp-sync") {
+    try {
+      const report = await syncWhatsappReplies(actor);
+      if (report.totals.nuevas && !report.reused) {
+        revalidatePath("/panel/prospeccion");
+        revalidatePath("/panel/follow-up");
+        queueTurniaSheetSync();
+      }
+      return NextResponse.json({ whatsapp: report }, { headers: NO_STORE });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 409 });
+    }
+  }
   try {
     const result = await runFollowupOp(f.op, f, actor);
     if (["confirm", "fail", "situation", "reply"].includes(String(f.op))) {
