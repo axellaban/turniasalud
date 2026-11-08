@@ -54,26 +54,40 @@ La que sigue a la lista 1, en la misma zona. Se entrega como `lista-mdp-miramar-
 - **Miramar casi no suma** (3): sus odontólogos ya estaban todos en el Círculo.
 - **Zona:** Mar del Plata, Batán, Sierra de los Padres, Miramar y Otamendi, Mar Chiquita (Santa Clara, Coronel Vidal), Balcarce, Necochea y Quequén, Lobería, Villa Gesell, Pinamar, Madariaga, Maipú, Ayacucho y la Costa. Tandil y Dolores quedaron afuera.
 
-## Lista 4: alrededores de Mar del Plata, con los que hacen Google Ads primero (257 personas, 08/11)
+## Lista 4: alrededores de Mar del Plata, con los que pagan anuncios primero (258 personas, 08/11)
 
 Para la semana del 9/11, cuando a la base le quedaban 10 celulares sin contactar. Se entrega como `lista-4-alrededores-mdp.csv` (fuera del repo) y se importa en Panel → Prospección → Importar lista, **sin marcar «Reemplazar»**. No repite a nadie de las 709 personas que ya estaban en la base (listas 1 y 3 y consultorios con web): se cruzó por cada teléfono, por nombre y por apellido con la misma inicial en la misma ciudad.
 
 | Grupo | Personas | Dónde |
 |---|---:|---|
 | Con WhatsApp, alrededores | 117 | Tandil 53, Necochea 21, la Costa 24 (Santa Teresita, San Bernardo, Mar de Ajó, San Clemente, Mar del Tuyú, Las Toninas), Pinamar y Villa Gesell 14, Chapadmalal, Balcarce, Maipú, Dolores |
-| Con WhatsApp, Mar del Plata | 37 | Consultorios que no estaban en las listas 1 y 3 (salen de Google Maps). Van con prioridad 3, después de los alrededores |
-| Fijos | 103 | Tandil 29, Necochea 22, Mar del Plata 12, Villa Gesell 8, Pinamar 7 y otros. Quedan fuera de la cola, como siempre |
+| Con WhatsApp, Mar del Plata | 37 | Consultorios que no estaban en las listas 1 y 3 (salen de Google Maps). Van con prioridad 3, después de los alrededores, salvo los 5 que pautan en Instagram y Facebook (prioridad 1) |
+| Fijos | 104 | Tandil 29, Necochea 22, Mar del Plata 13, Villa Gesell 8, Pinamar 7 y otros. Quedan fuera de la cola, como siempre |
 
-- **Prioridad 1 (9):** los que pagan anuncios y los que muestran más inversión. Cinco hacen **Google Ads** confirmado en el [Centro de Transparencia de Anuncios de Google](https://adstransparency.google.com/?region=AR) (anuncios vistos en la Argentina entre junio y noviembre de 2026): cuatro por el dominio de su web y uno por el texto del anuncio. Otro hace anuncios en Instagram y Facebook ([Biblioteca de Anuncios de Meta](https://www.facebook.com/ads/library/)). En «Señales» queda la fecha del último anuncio, y en Chapa Labs llevan la marca «Google Ads» y van primeros entre los nuevos.
+- **Prioridad 1 (14 con WhatsApp):** los que pagan anuncios y los que muestran más inversión. Cinco hacen **Google Ads** confirmado en el [Centro de Transparencia de Anuncios de Google](https://adstransparency.google.com/?region=AR) (anuncios vistos en la Argentina entre junio y noviembre de 2026): cuatro por el dominio de su web y uno por el texto del anuncio. Seis pautan en Instagram y Facebook ([Biblioteca de Anuncios de Meta](https://www.facebook.com/ads/library/)): cinco en Mar del Plata y uno en Tandil (y un fijo más de Mar del Plata). En «Señales» queda la fecha del último anuncio, y en Chapa Labs llevan la marca «Google Ads» o «Meta Ads» y van primeros entre los nuevos.
 - **Cómo se confirmó Google Ads:** coincidir el nombre no alcanza. Buscando por nombre aparecieron homónimos que anuncian otras cosas, así que se miró cada anuncio. Solo cuenta si el anuncio lleva a su web o si dice su nombre y «odontología».
 - **Fuentes:**
   - Google Maps, unas 260 búsquedas por localidad y especialidad (sin sesión, Maps muestra hasta 20 resultados por búsqueda). De ahí salen la web, el Instagram y el WhatsApp que publica cada web.
   - Cartillas de OSDE de la filial Buenos Aires Centro (Tandil), PDF públicos con vigencia al 07/11/2026, con el celular propio de muchos odontólogos.
   - [Cartilla de OSPUNCPBA](https://www.ospuncpba.com.ar/) (obra social de la UNICEN): odontólogos de Tandil y Necochea con teléfono.
 - **Celular o fijo:** es celular si viene con 9 o con 15, si está en el link de WhatsApp de su web, o si el número local empieza con 3, 5 o 6. En Tandil (249), los celulares de las cartillas empiezan con 40 a 42, 45 a 47 o 449, y los fijos con 43 o 440 a 448. A 17 se los marcó celular solo por eso, con una nota en la ficha: si WhatsApp dice que el número no existe, «No tiene WhatsApp». Ojo: Maps muestra muchos celulares sin el 9. Por ejemplo, alguien que publica «0223-15-448-…» aparece en Maps como «+54 223 448-…». Por eso algunos «fijos» pueden tener WhatsApp.
-- **Sin nombre del odontólogo (55 con WhatsApp):** el saludo va al consultorio («¿Hablo con el consultorio de …?») y la nota dice que, si responde, hay que preguntar quién lo dirige. Los cuatro con nombre genérico en Google («Consultorio Odontológico») van con prioridad 3 y una nota para cambiar el saludo antes de mandar.
-- **Afuera:** el Círculo Odontológico de Balcarce, mecánicos dentales, laboratorios, hospitales y centros de salud. También un consultorio que hace Google Ads pero es de alguien que ya estaba en la base, Benito Juárez (queda lejos) y la cartilla de IOMA (casi no publica odontólogos).
+- **Sin nombre del odontólogo (55 con WhatsApp):** el saludo va al consultorio («¿Hablo con el consultorio de …?») y la nota dice que, si responde, hay que preguntar quién lo dirige. Los que tienen nombre genérico en Google («Consultorio Odontológico») van con prioridad 3 y una nota para cambiar el saludo antes de mandar.
+- **Afuera:** el Círculo Odontológico de Balcarce, mecánicos dentales, laboratorios, hospitales y centros de salud. También dos marcas de una misma clínica que pauta en Google e Instagram, que es de alguien que ya estaba en la base (va en el recontacto, abajo), Benito Juárez (queda lejos) y la cartilla de IOMA (casi no publica odontólogos).
 - **En Chapa Labs:** la planilla de Turnia no tiene columna «Lista», así que Chapa la toma de «Fuente», que empieza con «Lista 4». Se puede filtrar en «Por segmento → Lista» y buscar «lista 4».
+
+## Volver a hablarles a los que pagan anuncios (Mar del Plata y Miramar, 08/11)
+
+Se entrega como `recontactar-ads-mdp-miramar.csv` (fuera del repo). Son los de la base de Mar del Plata y Miramar que **pagan anuncios**: 11 en total, 10 ya contactados. Quien paga por cada consulta es el más interesado en no perder las que llegan fuera de horario.
+
+- **Cómo se buscaron:**
+  - El [Centro de Transparencia de Anuncios de Google](https://adstransparency.google.com/?region=AR), por el dominio de cada web conocida (de la ficha o de Google Maps, cruzada por teléfono).
+  - La [Biblioteca de Anuncios de Meta](https://www.facebook.com/ads/library/), por palabras («odontología», «dentista», «implantes», «ortodoncia» con Mar del Plata y Miramar), cruzando las páginas con la base.
+  - En sus webs, la etiqueta de conversiones de Google Ads y el píxel de Meta.
+  - No se cuentan los anuncios de una clínica o una red donde la persona solo atiende (por ejemplo, un sanatorio).
+- **Qué hay:** 4 con Google Ads (uno, además, en Instagram), 5 con anuncios en Instagram y Facebook (varios son anuncios «Chateá con nosotros» que llevan a su WhatsApp) y 2 que solo tienen la etiqueta o el píxel en su web. Por estado: 5 saludados sin respuesta, 5 con la demo enviada (3 ya usaron los tres WhatsApp) y 1 por contactar.
+- **Qué falta:** buscarlos también por el nombre del anunciante verificado. Google frenó esas consultas por exceso de pedidos y no se pudo hacer ninguna; queda para cuando lo permita.
+- **El ángulo:** «ya pagás por cada consulta; las que llegan a la noche o el finde se enfrían hasta que alguien contesta». No es un cuarto WhatsApp: a quien ya usó los tres, se le habla por otro canal (llamada, Instagram de su consultorio, email o visita). La columna «otros_canales» trae el Instagram, el email o el WhatsApp de su web.
+- **Marcarlos en el panel:** `marcar-ads-en-turnia.csv` (código, nombre y señales) se importa en Panel → Prospección → Importar lista **con «Reemplazar» marcado**. Solo cambia «Señales»: queda «Hace Google Ads» o «Hace anuncios en Instagram y Facebook» con la fecha, delante de lo que ya decía. En Chapa Labs aparecen con la marca y se encuentran buscando «ads».
 
 ## Lista 2: otras ciudades (Tucumán, La Rioja, Bahía Blanca, La Plata; 1.247 personas, 02/11)
 
