@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
-import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+import { NextResponse, after } from "next/server";
 import { OUTREACH_COLUMNS, outreachSheetRows, queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
+import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
+import { parseOutreachImport } from "@/lib/sales/outreach-import";
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABEL,
@@ -14,6 +17,7 @@ import {
 import {
   OutreachError,
   addOutreachNote,
+  importOutreach,
   outreachSettings,
   recordTouch,
   saveOutreachSettings,
@@ -38,6 +42,9 @@ export const dynamic = "force-dynamic";
 //   POST { templates }           guarda mensajes ({ clave: texto }); los demás quedan como estaban.
 //   POST { funnel }              guarda las metas del embudo: { perWeek, rates: { paso: 0.45 } }. perWeek es
 //                                la meta semanal de saludos de Panel → Prospección (la misma).
+//   POST { import: { csv, overwrite } }  importa una lista como Panel → Prospección → Importar lista (las
+//                                mismas columnas y reglas; overwrite = «Reemplazar los datos de los que ya
+//                                están»). Devuelve cuántas personas nuevas y cuántas actualizadas.
 
 function secret(): string | null {
   // Pegada en Vercel puede traer un espacio o un salto de línea de más.
@@ -262,6 +269,7 @@ export async function POST(request: Request) {
       throw e;
     }
   }
+  if (body && "import" in body && !body.code) return importList((body as { import: unknown }).import);
   if (body?.templates && typeof body.templates === "object" && !body.code) {
     try {
       await saveTemplates(body.templates as Record<string, unknown>);
@@ -287,4 +295,22 @@ export async function POST(request: Request) {
   queueTurniaSheetSync();
   const [row] = await outreachSheetRows(person.id);
   return NextResponse.json({ header: OUTREACH_COLUMNS, row }, { headers: { "Cache-Control": "private, no-store" } });
+}
+
+/** Lo mismo que Panel → Prospección → Importar lista: una persona nueva por fila, y quien ya estaba solo
+ * completa lo que le falta (o, con overwrite, toma los datos del archivo). Nunca cambia el nombre, el estado
+ * ni los contactos. */
+async function importList(raw: unknown) {
+  const input = raw && typeof raw === "object" ? (raw as { csv?: unknown; overwrite?: unknown }) : {};
+  const csv = typeof input.csv === "string" ? input.csv : "";
+  if (!csv.trim()) return NextResponse.json({ error: "Falta la lista (csv)." }, { status: 400 });
+  if (csv.length > 3_000_000) return NextResponse.json({ error: "La lista es muy grande: dividila en partes." }, { status: 413 });
+  const preview = parseOutreachImport(csv);
+  if (!preview.rows.length) return NextResponse.json({ error: preview.problems[0]?.reason ?? "No encontramos filas para importar.", problems: preview.problems }, { status: 422 });
+  const { codes, ...result } = await importOutreach(preview.rows, { overwrite: input.overwrite === true });
+  // Como en el panel: las vistas previas de los links se arman después de responder y la planilla se copia.
+  after(() => ensureDemoPreviews(codes));
+  revalidatePath("/panel/prospeccion");
+  queueTurniaSheetSync();
+  return NextResponse.json({ ...result, total: preview.total, problems: preview.problems.slice(0, 50) }, { headers: { "Cache-Control": "private, no-store" } });
 }

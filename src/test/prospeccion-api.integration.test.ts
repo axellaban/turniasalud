@@ -217,4 +217,23 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect(col(r.body, "Instagram")).toBe("@ana.odonto");
     expect((await post({ code: "ana-111", action: { type: "edit", fields: { phone: "12" } } })).status).toBe(422);
   });
+  it("importa una lista como el panel: nuevos, los que ya estaban solo completan y con overwrite reemplazan", async () => {
+    mocks.after.length = 0;
+    const csv = "codigo,nombre,saludo,zona,telefono,tipo_telefono,prioridad,señales,fuente\n" +
+      ",Carla Nueva,Carla,Tandil,249 15 455-0001,movil,1,Hace Google Ads,Lista 4 · Google Maps\n" +
+      "ana-111,Ana Prueba,,Mar del Plata,,,,,\n";
+    let r = await post({ import: { csv } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ created: 1, updated: 1, total: 2 });
+    expect(mocks.after.length).toBeGreaterThan(0);
+    const [carla] = await sql`select code, phone, phone_kind, priority, signals, source, status from sales_outreach where name = 'Carla Nueva'`;
+    expect(carla).toMatchObject({ phone: "+5492494550001", phone_kind: "movil", priority: 1, signals: "Hace Google Ads", source: "Lista 4 · Google Maps", status: "por_contactar" });
+    // Con overwrite, por código, solo cambia lo que trae el archivo (acá, las señales).
+    r = await post({ import: { csv: `codigo,nombre,señales\n${carla.code},Carla Nueva,Hace Google Ads (último visto 07/11/2026)\n`, overwrite: true } });
+    expect(r.body).toMatchObject({ created: 0, updated: 1 });
+    const [after2] = await sql`select phone, priority, signals, status from sales_outreach where code = ${carla.code}`;
+    expect(after2).toMatchObject({ phone: "+5492494550001", priority: 1, signals: "Hace Google Ads (último visto 07/11/2026)", status: "por_contactar" });
+    expect((await post({ import: { csv: "telefono\n2235000009\n" } })).status).toBe(422);
+    expect((await post({ import: { csv: "nombre\nX\n" } }, "Bearer otra")).status).toBe(401);
+  });
 });
