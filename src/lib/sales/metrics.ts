@@ -1,7 +1,8 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { DEFAULT_TZ } from "@/lib/time";
-import { fijoSinRespuesta } from "./outreach";
+import { DEMO_VERSIONS, ESFERA_DESDE, type DemoVersion } from "@/lib/demo-version";
+import { conversoSql, fijoSinRespuesta } from "./outreach";
 
 // Métricas agregadas para el tablero de Chapa Labs (/api/metricas): prospección, demos, pedidos de
 // demo y uso del producto, en totales y por día. Sin nombres, teléfonos ni textos. Las cuentas de la
@@ -41,12 +42,13 @@ export async function turniaMetrics({ from, to }: Range) {
     sofiDaily,
   ] = await Promise.all([
     // Cohorte: contactados por primera vez en el período. Prospectados es siempre toda la base.
-    sql<Array<Counts<"prospectados" | "contactados" | "abrieron_demo" | "probaron_demo" | "respondieron" | "interesados" | "reuniones" | "clientes" | "no_interesa" | "toques">>>`
+    sql<Array<Counts<"prospectados" | "contactados" | "abrieron_demo" | "probaron_demo" | "hablaron_sofi" | "respondieron" | "interesados" | "reuniones" | "clientes" | "no_interesa" | "toques">>>`
       select
         count(*)::int as prospectados,
         count(*) filter (where ${cohort})::int as contactados,
         count(*) filter (where ${cohort} and opened_at is not null)::int as abrieron_demo,
         count(*) filter (where ${cohort} and demo_at is not null)::int as probaron_demo,
+        count(*) filter (where ${cohort} and ${conversoSql()})::int as hablaron_sofi,
         count(*) filter (where ${cohort} and status in ${sql(REPLIED)})::int as respondieron,
         count(*) filter (where ${cohort} and (status in ('respondio', 'reunion', 'cliente') or (status = 'contactado' and (opened_at is not null or demo_at is not null))))::int as interesados,
         count(*) filter (where ${cohort} and status in ('reunion', 'cliente'))::int as reuniones,
@@ -152,9 +154,24 @@ export async function turniaMetrics({ from, to }: Range) {
     else daily.set(row.date, { date: row.date, mensajes: 0, otros_contactos: 0, aperturas: 0, demos: 0, respuestas: 0, reuniones: 0, clientes: 0, nuevos: row.nuevos });
   }
 
+  // La demo personal por versión (src/lib/demo-version.ts): cada persona va a la versión de su primera
+  // apertura, la única que queda con fecha. Lo que se compara es «abrieron → hablaron con Sofi»; «la
+  // empezaron» en A era tocar «Probar la demo» y en B ya es la charla. Toda la base, sin el rango.
+  const byVersion = await sql<Array<{ version: DemoVersion; abrieron: number; empezaron: number; hablaron: number }>>`
+    select case when opened_at < ${ESFERA_DESDE}::timestamptz then 'con_probar' else 'esfera' end as version,
+      count(*)::int as abrieron,
+      count(*) filter (where demo_at is not null)::int as empezaron,
+      count(*) filter (where ${conversoSql()})::int as hablaron
+    from sales_outreach o where opened_at is not null and ${counted} group by 1`;
+  const porVersionDemo = Object.fromEntries((Object.keys(DEMO_VERSIONS) as DemoVersion[]).map((v) => {
+    const r = byVersion.find((x) => x.version === v) ?? { abrieron: 0, empezaron: 0, hablaron: 0 };
+    return [v, { label: DEMO_VERSIONS[v].label, pasos: DEMO_VERSIONS[v].pasos, abrieron: r.abrieron, empezaron: r.empezaron, hablaron: r.hablaron }];
+  }));
+
   return {
     prospeccion: {
       ...funnel,
+      porVersionDemo,
       etapas: Object.fromEntries(statuses.map((s) => [s.estado, s.cuentas])),
       porCanal: channels,
       porZona: zones,

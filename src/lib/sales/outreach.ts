@@ -108,6 +108,8 @@ export type OutreachStats = {
   replied: number;
   opened: number;
   demos: number;
+  /** Hablaron con Sofi en su demo (escribieron o hablaron): la conversión de la demo en las dos versiones. */
+  talked: number;
   meetings: number;
   clients: number;
   due_followups: number;
@@ -130,6 +132,7 @@ export async function outreachStats(): Promise<OutreachStats> {
       count(*) filter (where status in ('respondio', 'reunion', 'cliente', 'no_interesa', 'baja'))::int as replied,
       count(*) filter (where opened_at is not null)::int as opened,
       count(*) filter (where demo_at is not null)::int as demos,
+      count(*) filter (where ${conversoSql()})::int as talked,
       count(*) filter (where status = 'reunion')::int as meetings,
       count(*) filter (where status = 'cliente')::int as clients,
       count(*) filter (where status = 'contactado' and touches < ${MAX_TOUCHES} and next_action_on <= ${today}::date)::int as due_followups,

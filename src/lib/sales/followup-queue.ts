@@ -222,7 +222,9 @@ export async function followupSnapshot(now = new Date()) {
   const timing = [
     { from: "Saludo", to: "Demo enviada", medianHours: gaps(b.people.map((r) => hours(r.greeted_at, r.first_contact_at))) },
     { from: "Demo enviada", to: "Demo visitada", medianHours: gaps(b.people.map((r) => hours(r.first_contact_at, r.opened_at))) },
-    { from: "Demo visitada", to: "Probó la demo", medianHours: gaps(b.people.map((r) => hours(r.opened_at, r.demo_at))) },
+    // De punta a punta, igual en las dos versiones de la demo (src/lib/demo-version.ts): «Probó la demo»
+    // ya no es un paso propio desde que tocar la esfera empieza la charla.
+    { from: "Demo visitada", to: "Habló con Sofi", medianHours: gaps(b.people.map((r) => hours(r.opened_at, r.converso_at))) },
   ];
   const sent = b.ex.filter((e) => e.status === "sent");
   const byActor = new Map<string, { executions: number; conversions: number }>();

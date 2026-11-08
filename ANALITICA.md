@@ -103,7 +103,7 @@ Si el saludo, la demo o el seguimiento salieron desde Panel → Follow-up, el ev
 
 | Evento | Propiedades |
 | --- | --- |
-| `personal_demo_viewed` | `prospect_*`, `with_web`, `demo_ready` (si la demo estaba disponible), `preview` (vista desde el panel), `talked_to_sofi` (ya había conversado con Sofi; desde el 07/11 la página es la misma) |
+| `personal_demo_viewed` | `prospect_*`, `with_web`, `demo_ready` (si la demo estaba disponible), `preview` (vista desde el panel), `talked_to_sofi` (ya había conversado con Sofi; desde el 07/11 la página es la misma), `demo_version` (desde el 08/11; ver abajo) |
 | `demo_started` | `source` = `personal`, `via`, `with_web`. Toca la esfera o manda el primer mensaje y se arma la demo (una vez por visita). Sale por beacon |
 | `demo_conversation_*`, `demo_mode_switched`, `demo_closing_viewed` | Los mismos que en `/probar-demo` (la charla es la misma, `use-charla-demo.ts`). Si no se pudo armar la demo, sale `demo_conversation_failed` con `error_kind = start_error` |
 | `demo_active_time` | Por tramos; el total de la visita es la suma. `active_ms`, `visible_ms`, `max_scroll_pct`, `end_reason`, `demo_kind` |
@@ -194,15 +194,30 @@ Para medir un botón nuevo: `{...cta("id", "zona", "destino")}` de `@/lib/analyt
 
 En todos: filtro `app_env` = `production` y tráfico interno excluido (paso 2 de arriba).
 
-**El embudo que se sigue cada semana** (saludos → demos enviadas → visitadas → con interacción → cuentas creadas → activas → clientes pagos) está definido en [`EMBUDO.md`](EMBUDO.md) y sale con `npm run embudo`. El proyecto 518346 («Default project») lo comparten Loreado y Copiloto: sin esos filtros, los gráficos mezclan productos.
+**El embudo que se sigue cada semana** (saludos → demos enviadas → visitadas → hablaron con Sofi → cuentas creadas → activas → clientes pagos) está definido en [`EMBUDO.md`](EMBUDO.md) y sale con `npm run embudo`. El proyecto 518346 («Default project») lo comparten Loreado y Copiloto: sin esos filtros, los gráficos mezclan productos.
 
-### Prospección (Insights → New → Funnel, conversión por persona, ventana 30 días)
+### Versión de la demo personal (`demo_version`)
+
+- **Qué es:** la versión de `/p/<código>` que vio la persona: `con_probar` (A, hasta el 07/11, con el botón «Probar la demo») o `esfera` (B, desde el 07/11, una sola pantalla). La regla está en `src/lib/demo-version.ts`.
+- **Dónde va:** desde el 08/11, en `personal_demo_viewed` y `demo_started`, y como propiedad registrada en todo lo que haga después ese navegador, incluidas las charlas.
+- **Lo anterior:** no la tiene. Para desglosar, usar la expresión HogQL de `DEMO_VERSION_HOGQL`:
+  `coalesce(properties.demo_version, if(timestamp < toDateTime('2026-11-07 15:30:00'), 'con_probar', 'esfera'))`.
+- **Qué comparar entre versiones:** **visitó → habló con Sofi**. «Empezó la demo» (`demo_started`) en A era tocar un botón y en B ya es la charla. Ver `EMBUDO.md` → «Las dos versiones de la demo personal».
+
+### Prospección (tablero «Turnia · Prospección», conversión por persona, ventana 30 días)
+
+En PostHog están creados (08/11) en el tablero «Turnia · Prospección», con los filtros de Turnia (prospectos `prospecto:<código>`, producción, sin tráfico interno):
+
+- **«Embudo comercial»:** saludo → demo enviada → visitó → habló con Sofi → respondió.
+- **«Demo personal: A contra B»:** visitó → empezó la demo → habló con Sofi, desglosado por versión con la expresión de arriba.
+
+Los pasos, para armarlo a mano:
 
 1. `prospect_greeting_sent`
 2. `prospect_pitch_sent`
 3. `personal_demo_viewed` con `preview` = `false`
-4. `demo_started` con `source` = `personal`
-5. `demo_conversation_started`
+4. `demo_started` con `source` = `personal` (diagnóstico: no significa lo mismo en A y B)
+5. `demo_conversation_ended` con `user_messages` > 0 (**habló con Sofi**; hasta el 08/11 este paso era `demo_conversation_started`, que con la esfera sale apenas la toca)
 6. `prospect_status_changed` con `status_to` = `respondio`
 7. `prospect_status_changed` con `status_to` = `reunion`
 8. `prospect_status_changed` con `status_to` = `cliente`

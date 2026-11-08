@@ -105,7 +105,7 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
             <Stat label="Hoy" value={`${stats.today_new} / ${settings.daily_goal}`} hint={`nuevos · ${stats.today_followups} seguimientos`} />
             <Stat label="Esta semana" value={`${stats.week_new} / ${settings.weekly_goal}`} hint="primeros contactos desde el lunes" />
             <Stat label="Respondieron" value={stats.replied} hint={`${pct(stats.replied, stats.contacted)} de ${stats.contacted} contactados`} />
-            <Stat label="Abrieron su demo" value={stats.opened} hint={`${stats.demos} la probaron · ${stats.meetings} reuniones`} />
+            <Stat label="Abrieron su demo" value={stats.opened} hint={`${stats.talked} hablaron con Sofi · ${stats.meetings} reuniones`} />
           </div>
 
           <Tabs

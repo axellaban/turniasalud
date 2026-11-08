@@ -55,6 +55,13 @@ describe.runIf(base)("métricas del tablero", () => {
     const m = await metrics.turniaMetrics({ from: null, to: null });
     expect(m.prospeccion).toMatchObject({ prospectados: 4, contactados: 3, abrieron_demo: 2, probaron_demo: 1, respondieron: 2, interesados: 3, reuniones: 1, clientes: 1 });
     expect(m.prospeccion.etapas).toEqual({ respondio: 1, contactado: 1, cliente: 1, por_contactar: 1 });
+    // La conversión de la demo es hablar con Sofi (nadie habló acá), por versión de la demo personal:
+    // las dos aperturas son de octubre, con «Probar la demo» (A).
+    expect(m.prospeccion.hablaron_sofi).toBe(0);
+    expect(m.prospeccion.porVersionDemo).toEqual({
+      con_probar: expect.objectContaining({ abrieron: 2, empezaron: 1, hablaron: 0 }),
+      esfera: expect.objectContaining({ abrieron: 0, empezaron: 0, hablaron: 0 }),
+    });
     expect(m.prospeccion.porCanal).toEqual([
       { canal: "whatsapp", contactados: 2, respondieron: 1, probaron_demo: 1, clientes: 0 },
       { canal: "instagram", contactados: 1, respondieron: 1, probaron_demo: 0, clientes: 1 },
