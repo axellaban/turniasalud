@@ -37,6 +37,16 @@ const messages: Record<string, Msg[]> = {
     { id: "e1", timestamp: T, fromMe: true, body: "Hola Eva" },
     { id: "e2", timestamp: T + 100, fromMe: false, hasMedia: true, media: { mimetype: "audio/ogg; codecs=opus" } },
   ],
+  // Fede: solo la respuesta automática de WhatsApp Business: no es una respuesta.
+  "prospeccion/5492236000006@c.us": [
+    { id: "f1", timestamp: T, fromMe: true, body: "Hola Fede" },
+    { id: "f2", timestamp: T + 2, fromMe: false, body: "Gracias por comunicarte con el consultorio. Nuestro horario de atención es de 9 a 18 hs." },
+  ],
+  // Gabi: una lectura vieja la abrió por su respuesta automática; esta lo deshace.
+  "prospeccion/5492236000007@c.us": [
+    { id: "g1", timestamp: T, fromMe: true, body: "Hola Gabi" },
+    { id: "g2", timestamp: T + 2, fromMe: false, body: "*Respuesta automática* En este momento no podemos atenderte." },
+  ],
   // Beto, en el WhatsApp de Axel por @lid: le escribimos y todavía no contestó.
   "axel/77665544@lid": [{ id: "b1", timestamp: T, fromMe: true, body: "Hola Beto" }],
 };
@@ -49,7 +59,7 @@ async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   if (path === "/api/sessions/axel") return Response.json({ status: "WORKING", me: { id: "5491130235483@c.us" } });
   if (path === "/api/prospeccion/chats") {
     return Response.json(url.searchParams.get("offset") === "0"
-      ? ["5492236000001@c.us", "5492236000003@c.us", "5492236000004@c.us", "5492236000005@c.us", "5492299999999@c.us", "120363000000@g.us"].map((id) => ({ id }))
+      ? ["5492236000001@c.us", "5492236000003@c.us", "5492236000004@c.us", "5492236000005@c.us", "5492236000006@c.us", "5492236000007@c.us", "5492299999999@c.us", "120363000000@g.us"].map((id) => ({ id }))
       : []);
   }
   if (path === "/api/axel/chats") return Response.json(url.searchParams.get("offset") === "0" ? [{ id: "77665544@lid" }] : []);
@@ -91,6 +101,8 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
       ["caro-c3", "Caro Tres", "+5492236000003", "no_interesa"],
       ["dani-d4", "Dani Cuatro", "+5492236000004", "contactado"],
       ["eva-e5", "Eva Cinco", "+5492236000005", "respondio"],
+      ["fede-f6", "Fede Seis", "+5492236000006", "contactado"],
+      ["gabi-g7", "Gabi Siete", "+5492236000007", "contactado"],
     ];
     for (const [code, name, phone, st] of people) {
       await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, first_contact_at, last_contact_at)
@@ -98,6 +110,9 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     }
     const [eva] = await sql<Array<{ id: string }>>`select id from sales_outreach where code = 'eva-e5'`;
     await sql`insert into sales_followup_state (outreach_id, situation, situation_step) values (${eva.id}, 'interesado', 0)`;
+    // Lo que había dejado la primera lectura, cuando todavía no distinguía las respuestas automáticas.
+    const [gabi] = await sql<Array<{ id: string }>>`select id from sales_outreach where code = 'gabi-g7'`;
+    await (await import("@/lib/sales/followup-queue")).incomingReply(gabi.id, "*Respuesta automática* En este momento no podemos atenderte.", "WhatsApp (lectura diaria)");
   }, 60000);
 
   afterAll(async () => {
@@ -111,11 +126,18 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     expect(code).toBe(200);
     const r = body.whatsapp;
     expect(r.lines).toEqual([
-      expect.objectContaining({ line: "0000", status: "ok", chats: 6, prospects: 4, read: 4 }),
+      expect.objectContaining({ line: "0000", status: "ok", chats: 8, prospects: 6, read: 6 }),
       expect.objectContaining({ line: "5483", status: "ok", chats: 1, prospects: 1, read: 1 }),
     ]);
-    // Ana, Beto, Caro, Dani y Eva tienen mensajes nuestros; contestaron Ana, Caro y Eva.
-    expect(r.totals).toEqual({ conversaciones: 5, respondieron: 3, esperanRespuesta: 2, nuevas: 3, abiertas: 1 });
+    // Ana, Beto, Caro, Dani, Eva, Fede y Gabi tienen mensajes nuestros; contestaron Ana, Caro y Eva
+    // (lo de Fede y Gabi es automático). Gabi vuelve a como estaba.
+    expect(r.totals).toEqual({ conversaciones: 7, respondieron: 3, esperanRespuesta: 2, nuevas: 3, abiertas: 1, corregidas: 1 });
+    expect(await status("fede-f6")).toBe("contactado");
+    expect(await status("gabi-g7")).toBe("contactado");
+    const gabi = await sql<Array<{ kind: string }>>`
+      select e.kind from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id where o.code = 'gabi-g7'`;
+    expect(gabi).toEqual([]);
+    expect(await sql`select 1 from sales_followup_state s join sales_outreach o on o.id = s.outreach_id where o.code = 'gabi-g7'`).toHaveLength(0);
     // De la más vieja a la más nueva.
     expect(r.pending.map((p) => [p.code, p.line, p.text])).toEqual([
       ["eva-e5", "0000", "Audio"],
@@ -145,7 +167,7 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     await older();
     const next = await sync();
     expect(next.body.whatsapp.reused).toBeUndefined();
-    expect(next.body.whatsapp.totals).toMatchObject({ nuevas: 0, abiertas: 0, respondieron: 3 });
+    expect(next.body.whatsapp.totals).toMatchObject({ nuevas: 0, abiertas: 0, corregidas: 0, respondieron: 3 });
   });
 
   it("una respuesta nueva de Beto en el WhatsApp de Axel lo abre", async () => {
@@ -167,5 +189,23 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     expect(s).toMatchObject({ sent: 2, received: 1, repliedAt: 30, lastFromMe: true, newReplies: [{ at: 30, text: "sí" }] });
     expect(wa.summarizeChat([{ timestamp: 10, fromMe: false, body: "hola" }], null).received).toBe(0);
     expect(wa.summarizeChat([{ timestamp: 10, fromMe: false, body: "hola" }], null, true).received).toBe(1);
+    // Una respuesta automática no cuenta, ni para «el último mensaje es de ellos».
+    const auto = wa.summarizeChat([
+      { timestamp: 20, fromMe: true, body: "hola" },
+      { timestamp: 21, fromMe: false, body: "¡Hola! Gracias por escribirnos a Odontología Luro. Actualmente nos encontramos fuera del horario." },
+    ], null);
+    expect(auto).toMatchObject({ received: 0, automatic: 1, lastFromMe: true });
+  });
+
+  it("distingue las respuestas automáticas de WhatsApp Business de las de una persona", () => {
+    for (const t of [
+      "Hola, gracias por su mensaje❗ En éste momento no podemos atenderla/o.",
+      "Gracias por comunicarte con el Dr Miguel Gentili. Te responderemos a la brevedad. Muchas gracias",
+      "Gracias por comunicarse con el Consultorio del Dr X. Nuestros horarios de atención son de lunes a viernes.",
+      "Gracias por tu mensaje. En este momento no podemos responder, pero lo haremos lo antes posible.",
+    ]) expect(wa.isAutomaticReply(t)).toBe(true);
+    for (const t of ["Gracias,", "No estamos interesados. Gracias.", "Gracias por escribir! Me interesa, ¿cuánto sale?", "en este momento estoy atendiendo, te escribo luego", "Audio"]) {
+      expect(wa.isAutomaticReply(t)).toBe(false);
+    }
   });
 });
