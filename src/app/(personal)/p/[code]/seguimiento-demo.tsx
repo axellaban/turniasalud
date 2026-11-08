@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { identify, registerSuperProperties, registerSuperPropertiesOnce, track, type EventProperties } from "@/lib/analytics";
 import { prospectDistinctId } from "@/lib/analytics-shared";
 import { isInternal, markInternal, startDemoEngagement } from "@/lib/interaction-tracking";
+import { DEMO_VERSION_ACTUAL } from "@/lib/demo-version";
 
 /**
  * Avisa que abrió su demo y arma PostHog en la demo de cada odontólogo: este navegador pasa a ser esa persona de la prospección
@@ -27,12 +28,13 @@ export function SeguimientoDemo({ code, facts, contar }: { code: string; facts: 
       }
     }
     // Atribución: lo que haga después este navegador (probar la demo, pedir una guiada) queda con su código.
-    registerSuperProperties({ outreach_code: code });
+    // `demo_version`: qué versión de la demo personal vio (src/lib/demo-version.ts), en todo lo que siga.
+    registerSuperProperties({ outreach_code: code, demo_version: DEMO_VERSION_ACTUAL });
     registerSuperPropertiesOnce({ first_demo_kind: "personal", first_outreach_code: code });
     // En la persona, solo lo de la prospección (prioridad, zona, tipo de teléfono, estado).
     const person = Object.fromEntries(Object.entries(facts).filter(([k]) => k.startsWith("prospect_")));
     if (contar && !isInternal()) identify(prospectDistinctId(code), person, { prospect_code: code });
-    track("personal_demo_viewed", { ...facts, preview: !contar });
+    track("personal_demo_viewed", { ...facts, preview: !contar, demo_version: DEMO_VERSION_ACTUAL });
   }, [code, facts, contar]);
   useEffect(() => startDemoEngagement({ demo_kind: "personal" }), []);
   return null;

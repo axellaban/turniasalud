@@ -2,7 +2,9 @@
 //
 //   POSTHOG_PERSONAL_API_KEY=phx_… [DATABASE_URL=postgres://…] npm run embudo
 //
-// - Etapas 1 a 4 (saludos, demos enviadas, visitadas y con interacción): PostHog.
+// - Etapas 1 a 4 (saludos, demos enviadas, visitadas y hablaron con Sofi): PostHog.
+// - Después, la demo personal por versión (A con «Probar la demo», hasta el 07/11; B con la esfera),
+//   para comparar cuál convierte mejor: visitaron → empezaron la demo → hablaron con Sofi.
 // - Etapas 5 a 7 (cuentas creadas, cuentas activas, clientes pagos): la base (Neon). Sin
 //   DATABASE_URL esas filas salen como «sin base».
 // - Semanas de lunes a domingo, hora de Buenos Aires. La semana 1 empieza el lunes 26/10/2026.
@@ -27,12 +29,19 @@ const STAGES = [
   ["saludos", "Saludos enviados"],
   ["demos_enviadas", "Demos enviadas"],
   ["demos_visitadas", "Demos visitadas"],
-  ["demos_interaccion", "Demos con interacción"],
+  ["hablaron", "Hablaron con Sofi"],
   ["cuentas_creadas", "Cuentas creadas"],
   ["cuentas_activas", "Cuentas activas"],
   ["clientes", "Clientes pagos"],
 ];
 const FROM_DB = new Set(["cuentas_creadas", "cuentas_activas", "clientes"]);
+// La persona escribió o habló con Sofi en una charla de su demo.
+const SPOKE = "event = 'demo_conversation_ended' AND toInt(coalesce(properties.user_messages, 0)) > 0";
+// La versión de la demo personal: la misma regla que src/lib/demo-version.ts (DEMO_VERSION_HOGQL).
+// Si se cambia el corte, cambiarlo en los dos lados.
+const ESFERA_DESDE = "2026-11-07 15:30:00";
+const VERSION = `coalesce(properties.demo_version, if(timestamp < toDateTime('${ESFERA_DESDE}'), 'con_probar', 'esfera'))`;
+const VERSION_LABEL = { con_probar: "A · Con «Probar la demo» (hasta el 07/11)", esfera: "B · Pantalla única con la esfera (desde el 07/11)" };
 
 const isoDay = (date) => date.toISOString().slice(0, 10);
 const addDays = (day, n) => isoDay(new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000));
@@ -85,14 +94,35 @@ async function posthogStages() {
       FROM events WHERE ${base} AND event = 'personal_demo_viewed' AND coalesce(properties.preview, false) = false
       GROUP BY distinct_id
       UNION ALL
-      -- Al menos una conversación (voz o chat) con Sofi dentro de su demo.
-      SELECT 'demos_interaccion', distinct_id, min(timestamp), max(timestamp), toDateTime(0)
-      FROM events WHERE ${base} AND event = 'demo_conversation_started'
+      -- Hablaron con Sofi: una charla (voz o chat) en la que la persona escribió o habló. Sofi saluda
+      -- primero: abrir la llamada y no decir nada no cuenta (desde el 08/11; antes contaba
+      -- demo_conversation_started, que con la esfera sale apenas la toca).
+      SELECT 'hablaron', distinct_id, min(timestamp), max(timestamp), toDateTime(0)
+      FROM events WHERE ${base} AND ${SPOKE}
       GROUP BY distinct_id
     ) GROUP BY stage, semana`);
   const out = {};
   for (const [stage, monday, count] of rows) (out[stage] ??= {})[monday] = count;
   return out;
+}
+
+/**
+ * La demo personal por versión: por cada persona y versión, si la visitó, si empezó la demo y si habló
+ * con Sofi en esa versión. { versión: { visitaron, empezaron, hablaron } }.
+ */
+async function demoByVersion() {
+  const base = `distinct_id LIKE 'prospecto:%' AND properties.app_env = 'production'
+    AND coalesce(properties.is_internal, false) = false AND timestamp >= toDateTime('${WEEK_1} 00:00:00', '${TZ}')`;
+  const rows = await hogql(`
+    SELECT version, countIf(visito), countIf(visito AND empezo), countIf(visito AND hablo) FROM (
+      SELECT distinct_id, ${VERSION} AS version,
+        countIf(event = 'personal_demo_viewed' AND coalesce(properties.preview, false) = false) > 0 AS visito,
+        countIf(event = 'demo_started' AND properties.source = 'personal') > 0 AS empezo,
+        countIf(${SPOKE}) > 0 AS hablo
+      FROM events WHERE ${base} AND event IN ('personal_demo_viewed', 'demo_started', 'demo_conversation_ended')
+      GROUP BY distinct_id, version
+    ) GROUP BY version ORDER BY version`);
+  return Object.fromEntries(rows.map(([version, visitaron, empezaron, hablaron]) => [version, { visitaron, empezaron, hablaron }]));
 }
 
 /** Etapas 5 a 7 desde la base: { etapa: { lunes: cantidad } }. */
@@ -140,7 +170,7 @@ async function databaseStages(from) {
 async function main() {
   if (!POSTHOG_KEY) throw new Error("Falta POSTHOG_PERSONAL_API_KEY (clave personal de PostHog, phx_…).");
   const { list, today } = weeks();
-  const [ph, db] = await Promise.all([posthogStages(), DATABASE_URL ? databaseStages(WEEK_1) : null]);
+  const [ph, db, versions] = await Promise.all([posthogStages(), DATABASE_URL ? databaseStages(WEEK_1) : null, demoByVersion()]);
   const data = { ...ph, ...(db ?? {}) };
 
   const header = list.map((monday, i) => `Semana ${i + 1} (${short(monday)}–${short(addDays(monday, 6) < today ? addDays(monday, 6) : today)})`);
@@ -161,6 +191,14 @@ async function main() {
   console.log(`Embudo de Turnia al ${short(today)}/${today.slice(0, 4)} (lunes a domingo, hora de Buenos Aires)\n`);
   console.log(lines.join("\n"));
   if (!db) console.log("\nSin DATABASE_URL: cuentas y clientes salen de la base (Neon); ver EMBUDO.md.");
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+  console.log("\nDemo personal por versión (cada persona, en la versión de su visita)\n");
+  console.log("| Versión | Visitaron | Empezaron la demo | Hablaron con Sofi | Visitaron → hablaron |");
+  console.log("| --- | ---: | ---: | ---: | ---: |");
+  for (const key of Object.keys(VERSION_LABEL)) {
+    const v = versions[key] ?? { visitaron: 0, empezaron: 0, hablaron: 0 };
+    console.log(`| ${VERSION_LABEL[key]} | ${v.visitaron} | ${v.empezaron} | ${v.hablaron} | ${pct(v.hablaron, v.visitaron)} |`);
+  }
 }
 
 main().catch((error) => {

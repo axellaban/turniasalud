@@ -1,5 +1,6 @@
 "use client";
 
+import { DEMO_VERSION_ACTUAL } from "@/lib/demo-version";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
@@ -63,7 +64,7 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
   /** Arma la demo (una vez por visita) y espera a que la ficha esté lista. Devuelve su token. */
   async function prepararDemo(): Promise<string> {
     if (sesion.current) return sesion.current;
-    track("demo_started", { source: "personal", via: "navegador", with_web: false }, true);
+    track("demo_started", { source: "personal", via: "navegador", with_web: false, demo_version: DEMO_VERSION_ACTUAL }, true);
     const res = await fetch("/api/demo/iniciar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

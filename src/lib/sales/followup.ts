@@ -3,7 +3,7 @@ import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { DEFAULT_TZ } from "@/lib/time";
 import { CLOSED, displayOutreachPhone, renderTemplate, whatsappLinks, type OutreachPerson, type OutreachStatus } from "./outreach-messages";
-import { OutreachError, addOutreachNote, conversoSql, fijoSinRespuesta, outreachDemoUrl, recordTouch } from "./outreach";
+import { OutreachError, addOutreachNote, conversoSql, fijoSinRespuesta, outreachDemoUrl, recordTouch, userSpokeSql } from "./outreach";
 import {
   FOLLOWUP_STAGES,
   TOUCH_STAGES,
@@ -49,6 +49,8 @@ export type Row = OutreachPerson & {
   landline: boolean;
   contactable: boolean;
   converso: boolean;
+  /** La primera charla de su demo en la que escribió o habló. */
+  converso_at: string | null;
   account: boolean;
   active: boolean;
 };
@@ -79,6 +81,8 @@ export async function rows(id?: string) {
       (o.phone is not null and o.phone_kind is distinct from 'fijo'
         and not exists (select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id and (x.touches > 0 or x.status <> 'por_contactar'))) as contactable,
       ${conversoSql()} as converso,
+      (select min(v.started_at) from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
+        where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()}) as converso_at,
       ${account} as account,
       (${account}
         and (select count(distinct v.patient_id) from conversations v where v.clinic_id = o.clinic_id and v.patient_id is not null and v.started_at >= ${weekStart}) >= ${ACTIVE_MIN_PATIENTS}
