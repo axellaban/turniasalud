@@ -208,8 +208,10 @@ En todos: filtro `app_env` = `production` y tráfico interno excluido (paso 2 de
 
 En PostHog están creados (08/11) en el tablero «Turnia · Prospección», con los filtros de Turnia (prospectos `prospecto:<código>`, producción, sin tráfico interno):
 
-- **«Embudo comercial»:** saludo → demo enviada → visitó → habló con Sofi → respondió.
-- **«Demo personal: A contra B»:** visitó → empezó la demo → habló con Sofi, desglosado por versión con la expresión de arriba.
+- **«Turnia · Embudo comercial»** (`OyCLwy0z`): demo enviada → visitó → habló con Sofi → respondió. Va por persona, en orden y con ventana de 30 días. No entra quien abrió su demo antes de que PostHog registrara el envío; la tabla completa por semana sale con `npm run embudo`.
+- **«Turnia · Demo personal: A contra B»** (`ontJfMd9`): visitó → empezó la demo → habló con Sofi, desglosado por versión con la expresión de arriba.
+  - **Va por visita (sesión),** no por persona: así quien volvió con la otra versión cuenta en las dos.
+  - **Al 08/11:** A, 23 visitas, 12 empezaron y 9 hablaron (39%); B, 5 visitas, 2 empezaron y 1 habló (20%).
 
 Los pasos, para armarlo a mano:
 

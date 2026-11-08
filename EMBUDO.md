@@ -46,7 +46,9 @@ Los umbrales están en `scripts/embudo.mjs` (`ACTIVE_MIN_PATIENTS` y `ACTIVE_MIN
 - **Qué se compara:** **visitaron → hablaron con Sofi**, de punta a punta. «Empezaron la demo» (`demo_started`, `demo_at` en la base) no significa lo mismo en las dos versiones: en A era tocar un botón y todavía faltaba la charla; en B ya es la charla. Sirve para ver **dónde** se pierde cada una (en A, entre el botón y la charla; en B, antes de tocar la esfera), no para compararlas entre sí.
 - **El corte:** es el deploy de #138. Se mergeó el 07/11 a las 12:26 y la primera visita con la pantalla nueva fue a las 12:32. Está en `src/lib/demo-version.ts` (`ESFERA_DESDE`) y en `scripts/embudo.mjs`: si se cambia, cambiarlo en los dos.
 - **Cómo se asigna una persona:**
-  - **PostHog:** a la versión de cada visita. Alguien que la abrió con A y volvió con B cuenta en las dos, cada una con lo que hizo en esa visita.
+  - **PostHog:**
+    - En `npm run embudo`, cada persona cuenta en la versión de cada visita: quien la abrió con A y volvió con B cuenta en las dos, cada una con lo que hizo en esa versión.
+    - En el gráfico «Turnia · Demo personal: A contra B» del tablero «Turnia · Prospección», se cuenta por visita (sesión). Al 08/11: A, 23 visitas y 9 hablaron (39%); B, 5 visitas y 1 habló (20%).
   - **Base y Chapa:** a la versión de su primera apertura, que es la única que queda con fecha.
 - **Desde el 08/11, `personal_demo_viewed` y `demo_started` llevan `demo_version`** (`con_probar` o `esfera`), y lo mismo todo lo que haga después ese navegador, porque va como propiedad registrada. Para lo anterior se usa el corte.
 - **Para una versión C:** sumarla en `DEMO_VERSIONS` con su fecha, cambiar `DEMO_VERSION_ACTUAL` y agregar el tramo en `scripts/embudo.mjs`. Las versiones anteriores no se tocan.
