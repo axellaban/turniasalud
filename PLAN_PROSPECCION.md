@@ -250,7 +250,21 @@ Cada persona está en su paso más alto; no se exige haber pasado por el anterio
 - **Números:** por versión, ejecuciones (envíos confirmados, una vez por persona), conversiones (hoy está en un paso más alto que al recibirla, sin plazo) y tasa. Con menos de 30 ejecuciones dice «muestra chica».
 - **Extensión:** las franjas tienen `data-testid="followup-stage"` (con `data-stage`) y cada persona `data-testid="followup-item"` (con `data-outreach`, `data-status` y `data-version`). Los botones son `followup-execute`, `followup-message`, `followup-open`, `followup-confirm`, `followup-failed`, `followup-failed-reason`, `followup-failed-save`, `followup-link-demo` y `followup-link-panel`.
 - **Datos:** `sales_followup_versions` y `sales_followup_executions` en `supabase/schema.sql`; la lógica, en `src/lib/sales/followup-stages.ts` (pura) y `src/lib/sales/followup.ts`.
-- **habita.:** lo mismo en amoblaia, `/admin/follow-up` (`docs/FOLLOWUP.md`). En Chapa Labs no hay Follow-up para ninguna de las dos unidades.
+- **habita.:** lo mismo en amoblaia, `/admin/follow-up` (`docs/FOLLOWUP.md`).
+
+### La cola, operada desde Chapa Labs (08/11, fases 1 a 4 de habita.)
+
+Chapa Labs (`/prospecting`, pestaña «Hoy» con Turnia y habita. juntas) opera una sola cola de Follow-up por `/api/prospeccion`, con la misma lógica que la de habita. y los datos de Turnia. Lógica en `src/lib/sales/followup-plan.ts` (pura) y `src/lib/sales/followup-queue.ts`.
+
+- **Situación** de la conversación: sin respuesta, respondió el saludo, interesado, neutro, pregunta precios, pide más adelante, derivó, rechazo, no contactar, sin WhatsApp, número incorrecto. Sale del estado de Prospección; la marcada a mano vale mientras siga en el mismo paso del embudo, y también cambia el estado en Prospección (Respondió, No le interesa, Sin canal, Baja) para que este panel y el embudo digan lo mismo.
+- **Grupos y prioridad:** respuestas y demos por enviar (alta), seguimientos (media), contactos nuevos (baja); se cambia a mano. Dentro de cada una: la prioridad de la lista, los que pagan anuncios y los que esperan hace más.
+- **Bloqueos** (con el motivo a la vista): sin texto en la etapa, sin WhatsApp, posible duplicado (el número ya recibió un mensaje), tope diario de saludos (la meta del día de Prospección), fuera de horario (lunes a sábado de 8:30 a 21; los nuevos hasta las 20) y reprogramada.
+- **Programadas:** los primeros pasos siguen la cadencia de Prospección (su «Próximo paso» en días hábiles); los siguientes salen 48 h después del último mensaje. Una respuesta se atiende enseguida.
+- **Tomas:** al ejecutar, quien opera la toma 10 minutos (`sales_followup_claims`); la otra persona ve «Lo tiene Facu» y no puede tomarla ni confirmarla. Confirmar es idempotente, también si ya pasó de etapa.
+- **Quién:** cada ejecución guarda quién la hizo (`sales_followup_executions.actor`); situación, prioridad, reprogramación, responsable y respuestas quedan en `sales_followup_audit`.
+- **Resultados:** por versión (los de siempre), por quien ejecutó y el tiempo mediano entre saludo, demo enviada, demo visitada y demo probada.
+- **API:** `GET ?vista=followup`, `GET ?vista=filas` (la planilla «Prospección» leída de la base, con la historia) y `POST { by, followup: { op } }` con `claim`, `open`, `confirm`, `fail`, `release`, `situation`, `reply`, `replies`, `snooze`, `priority`, `owner`, `version-create` y `version-status`.
+- **Diferencias con habita.:** las esperas no se editan (son la cadencia de Prospección) y una versión no se edita (se crea la siguiente); no hay bandeja aparte de respuestas: una respuesta registrada queda en el grupo «Respuestas» con su texto. Panel → Follow-up sigue mostrando las etapas y las versiones como antes.
 
 ## Cuando responde
 

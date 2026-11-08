@@ -33,10 +33,13 @@ const TZ = DEFAULT_TZ;
 const ACTIVE_MIN_PATIENTS = 3;
 const ACTIVE_MIN_APPOINTMENTS = 1;
 
-type Row = OutreachPerson & {
+export type Row = OutreachPerson & {
   id: string;
   status: OutreachStatus;
   priority: number;
+  touches: number;
+  next_action_on: string | null;
+  signals: string;
   opened_at: string | null;
   demo_at: string | null;
   last_contact_at: string | null;
@@ -59,18 +62,18 @@ const facts = (r: Row) => ({
   active: r.active,
   client: r.status === "cliente",
 });
-const placeOf = (r: Row) => ({
+export const placeOf = (r: Row) => ({
   step: stepOf(facts(r)),
   stage: stageOf({ ...facts(r), closed: CLOSED.includes(r.status) && r.status !== "cliente", suppressed: r.suppressed, landline: r.landline, contactable: r.contactable }),
 });
 
 /** Cada persona de la prospección con lo que hace falta para ubicarla en el embudo. */
-async function rows(id?: string) {
+export async function rows(id?: string) {
   const weekStart = sql`(date_trunc('week', now() at time zone ${TZ}) at time zone ${TZ})`;
   const account = sql`(o.clinic_id is not null and exists (select 1 from clinic_access a where a.clinic_id = o.clinic_id and a.revoked_at is null))`;
   return sql<Row[]>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind, o.instagram,
-      o.website, o.touches, o.greeted_at, o.status, o.priority, o.opened_at, o.demo_at, o.last_contact_at, o.first_contact_at, o.created_at,
+      o.website, o.touches, o.greeted_at, o.status, o.priority, o.next_action_on::text as next_action_on, o.signals, o.opened_at, o.demo_at, o.last_contact_at, o.first_contact_at, o.created_at,
       exists (select 1 from sales_suppressions s where s.phone = o.phone) as suppressed,
       ${fijoSinRespuesta()} as landline,
       (o.phone is not null and o.phone_kind is distinct from 'fijo'
@@ -84,11 +87,11 @@ async function rows(id?: string) {
     ${id ? sql`where o.id = ${id}` : sql``}`;
 }
 
-const versions = () =>
+export const versions = () =>
   sql<FollowupVersion[]>`select id, stage, version, channel, trigger_label, body, ctas, status, created_at, status_at from sales_followup_versions order by stage, version`;
-const executions = (outreachId?: string) =>
+export const executions = (outreachId?: string) =>
   sql<FollowupExecution[]>`
-    select id, version_id, stage, outreach_id, from_step, status, reason, updated_at from sales_followup_executions
+    select id, version_id, stage, outreach_id, from_step, status, reason, updated_at, actor, sent_at from sales_followup_executions
     ${outreachId ? sql`where outreach_id = ${outreachId}` : sql``}`;
 
 export type QueueItem = {
@@ -209,7 +212,7 @@ export async function prepareFollowup(id: string, stage: unknown) {
  * en las demás queda como nota en su historia. Si eso falla, la ejecución cuenta igual y se avisa.
  * Una ejecución enviada no vuelve atrás.
  */
-export async function markFollowup(input: { id: string; stage: unknown; versionId: unknown; status: unknown; reason?: unknown }) {
+export async function markFollowup(input: { id: string; stage: unknown; versionId: unknown; status: unknown; reason?: unknown; actor?: string }) {
   const status = input.status === "opened" || input.status === "sent" || input.status === "failed" ? (input.status as ExecutionStatus) : null;
   if (!status) throw new FollowupError("Estado desconocido.");
   const c = await current(input.id, input.stage);
@@ -218,20 +221,20 @@ export async function markFollowup(input: { id: string; stage: unknown; versionI
   const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 300) : "";
   if (status === "failed" && !reason) throw new FollowupError("Contá por qué no salió.");
   const [saved] = await sql<FollowupExecution[]>`
-    insert into sales_followup_executions (version_id, stage, outreach_id, from_step, status, reason, sent_at)
-    values (${v.id}, ${v.stage}, ${input.id}, ${c.step}, ${status}, ${reason || null}, ${status === "sent" ? sql`now()` : null})
+    insert into sales_followup_executions (version_id, stage, outreach_id, from_step, status, reason, sent_at, actor)
+    values (${v.id}, ${v.stage}, ${input.id}, ${c.step}, ${status}, ${reason || null}, ${status === "sent" ? sql`now()` : null}, ${input.actor?.slice(0, 80) || null})
     on conflict (version_id, outreach_id) do update set status = excluded.status, reason = excluded.reason, from_step = excluded.from_step,
-      sent_at = excluded.sent_at, updated_at = now()
+      sent_at = excluded.sent_at, actor = coalesce(excluded.actor, sales_followup_executions.actor), updated_at = now()
     where sales_followup_executions.status <> 'sent'
-    returning id, version_id, stage, outreach_id, from_step, status, reason, updated_at`;
+    returning id, version_id, stage, outreach_id, from_step, status, reason, updated_at, actor, sent_at`;
   const [execution] = saved ? [saved] : await sql<FollowupExecution[]>`
-    select id, version_id, stage, outreach_id, from_step, status, reason, updated_at from sales_followup_executions
+    select id, version_id, stage, outreach_id, from_step, status, reason, updated_at, actor, sent_at from sales_followup_executions
     where version_id = ${v.id} and outreach_id = ${input.id}`;
   let warning: string | null = null;
   if (status === "sent" && saved) {
     try {
       if (TOUCH_STAGES.includes(v.stage) && v.channel === "whatsapp") {
-        await recordTouch(input.id, "whatsapp", { properties: { followup_stage: v.stage, followup_version: v.version } });
+        await recordTouch(input.id, "whatsapp", { properties: { followup_stage: v.stage, followup_version: v.version, ...(input.actor ? { operator: input.actor } : {}) } });
       } else {
         await addOutreachNote(input.id, `Follow-up «${stageInfo(v.stage).title}» V${v.version}: ${v.channel === "tarea" ? "tarea hecha" : "mensaje enviado por WhatsApp"}.`);
       }
@@ -240,7 +243,7 @@ export async function markFollowup(input: { id: string; stage: unknown; versionI
       warning = `La ejecución quedó registrada, pero no el contacto en Prospección: ${e.message}`;
     }
   }
-  return { execution: { status: execution.status, at: String(execution.updated_at) }, warning };
+  return { execution: { status: execution.status, at: String(execution.updated_at) }, warning, replayed: status === "sent" && !saved };
 }
 
 /** Una versión nueva: activa (la anterior activa se archiva) o a prueba (reemplaza a la que estaba a prueba). */

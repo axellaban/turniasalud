@@ -61,6 +61,9 @@ export type FollowupExecution = {
   status: ExecutionStatus;
   reason: string | null;
   updated_at: string;
+  /** Quién la ejecutó (desde Chapa Labs: Facu, Axel); null desde el panel. */
+  actor?: string | null;
+  sent_at?: string | null;
 };
 
 /** Lo que se sabe de cada persona para ubicarla en el embudo, con las definiciones de EMBUDO.md. */
