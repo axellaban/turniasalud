@@ -1,7 +1,9 @@
 import "server-only";
 import { json, sql } from "@/lib/db";
-import { DEFAULT_TZ } from "@/lib/time";
+import { DEFAULT_TZ, localDateKey } from "@/lib/time";
 import { AXEL_WHATSAPP } from "./contacto-axel";
+import { nextFollowUp } from "./outreach-messages";
+import { todayKey } from "./outreach";
 import { incomingReply } from "./followup-queue";
 import { listProspectChats, prospectWaha, voiceChannelStatus, waha, type ProspectWaha } from "./voice-outreach";
 
@@ -58,6 +60,8 @@ export type SyncReport = {
     nuevas: number;
     /** Personas que pasaron a «Respuestas para atender» con esta lectura. */
     abiertas: number;
+    /** Personas que una lectura anterior abrió por una respuesta automática y volvieron a como estaban. */
+    corregidas: number;
   };
   /** Las que esperan respuesta, de la más vieja a la más nueva (hasta 60). */
   pending: PendingReply[];
@@ -78,9 +82,18 @@ export function messageText(m: Message): string {
   return "Archivo";
 }
 
+// Las respuestas automáticas de WhatsApp Business («Gracias por comunicarte…», «fuera del horario de
+// atención») no son una respuesta de la persona: no abren nada ni cuentan como «respondió».
+const AUTOMATIC = /respuesta autom[aá]tica|mensaje autom[aá]tico|fuera (del|de) (nuestro )?horario|(este|[eé]ste|ese) momento no (podemos|nos es posible|estamos)|no (podemos|pudimos) (atender|responder|contestar)|(te|le|les) (responderemos|contestaremos|responderé|contestaré)|horarios? de atenci[oó]n|a la brevedad|lo antes posible|dej[aá](nos|me|n) (tu|su) (consulta|mensaje)|nos encontramos (fuera|cerrados)|para (pedir |solicitar )?turnos?,? (comunicate|comuníquese|llam)/i;
+const AUTOMATIC_OPENER = /^\W*(hola\W+)?(muchas )?gracias por (tu |su )?(comunicar|escrib|contact|mensaje)/i;
+/** ¿Es una respuesta automática (de bienvenida o de ausencia) de WhatsApp Business? */
+export const isAutomaticReply = (text: string) => AUTOMATIC.test(text) || (AUTOMATIC_OPENER.test(text) && text.length > 60);
+
 export type ChatSummary = {
   sent: number;
   received: number;
+  /** Respuestas automáticas (no cuentan en nada más). */
+  automatic: number;
   firstSentAt: number | null;
   lastSentAt: number | null;
   repliedAt: number | null;
@@ -97,10 +110,11 @@ export type ChatSummary = {
  * anterior ya había mensajes nuestros que ahora quedaron fuera de los últimos 50.
  */
 export function summarizeChat(messages: Message[], since: number | null, hadSent = false): ChatSummary {
-  const list = messages
+  const all = messages
     .map((m) => ({ at: seconds(m.timestamp), fromMe: Boolean(m.fromMe), text: messageText(m) }))
-    .filter((m) => m.at > 0 && (m.text || m.fromMe))
-    .sort((a, b) => a.at - b.at);
+    .filter((m) => m.at > 0 && (m.text || m.fromMe));
+  const automatic = all.filter((m) => !m.fromMe && isAutomaticReply(m.text)).length;
+  const list = all.filter((m) => m.fromMe || !isAutomaticReply(m.text)).sort((a, b) => a.at - b.at);
   const mine = list.filter((m) => m.fromMe);
   const firstSent = mine[0]?.at ?? null;
   const replies = list.filter((m) => !m.fromMe && m.text && (firstSent !== null ? m.at > firstSent : hadSent));
@@ -108,6 +122,7 @@ export function summarizeChat(messages: Message[], since: number | null, hadSent
   return {
     sent: mine.length,
     received: replies.length,
+    automatic,
     firstSentAt: firstSent,
     lastSentAt: mine.at(-1)?.at ?? null,
     repliedAt: replies[0]?.at ?? null,
@@ -169,7 +184,7 @@ export async function syncWhatsappReplies(trigger: string): Promise<SyncReport> 
     at: new Date().toISOString(),
     trigger,
     lines: [],
-    totals: { conversaciones: 0, respondieron: 0, esperanRespuesta: 0, nuevas: 0, abiertas: 0 },
+    totals: { conversaciones: 0, respondieron: 0, esperanRespuesta: 0, nuevas: 0, abiertas: 0, corregidas: 0 },
     pending: [],
   };
   try {
@@ -221,20 +236,23 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
     const s = summarizeChat(Array.isArray(messages) ? messages : [], since, (before?.sent ?? 0) > 0);
     if (!s.sent && !before) return; // un chat donde nunca le escribimos desde esta línea
     const at = (v: number | null) => (v === null ? null : iso(v));
+    // Con menos de 50 mensajes se ve el chat entero: lo leído reemplaza lo guardado. Si no, se suma.
+    const complete = Array.isArray(messages) && messages.length < MESSAGES;
     await sql`
       insert into sales_whatsapp_chats (outreach_id, sender_phone, chat_id, sent, received, first_sent_at, last_sent_at, replied_at, last_received_at, last_received_text, last_from_me, synced_at)
       values (${person.id}, ${sender}, ${chatId}, ${s.sent}, ${s.received}, ${at(s.firstSentAt)}, ${at(s.lastSentAt)}, ${at(s.repliedAt)}, ${at(s.lastReceivedAt)}, ${s.lastReceivedText}, ${s.lastFromMe}, now())
       on conflict (outreach_id, sender_phone) do update set
         chat_id = excluded.chat_id,
         sent = greatest(sales_whatsapp_chats.sent, excluded.sent),
-        received = greatest(sales_whatsapp_chats.received, excluded.received),
+        received = case when ${complete} then excluded.received else greatest(sales_whatsapp_chats.received, excluded.received) end,
         first_sent_at = coalesce(least(sales_whatsapp_chats.first_sent_at, excluded.first_sent_at), sales_whatsapp_chats.first_sent_at, excluded.first_sent_at),
         last_sent_at = coalesce(greatest(sales_whatsapp_chats.last_sent_at, excluded.last_sent_at), sales_whatsapp_chats.last_sent_at, excluded.last_sent_at),
-        replied_at = coalesce(least(sales_whatsapp_chats.replied_at, excluded.replied_at), sales_whatsapp_chats.replied_at, excluded.replied_at),
-        last_received_at = coalesce(excluded.last_received_at, sales_whatsapp_chats.last_received_at),
-        last_received_text = coalesce(excluded.last_received_text, sales_whatsapp_chats.last_received_text),
-        last_from_me = coalesce(excluded.last_from_me, sales_whatsapp_chats.last_from_me),
+        replied_at = case when ${complete} then excluded.replied_at else coalesce(least(sales_whatsapp_chats.replied_at, excluded.replied_at), sales_whatsapp_chats.replied_at, excluded.replied_at) end,
+        last_received_at = case when ${complete} then excluded.last_received_at else coalesce(excluded.last_received_at, sales_whatsapp_chats.last_received_at) end,
+        last_received_text = case when ${complete} then excluded.last_received_text else coalesce(excluded.last_received_text, sales_whatsapp_chats.last_received_text) end,
+        last_from_me = case when ${complete} then excluded.last_from_me else coalesce(excluded.last_from_me, sales_whatsapp_chats.last_from_me) end,
         synced_at = now()`;
+    if (complete && !s.received && (await undoAutomaticOpen(person.id))) report.totals.corregidas++;
     if (s.newReplies.length) {
       report.totals.nuevas += s.newReplies.length;
       const text = s.newReplies.map((r) => r.text).join("\n").slice(0, 2000);
@@ -247,6 +265,34 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
   }, deadline);
 
   return { line: label, status: "ok", chats: chats.ids.length, prospects: people.length, read, unread: people.length - read };
+}
+
+/**
+ * Deshace lo que hizo la lectura cuando el chat no tiene ninguna respuesta de verdad (la que la abrió
+ * era automática): vuelve a «Contactado» con su próximo seguimiento y se borra lo que anotó la lectura.
+ * Solo si nadie la tocó después (la situación y el último cambio de estado son de la lectura).
+ */
+async function undoAutomaticOpen(id: string): Promise<boolean> {
+  return sql.begin(async (tx) => {
+    const [p] = await tx<Array<{ touches: number; greeted_at: string | null; last_contact_at: string | null }>>`
+      select o.touches, o.greeted_at, o.last_contact_at from sales_outreach o
+      join sales_followup_state s on s.outreach_id = o.id
+      where o.id = ${id} and o.status = 'respondio' and s.updated_by = ${SYNC_ACTOR}
+        and (select e.detail from sales_outreach_events e where e.outreach_id = o.id and e.kind = 'estado' order by e.created_at desc limit 1)
+          like ${`respondio:%(Follow-up, ${SYNC_ACTOR})`}
+      for update of o`;
+    if (!p) return false;
+    const base = p.last_contact_at ?? p.greeted_at;
+    const from = base ? localDateKey(new Date(base), DEFAULT_TZ) : todayKey();
+    const next = p.touches === 0 ? from : nextFollowUp(from, p.touches);
+    await tx`update sales_outreach set status = 'contactado', next_action_on = ${next}, updated_at = now() where id = ${id}`;
+    await tx`delete from sales_followup_state where outreach_id = ${id} and updated_by = ${SYNC_ACTOR}`;
+    await tx`delete from sales_followup_audit where outreach_id = ${id} and actor = ${SYNC_ACTOR}`;
+    await tx`
+      delete from sales_outreach_events where outreach_id = ${id}
+        and ((kind = 'estado' and detail like ${`%(Follow-up, ${SYNC_ACTOR})`}) or (kind = 'nota' and detail like ${`%(${SYNC_ACTOR})`}))`;
+    return true;
+  });
 }
 
 /** Quienes ya no esperan nada de nosotros aunque lo último sea de ellos. */
