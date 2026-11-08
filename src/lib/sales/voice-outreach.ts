@@ -144,7 +144,7 @@ const configSchema = z.object({
   /** El número con el que se prospectó (549…): si la sesión tiene otro, no se manda nada. */
   phone: z.string().regex(/^\d{8,15}$/).optional(),
 });
-type ProspectWaha = z.infer<typeof configSchema>;
+export type ProspectWaha = z.infer<typeof configSchema>;
 
 export function prospectWaha(ending?: string): ProspectWaha | null {
   const secondary = ending === AXEL_WHATSAPP.slice(-4);
@@ -202,7 +202,7 @@ export async function importVoiceSenders(ending: string, rows: Array<{ code: str
   return result;
 }
 
-async function waha(config: ProspectWaha, path: string, init: RequestInit = {}): Promise<Response> {
+export async function waha(config: ProspectWaha, path: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(`${config.url.replace(/\/$/, "")}${path}`, {
     ...init,
     headers: { "X-Api-Key": config.apiKey, Accept: "application/json", "Content-Type": "application/json", ...(init.headers ?? {}) },
@@ -299,13 +299,20 @@ export function phoneFromChatId(id: string | null | undefined): string | null {
 const SYNC_PAGE = 500;
 const SYNC_MAX_CHATS = 5000;
 
+export type ProspectChats = {
+  /** Todos los chats de la línea, como los devuelve WAHA. */
+  ids: string[];
+  /** El chat de cada teléfono (+549…), con el @lid ya resuelto. */
+  byPhone: Map<string, string>;
+  kinds: { numero: number; lid: number; lidSinNumero: number; grupos: number; otros: number };
+};
+
 /**
- * Sugiere contactos con un chat existente para que el operador compruebe qué envió y desde dónde.
- * Los @lid se resuelven con su teléfono.
+ * Los chats individuales de una línea de la prospección, con su teléfono. Los @lid se resuelven con
+ * la lista de WAHA, de a uno y, si quedan, al revés: el @lid de cada teléfono de `candidates`.
+ * Solo lee: no manda nada.
  */
-export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ sender: string; chats: number; matched: number; inserted: 0; phones: number; kinds: Record<string, number>; suggestions: string[] }> {
-  const config = await requireChannel(ending);
-  if (!config.phone) throw new OutreachError("Agregá «phone» a WAHA_PROSPECCION para saber de qué línea son los chats.");
+export async function listProspectChats(config: ProspectWaha, candidates: () => Promise<string[]>): Promise<ProspectChats> {
   const session = encodeURIComponent(config.session);
   const ids: string[] = [];
   try {
@@ -317,9 +324,7 @@ export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ se
     }
   } catch (e) {
     console.error("chats del WhatsApp emisor", e instanceof Error ? e.message : e);
-    throw new OutreachError(
-      "WAHA no devolvió la lista de chats del WhatsApp emisor. Con el motor NOWEB hace falta prender su historial (store) en la sesión. Mientras tanto, confirmá cada contacto con «+ " + config.phone.slice(-4) + "».",
-    );
+    throw new OutreachError("WAHA no devolvió la lista de chats del WhatsApp emisor. Con el motor NOWEB hace falta prender su historial (store) en la sesión.");
   }
 
   const lids = new Map<string, string>();
@@ -348,17 +353,14 @@ export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ se
     }));
   }
 
-  // Si quedan @lid sin número, al revés: el @lid de cada contacto que puede recibir el audio
-  // (WAHA lo averigua por su teléfono) y si coincide con un chat, es ese contacto.
+  // Si quedan @lid sin número, al revés: el @lid de cada candidato (WAHA lo averigua por su
+  // teléfono) y si coincide con un chat, es ese contacto.
   const unknown = new Set(ids.filter((id) => id.endsWith("@lid") && !lids.has(id)));
   if (unknown.size) {
-    const people = await sql<Array<{ phone: string }>>`
-      select distinct o.phone from sales_outreach o where ${eligible()}
-        and not exists (select 1 from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone and w.sender_phone = ${config.phone})
-      limit 1500`;
+    const people = await candidates();
     const deadline = Date.now() + 60_000;
     for (let i = 0; i < people.length && unknown.size && Date.now() < deadline; i += 10) {
-      await Promise.all(people.slice(i, i + 10).map(async ({ phone }) => {
+      await Promise.all(people.slice(i, i + 10).map(async (phone) => {
         const pn = `${phone.replace(/\D/g, "")}@c.us`;
         try {
           const res = await waha(config, `/api/${session}/lids/pn/${encodeURIComponent(pn)}`, { signal: AbortSignal.timeout(5000) });
@@ -369,8 +371,9 @@ export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ se
     }
   }
 
-  const kinds ={ numero: 0, lid: 0, lidSinNumero: 0, grupos: 0, otros: 0 };
-  const phones = [...new Set(ids.flatMap((id) => {
+  const kinds = { numero: 0, lid: 0, lidSinNumero: 0, grupos: 0, otros: 0 };
+  const byPhone = new Map<string, string>();
+  for (const id of ids) {
     const lid = id.endsWith("@lid");
     if (lid) kinds.lid++;
     else if (/@(c\.us|s\.whatsapp\.net)$/.test(id)) kinds.numero++;
@@ -378,19 +381,42 @@ export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ se
     else kinds.otros++;
     if (lid && !lids.has(id)) kinds.lidSinNumero++;
     const phone = phoneFromChatId(lid ? lids.get(id) : id);
-    return phone ? [phone] : [];
-  }))];
+    // Si el mismo teléfono tiene chat por número y por @lid, se queda el primero que da WAHA.
+    if (phone && !byPhone.has(phone)) byPhone.set(phone, id);
+  }
+  return { ids, byPhone, kinds };
+}
+
+/**
+ * Sugiere contactos con un chat existente para que el operador compruebe qué envió y desde dónde.
+ * Los @lid se resuelven con su teléfono.
+ */
+export async function suggestVoiceSendersFromWaha(ending?: string): Promise<{ sender: string; chats: number; matched: number; inserted: 0; phones: number; kinds: Record<string, number>; suggestions: string[] }> {
+  const config = await requireChannel(ending);
+  if (!config.phone) throw new OutreachError("Agregá «phone» a WAHA_PROSPECCION para saber de qué línea son los chats.");
+  const sender = config.phone;
+  let chats: ProspectChats;
+  try {
+    chats = await listProspectChats(config, async () => (await sql<Array<{ phone: string }>>`
+      select distinct o.phone from sales_outreach o where ${eligible()}
+        and not exists (select 1 from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone and w.sender_phone = ${sender})
+      limit 1500`).map((r) => r.phone));
+  } catch (e) {
+    if (e instanceof OutreachError) throw new OutreachError(`${e.message} Mientras tanto, confirmá cada contacto con «+ ${sender.slice(-4)}».`);
+    throw e;
+  }
+  const phones = [...chats.byPhone.keys()];
   const digits = phones.map((phone) => phone.replace(/\D/g, ""));
   const matches = await sql<Array<{ id: string }>>`
     select o.id from sales_outreach o
     where ${eligible()} and regexp_replace(o.phone, '[^0-9]', '', 'g') = any(${digits}::text[])
       and not exists (
         select 1 from sales_outreach_whatsapp_senders w
-        where w.outreach_id = o.id and w.phone = o.phone and w.sender_phone = ${config.phone}
+        where w.outreach_id = o.id and w.phone = o.phone and w.sender_phone = ${sender}
       )`;
   return {
-    sender: config.phone.slice(-4), chats: ids.length, matched: matches.length, inserted: 0,
-    phones: phones.length, kinds, suggestions: matches.map(({ id }) => id),
+    sender: sender.slice(-4), chats: chats.ids.length, matched: matches.length, inserted: 0,
+    phones: phones.length, kinds: chats.kinds, suggestions: matches.map(({ id }) => id),
   };
 }
 

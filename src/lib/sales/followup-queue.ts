@@ -441,6 +441,25 @@ export async function registerReply(input: { id: unknown; text: unknown; classif
   return setSituation(input.id, situation, text, actor);
 }
 
+/**
+ * Una respuesta leída del WhatsApp (la lectura diaria de WAHA), sin clasificar. Si la persona estaba
+ * esperando (por contactar, contactado, o «pide más adelante» / «sin respuesta»), pasa a «Respuestas
+ * para atender» como Neutro; si ya se está hablando o está cerrada, solo queda en la historia.
+ */
+export async function incomingReply(id: string, text: string, actor: string): Promise<"abierta" | "registrada"> {
+  const [p] = await sql<Array<{ status: string; situation: string | null }>>`
+    select o.status, s.situation from sales_outreach o left join sales_followup_state s on s.outreach_id = o.id where o.id = ${id}`;
+  if (!p) throw new FollowupError("No encontramos ese contacto.");
+  const waiting = p.status === "por_contactar" || p.status === "contactado"
+    || ((p.status === "respondio" || p.status === "reunion") && (p.situation === "mas_adelante" || p.situation === "sin_respuesta"));
+  if (waiting) {
+    await registerReply({ id, text }, actor);
+    return "abierta";
+  }
+  await audit(id, "reply", text, actor);
+  return "registrada";
+}
+
 const DAY_MS = 86_400_000;
 /** Reprogramar: sale de la cola hasta esa fecha (sin fecha: mañana a las 9 de Argentina). */
 export async function snooze(id: string, rawUntil: unknown, rawReason: unknown, actor: string) {

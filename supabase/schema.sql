@@ -1363,3 +1363,35 @@ create table if not exists sales_followup_audit (
 );
 create index if not exists sales_followup_audit_idx on sales_followup_audit (outreach_id, created_at desc);
 alter table sales_followup_audit enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Lectura diaria de WhatsApp (08/11): una vez por día se leen los chats de las dos líneas de la
+-- prospección (WAHA_PROSPECCION y WAHA_PROSPECCION_5483) y se anota, por persona y línea, qué se le
+-- mandó y qué contestó. Una respuesta nueva pasa a «Respuestas para atender». Solo lee: no manda nada.
+-- ---------------------------------------------------------------------------
+create table if not exists sales_whatsapp_chats (
+  outreach_id uuid not null references sales_outreach(id) on delete cascade,
+  sender_phone text not null,
+  chat_id text not null,
+  sent int not null default 0,
+  received int not null default 0,
+  first_sent_at timestamptz,
+  last_sent_at timestamptz,
+  replied_at timestamptz,
+  last_received_at timestamptz,
+  last_received_text text check (last_received_text is null or length(last_received_text) <= 2000),
+  last_from_me boolean,
+  synced_at timestamptz not null default now(),
+  primary key (outreach_id, sender_phone)
+);
+alter table sales_whatsapp_chats enable row level security;
+
+create table if not exists sales_whatsapp_syncs (
+  id uuid primary key default gen_random_uuid(),
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  trigger text not null,
+  report jsonb not null default '{}'::jsonb
+);
+create index if not exists sales_whatsapp_syncs_idx on sales_whatsapp_syncs (started_at desc);
+alter table sales_whatsapp_syncs enable row level security;
