@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { NextResponse, after } from "next/server";
 import { OUTREACH_COLUMNS, outreachSheetRows, queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
 import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
+import { FollowupError } from "@/lib/sales/followup";
+import { FollowupConflict, followupSnapshot, runFollowupOp } from "@/lib/sales/followup-queue";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
 import {
   TEMPLATE_KEYS,
@@ -42,6 +44,13 @@ export const dynamic = "force-dynamic";
 //   POST { templates }           guarda mensajes ({ clave: texto }); los demás quedan como estaban.
 //   POST { funnel }              guarda las metas del embudo: { perWeek, rates: { paso: 0.45 } }. perWeek es
 //                                la meta semanal de saludos de Panel → Prospección (la misma).
+//   GET ?vista=filas             la prospección como la planilla «Prospección» ({ header, rows, events }), leída
+//                                de la base: Chapa la usa en vez de la copia en Google Sheets.
+//   GET ?vista=followup          la cola de Follow-up como la de habita.: { summary, queue, scheduled, blocked,
+//                                inbox, funnel, timing, stages, rules, results, changes }.
+//   POST { followup: { op, ... }, by }  opera esa cola: claim, open, confirm, fail, release, situation, reply,
+//                                snooze, priority, owner, version-create, version-status (los mismos campos que
+//                                habita.; `inmobiliaria` es la persona, por id o código). `by` es quien opera.
 //   POST { import: { csv, overwrite } }  importa una lista como Panel → Prospección → Importar lista (las
 //                                mismas columnas y reglas; overwrite = «Reemplazar los datos de los que ya
 //                                están»). Devuelve cuántas personas nuevas y cuántas actualizadas.
@@ -210,8 +219,30 @@ async function apply(id: string, a: Action): Promise<void> {
 }
 
 
+const NO_STORE = { "Cache-Control": "private, no-store" };
+
+/** La historia de cada persona en la forma de la pestaña Actividad de Chapa (la misma de habita.). */
+async function activity() {
+  const events = await sql<Array<{ at: string; code: string; name: string; kind: string; channel: string | null; detail: string }>>`
+    select to_char(e.created_at at time zone ${DEFAULT_TZ}, 'YYYY-MM-DD HH24:MI') as at, o.code, o.name, e.kind, e.channel, e.detail
+    from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id
+    where e.created_at > now() - interval '180 days' order by e.created_at`;
+  const TYPE: Record<string, string> = { mensaje: "mensaje", llamada: "llamada", visita: "visita", nota: "nota", abrio: "abrio_demo", demo: "probo_demo", pidio_hablar: "pidio_hablar" };
+  return events.map((e) => {
+    const status = e.kind === "estado" ? e.detail.split(":")[0] : "";
+    const type = e.kind === "estado" ? ({ respondio: "respondio", reunion: "reunion", cliente: "cliente", no_interesa: "perdido", sin_canal: "invalido", baja: "baja" } as Record<string, string>)[status] ?? "estado" : TYPE[e.kind] ?? e.kind;
+    return { at: e.at, id: e.code, account: e.name, type, channel: e.channel ?? "", template: e.kind === "mensaje" ? e.detail : "", detail: e.kind === "mensaje" ? "" : e.detail, by: "" };
+  });
+}
+
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const vista = new URL(request.url).searchParams.get("vista");
+  if (vista === "filas") {
+    const [rows, events] = await Promise.all([outreachSheetRows(), activity()]);
+    return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events }, { headers: NO_STORE });
+  }
+  if (vista === "followup") return NextResponse.json(await followupSnapshot(), { headers: NO_STORE });
   const [settings, clinics, [funnel]] = await Promise.all([
     outreachSettings(),
     sql<Array<{ id: string; name: string }>>`select id, name from clinics where not is_demo order by name`,
@@ -270,6 +301,7 @@ export async function POST(request: Request) {
     }
   }
   if (body && "import" in body && !body.code) return importList((body as { import: unknown }).import);
+  if (body && "followup" in body && !body.code) return followupOp(body as { followup?: unknown; by?: unknown });
   if (body?.templates && typeof body.templates === "object" && !body.code) {
     try {
       await saveTemplates(body.templates as Record<string, unknown>);
@@ -300,6 +332,26 @@ export async function POST(request: Request) {
 /** Lo mismo que Panel → Prospección → Importar lista: una persona nueva por fila, y quien ya estaba solo
  * completa lo que le falta (o, con overwrite, toma los datos del archivo). Nunca cambia el nombre, el estado
  * ni los contactos. */
+/** Una operación de la cola de Follow-up desde Chapa Labs, a nombre de quien opera. */
+async function followupOp(body: { followup?: unknown; by?: unknown }) {
+  const f = body.followup && typeof body.followup === "object" ? (body.followup as Record<string, unknown>) : null;
+  if (!f) return NextResponse.json({ error: "Falta la operación." }, { status: 400 });
+  const actor = (typeof body.by === "string" ? body.by.trim().slice(0, 80) : "") || "Chapa Labs";
+  try {
+    const result = await runFollowupOp(f.op, f, actor);
+    if (["confirm", "fail", "situation", "reply"].includes(String(f.op))) {
+      revalidatePath("/panel/prospeccion");
+      revalidatePath("/panel/follow-up");
+      queueTurniaSheetSync();
+    }
+    return NextResponse.json(result ?? null, { headers: NO_STORE });
+  } catch (e) {
+    if (e instanceof FollowupConflict) return NextResponse.json({ error: e.message }, { status: 409 });
+    if (e instanceof FollowupError || e instanceof OutreachError) return NextResponse.json({ error: e.message }, { status: 422 });
+    throw e;
+  }
+}
+
 async function importList(raw: unknown) {
   const input = raw && typeof raw === "object" ? (raw as { csv?: unknown; overwrite?: unknown }) : {};
   const csv = typeof input.csv === "string" ? input.csv : "";

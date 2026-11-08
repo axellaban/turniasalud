@@ -1,0 +1,542 @@
+import "server-only";
+import { sql } from "@/lib/db";
+import { DEFAULT_TZ } from "@/lib/time";
+import { displayOutreachPhone, type OutreachStatus } from "./outreach-messages";
+import { OutreachError, addOutreachNote, outreachDemoUrl, outreachSettings, setOutreachStatus, todayKey } from "./outreach";
+import {
+  FollowupError,
+  createFollowupVersion,
+  executions,
+  markFollowup,
+  placeOf,
+  prepareFollowup,
+  rows,
+  setFollowupVersionStatus,
+  versions,
+  type Row,
+} from "./followup";
+import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
+import {
+  CLAIM_SECONDS,
+  CLOSED_SITUATIONS,
+  GROUP_LABEL,
+  SITUATIONS,
+  actionLabel,
+  byPriority,
+  currentSituation,
+  defaultPriority,
+  derivedSituation,
+  groupOf,
+  isPriority,
+  isSituation,
+  planFor,
+  type Group,
+  type Priority,
+  type Situation,
+} from "./followup-plan";
+
+// La cola de Follow-up de Turnia, como la de habita. (amoblaia src/lib/followup/server.ts): una sola
+// lista con lo que se puede ejecutar ahora, lo programado y lo bloqueado con su motivo; las tomas
+// de 10 minutos para que Facu y Axel no le escriban a la misma persona; situación, reprogramación,
+// prioridad y responsable; y los resultados por versión y por quien ejecutó. Se opera desde Chapa
+// Labs por /api/prospeccion. Las etapas, las versiones y el registro del envío son los del Follow-up
+// de Turnia (followup.ts), así los números coinciden con Panel → Follow-up.
+
+/** Otra sesión la tiene tomada, o la acción cambió: 409. */
+export class FollowupConflict extends FollowupError {}
+
+type State = {
+  outreach_id: string;
+  situation: string | null;
+  situation_step: number | null;
+  situation_note: string | null;
+  priority: string | null;
+  snooze_until: string | null;
+  snooze_reason: string | null;
+  owner: string | null;
+};
+type Claim = { outreach_id: string; actor: string; stage: string; locked_until: string };
+
+export type QueueItem = {
+  id: string;
+  code: string;
+  name: string;
+  business: string;
+  zone: string;
+  phone: string | null;
+  whatsapp: boolean;
+  demoUrl: string;
+  stage: StageKey;
+  stageTitle: string;
+  step: number;
+  situation: Situation;
+  situationLabel: string;
+  situationManual: boolean;
+  situationNote: string | null;
+  action: string | null;
+  actionReason: string | null;
+  group: Group;
+  groupLabel: string;
+  priority: Priority;
+  priorityManual: boolean;
+  /** La prioridad de la lista de Prospección (1 a 3). */
+  rank: number;
+  ads: boolean;
+  owner: string | null;
+  touches: number;
+  opened: boolean;
+  lastContactAt: string | null;
+  since: string;
+  snoozedUntil: string | null;
+  dueAt: string | null;
+  blocked: string | null;
+  claim: { by: string; until: string } | null;
+  versionId: string | null;
+  version: number | null;
+  execution: { status: string; at: string; reason: string | null; by: string | null } | null;
+};
+
+const iso = (v: unknown) => (v ? new Date(String(v)).toISOString() : null);
+const UUID = /^[0-9a-f-]{36}$/i;
+
+async function board(now = new Date()) {
+  const [people, vs, ex, states, claims, settings, [{ n: newToday }]] = await Promise.all([
+    rows(),
+    versions(),
+    executions(),
+    sql<State[]>`select outreach_id, situation, situation_step, situation_note, priority, snooze_until, snooze_reason, owner from sales_followup_state`,
+    sql<Claim[]>`select outreach_id, actor, stage, locked_until from sales_followup_claims where locked_until > ${now}`,
+    outreachSettings(),
+    sql<Array<{ n: number }>>`select count(*)::int as n from sales_outreach where greeted_at is not null and (greeted_at at time zone ${DEFAULT_TZ})::date = ${todayKey()}::date`,
+  ]);
+  const stateOf = new Map(states.map((s) => [s.outreach_id, s]));
+  const claimOf = new Map(claims.map((c) => [c.outreach_id, c]));
+  const exOf = new Map<string, FollowupExecution[]>();
+  for (const e of ex) exOf.set(e.outreach_id, [...(exOf.get(e.outreach_id) ?? []), e]);
+  const stepNow = new Map<string, number>();
+  const items = new Map<string, QueueItem>();
+  const cap = Math.max(1, Number(settings.daily_goal) || 50);
+  for (const r of people) {
+    const { step, stage } = placeOf(r);
+    stepNow.set(r.id, step);
+    if (!stage) continue;
+    items.set(r.id, itemOf(r, stage, step, { vs, mine: exOf.get(r.id) ?? [], state: stateOf.get(r.id), claim: claimOf.get(r.id), newToday, cap }, now));
+  }
+  return { people, vs, ex, items, stepNow, newToday, cap, states };
+}
+
+function itemOf(
+  r: Row,
+  stage: StageKey,
+  step: number,
+  ctx: { vs: Awaited<ReturnType<typeof versions>>; mine: FollowupExecution[]; state?: State; claim?: Claim; newToday: number; cap: number },
+  now: Date,
+): QueueItem {
+  const whatsapp = Boolean(r.phone && r.phone_kind !== "fijo");
+  const derived = derivedSituation({ status: r.status, touches: r.touches, suppressed: r.suppressed, whatsapp });
+  const { situation, manual } = currentSituation(derived, ctx.state ? { situation: ctx.state.situation, step: ctx.state.situation_step } : null, step);
+  const group = groupOf(stage, situation);
+  const own = ctx.vs.filter((v) => v.stage === stage);
+  const mineHere = ctx.mine.filter((e) => e.stage === stage);
+  const v = versionFor(r.id, own, mineHere);
+  const done = v ? mineHere.find((e) => e.version_id === v.id) : undefined;
+  const plan = planFor(
+    {
+      stage,
+      situation,
+      touches: r.touches,
+      whatsapp,
+      contactable: r.contactable,
+      nextActionOn: r.next_action_on,
+      lastContactAt: iso(r.last_contact_at),
+      snoozedUntil: iso(ctx.state?.snooze_until),
+      hasVersion: Boolean(v),
+      sentThisVersion: done?.status === "sent",
+      newToday: ctx.newToday,
+      dailyCap: ctx.cap,
+    },
+    group,
+    now,
+  );
+  const manualPriority = isPriority(ctx.state?.priority) ? (ctx.state!.priority as Priority) : null;
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    business: r.business_name,
+    zone: r.zone,
+    phone: r.phone ? displayOutreachPhone(r.phone) : null,
+    whatsapp,
+    demoUrl: outreachDemoUrl(r.code),
+    stage,
+    stageTitle: stageInfo(stage).title,
+    step,
+    situation,
+    situationLabel: SITUATIONS[situation],
+    situationManual: manual,
+    situationNote: manual ? ctx.state?.situation_note ?? null : null,
+    action: plan.pending ? actionLabel(stage) : null,
+    actionReason: plan.actionReason,
+    group,
+    groupLabel: GROUP_LABEL[group],
+    priority: manualPriority ?? defaultPriority(group),
+    priorityManual: Boolean(manualPriority),
+    rank: r.priority,
+    ads: /google ads|meta ads|anuncios en (instagram|facebook)/i.test(r.signals || ""),
+    owner: ctx.state?.owner ?? null,
+    touches: r.touches,
+    opened: Boolean(r.opened_at),
+    lastContactAt: iso(r.last_contact_at),
+    since: String(iso(r.last_contact_at) ?? iso(r.first_contact_at) ?? iso(r.created_at)),
+    snoozedUntil: iso(ctx.state?.snooze_until) && Date.parse(String(ctx.state!.snooze_until)) > now.getTime() ? iso(ctx.state!.snooze_until) : null,
+    dueAt: plan.dueAt,
+    blocked: plan.blocked,
+    claim: ctx.claim ? { by: ctx.claim.actor, until: iso(ctx.claim.locked_until)! } : null,
+    versionId: v?.id ?? null,
+    version: v?.version ?? null,
+    execution: done ? { status: done.status, at: String(iso(done.updated_at)), reason: done.reason, by: done.actor ?? null } : null,
+  };
+}
+
+const ready = (q: QueueItem) => Boolean(q.action) && !q.blocked && !q.dueAt;
+const median = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+};
+
+/** Lo que Chapa muestra: la cola, lo programado, lo bloqueado, las respuestas, el embudo y los resultados. */
+export async function followupSnapshot(now = new Date()) {
+  const b = await board(now);
+  const all = [...b.items.values()];
+  const live = now.toISOString();
+  const queue = all.filter(ready).sort(byPriority);
+  const counted = b.people.filter((r) => placeOf(r).stage || placeOf(r).step >= 0);
+  const reach = (step: number) => counted.filter((r) => (b.stepNow.get(r.id) ?? -1) >= step).length;
+  const funnel = FOLLOWUP_STAGES.map((s) => {
+    const here = reach(s.step);
+    return { key: s.key, title: s.title, goal: s.goal, waiting: all.filter((q) => q.stage === s.key).length, reached: here, rate: here ? reach(s.step + 1) / here : null };
+  });
+  const hours = (from: unknown, to: unknown) => (from && to ? (Date.parse(String(to)) - Date.parse(String(from))) / 3600_000 : null);
+  const gaps = (pairs: Array<number | null>) => median(pairs.filter((x): x is number => x !== null && x >= 0));
+  const timing = [
+    { from: "Saludo", to: "Demo enviada", medianHours: gaps(b.people.map((r) => hours(r.greeted_at, r.first_contact_at))) },
+    { from: "Demo enviada", to: "Demo visitada", medianHours: gaps(b.people.map((r) => hours(r.first_contact_at, r.opened_at))) },
+    { from: "Demo visitada", to: "Probó la demo", medianHours: gaps(b.people.map((r) => hours(r.opened_at, r.demo_at))) },
+  ];
+  const sent = b.ex.filter((e) => e.status === "sent");
+  const byActor = new Map<string, { executions: number; conversions: number }>();
+  for (const e of sent) {
+    const k = e.actor || "Panel de Turnia";
+    const cur = byActor.get(k) ?? { executions: 0, conversions: 0 };
+    cur.executions++;
+    if ((b.stepNow.get(e.outreach_id) ?? -1) > e.from_step) cur.conversions++;
+    byActor.set(k, cur);
+  }
+  const changes = await sql<Array<{ outreach_id: string | null; subject: string; new_value: string | null; actor: string | null; created_at: string }>>`
+    select outreach_id, subject, new_value, actor, created_at from sales_followup_audit order by created_at desc limit 20`;
+  return {
+    labels: { situations: SITUATIONS, groups: GROUP_LABEL },
+    summary: {
+      ready: queue.filter((q) => !(q.claim && q.claim.until > live)).length,
+      replies: all.filter((q) => ready(q) && q.group === "respuestas").length,
+      demos: all.filter((q) => ready(q) && q.group === "demos").length,
+      scheduled: all.filter((q) => q.action && q.dueAt).length,
+      blocked: all.filter((q) => q.action && q.blocked).length,
+      claimed: queue.filter((q) => q.claim && q.claim.until > live).length,
+      doneToday: sent.filter((e) => e.sent_at && String(iso(e.sent_at)).slice(0, 10) === now.toISOString().slice(0, 10)).length,
+      newToday: b.newToday,
+      cap: b.cap,
+    },
+    queue,
+    scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))),
+    blocked: all.filter((q) => q.action && q.blocked).sort(byPriority),
+    inbox: queue.filter((q) => q.group === "respuestas"),
+    funnel,
+    timing,
+    stages: FOLLOWUP_STAGES.map((s) => {
+      const own = b.vs.filter((v) => v.stage === s.key);
+      const stats = versionStats(own, b.ex.filter((e) => e.stage === s.key), b.stepNow);
+      return { key: s.key, title: s.title, goal: s.goal, waiting: all.filter((q) => q.stage === s.key).length, versions: own.map((v, i) => ({ ...v, stats: stats[i] })) };
+    }),
+    rules: FOLLOWUP_STAGES.map((s) => ({
+      stage: s.key,
+      title: s.title,
+      action: actionLabel(s.key),
+      wait:
+        s.key === "sin-saludo"
+          ? `Hasta ${b.cap} saludos por día, de lunes a sábado de 8:30 a 20`
+          : s.key === "saludo-sin-demo"
+            ? "El mismo día del saludo (o apenas responde)"
+            : s.key === "demo-sin-abrir"
+              ? "Cadencia de Prospección: 2 y 4 días hábiles, 3 mensajes como máximo"
+              : "48 h desde el último mensaje",
+      exit: s.goal,
+    })),
+    results: {
+      byActor: [...byActor].map(([actor, x]) => ({ actor, ...x, rate: x.executions ? x.conversions / x.executions : null })),
+      totals: { executions: sent.length, failed: b.ex.filter((e) => e.status === "failed").length },
+    },
+    changes,
+  };
+}
+
+async function one(id: unknown, now = new Date()) {
+  if (typeof id !== "string" || !UUID.test(id)) throw new FollowupError("No encontramos ese contacto.");
+  const b = await board(now);
+  const it = b.items.get(id);
+  if (!it) throw new FollowupConflict("Ya no está en Follow-up (avanzó, se cerró o es un fijo). Actualizá la lista.");
+  return it;
+}
+
+/** Que nadie más la tenga tomada. */
+function mine(it: QueueItem, actor: string) {
+  if (it.claim && it.claim.until > new Date().toISOString() && it.claim.by !== actor) throw new FollowupConflict(`${it.name} la está ejecutando ${it.claim.by}.`);
+}
+
+// La hora de las tomas es la del servidor de la app (la misma con que se leen), no la de la base.
+async function lock(it: QueueItem, actor: string) {
+  const now = new Date();
+  const until = new Date(now.getTime() + CLAIM_SECONDS * 1000);
+  const got = await sql<Array<{ actor: string }>>`
+    insert into sales_followup_claims (outreach_id, actor, stage, claimed_at, locked_until)
+    values (${it.id}, ${actor}, ${it.stage}, ${now}, ${until})
+    on conflict (outreach_id) do update set actor = excluded.actor, stage = excluded.stage, locked_until = excluded.locked_until,
+      claimed_at = case when sales_followup_claims.actor = excluded.actor then sales_followup_claims.claimed_at else excluded.claimed_at end
+    where sales_followup_claims.actor = excluded.actor or sales_followup_claims.locked_until <= ${now}
+    returning actor`;
+  if (!got.length) throw new FollowupConflict(`${it.name} la está ejecutando otra persona.`);
+}
+const unlock = (id: string, actor: string) => sql`delete from sales_followup_claims where outreach_id = ${id} and actor = ${actor}`;
+
+/** «Ejecutar»: la toma 10 minutos y devuelve el mensaje armado. Sin id, la próxima libre de la cola. */
+export async function claim(id: unknown, actor: string) {
+  if (id) {
+    const it = await one(id);
+    if (!it.action) throw new FollowupConflict(it.actionReason ?? "No hay nada para mandarle ahora.");
+    if (it.blocked) throw new FollowupConflict(it.blocked);
+    mine(it, actor);
+    await lock(it, actor);
+    return { item: it, ...(await prepareFollowup(it.id, it.stage)), lockedUntil: new Date(Date.now() + CLAIM_SECONDS * 1000).toISOString() };
+  }
+  const { queue } = await followupSnapshot();
+  for (const it of queue) {
+    if (it.claim && it.claim.until > new Date().toISOString() && it.claim.by !== actor) continue;
+    try {
+      await lock(it, actor);
+      return { item: it, ...(await prepareFollowup(it.id, it.stage)), lockedUntil: new Date(Date.now() + CLAIM_SECONDS * 1000).toISOString() };
+    } catch (e) {
+      if (e instanceof FollowupConflict) continue;
+      throw e;
+    }
+  }
+  return null;
+}
+
+type Task = { id: unknown; stage?: unknown; versionId?: unknown };
+async function sameTask(t: Task, actor: string) {
+  const it = await one(t.id);
+  if (t.stage !== undefined && t.stage !== it.stage)
+    throw new FollowupConflict(`Ya no está en «${isStageKey(t.stage) ? stageInfo(t.stage).title : String(t.stage)}»: ahora está en «${it.stageTitle}». Actualizá la lista.`);
+  if (t.versionId !== undefined && t.versionId !== it.versionId && it.execution?.status !== "sent") throw new FollowupConflict("Esa versión ya no corresponde a esta etapa. Actualizá la lista.");
+  mine(it, actor);
+  return it;
+}
+
+/** «Abrir WhatsApp»: queda abierta (no cuenta como enviada). */
+export async function open(t: Task, actor: string) {
+  const it = await sameTask(t, actor);
+  await lock(it, actor);
+  return markFollowup({ id: it.id, stage: it.stage, versionId: t.versionId ?? it.versionId, status: "opened", actor });
+}
+
+/** El mensaje salió: cuenta como ejecución (y como contacto de Prospección en las tres primeras etapas). Idempotente. */
+export async function confirm(t: Task, actor: string) {
+  // Un reintento (o un doble clic) de un envío ya confirmado: aunque ya haya pasado de etapa, no suma nada.
+  if (typeof t.id === "string" && UUID.test(t.id) && typeof t.versionId === "string" && UUID.test(t.versionId)) {
+    const [done] = await sql<Array<{ status: string; updated_at: string; actor: string | null; reason: string | null }>>`
+      select status, updated_at, actor, reason from sales_followup_executions where outreach_id = ${t.id} and version_id = ${t.versionId} and status = 'sent'`;
+    if (done) return { execution: { status: done.status, at: String(iso(done.updated_at)), reason: done.reason, by: done.actor }, warning: null, replayed: true, item: await one(t.id).catch(() => null) };
+  }
+  const it = await sameTask(t, actor);
+  const out = await markFollowup({ id: it.id, stage: it.stage, versionId: t.versionId ?? it.versionId, status: "sent", actor });
+  await unlock(it.id, actor);
+  const after = await one(it.id).catch(() => null);
+  return { ...out, item: after };
+}
+
+/** No salió (con motivo). «sin_whatsapp» o «numero_incorrecto» también lo cierran. */
+export async function fail(t: Task & { reason?: unknown; kind?: unknown }, actor: string) {
+  const it = await sameTask(t, actor);
+  const kind = t.kind === "sin_whatsapp" || t.kind === "numero_incorrecto" ? t.kind : null;
+  const reason = (typeof t.reason === "string" ? t.reason.trim().slice(0, 300) : "") || (kind ? SITUATIONS[kind] : "");
+  if (!reason) throw new FollowupError("Contá por qué no salió.");
+  const out = await markFollowup({ id: it.id, stage: it.stage, versionId: t.versionId ?? it.versionId, status: "failed", reason, actor });
+  if (kind) await setSituation(it.id, kind, reason, actor);
+  await unlock(it.id, actor);
+  return out;
+}
+
+export async function release(id: unknown, actor: string) {
+  if (typeof id !== "string" || !UUID.test(id)) throw new FollowupError("No encontramos ese contacto.");
+  await unlock(id, actor);
+  return { released: true };
+}
+
+async function audit(id: string, subject: string, value: string | null, actor: string) {
+  await sql`insert into sales_followup_audit (outreach_id, subject, new_value, actor) values (${id}, ${subject}, ${value?.slice(0, 2300) ?? null}, ${actor.slice(0, 80)})`;
+}
+async function saveState(id: string, fields: Partial<Omit<State, "outreach_id">>, actor: string) {
+  const f = { situation: null, situation_step: null, situation_note: null, priority: null, snooze_until: null, snooze_reason: null, owner: null, ...fields };
+  const keys = Object.keys(fields) as (keyof typeof f)[];
+  await sql`
+    insert into sales_followup_state (outreach_id, situation, situation_step, situation_note, situation_at, priority, snooze_until, snooze_reason, owner, updated_by)
+    values (${id}, ${f.situation}, ${f.situation_step}, ${f.situation_note}, ${keys.includes("situation") ? sql`now()` : null}, ${f.priority}, ${f.snooze_until}, ${f.snooze_reason}, ${f.owner}, ${actor})
+    on conflict (outreach_id) do update set ${sql(Object.fromEntries(keys.map((k) => [k, f[k]])))}, ${keys.includes("situation") ? sql`situation_at = now(),` : sql``} updated_by = ${actor}, updated_at = now()`;
+}
+
+/** Lo que cada situación cambia en Prospección, para que su panel y el embudo digan lo mismo. */
+const STATUS_FOR: Partial<Record<Situation, OutreachStatus>> = {
+  confirmo_numero: "respondio",
+  interesado: "respondio",
+  neutro: "respondio",
+  pregunta_precios: "respondio",
+  mas_adelante: "respondio",
+  derivo: "respondio",
+  rechazo: "no_interesa",
+  no_contactar: "baja",
+  sin_whatsapp: "sin_canal",
+  numero_incorrecto: "sin_canal",
+};
+
+/** Qué pasó en la conversación (con el texto original). Vale mientras siga en el mismo paso del embudo. */
+export async function setSituation(id: string, raw: unknown, note: unknown, actor: string) {
+  if (!isSituation(raw)) throw new FollowupError("Situación desconocida.");
+  const [person] = await rows(id);
+  if (!person) throw new FollowupError("No encontramos ese contacto.");
+  const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
+  const { step } = placeOf(person);
+  await saveState(id, { situation: raw, situation_step: step, situation_note: text || null }, actor);
+  await audit(id, "situation", `${raw}${text ? ` · «${text.slice(0, 200)}»` : ""}`, actor);
+  let warning: string | null = null;
+  const status = STATUS_FOR[raw];
+  const open = person.status === "por_contactar" || person.status === "contactado";
+  try {
+    if (status && (open || CLOSED_SITUATIONS.includes(raw)) && person.status !== status) await setOutreachStatus(id, status, `${SITUATIONS[raw]} (Follow-up, ${actor})`);
+    if (text) await addOutreachNote(id, `${SITUATIONS[raw]}: «${text}» (${actor})`);
+  } catch (e) {
+    if (!(e instanceof OutreachError)) throw e;
+    warning = `La situación quedó guardada, pero no en Prospección: ${e.message}`;
+  }
+  return { situation: raw, warning };
+}
+
+/** Una respuesta de WhatsApp: con clasificación se aplica como situación; sin ella, queda «Neutro» para resolver a mano. */
+export async function registerReply(input: { id: unknown; text: unknown; classification?: unknown }, actor: string) {
+  if (typeof input.id !== "string" || !UUID.test(input.id)) throw new FollowupError("No encontramos ese contacto.");
+  const text = typeof input.text === "string" ? input.text.trim().slice(0, 2000) : "";
+  if (!text) throw new FollowupError("Falta el texto de la respuesta (en un audio: «Audio»).");
+  const situation = input.classification === undefined || input.classification === null || input.classification === "" ? "neutro" : input.classification;
+  await audit(input.id, "reply", text, actor);
+  return setSituation(input.id, situation, text, actor);
+}
+
+const DAY_MS = 86_400_000;
+/** Reprogramar: sale de la cola hasta esa fecha (sin fecha: mañana a las 9 de Argentina). */
+export async function snooze(id: string, rawUntil: unknown, rawReason: unknown, actor: string) {
+  if (!UUID.test(id)) throw new FollowupError("No encontramos ese contacto.");
+  const reason = typeof rawReason === "string" ? rawReason.trim().slice(0, 300) : "";
+  let until: Date;
+  if (rawUntil === null || rawUntil === undefined || rawUntil === "") {
+    until = new Date(Date.now() + DAY_MS);
+    until.setUTCHours(12, 0, 0, 0);
+  } else until = new Date(String(rawUntil));
+  if (Number.isNaN(until.getTime())) throw new FollowupError("Fecha inválida.");
+  if (until.getTime() < Date.now()) throw new FollowupError("La fecha ya pasó.");
+  if (until.getTime() > Date.now() + 90 * DAY_MS) throw new FollowupError("Se reprograma hasta 90 días.");
+  await saveState(id, { snooze_until: until.toISOString(), snooze_reason: reason || null }, actor);
+  await unlock(id, actor);
+  await audit(id, "snooze", `${until.toISOString()}${reason ? ` · ${reason}` : ""}`, actor);
+  return { snoozedUntil: until.toISOString(), reason: reason || null };
+}
+export async function unsnooze(id: string, actor: string) {
+  if (!UUID.test(id)) throw new FollowupError("No encontramos ese contacto.");
+  await saveState(id, { snooze_until: null, snooze_reason: null }, actor);
+  await audit(id, "snooze", "vuelve a la cola", actor);
+  return { snoozedUntil: null };
+}
+
+export async function setPriority(id: string, raw: unknown, actor: string) {
+  if (!UUID.test(id)) throw new FollowupError("No encontramos ese contacto.");
+  if (raw !== null && raw !== "" && !isPriority(raw)) throw new FollowupError("La prioridad es alta, media o baja.");
+  await saveState(id, { priority: isPriority(raw) ? raw : null }, actor);
+  await audit(id, "priority", isPriority(raw) ? raw : "automática", actor);
+  return { priority: isPriority(raw) ? raw : null };
+}
+
+/** El responsable de la persona (Facu, Axel); vacío lo saca. */
+export async function setOwner(id: string, raw: unknown, actor: string) {
+  if (!UUID.test(id)) throw new FollowupError("No encontramos ese contacto.");
+  const owner = typeof raw === "string" ? raw.trim().slice(0, 80) : "";
+  await saveState(id, { owner: owner || null }, actor);
+  await audit(id, "owner", owner || "sin responsable", actor);
+  return { owner: owner || null };
+}
+
+/**
+ * Una operación de Follow-up desde Chapa Labs, con los nombres de campo de habita. (`inmobiliaria`
+ * es la persona: su id o su código). Quien opera (`actor`) queda en la toma, la ejecución y la auditoría.
+ */
+export async function runFollowupOp(op: unknown, b: Record<string, unknown>, actor: string) {
+  const raw = b.inmobiliaria ?? b.id;
+  const id = typeof raw === "string" && !UUID.test(raw) && raw ? await idOfCode(raw) : raw;
+  const task = { id, stage: b.etapa, versionId: b.version };
+  const need = () => {
+    if (typeof id !== "string" || !UUID.test(id)) throw new FollowupError("Falta la persona.");
+    return id;
+  };
+  switch (op) {
+    case "queue": {
+      const s = await followupSnapshot();
+      const free = s.queue.filter((q) => !q.claim || q.claim.by === actor || q.claim.until <= new Date().toISOString());
+      return { summary: s.summary, next: free[0] ?? null, queue: s.queue.slice(0, Math.max(1, Math.min(Number(b.limite) || 50, 500))), blocked: s.blocked.slice(0, 200) };
+    }
+    case "claim":
+      return claim(id || null, actor);
+    case "open":
+      return open(task, actor);
+    case "confirm":
+      return confirm(task, actor);
+    case "fail":
+      return fail({ ...task, reason: b.motivo, kind: b.tipo }, actor);
+    case "release":
+      return release(need(), actor);
+    case "situation":
+      return setSituation(need(), b.situacion, b.texto, actor);
+    case "reply":
+      return registerReply({ id: need(), text: b.texto, classification: b.clasificacion }, actor);
+    case "replies":
+      return { replies: (await followupSnapshot()).inbox };
+    case "snooze":
+      return b.volver === true ? unsnooze(need(), actor) : snooze(need(), b.hasta, b.motivo, actor);
+    case "priority":
+      return setPriority(need(), b.prioridad, actor);
+    case "owner":
+      return setOwner(need(), b.responsable, actor);
+    case "version-create":
+      return createFollowupVersion((b.valores as Record<string, unknown>) ?? {});
+    case "version-status":
+      return setFollowupVersionStatus(b.id, b.estado);
+    case "version-update":
+    case "rule-save":
+      throw new FollowupError("En Turnia las versiones no se editan (se crea una nueva) y las esperas siguen la cadencia de Prospección.");
+    default:
+      throw new FollowupError("Operación de Follow-up desconocida.");
+  }
+}
+
+async function idOfCode(code: string) {
+  const [row] = await sql<Array<{ id: string }>>`select id from sales_outreach where code = ${code.trim().toLowerCase()}`;
+  if (!row) throw new FollowupError("Esa persona no está en la prospección de Turnia.");
+  return row.id;
+}

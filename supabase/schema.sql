@@ -1320,3 +1320,46 @@ insert into sales_followup_versions (stage, version, channel, trigger_label, bod
    E'Hola {saludo}, Sofi ya está dando turnos en tu consultorio. ¿Te paso cómo seguir con el plan para que no se corte?',
    '{whatsapp,copy}', 'active')
 on conflict (stage, version) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Follow-up como en habita. (08/11): la cola que se opera desde Chapa Labs. Por persona: la
+-- situación de la conversación (vale mientras siga en el mismo paso del embudo), la prioridad a
+-- mano, la reprogramación y el responsable; las tomas de 10 minutos para que dos personas no le
+-- escriban a la vez; y quién hizo cada cambio. Ver src/lib/sales/followup-queue.ts.
+-- ---------------------------------------------------------------------------
+alter table sales_followup_executions add column if not exists actor text check (actor is null or length(actor) <= 80);
+
+create table if not exists sales_followup_state (
+  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
+  situation text check (situation is null or situation in ('sin_respuesta', 'confirmo_numero', 'interesado', 'neutro', 'pregunta_precios', 'mas_adelante', 'derivo', 'rechazo', 'no_contactar', 'sin_whatsapp', 'numero_incorrecto')),
+  situation_step smallint,
+  situation_note text check (situation_note is null or length(situation_note) <= 2000),
+  situation_at timestamptz,
+  priority text check (priority is null or priority in ('alta', 'media', 'baja')),
+  snooze_until timestamptz,
+  snooze_reason text check (snooze_reason is null or length(snooze_reason) <= 300),
+  owner text check (owner is null or length(owner) <= 80),
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+alter table sales_followup_state enable row level security;
+
+create table if not exists sales_followup_claims (
+  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
+  actor text not null check (length(actor) between 1 and 80),
+  stage text not null,
+  claimed_at timestamptz not null default now(),
+  locked_until timestamptz not null
+);
+alter table sales_followup_claims enable row level security;
+
+create table if not exists sales_followup_audit (
+  id uuid primary key default gen_random_uuid(),
+  outreach_id uuid references sales_outreach(id) on delete cascade,
+  subject text not null check (subject in ('situation', 'priority', 'snooze', 'owner', 'reply')),
+  new_value text check (new_value is null or length(new_value) <= 2300),
+  actor text,
+  created_at timestamptz not null default now()
+);
+create index if not exists sales_followup_audit_idx on sales_followup_audit (outreach_id, created_at desc);
+alter table sales_followup_audit enable row level security;
