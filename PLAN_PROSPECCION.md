@@ -1,6 +1,6 @@
 # Prospección: odontólogos de Mar del Plata y Miramar
 
-Actualizado: 28/10/2026. Estrategia, plan de la semana del 26 al 30/10 (meta: 250 primeros contactos) y cómo usar Panel → Prospección. **No contiene datos de contacto**: la lista se entrega aparte y vive solo en la base de Turnia.
+Actualizado: 08/11/2026 (lista 4). Estrategia, plan de la semana del 26 al 30/10 (meta: 250 primeros contactos) y cómo usar Panel → Prospección. **No contiene datos de contacto**: la lista se entrega aparte y vive solo en la base de Turnia.
 
 ## La táctica, en cinco líneas
 
@@ -53,6 +53,27 @@ La que sigue a la lista 1, en la misma zona. Se entrega como `lista-mdp-miramar-
   - No se cruza con los «consultorios con web» ni con los primeros 50 del tablero viejo: si aparece alguno, el panel avisa que el número ya tiene contacto.
 - **Miramar casi no suma** (3): sus odontólogos ya estaban todos en el Círculo.
 - **Zona:** Mar del Plata, Batán, Sierra de los Padres, Miramar y Otamendi, Mar Chiquita (Santa Clara, Coronel Vidal), Balcarce, Necochea y Quequén, Lobería, Villa Gesell, Pinamar, Madariaga, Maipú, Ayacucho y la Costa. Tandil y Dolores quedaron afuera.
+
+## Lista 4: alrededores de Mar del Plata, con los que hacen Google Ads primero (257 personas, 08/11)
+
+Para la semana del 9/11, cuando a la base le quedaban 10 celulares sin contactar. Se entrega como `lista-4-alrededores-mdp.csv` (fuera del repo) y se importa en Panel → Prospección → Importar lista, **sin marcar «Reemplazar»**. No repite a nadie de las 709 personas que ya estaban en la base (listas 1 y 3 y consultorios con web): se cruzó por cada teléfono, por nombre y por apellido con la misma inicial en la misma ciudad.
+
+| Grupo | Personas | Dónde |
+|---|---:|---|
+| Con WhatsApp, alrededores | 117 | Tandil 53, Necochea 21, la Costa 24 (Santa Teresita, San Bernardo, Mar de Ajó, San Clemente, Mar del Tuyú, Las Toninas), Pinamar y Villa Gesell 14, Chapadmalal, Balcarce, Maipú, Dolores |
+| Con WhatsApp, Mar del Plata | 37 | Consultorios que no estaban en las listas 1 y 3 (salen de Google Maps). Van con prioridad 3, después de los alrededores |
+| Fijos | 103 | Tandil 29, Necochea 22, Mar del Plata 12, Villa Gesell 8, Pinamar 7 y otros. Quedan fuera de la cola, como siempre |
+
+- **Prioridad 1 (9):** los que pagan anuncios y los que muestran más inversión. Cinco hacen **Google Ads** confirmado en el [Centro de Transparencia de Anuncios de Google](https://adstransparency.google.com/?region=AR) (anuncios vistos en la Argentina entre junio y noviembre de 2026): cuatro por el dominio de su web y uno por el texto del anuncio. Otro hace anuncios en Instagram y Facebook ([Biblioteca de Anuncios de Meta](https://www.facebook.com/ads/library/)). En «Señales» queda la fecha del último anuncio, y en Chapa Labs llevan la marca «Google Ads» y van primeros entre los nuevos.
+- **Cómo se confirmó Google Ads:** coincidir el nombre no alcanza. Buscando por nombre aparecieron homónimos que anuncian otras cosas, así que se miró cada anuncio. Solo cuenta si el anuncio lleva a su web o si dice su nombre y «odontología».
+- **Fuentes:**
+  - Google Maps, unas 260 búsquedas por localidad y especialidad (sin sesión, Maps muestra hasta 20 resultados por búsqueda). De ahí salen la web, el Instagram y el WhatsApp que publica cada web.
+  - Cartillas de OSDE de la filial Buenos Aires Centro (Tandil), PDF públicos con vigencia al 07/11/2026, con el celular propio de muchos odontólogos.
+  - [Cartilla de OSPUNCPBA](https://www.ospuncpba.com.ar/) (obra social de la UNICEN): odontólogos de Tandil y Necochea con teléfono.
+- **Celular o fijo:** es celular si viene con 9 o con 15, si está en el link de WhatsApp de su web, o si el número local empieza con 3, 5 o 6. En Tandil (249), los celulares de las cartillas empiezan con 40 a 42, 45 a 47 o 449, y los fijos con 43 o 440 a 448. A 17 se los marcó celular solo por eso, con una nota en la ficha: si WhatsApp dice que el número no existe, «No tiene WhatsApp». Ojo: Maps muestra muchos celulares sin el 9. Por ejemplo, alguien que publica «0223-15-448-…» aparece en Maps como «+54 223 448-…». Por eso algunos «fijos» pueden tener WhatsApp.
+- **Sin nombre del odontólogo (55 con WhatsApp):** el saludo va al consultorio («¿Hablo con el consultorio de …?») y la nota dice que, si responde, hay que preguntar quién lo dirige. Los cuatro con nombre genérico en Google («Consultorio Odontológico») van con prioridad 3 y una nota para cambiar el saludo antes de mandar.
+- **Afuera:** el Círculo Odontológico de Balcarce, mecánicos dentales, laboratorios, hospitales y centros de salud. También un consultorio que hace Google Ads pero es de alguien que ya estaba en la base, Benito Juárez (queda lejos) y la cartilla de IOMA (casi no publica odontólogos).
+- **En Chapa Labs:** la planilla de Turnia no tiene columna «Lista», así que Chapa la toma de «Fuente», que empieza con «Lista 4». Se puede filtrar en «Por segmento → Lista» y buscar «lista 4».
 
 ## Lista 2: otras ciudades (Tucumán, La Rioja, Bahía Blanca, La Plata; 1.247 personas, 02/11)
 
