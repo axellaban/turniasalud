@@ -34,6 +34,8 @@ import { json, sql } from "@/lib/db";
 import { DEFAULT_TZ } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
+// La lectura de WhatsApp (op «whatsapp-sync») recorre los chats de dos líneas.
+export const maxDuration = 300;
 
 // /api/prospeccion — el panel de prospección de Chapa Labs (/prospecting) opera la prospección de
 // Turnia desde acá, con las mismas funciones y reglas que Panel → Prospección; la planilla de Google se
