@@ -99,6 +99,8 @@ Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propi
 
 Si el saludo, la demo o el seguimiento salieron desde Panel → Follow-up, el evento trae también `followup_stage` (la etapa) y `followup_version` (el número de versión).
 
+En Chapa, «Generar otro QR» y «Volver a vincular» son acciones operativas del emisor 5483. El código de vinculación queda en el panel autorizado y no forma parte de la analítica. Una omisión porque WAHA no encontró WhatsApp tampoco genera un evento de envío.
+
 ### Demo personal (`/p/<código>`, navegador)
 
 | Evento | Propiedades |

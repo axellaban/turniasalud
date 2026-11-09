@@ -19,6 +19,7 @@ vi.mock("node:timers/promises", () => ({ setTimeout: async () => {} }));
 const base = testDatabaseUrl();
 const calls: Array<{ path: string; body: Record<string, unknown> | null }> = [];
 let session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
+let secondarySession: { status: string; me: { id: string } | null };
 let exists = true;
 let chatsStore = true;
 let sendVoiceFails = false;
@@ -26,7 +27,12 @@ let sendVoiceFails = false;
 async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   const url = new URL(String(input));
   calls.push({ path: url.pathname, body: init.body ? JSON.parse(String(init.body)) : null });
-  if (url.pathname === "/api/sessions/secondary") return Response.json({ status: "WORKING", me: { id: "5491130235483@c.us" } });
+  if (url.pathname === "/api/sessions/secondary") return Response.json(secondarySession);
+  if (url.pathname === "/api/sessions/secondary/restart") {
+    secondarySession = { status: "SCAN_QR_CODE", me: null };
+    return Response.json(secondarySession);
+  }
+  if (url.pathname === "/api/secondary/auth/qr") return Response.json({ mimetype: "image/png", data: "aW1hZ2U=" });
   if (url.pathname === "/api/sessions/prospeccion") return Response.json(session);
   if (url.pathname === "/api/contacts/check-exists") return Response.json({ numberExists: exists, chatId: exists ? `${url.searchParams.get("phone")}@c.us` : null });
   if (url.pathname === "/api/prospeccion/chats") {
@@ -107,9 +113,39 @@ describe.runIf(base)("audios de seguimiento", () => {
   beforeEach(() => {
     calls.length = 0;
     session = { status: "WORKING", me: { id: "5492235000000@c.us" } };
+    secondarySession = { status: "WORKING", me: { id: "5491130235483@c.us" } };
     exists = true;
     chatsStore = true;
     sendVoiceFails = false;
+  });
+
+  it("solo devuelve el QR del 5483 autorizado y recupera una sesión fallida sin cerrar una activa", async () => {
+    const { GET, POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const url = "https://turnia.example/api/prospeccion/audio";
+    const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}` };
+    const reconnect = (relink: boolean) => POST(new Request(url, {
+      method: "POST", headers, body: JSON.stringify({ action: "reconnect", relink }),
+    }));
+    vi.stubEnv("WAHA_PROSPECCION_5483", JSON.stringify({
+      url: "https://waha-secondary.example", apiKey: "clave-secundaria", session: "secondary", phone: "5491130235483",
+    }));
+
+    const qrUrl = url + "?view=connection";
+    expect((await GET(new Request(qrUrl))).status).toBe(401);
+    expect((await reconnect(true)).status).toBe(200);
+    expect(calls.map((call) => call.path)).toEqual(["/api/sessions/secondary"]);
+
+    secondarySession.status = "FAILED";
+    expect((await reconnect(false)).status).toBe(200);
+    const result = await GET(new Request(qrUrl, { headers }));
+    expect(result.headers.get("cache-control")).toBe("private, no-store");
+    expect(await result.json()).toEqual({ status: "SCAN_QR_CODE", ready: false, hasAccount: false, qr: "aW1hZ2U=" });
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/sessions/secondary", "/api/sessions/secondary", "/api/sessions/secondary/restart",
+      "/api/sessions/secondary", "/api/secondary/auth/qr",
+    ]);
   });
 
   it("sugiere contactos con chats, también los @lid, sin confirmar líneas ni mandar nada", async () => {

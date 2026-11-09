@@ -5,17 +5,20 @@ import { OutreachError, outreachSettings } from "@/lib/sales/outreach";
 import { TEMPLATE_LABEL } from "@/lib/sales/outreach-messages";
 import {
   listVoiceNotes,
+  reconnectVoiceBusiness,
   saveBrowserVoiceNote,
   sendVoiceTest,
   sendVoiceToProspect,
   setVoiceSender,
   suggestVoiceSendersFromWaha,
   voiceCandidates,
+  voiceBusinessConnection,
   voiceChannelStatus,
   voiceNoteAudio,
   voiceSentToday,
   voiceSenderPhones,
   VoicePaceError,
+  VoiceRecipientUnavailableError,
   VOICE_DEFAULT_TEXT,
   VOICE_GROUPS,
   VOICE_MAX_BYTES,
@@ -42,6 +45,7 @@ const senderSchema = z.string().regex(/^\d{4}$/).optional();
 const secondsSchema = z.number().min(1).max(180).default(15);
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("rules"), rules: voiceRulesSchema }),
+  z.object({ action: z.literal("reconnect"), relink: z.boolean() }),
   z.object({ action: z.literal("source"), person: z.uuid(), sender: z.string().regex(/^\d{4}$/), confirmed: z.boolean() }),
   z.object({ action: z.literal("detect"), sender: senderSchema }),
   // Sin `note` sale solo el texto.
@@ -66,6 +70,7 @@ export function OPTIONS(request: Request) {
 export async function GET(request: Request) {
   if (!authorized(request)) return json({ error: "Autorizá los audios con tu sesión de Turnia." }, 401);
   const params = new URL(request.url).searchParams;
+  if (params.get("view") === "connection") return json(await voiceBusinessConnection());
   const note = noteSchema.safeParse(params.get("note"));
   if (params.get("view") === "recording") {
     const recording = note.success ? await voiceNoteAudio(note.data) : null;
@@ -90,6 +95,7 @@ export async function GET(request: Request) {
   ]);
   return json({
     ready: status.configured && status.ok,
+    channelStatus: status.configured ? status.status : "CONFIG",
     sender: status.configured && status.ok ? status.me?.slice(-4) : null,
     testTo: testPhone(sender.data)?.slice(-4) ?? null,
     senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
@@ -132,6 +138,10 @@ export async function POST(request: Request) {
     }, 400);
     const { data } = input;
     if (data.action === "rules") return json({ rules: await saveVoiceRules(data.rules) });
+    if (data.action === "reconnect") {
+      await reconnectVoiceBusiness(data.relink);
+      return json({ ok: true });
+    }
     if (data.action === "source") {
       await setVoiceSender(data.person, data.sender, data.confirmed);
       return json({ ok: true });
@@ -148,6 +158,7 @@ export async function POST(request: Request) {
     return json({ ok: true });
   } catch (error) {
     if (error instanceof VoicePaceError) return json({ error: error.message, retryAfter: error.retryAfter }, 429);
+    if (error instanceof VoiceRecipientUnavailableError) return json({ error: error.message, code: "recipient_unavailable" }, 422);
     if (error instanceof OutreachError) return json({ error: error.message }, 422);
     console.error("chapa_prospecting_voice", error instanceof Error ? error.message : error);
     return json({ error: "No se pudo completar la operación." }, 500);
