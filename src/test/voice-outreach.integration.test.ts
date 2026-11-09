@@ -129,7 +129,7 @@ describe.runIf(base)("audios de seguimiento", () => {
   });
 
   it("arma los tres grupos con las definiciones del embudo, sin baja ni quien ya usó los tres mensajes", async () => {
-    expect(await voice.voiceGroupCounts()).toEqual({ saludo: 2, presentacion: 1, no_abrio: 1, abrio: 2, hablo: 1 });
+    expect(await voice.voiceGroupCounts()).toEqual({ saludo: 2, presentacion: 1, no_abrio: 1, abrio: 2, hablo: 1, no_interesa: 0 });
     expect((await voice.voiceCandidates("saludo", null)).map((c) => c.name).sort()).toEqual(["Gabriela Siete", "Inés Nueve"]);
     expect((await voice.voiceCandidates("presentacion", null)).map((c) => c.name)).toEqual(["Hugo Ocho"]);
     expect((await voice.voiceCandidates("hablo", null)).map((c) => c.name)).toEqual(["Caro Tres"]);
@@ -402,5 +402,43 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect((await POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "test", text: "¿Hablo con {saludo}?" }) }))).status).toBe(200);
     expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ text: "¿Hablo con Axel?" });
     expect(await voice.voiceSentToday()).toBe(count);
+  });
+
+  it("a quien dijo que no le pide feedback una vez, sin sumar un mensaje, y lo pasa a «No le interesa»", async () => {
+    const { POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const url = "https://turnia.example/api/prospeccion/audio";
+    const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}`, "Content-Type": "application/json" };
+    const send = (body: Record<string, unknown>) => POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "send", group: "no_interesa", ...body }) }));
+    await sql`update sales_voice_sends set created_at = now() - interval '1 day' where outreach_id is not null`;
+    // Respondió que no (lo leyó la lectura diaria en la línea 0000), otro respondió otra cosa y otro ya estaba cerrado.
+    await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches)
+              values ('dijono-k1', 'Karina Diez', 'Kari', '+5492236000010', 'movil', 'respondio', 1),
+                     ('gracias-l2', 'Luis Once', 'Luis', '+5492236000011', 'movil', 'respondio', 1),
+                     ('cerrado-m3', 'Marta Doce', 'Marta', '+5492236000012', 'movil', 'no_interesa', 3)`;
+    const kari = await id("dijono-k1");
+    const marta = await id("cerrado-m3");
+    await sql`insert into sales_whatsapp_chats (outreach_id, sender_phone, chat_id, sent, received, last_received_text, last_from_me)
+              values (${kari}, '5492235000000', '5492236000010@c.us', 1, 1, 'No estamos interesados. Gracias.', false),
+                     (${await id("gracias-l2")}, '5492235000000', '5492236000011@c.us', 1, 1, 'Gracias,', false)`;
+    const people = await voice.voiceCandidates("no_interesa", null);
+    expect(people.map((p) => p.name).sort()).toEqual(["Karina Diez", "Marta Doce"]);
+    expect(people.find((p) => p.id === kari)).toMatchObject({ senders: ["5492235000000"], reply: "No estamos interesados. Gracias." });
+
+    expect(await (await send({ person: kari, note: (await sql`select id from sales_voice_notes limit 1`)[0].id, text: "" })).json()).toMatchObject({ error: expect.stringContaining("solo con texto") });
+    calls.length = 0;
+    expect((await send({ person: kari, text: "" })).status).toBe(200);
+    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({
+      text: "Gracias por contestarme, Kari. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
+    });
+    const [row] = await sql`select status, touches from sales_outreach where id = ${kari}`;
+    expect(row).toEqual({ status: "no_interesa", touches: 1 });
+    expect((await sql`select detail from sales_outreach_events where outreach_id = ${kari} and kind = 'mensaje'`)[0].detail).toContain("Pedido de feedback");
+    expect((await voice.voiceCandidates("no_interesa", null)).find((p) => p.id === kari)?.sent).toBe(true);
+    await sql`update sales_voice_sends set created_at = now() - interval '1 day' where outreach_id is not null`;
+    expect((await send({ person: kari, text: "" })).status).toBe(422);
+    // A Marta no le escribimos desde esta línea: hay que confirmarla.
+    expect(await (await send({ person: marta, text: "" })).json()).toMatchObject({ error: expect.stringContaining("WhatsApp emisor") });
   });
 });

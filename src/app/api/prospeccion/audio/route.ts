@@ -94,7 +94,10 @@ export async function GET(request: Request) {
     testTo: testPhone(sender.data)?.slice(-4) ?? null,
     senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
     notes: notes.map(({ id, label }) => ({ id, label })),
-    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders }) => ({ id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)) })),
+    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders, reply }) => ({
+      id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)),
+      reply: reply?.slice(0, 160) ?? null,
+    })),
     stage: {
       textOnly: voiceTextOnly(group.data),
       needsSender: voiceNeedsSender(group.data),
