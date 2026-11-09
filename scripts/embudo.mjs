@@ -2,10 +2,10 @@
 //
 //   POSTHOG_PERSONAL_API_KEY=phx_… [DATABASE_URL=postgres://…] npm run embudo
 //
-// - Etapas 1 a 4 (saludos, demos enviadas, visitadas y hablaron con Sofi): PostHog.
+// - Etapas 1 a 5 (saludos, respondieron el saludo, demos enviadas, visitadas y hablaron con Sofi): PostHog.
 // - Después, la demo personal por versión (A con «Probar la demo», hasta el 07/11; B con la esfera),
 //   para comparar cuál convierte mejor: visitaron → empezaron la demo → hablaron con Sofi.
-// - Etapas 5 a 7 (cuentas creadas, cuentas activas, clientes pagos): la base (Neon). Sin
+// - Etapas 6 a 8 (cuentas creadas, cuentas activas, clientes pagos): la base (Neon). Sin
 //   DATABASE_URL esas filas salen como «sin base».
 // - Semanas de lunes a domingo, hora de Buenos Aires. La semana 1 empieza el lunes 26/10/2026.
 // - Cada prospecto o cuenta se cuenta una sola vez, en la semana en que llegó por primera vez a la
@@ -27,6 +27,7 @@ const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
 const STAGES = [
   ["saludos", "Saludos enviados"],
+  ["respondieron", "Respondieron el saludo"],
   ["demos_enviadas", "Demos enviadas"],
   ["demos_visitadas", "Demos visitadas"],
   ["hablaron", "Hablaron con Sofi"],
@@ -66,7 +67,7 @@ async function hogql(query) {
   return (await response.json()).results;
 }
 
-/** Etapas 1 a 4: { etapa: { lunes: cantidad } }. */
+/** Etapas 1 a 5: { etapa: { lunes: cantidad } }. */
 async function posthogStages() {
   const week = (column) => `toString(toStartOfWeek(toTimeZone(${column}, '${TZ}'), 1))`;
   // Solo prospectos (`prospecto:<código>`), solo producción y sin tráfico interno. Los dispositivos
@@ -82,6 +83,13 @@ async function posthogStages() {
         maxIf(timestamp, event = 'prospect_contact_undone' AND properties.contact_kind = 'saludo') AS last_undo
       FROM events WHERE ${base} AND event IN ('prospect_greeting_sent', 'prospect_contact_undone')
       GROUP BY distinct_id HAVING countIf(event = 'prospect_greeting_sent') > 0 AND last_sent > last_undo
+      UNION ALL
+      -- Respondieron el saludo (desde el 09/11): la primera respuesta registrada (pasó a «Respondió»: la
+      -- lectura de WhatsApp o a mano) o el Paso 2 enviado, que va solo a quien respondió.
+      SELECT 'respondieron', distinct_id, min(timestamp), max(timestamp), toDateTime(0)
+      FROM events WHERE ${base} AND (event = 'prospect_permission_sent'
+        OR (event = 'prospect_status_changed' AND properties.status_to = 'respondio'))
+      GROUP BY distinct_id
       UNION ALL
       SELECT 'demos_enviadas', distinct_id,
         minIf(timestamp, event = 'prospect_pitch_sent'),
@@ -125,7 +133,7 @@ async function demoByVersion() {
   return Object.fromEntries(rows.map(([version, visitaron, empezaron, hablaron]) => [version, { visitaron, empezaron, hablaron }]));
 }
 
-/** Etapas 5 a 7 desde la base: { etapa: { lunes: cantidad } }. */
+/** Etapas 6 a 8 desde la base: { etapa: { lunes: cantidad } }. */
 async function databaseStages(from) {
   const { default: postgres } = await import("postgres");
   const sql = postgres(DATABASE_URL, { max: 1, prepare: false, idle_timeout: 5 });
