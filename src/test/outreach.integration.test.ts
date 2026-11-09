@@ -435,8 +435,12 @@ describe.runIf(base)("prospección a odontólogos", () => {
     // Habló con Sofi (para la planilla y Chapa Labs). Si solo saludó Sofi (abrió y se fue sin decir nada), todavía no habló.
     await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }])})`;
     expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(false);
+    // En el selector de clínicas, la demo es de López y todavía no habló.
+    const mine = async () => (await outreach.clinicRows()).find((c) => c.id === clinic.id);
+    expect(await mine()).toMatchObject({ is_demo: true, retained: false, person: "María Elvira López Sánchez", spoke: false });
     await sql`insert into conversations (clinic_id, channel, transcript) values (${clinic.id}, 'web', ${sql.json([{ role: "agent", message: "¡Hola! Soy Sofi." }, { role: "user", message: "Quiero un turno" }])})`;
     expect((await outreach.publicOutreach("lopez-j7k"))!.converso).toBe(true);
+    expect(await mine()).toMatchObject({ person: "María Elvira López Sánchez", spoke: true });
     // Su página es una sola: después de hablar con Sofi, la vuelve a encontrar igual.
     const despues = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({}) }));
     expect(despues).toContain("Hablame como si fueras un paciente");

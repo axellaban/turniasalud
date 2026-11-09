@@ -5,6 +5,7 @@ import { prospectDistinctId } from "@/lib/analytics-shared";
 import { json, sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { DEFAULT_TZ, localDateKey } from "@/lib/time";
+import type { ClinicRow } from "@/lib/clinic-options";
 import type { OutreachImportRow } from "./outreach-import";
 import { FORWARD_NOTE, TALK_PLACES, type TalkPlace } from "./outreach-places";
 import {
@@ -265,6 +266,19 @@ export const userSpokeSql = () => sql`jsonb_path_exists(coalesce(v.transcript, '
 export const conversoSql = () => sql`exists (
   select 1 from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
   where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()})`;
+
+/**
+ * Las clínicas para el selector del panel (src/lib/clinic-options.ts): de cada demo, la persona de la
+ * prospección que la armó desde su link (/p/<código>) y si habló con Sofi en ella.
+ */
+export async function clinicRows(): Promise<ClinicRow[]> {
+  return sql<ClinicRow[]>`
+    select c.id, c.name, c.created_at, c.is_demo, c.retained_at is not null as retained,
+      (select o.name from demo_sessions s join sales_outreach o on o.lead_id = s.lead_id
+        where s.clinic_id = c.id and s.lead_id is not null order by o.created_at limit 1) as person,
+      exists (select 1 from conversations v where v.clinic_id = c.id and ${userSpokeSql()}) as spoke
+    from clinics c`;
+}
 
 /** Lo que muestra la página pública de su demo: sin teléfono, notas ni estado. `converso`: ya habló con Sofi. */
 export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "title" | "business_name" | "zone" | "address" | "specialty" | "website" | "priority" | "phone_kind" | "status"> & {
