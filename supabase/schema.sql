@@ -1198,6 +1198,9 @@ create index if not exists sales_voice_sends_day_idx on sales_voice_sends (creat
 -- 09/11: también salen mensajes de texto (el saludo y la presentación), con la etapa de cada envío.
 alter table sales_voice_sends alter column voice_note_id drop not null;
 alter table sales_voice_sends add column if not exists stage text;
+alter table sales_voice_sends add column if not exists failure_code text;
+create index if not exists sales_voice_sends_phone_recent_idx on sales_voice_sends (phone, created_at desc)
+  where outreach_id is not null;
 -- El mensaje de texto de una etapa sale una sola vez por persona.
 create unique index if not exists sales_voice_sends_text_once on sales_voice_sends (outreach_id, stage)
   where outreach_id is not null and voice_note_id is null and status <> 'error';

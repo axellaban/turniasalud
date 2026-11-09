@@ -23,7 +23,11 @@ export class VoicePaceError extends OutreachError {
   }
 }
 
-export class VoiceRecipientUnavailableError extends OutreachError {}
+const NO_WHATSAPP_DETAIL = "ese número no tiene WhatsApp.";
+export class VoiceRecipientUnavailableError extends OutreachError {
+  constructor(name: string) { super(`${name}: ${NO_WHATSAPP_DETAIL}`); }
+}
+export class VoiceRecipientIneligibleError extends OutreachError {}
 export const VOICE_MAX_BYTES = 3 * 1024 * 1024;
 /** De 8 a 21 en Buenos Aires: nunca un audio ni un mensaje de un desconocido a la noche. */
 const HOURS = { from: 8, to: 21 };
@@ -113,7 +117,20 @@ const eligible = (g?: VoiceGroup) => sql`${reachable()} and ${g ? stageFilter(g)
 /** Las etapas que salen desde la línea que ya le escribió: todas menos el saludo. */
 const withSender = () => sql`${reachable()} and (${followup()} or ${stageFilter("presentacion")})`;
 
-export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[]; reply: string | null };
+export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[]; reply: string | null; whatsapp_unavailable: boolean };
+
+// El rechazo se guarda por número, no por ficha. Una corrección de teléfono no hereda el
+// rechazo. La evidencia vence al día y un envío posterior prevalece sobre el rechazo.
+const recentlyUnavailable = () => sql`coalesce((
+  select v.status = 'error'
+  from sales_voice_sends v
+  where v.outreach_id is not null and v.phone = o.phone and v.created_at > now() - interval '24 hours'
+    and (v.status = 'enviado' or (v.status = 'error' and (
+      v.failure_code = 'recipient_unavailable' or (v.failure_code is null and v.error like ${`%: ${NO_WHATSAPP_DETAIL}`})
+    )))
+  order by v.created_at desc, v.id desc
+  limit 1
+), false)`;
 
 /**
  * Las líneas que ya tienen un chat con esa persona: las confirmadas a mano o al mandar desde acá, y
@@ -135,11 +152,12 @@ export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
   return row;
 }
 
-export async function voiceCandidates(group: VoiceGroup, noteId: string | null): Promise<VoiceCandidate[]> {
+export async function voiceCandidates(group: VoiceGroup, noteId: string | null, rememberUnavailable = false): Promise<VoiceCandidate[]> {
   return sql<VoiceCandidate[]>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
       o.instagram, o.website, o.touches, o.greeted_at, o.opened_at, o.demo_at,
       coalesce(delivery.reserved, false) as sent, coalesce(delivery.needs_review, false) as needs_review,
+      ${rememberUnavailable ? recentlyUnavailable() : sql`false`} as whatsapp_unavailable,
       array(select x.sender_phone from (${senderPhones()}) x order by x.sender_phone) as senders,
       (select c.last_received_text from sales_whatsapp_chats c where c.outreach_id = o.id and c.received > 0
         order by c.last_received_at desc nulls last limit 1) as reply
@@ -152,7 +170,7 @@ export async function voiceCandidates(group: VoiceGroup, noteId: string | null):
         and ${noteId ? sql`v.voice_note_id = ${noteId}` : sql`v.voice_note_id is null and v.stage = ${group}`}
     ) delivery on true
     where ${eligible(group)}
-    order by o.priority, o.last_contact_at nulls first, o.name
+    order by whatsapp_unavailable, o.priority, o.last_contact_at nulls first, o.name
     limit 300`;
 }
 
@@ -630,13 +648,15 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
   const note = noteId ? await voiceNoteAudio(noteId) : null;
   if (noteId && !note) throw new OutreachError("No encontramos ese audio.");
   if (!/^[0-9a-f-]{36}$/i.test(outreachId)) throw new OutreachError("No encontramos ese contacto.");
-  const [person] = await sql<Array<OutreachPerson & { id: string; ok: boolean; shared: number; demo_at: string | null }>>`
+  const [person] = await sql<Array<OutreachPerson & { id: string; ok: boolean; shared: number; demo_at: string | null; whatsapp_unavailable: boolean }>>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
       o.instagram, o.website, o.touches, o.greeted_at, o.demo_at, ${eligible(group)} as ok,
+      ${group ? recentlyUnavailable() : sql`false`} as whatsapp_unavailable,
       (select count(*)::int from sales_outreach x where x.phone = o.phone and x.id <> o.id) as shared
     from sales_outreach o where o.id = ${outreachId}`;
-  if (!person) throw new OutreachError("No encontramos ese contacto.");
-  if (!person.ok || !person.phone) throw new OutreachError(`A ${person.name} ya no le toca en este grupo o ya no puede recibir el seguimiento.`);
+  if (!person) throw new VoiceRecipientIneligibleError("No encontramos ese contacto.");
+  if (!person.ok || !person.phone) throw new VoiceRecipientIneligibleError(`A ${person.name} ya no le toca en este grupo o ya no puede recibir el seguimiento.`);
+  if (person.whatsapp_unavailable) throw new VoiceRecipientUnavailableError(person.name);
   const custom = template.trim();
   const fallback = group && !VOICE_PANEL_TEMPLATES[group].length
     ? renderTemplate(VOICE_DEFAULT_TEXT[group], person, outreachDemoUrl(person.code)).trim()
@@ -658,13 +678,13 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
         select 1 from sales_outreach o
         where o.id = ${outreachId} and o.phone = ${person.phone} and ${eligible(group)}
       `;
-      if (!current) throw new OutreachError(`A ${person.name} ya no le toca en este grupo o cambió su teléfono.`);
+      if (!current) throw new VoiceRecipientIneligibleError(`A ${person.name} ya no le toca en este grupo o cambió su teléfono.`);
     }
     if (group && voiceNeedsSender(group)) {
       const [verified] = await tx`
         select 1 from sales_outreach o where o.id = ${outreachId} and ${config.phone ?? ""} in (${senderPhones()})
       `;
-      if (!verified) throw new OutreachError("Confirmá primero que ya le escribiste desde el WhatsApp emisor.");
+      if (!verified) throw new VoiceRecipientIneligibleError("Confirmá primero que ya le escribiste desde el WhatsApp emisor.");
     }
     const rules = await voiceRules(tx);
     if ((await voiceSentToday(tx)) >= rules.dailyLimit) throw new OutreachError(`Ya se reservaron ${rules.dailyLimit} envíos para hoy (audios y mensajes). Seguí mañana.`);
@@ -686,18 +706,19 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
       )
       on conflict do nothing returning id`;
   });
-  if (!claim.length) throw new OutreachError(`${person.name} ya recibió ${note ? "este audio" : "el mensaje de esta etapa"} o tiene otro envío en curso.`);
+  if (!claim.length) throw new VoiceRecipientIneligibleError(`${person.name} ya recibió ${note ? "este audio" : "el mensaje de esta etapa"} o tiene otro envío en curso.`);
   const sendId = claim[0].id;
   let outboundStarted = false;
   try {
     const chatId = await chatFor(config, person.phone.replace(/\D/g, ""));
-    if (!chatId) throw new VoiceRecipientUnavailableError(`${person.name}: ese número no tiene WhatsApp.`);
+    if (!chatId) throw new VoiceRecipientUnavailableError(person.name);
     await deliver(config, chatId, note, text, seconds, () => { outboundStarted = true; });
     await sql`update sales_voice_sends set status = 'enviado' where id = ${sendId}`;
   } catch (e) {
     const error = String(e instanceof Error ? e.message : e).slice(0, 300);
     // Si hubo un intento de texto o audio, el proveedor pudo aceptarlo antes del error.
-    await sql`update sales_voice_sends set status = ${outboundStarted ? "enviando" : "error"}, error = ${error} where id = ${sendId}`;
+    const code = e instanceof VoiceRecipientUnavailableError ? "recipient_unavailable" : null;
+    await sql`update sales_voice_sends set status = ${outboundStarted ? "enviando" : "error"}, error = ${error}, failure_code = ${code} where id = ${sendId}`;
     if (outboundStarted) throw new OutreachError(`No se pudo confirmar el envío a ${person.name}. Revisá su chat antes de volver a escribirle.`);
     throw e;
   }
