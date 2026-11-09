@@ -4,8 +4,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import { sql, type Sql, type TransactionSql } from "@/lib/db";
 import { DEFAULT_TZ, zonedParts } from "@/lib/time";
-import { MAX_TOUCHES, outreachPhone, renderTemplate, whatsappTemplateKey, type OutreachPerson, type TemplateKey } from "./outreach-messages";
-import { OutreachError, conversoSql, outreachDemoUrl, outreachSettings, recordTouch, setOutreachStatus } from "./outreach";
+import { MAX_TOUCHES, PERMISSION_WAIT_HOURS, outreachPhone, renderTemplate, splitMessages, whatsappTemplateKey, type OutreachPerson, type TemplateKey } from "./outreach-messages";
+import { OutreachError, conversoSql, lastReplySql, outreachDemoUrl, outreachSettings, recordTouch, repliedSinceSql, setOutreachStatus } from "./outreach";
 import { DEFAULT_VOICE_RULES, voiceRules } from "./voice-rules";
 
 // Audios de seguimiento (MVP): Axel graba una vez y el panel lo manda como nota de voz nativa
@@ -33,44 +33,64 @@ export const VOICE_MAX_BYTES = 3 * 1024 * 1024;
 const HOURS = { from: 8, to: 21 };
 
 /**
- * Las etapas, en el orden del embudo. Las dos primeras van antes de la demo: el saludo (el primer
- * mensaje, solo texto y sin link) y la presentación con el link de su demo a quien ya saludamos. Las
- * otras tres son el seguimiento, y la última es para quien dijo que no: un mensaje (solo texto) que
- * cierra la charla y le pide en una línea por qué no le sirve. En el resto se puede mandar un audio,
- * un texto o los dos.
+ * Las etapas, en el orden de la secuencia de WhatsApp (outreach-messages.ts, siempre a la recepción):
+ * el Paso 1 (el saludo, sin link), el Paso 2 a quienes respondieron el saludo (pide permiso, sin link),
+ * el Paso 3 a quienes respondieron el Paso 2 (el link de su demo) y el Seguimiento 1 a quienes no lo
+ * respondieron en 24 horas (el link igual). Las tres siguientes son el seguimiento después del link (el
+ * Seguimiento 2, un audio de unos 12 segundos, y el 3, el mensaje para reenviar a los doctores), y la
+ * última es para quien dijo que no: un mensaje que cierra
+ * la charla y le pide en una línea por qué no le sirve. Antes del link sale solo texto; después, un
+ * audio, un texto o los dos.
  */
-export const VOICE_GROUPS = ["saludo", "presentacion", "no_abrio", "abrio", "hablo", "no_interesa"] as const;
+export const VOICE_GROUPS = ["saludo", "permiso", "entrega", "sin_respuesta", "no_abrio", "abrio", "hablo", "no_interesa"] as const;
 export type VoiceGroup = (typeof VOICE_GROUPS)[number];
 /** Las del seguimiento (después de la demo): las que muestra el panel de Turnia. */
 export const VOICE_FOLLOWUP_GROUPS = ["no_abrio", "abrio", "hablo"] as const satisfies readonly VoiceGroup[];
+const isFollowupGroup = (g: VoiceGroup) => (VOICE_FOLLOWUP_GROUPS as readonly VoiceGroup[]).includes(g);
 export const VOICE_GROUP_LABEL: Record<VoiceGroup, string> = {
-  saludo: "Por saludar",
-  presentacion: "Saludados sin la demo",
-  no_abrio: "No abrieron la demo",
-  abrio: "La abrieron sin hablar con Sofi",
-  hablo: "Hablaron con Sofi",
+  saludo: "Paso 1 · Por saludar",
+  permiso: "Paso 2 · Respondieron el saludo",
+  entrega: "Paso 3 · Respondieron el Paso 2",
+  sin_respuesta: "Seguimiento 1 · Sin respuesta al Paso 2 en 24 h",
+  no_abrio: "Seguimientos 2 y 3 · No abrieron la demo",
+  abrio: "Seguimientos 2 y 3 · La abrieron sin hablar con Sofi",
+  hablo: "Seguimientos 2 y 3 · Hablaron con Sofi",
   no_interesa: "Dijeron que no les interesa",
 };
-/** El saludo es solo texto: un audio o un link de un desconocido es lo que hace que WhatsApp bloquee el número. */
-export const voiceTextOnly = (g: VoiceGroup) => g === "saludo" || g === "no_interesa";
+/**
+ * Antes del link, solo texto (un audio o un link de un desconocido es lo que hace que WhatsApp bloquee
+ * el número, y el Paso 3 y el Seguimiento 1 son el link escrito). El pedido de feedback, también.
+ */
+export const voiceTextOnly = (g: VoiceGroup) => !isFollowupGroup(g);
 /** El saludo es el primer chat: no hay una línea que confirmar. En el resto, sale desde la línea que ya le escribió. */
 export const voiceNeedsSender = (g: VoiceGroup) => g !== "saludo";
-/** El texto que va antes del audio: el nombre y el link, que una grabación sola no puede decir. */
+/** Las etapas que llevan el link de su demo. */
+export const needsLink = (g: VoiceGroup) => g === "entrega" || g === "sin_respuesta";
+/** Las que no pueden llevar un link (el Paso 1 y el 2: todavía no dio permiso). */
+export const forbidsLink = (g: VoiceGroup) => g === "saludo" || g === "permiso";
+/**
+ * El texto que se propone para escribir. Vacío: sale el mensaje del panel de esa etapa (o, con un
+ * audio, el audio solo, como el Seguimiento 2).
+ */
 export const VOICE_DEFAULT_TEXT: Record<VoiceGroup, string> = {
   saludo: "",
-  presentacion: "",
-  no_abrio: "Hola {saludo}! Te dejo un audio cortito. Tu demo: {link}",
-  abrio: "Hola {saludo}! Tu demo: {link}",
-  hablo: "Hola {saludo}!",
-  no_interesa: "Gracias por contestarme, {saludo}. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
+  permiso: "",
+  entrega: "",
+  sin_respuesta: "",
+  no_abrio: "",
+  abrio: "",
+  hablo: "",
+  no_interesa: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no les sirve, me ayudás un montón.",
 };
 /** Los mensajes del panel que salen cuando se manda solo texto y el texto queda vacío. */
 export const VOICE_PANEL_TEMPLATES: Record<VoiceGroup, TemplateKey[]> = {
-  saludo: ["whatsapp_saludo", "whatsapp_saludo_consultorio"],
-  presentacion: ["whatsapp_1", "whatsapp_consultorio"],
-  no_abrio: ["whatsapp_2", "whatsapp_3"],
-  abrio: ["whatsapp_2", "whatsapp_3", "whatsapp_demo"],
-  hablo: ["whatsapp_demo", "whatsapp_3"],
+  saludo: ["whatsapp_abridor"],
+  permiso: ["whatsapp_permiso"],
+  entrega: ["whatsapp_entrega"],
+  sin_respuesta: ["whatsapp_sin_respuesta"],
+  no_abrio: ["whatsapp_seguimiento", "whatsapp_reenviable"],
+  abrio: ["whatsapp_seguimiento", "whatsapp_reenviable"],
+  hablo: ["whatsapp_seguimiento", "whatsapp_reenviable"],
   no_interesa: [],
 };
 
@@ -93,31 +113,56 @@ const reachable = () => sql`
   o.phone is not null and o.phone_kind is distinct from 'fijo'
   and not exists (select 1 from sales_suppressions s where s.phone = o.phone)`;
 
-/** El seguimiento: ya recibió la demo (al menos un mensaje), sigue «Contactado» y le queda alguno de los tres. */
-const followup = () => sql`o.status = 'contactado' and o.touches >= 1 and o.touches < ${MAX_TOUCHES}`;
+/** Su última respuesta fue un «no, gracias» (va a la etapa de quienes dijeron que no). */
+const saidNo = () => sql`exists (
+  select 1 from sales_whatsapp_chats c
+  where c.outreach_id = o.id and c.last_from_me is false and c.last_received_text ~* ${NO_INTERESA_PATTERN})`;
+
+/** Antes del link: lo saludamos o le escribimos el Paso 2 y todavía no recibió ninguno de los tres mensajes. */
+const beforeLink = () => sql`o.status in ('contactado', 'respondio') and o.touches = 0`;
+
+/**
+ * El seguimiento: ya recibió el link (al menos uno de los tres mensajes), le queda alguno, no respondió
+ * después de nuestro último mensaje («no habló más»: si contestó, lo atiende una persona) y no se le
+ * escribió hoy (el Seguimiento 2 va al día siguiente del link).
+ */
+const followup = () => sql`o.status in ('contactado', 'respondio') and o.touches >= 1 and o.touches < ${MAX_TOUCHES}
+  and not ${repliedSinceSql(sql`o.last_contact_at`)}
+  and (o.last_contact_at is null or (o.last_contact_at at time zone ${DEFAULT_TZ})::date < (now() at time zone ${DEFAULT_TZ})::date)`;
 
 /**
  * Quién está en cada etapa. Saludo: nadie le escribió todavía, ni a él ni a otro con su mismo número
  * (un número compartido se saluda una vez, por la persona de mejor prioridad, como en la cola del
- * panel). Presentación: lo saludamos y falta la demo. Quien respondió lo atiende una persona.
+ * panel). Paso 2: respondió el saludo. Paso 3: respondió el Paso 2. Seguimiento 1: pasaron 24 horas del
+ * Paso 2 sin respuesta. Las respuestas salen de la lectura de WhatsApp (a las 8 y con «Leer las
+ * respuestas») o de lo que se marcó a mano.
  */
 const stageFilter = (g: VoiceGroup) =>
   g === "saludo" ? sql`o.status = 'por_contactar' and o.touches = 0 and o.greeted_at is null
       and not exists (
         select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id
           and (x.touches > 0 or x.status <> 'por_contactar' or x.greeted_at is not null or (x.priority, x.name, x.id) < (o.priority, o.name, o.id)))`
-  : g === "presentacion" ? sql`o.status = 'contactado' and o.touches = 0 and o.greeted_at is not null`
-  : g === "no_interesa" ? sql`(o.status = 'no_interesa' or (o.status = 'respondio' and exists (
-      select 1 from sales_whatsapp_chats c
-      where c.outreach_id = o.id and c.last_from_me is false and c.last_received_text ~* ${NO_INTERESA_PATTERN})))`
+  : g === "permiso" ? sql`${beforeLink()} and o.greeted_at is not null and o.permission_at is null
+      and ${repliedSinceSql(sql`o.greeted_at`)} and not ${saidNo()}`
+  : g === "entrega" ? sql`${beforeLink()} and o.permission_at is not null and ${repliedSinceSql(sql`o.permission_at`)} and not ${saidNo()}`
+  : g === "sin_respuesta" ? sql`${beforeLink()} and o.permission_at <= now() - ${PERMISSION_WAIT_HOURS} * interval '1 hour'
+      and not ${repliedSinceSql(sql`o.permission_at`)}`
+  : g === "no_interesa" ? sql`(o.status = 'no_interesa' or (o.status = 'respondio' and ${saidNo()}))`
   : sql`${followup()} and ${groupFilter(g)}`;
 
 /** Sin etapa (el panel de Turnia) es el seguimiento con audio, como antes. */
 const eligible = (g?: VoiceGroup) => sql`${reachable()} and ${g ? stageFilter(g) : followup()}`;
 /** Las etapas que salen desde la línea que ya le escribió: todas menos el saludo. */
-const withSender = () => sql`${reachable()} and (${followup()} or ${stageFilter("presentacion")})`;
+const withSender = () => sql`${reachable()} and (${followup()} or (${beforeLink()} and o.greeted_at is not null))`;
 
-export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[]; reply: string | null; whatsapp_unavailable: boolean };
+/**
+ * Cómo se registra un envío de texto en sales_voice_sends (uno por persona y clave): la etapa o, en el
+ * seguimiento, la etapa y el número de mensaje (así el Seguimiento 2 y el 3 pueden salir escritos los dos).
+ */
+const textStage = (g: VoiceGroup, touches: number) => (isFollowupGroup(g) ? `${g}:${touches + 1}` : g);
+const textStageSql = (g: VoiceGroup) => (isFollowupGroup(g) ? sql`${g} || ':' || (o.touches + 1)` : sql`${g}`);
+
+export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[]; reply: string | null; reply_at: string | null; whatsapp_unavailable: boolean };
 
 // El rechazo se guarda por número, no por ficha. Una corrección de teléfono no hereda el
 // rechazo. La evidencia vence al día y un envío posterior prevalece sobre el rechazo.
@@ -143,7 +188,9 @@ const senderPhones = () => sql`
 export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
   const [row] = await sql<Array<Record<VoiceGroup, number>>>`
     select count(*) filter (where ${stageFilter("saludo")})::int as saludo,
-           count(*) filter (where ${stageFilter("presentacion")})::int as presentacion,
+           count(*) filter (where ${stageFilter("permiso")})::int as permiso,
+           count(*) filter (where ${stageFilter("entrega")})::int as entrega,
+           count(*) filter (where ${stageFilter("sin_respuesta")})::int as sin_respuesta,
            count(*) filter (where ${stageFilter("no_abrio")})::int as no_abrio,
            count(*) filter (where ${stageFilter("abrio")})::int as abrio,
            count(*) filter (where ${stageFilter("hablo")})::int as hablo,
@@ -155,22 +202,23 @@ export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
 export async function voiceCandidates(group: VoiceGroup, noteId: string | null, rememberUnavailable = false): Promise<VoiceCandidate[]> {
   return sql<VoiceCandidate[]>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
-      o.instagram, o.website, o.touches, o.greeted_at, o.opened_at, o.demo_at,
+      o.instagram, o.website, o.touches, o.greeted_at, o.permission_at, o.opened_at, o.demo_at,
       coalesce(delivery.reserved, false) as sent, coalesce(delivery.needs_review, false) as needs_review,
       ${rememberUnavailable ? recentlyUnavailable() : sql`false`} as whatsapp_unavailable,
       array(select x.sender_phone from (${senderPhones()}) x order by x.sender_phone) as senders,
       (select c.last_received_text from sales_whatsapp_chats c where c.outreach_id = o.id and c.received > 0
-        order by c.last_received_at desc nulls last limit 1) as reply
+        order by c.last_received_at desc nulls last limit 1) as reply,
+      ${lastReplySql()} as reply_at
     from sales_outreach o
     left join lateral (
       select bool_or(v.status <> 'error') as reserved,
         bool_or(v.status = 'enviando' and (v.error is not null or v.created_at < now() - ${VOICE_RESERVATION_TIMEOUT} * interval '1 second')) as needs_review
       from sales_voice_sends v
       where v.outreach_id is not null and (v.outreach_id = o.id or v.phone = o.phone)
-        and ${noteId ? sql`v.voice_note_id = ${noteId}` : sql`v.voice_note_id is null and v.stage = ${group}`}
+        and ${noteId ? sql`v.voice_note_id = ${noteId}` : sql`v.voice_note_id is null and v.stage = ${textStageSql(group)}`}
     ) delivery on true
     where ${eligible(group)}
-    order by whatsapp_unavailable, o.priority, o.last_contact_at nulls first, o.name
+    order by whatsapp_unavailable, ${group === "permiso" || group === "entrega" ? sql`reply_at desc nulls last,` : sql``} o.priority, o.last_contact_at nulls first, o.name
     limit 300`;
 }
 
@@ -418,9 +466,17 @@ async function deliver(config: ProspectWaha, chatId: string, note: { mimetype: s
     await post(config, `/api/${encodeURIComponent(config.session)}/presence`, { chatId, presence: "typing" }).catch(() => {});
     await sleep(between(2000, 4000));
   }
-  if (text) {
+  // Una línea con «---» separa dos mensajes (el Seguimiento 3: el segundo queda solo, para reenviarlo).
+  const parts = splitMessages(text);
+  for (const [i, part] of parts.entries()) {
+    if (i > 0) {
+      await post(config, `/api/${encodeURIComponent(config.session)}/presence`, { chatId, presence: "typing" }).catch(() => {});
+      await sleep(between(2500, 5000));
+    }
     onOutbound?.();
-    await post(config, "/api/sendText", { chatId, text });
+    await post(config, "/api/sendText", { chatId, text: part });
+  }
+  if (parts.length) {
     if (!note) return;
     await sleep(between(2000, 4000));
   }
@@ -637,9 +693,12 @@ export async function sendVoiceTest(noteId: string | null, rawPhone: string, tex
   }
 }
 
-/** El mensaje del panel que le toca (a la persona o a la recepción), para cuando se manda solo texto sin escribirlo. */
-async function panelMessage(person: OutreachPerson & { shared: number }): Promise<string> {
-  const key = whatsappTemplateKey(person, person.shared >= 2);
+/**
+ * El mensaje del panel que le toca, para cuando se manda solo texto sin escribirlo: el de la etapa antes
+ * del link y, en el seguimiento, el Seguimiento 2 o el 3 según cuántos lleva.
+ */
+async function panelMessage(person: OutreachPerson, group?: VoiceGroup): Promise<string> {
+  const key = group && !isFollowupGroup(group) ? VOICE_PANEL_TEMPLATES[group][0] : whatsappTemplateKey(person);
   if (!key) return "";
   const { templates } = await outreachSettings();
   return renderTemplate(templates[key], person, outreachDemoUrl(person.code)).trim();
@@ -648,21 +707,20 @@ async function panelMessage(person: OutreachPerson & { shared: number }): Promis
 /**
  * Un envío de la cola. Se reserva antes de mandar (el índice único impide el doble envío aunque
  * se toque dos veces), y al salir suma el mensaje y programa el seguimiento como cualquier WhatsApp.
- * Sin audio (`noteId` null) sale solo el texto: el escrito o, si queda vacío, el del panel. El saludo
- * es siempre así y no lleva link; la presentación lleva el de su demo.
+ * Sin audio (`noteId` null) sale solo el texto: el escrito o, si queda vacío, el del panel. Antes del
+ * link es siempre así: el Paso 1 y el 2 no llevan link; el 3 y el Seguimiento 1, el de su demo.
  */
 export async function sendVoiceToProspect(noteId: string | null, outreachId: string, template: string, seconds: number, group?: VoiceGroup, ending?: string): Promise<{ name: string }> {
   checkHours();
   if (!noteId && !group) throw new OutreachError("Elegí un audio.");
-  if (noteId && group && voiceTextOnly(group)) throw new OutreachError("El saludo va solo con texto: el audio queda para cuando ya te respondió o le mandaste la demo.");
+  if (noteId && group && voiceTextOnly(group)) throw new OutreachError("Esta etapa va solo con texto: el audio queda para el seguimiento, cuando ya tiene el link de su demo.");
   const note = noteId ? await voiceNoteAudio(noteId) : null;
   if (noteId && !note) throw new OutreachError("No encontramos ese audio.");
   if (!/^[0-9a-f-]{36}$/i.test(outreachId)) throw new OutreachError("No encontramos ese contacto.");
-  const [person] = await sql<Array<OutreachPerson & { id: string; ok: boolean; shared: number; demo_at: string | null; whatsapp_unavailable: boolean }>>`
+  const [person] = await sql<Array<OutreachPerson & { id: string; ok: boolean; demo_at: string | null; whatsapp_unavailable: boolean }>>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
-      o.instagram, o.website, o.touches, o.greeted_at, o.demo_at, ${eligible(group)} as ok,
-      ${group ? recentlyUnavailable() : sql`false`} as whatsapp_unavailable,
-      (select count(*)::int from sales_outreach x where x.phone = o.phone and x.id <> o.id) as shared
+      o.instagram, o.website, o.touches, o.greeted_at, o.permission_at, o.demo_at, ${eligible(group)} as ok,
+      ${group ? recentlyUnavailable() : sql`false`} as whatsapp_unavailable
     from sales_outreach o where o.id = ${outreachId}`;
   if (!person) throw new VoiceRecipientIneligibleError("No encontramos ese contacto.");
   if (!person.ok || !person.phone) throw new VoiceRecipientIneligibleError(`A ${person.name} ya no le toca en este grupo o ya no puede recibir el seguimiento.`);
@@ -670,15 +728,18 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
   const custom = template.trim();
   const fallback = group && !VOICE_PANEL_TEMPLATES[group].length
     ? renderTemplate(VOICE_DEFAULT_TEXT[group], person, outreachDemoUrl(person.code)).trim()
-    : await panelMessage(person);
+    : await panelMessage(person, group);
   const text = custom ? renderTemplate(custom, person, outreachDemoUrl(person.code)).trim() : note ? "" : fallback;
   if (!note && !text) throw new OutreachError("Escribí el mensaje o elegí un audio.");
-  if (group === "saludo" && /\{link\}|https?:\/\/|www\./i.test(`${custom} ${text}`)) {
-    throw new OutreachError("El saludo va sin link: que un desconocido mande un link de entrada es lo que hace que WhatsApp bloquee el número.");
+  if (group && forbidsLink(group) && /\{link\}|https?:\/\/|www\./i.test(`${custom} ${text}`)) {
+    throw new OutreachError(group === "saludo"
+      ? "El Paso 1 va sin link: que un desconocido mande un link de entrada es lo que hace que WhatsApp bloquee el número."
+      : "El Paso 2 va sin link: pide permiso para pasarlo. El link sale en el Paso 3 (o el Seguimiento 1).");
   }
-  if (group === "presentacion" && !text.includes(outreachDemoUrl(person.code))) {
-    throw new OutreachError("La presentación lleva el link de su demo: sumá {link} al mensaje.");
+  if (group && needsLink(group) && !text.includes(outreachDemoUrl(person.code))) {
+    throw new OutreachError("Este paso lleva el link de su demo: sumá {link} al mensaje.");
   }
+  const stageKey = group ? textStage(group, person.touches) : null;
   const config = await requireChannel(ending);
 
   const claim = await sql.begin(async (tx) => {
@@ -707,11 +768,11 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
     }
     return tx<Array<{ id: string }>>`
       insert into sales_voice_sends (voice_note_id, outreach_id, phone, status, stage, sender_phone)
-      select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando', ${group ?? null}, ${config.phone ?? null}
+      select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando', ${stageKey}, ${config.phone ?? null}
       where not exists (
         select 1 from sales_voice_sends
         where outreach_id is not null and (outreach_id = ${outreachId} or phone = ${person.phone}) and status <> 'error'
-          and (${noteId ? tx`voice_note_id = ${noteId}` : tx`voice_note_id is null and stage = ${group ?? null}`}
+          and (${noteId ? tx`voice_note_id = ${noteId}` : tx`voice_note_id is null and stage = ${stageKey}`}
             or (status = 'enviando' and created_at > now() - ${VOICE_RESERVATION_TIMEOUT} * interval '1 second'))
       )
       on conflict do nothing returning id`;
@@ -745,7 +806,11 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
     return { name: person.name };
   }
   try {
-    await recordTouch(outreachId, "whatsapp", { properties: { message_format: note ? "audio" : "texto", voice_note: note?.label ?? null, voice_stage: group ?? null } });
+    // El Paso 1 y el 2 se registran como tales (no son de los tres mensajes); el resto, como uno de los tres.
+    await recordTouch(outreachId, "whatsapp", {
+      touch: group !== "saludo" && group !== "permiso",
+      properties: { message_format: note ? "audio" : "texto", voice_note: note?.label ?? null, voice_stage: group ?? null },
+    });
     if (note) await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${outreachId}, 'nota', 'whatsapp', ${`Audio de seguimiento: «${note.label}»`})`;
     // El chat ya existe en esta línea: los próximos envíos de esta persona salen de acá sin confirmarlo a mano.
     if (config.phone) {

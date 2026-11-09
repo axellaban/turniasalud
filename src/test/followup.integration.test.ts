@@ -51,9 +51,13 @@ describe.runIf(base)("follow-up", () => {
     vi.unstubAllEnvs();
   });
 
-  it("arranca cada etapa con su V1 activa y ubica a cada uno; el fijo sin respuesta no entra", async () => {
+  it("arranca con los textos de la secuencia activos y ubica a cada uno; el fijo sin respuesta no entra", async () => {
     const all = await followup.followupOverview();
-    expect(all.map((s) => s.versions.map((v) => `${v.version}:${v.status}`))).toEqual(Array(7).fill(["1:active"]));
+    // Las cinco primeras etapas tienen la V2 de la secuencia del 09/11 (a la recepción); las de la cuenta, su V1.
+    expect(all.map((s) => s.versions.map((v) => `${v.version}:${v.status}`))).toEqual([
+      ...Array(5).fill(["1:archived", "2:active"]),
+      ...Array(2).fill(["1:active"]),
+    ]);
     const sinSaludo = all.find((s) => s.key === "sin-saludo")!;
     expect(sinSaludo.queue.map((q) => q.code).sort()).toEqual(["lopez-j7k", "moreta-ab3", "secreti-c4d"]);
     expect(await stageOf(people["pirera-g6h"])).toBeNull();
@@ -62,8 +66,8 @@ describe.runIf(base)("follow-up", () => {
   it("arma el saludo y, al confirmarlo, cuenta como el saludo de Prospección y la ejecución convierte", async () => {
     const id = people["moreta-ab3"];
     const p = await followup.prepareFollowup(id, "sin-saludo");
-    expect(p).toMatchObject({ message: "¡Buenas! ¿Hablo con Myriam?", ready: true, version: 1 });
-    expect(p.whatsapp!.app).toBe(`https://wa.me/5492236602433?text=${encodeURIComponent("¡Buenas! ¿Hablo con Myriam?")}`);
+    expect(p).toMatchObject({ message: "Buenas! Hablo con la recepción de la Dra. Moreta?", ready: true, version: 2 });
+    expect(p.whatsapp!.app).toBe(`https://wa.me/5492236602433?text=${encodeURIComponent("Buenas! Hablo con la recepción de la Dra. Moreta?")}`);
     await followup.markFollowup({ id, stage: "sin-saludo", versionId: p.versionId, status: "opened" });
     expect((await stage("sin-saludo")).queue.find((q) => q.id === id)!.execution!.status).toBe("opened");
     await followup.markFollowup({ id, stage: "sin-saludo", versionId: p.versionId, status: "sent" });
@@ -71,19 +75,37 @@ describe.runIf(base)("follow-up", () => {
     expect(row).toEqual({ greeted: true, touches: 0, status: "contactado" });
     expect(mocks.capture.map((c) => c.event)).toContain("prospect_greeting_sent");
     expect(await stageOf(id)).toBe("saludo-sin-demo");
-    expect((await stage("sin-saludo")).versions[0].stats).toMatchObject({ executions: 1, conversions: 1, rate: 1 });
+    expect((await stage("sin-saludo")).versions.find((v) => v.status === "active")!.stats).toMatchObject({ executions: 1, conversions: 1, rate: 1 });
     // Ya no está en esa etapa: se avisa en vez de registrar dos veces.
     await expect(followup.markFollowup({ id, stage: "sin-saludo", versionId: p.versionId, status: "sent" })).rejects.toThrow(/Ya no está en «Sin saludar»: pasó a «Saludado, sin demo»/);
   });
 
-  it("manda la demo con su link /p/<código> y suma el primer toque", async () => {
+  it("el Paso 2 pide permiso sin link y no suma un toque; la demo, con su link /p/<código>, suma el primero", async () => {
     const id = people["moreta-ab3"];
     const p = await followup.prepareFollowup(id, "saludo-sin-demo");
-    expect(p.message).toContain("https://turnia.example/p/moreta-ab3");
+    expect(p.message).toMatch(/^Qué tal! Soy Axel\./);
+    expect(p.message).not.toContain("https://");
     expect(p.links.demo).toBe("https://turnia.example/p/moreta-ab3");
     await followup.markFollowup({ id, stage: "saludo-sin-demo", versionId: p.versionId, status: "sent" });
+    expect((await sql`select touches, permission_at is not null as asked from sales_outreach where id = ${id}`)[0]).toEqual({ touches: 0, asked: true });
+    expect(await stageOf(id)).toBe("saludo-sin-demo");
+    // El link (Paso 3 o Seguimiento 1) sale desde «Audios y mensajes»: ahí ya es uno de los tres.
+    await (await import("@/lib/sales/outreach")).recordTouch(id, "whatsapp");
     expect((await sql`select touches from sales_outreach where id = ${id}`)[0].touches).toBe(1);
     expect(await stageOf(id)).toBe("demo-sin-abrir");
+  });
+
+  it("el Seguimiento 3 son dos mensajes: el chat se abre con el primero y el segundo se copia", async () => {
+    const id = people["moreta-ab3"];
+    await sql`update sales_outreach set opened_at = now(), lead_id = null where id = ${id}`;
+    const [v] = await sql<Array<{ id: string }>>`select id from sales_followup_versions where stage = 'converso-sin-cuenta' and status = 'active'`;
+    const body = (await sql`select body from sales_followup_versions where id = ${v.id}`)[0].body as string;
+    const [first, second] = body.split("\n---\n");
+    const { renderFollowup } = followup;
+    const person = (await sql`select * from sales_outreach where id = ${id}`)[0] as unknown as Parameters<typeof renderFollowup>[1];
+    expect(renderFollowup(second, person)).toMatch(/^Hola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: https:\/\/turnia\.example\/p\/moreta-ab3 \./);
+    expect(first).toMatch(/^Buenas! Para no robarte más tiempo/);
+    await sql`update sales_outreach set opened_at = null where id = ${id}`;
   });
 
   it("con cuenta creada (acceso sin revocar) pasa a «Cuenta creada, sin actividad» y el envío queda como nota", async () => {
@@ -108,7 +130,7 @@ describe.runIf(base)("follow-up", () => {
     const p = await followup.prepareFollowup(id, "sin-saludo");
     await expect(followup.markFollowup({ id, stage: "sin-saludo", versionId: p.versionId, status: "failed" })).rejects.toThrow(/por qué no salió/);
     await followup.markFollowup({ id, stage: "sin-saludo", versionId: p.versionId, status: "failed", reason: "Número equivocado" });
-    expect((await stage("sin-saludo")).versions[0].stats.executions).toBe(1);
+    expect((await stage("sin-saludo")).versions.find((v) => v.status === "active")!.stats.executions).toBe(1);
     await sql`insert into sales_suppressions (phone, reason) values ('+5492236147600', 'baja')`;
     expect(await stageOf(id)).toBeNull();
   });
@@ -116,17 +138,17 @@ describe.runIf(base)("follow-up", () => {
   it("versiones: una nueva activa archiva la anterior, la prueba reparte 50/50 y una guardada no se edita", async () => {
     expect(await actions.createFollowupVersionAction({ stage: "demo-sin-abrir", channel: "whatsapp", trigger: "", body: "Hola {apodo}", ctas: [], status: "active" })).toMatchObject({ ok: false });
     const v2 = await actions.createFollowupVersionAction({ stage: "demo-sin-abrir", channel: "whatsapp", trigger: "2 días", body: "Hola {saludo}, ¿viste la demo? {link}", ctas: ["whatsapp", "demo", "fax"], status: "active" });
-    expect(v2).toMatchObject({ ok: true, data: { version: 2, status: "active", ctas: ["whatsapp", "demo"] } });
+    expect(v2).toMatchObject({ ok: true, data: { version: 3, status: "active", ctas: ["whatsapp", "demo"] } });
     const v3 = await actions.createFollowupVersionAction({ stage: "demo-sin-abrir", channel: "whatsapp", trigger: "", body: "Prueba {saludo}", ctas: ["whatsapp"], status: "test" });
-    expect(v3).toMatchObject({ ok: true, data: { version: 3, status: "test" } });
+    expect(v3).toMatchObject({ ok: true, data: { version: 4, status: "test" } });
     const statuses = async () => (await stage("demo-sin-abrir")).versions.map((v) => `${v.version}:${v.status}`);
-    expect(await statuses()).toEqual(["1:archived", "2:active", "3:test"]);
-    // Moreta ya empezó con la V1 (archivada): ahora le toca una de las vigentes.
-    expect(["2", "3"]).toContain(String((await followup.prepareFollowup(people["moreta-ab3"], "demo-sin-abrir")).version));
+    expect(await statuses()).toEqual(["1:archived", "2:archived", "3:active", "4:test"]);
+    // A Moreta le toca una de las vigentes.
+    expect(["3", "4"]).toContain(String((await followup.prepareFollowup(people["moreta-ab3"], "demo-sin-abrir")).version));
     const v2id = v2.ok ? v2.data.id : "";
     expect(await actions.setFollowupVersionStatusAction(v2id, "archived")).toEqual({ ok: false, message: "La versión activa no se archiva sola: activá otra primero." });
     await actions.setFollowupVersionStatusAction(v3.ok ? v3.data.id : "", "active");
-    expect(await statuses()).toEqual(["1:archived", "2:archived", "3:active"]);
+    expect(await statuses()).toEqual(["1:archived", "2:archived", "3:archived", "4:active"]);
     await expect(sql`update sales_followup_versions set body = 'otro' where id = ${v2id}`).rejects.toThrow(/FOLLOWUP_VERSION_FROZEN/);
     await expect(sql`delete from sales_followup_versions where id = ${v2id}`).rejects.toThrow(/FOLLOWUP_VERSION_FROZEN/);
   });

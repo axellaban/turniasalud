@@ -3,7 +3,7 @@ import { json, sql } from "@/lib/db";
 import { DEFAULT_TZ, localDateKey } from "@/lib/time";
 import { AXEL_WHATSAPP } from "./contacto-axel";
 import { nextFollowUp } from "./outreach-messages";
-import { todayKey } from "./outreach";
+import { WHATSAPP_SYNC_ACTOR, todayKey } from "./outreach";
 import { incomingReply } from "./followup-queue";
 import { listProspectChats, prospectWaha, voiceChannelStatus, waha, type ProspectWaha } from "./voice-outreach";
 
@@ -13,7 +13,7 @@ import { listProspectChats, prospectWaha, voiceChannelStatus, waha, type Prospec
 // su texto. Solo lee: no manda, no marca como leído y no cambia nada en WAHA.
 // La dispara Chapa Labs una vez por día (y su botón «Leer WhatsApp ahora»).
 
-export const SYNC_ACTOR = "WhatsApp (lectura diaria)";
+export const SYNC_ACTOR = WHATSAPP_SYNC_ACTOR;
 /** Entre dos lecturas: si se pide antes, se devuelve la última. */
 const MIN_MINUTES = 10;
 const MESSAGES = 50;

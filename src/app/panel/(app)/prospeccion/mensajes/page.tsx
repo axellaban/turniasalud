@@ -18,7 +18,7 @@ export default async function MensajesProspeccionPage() {
       </Link>
       <PageHeader
         title="Mensajes y metas"
-        description="Lo que se escribe solo en cada chat. Cortos, con su nombre y su demo, sin precios ni promesas: el objetivo es que la pruebe o te responda."
+        description="La secuencia de WhatsApp, siempre a la recepción del consultorio: el saludo, el permiso para pasar el link, la demo y el seguimiento. Sin precios ni promesas: el objetivo es que la prueben y se la pasen a los doctores."
       />
       <Card>
         <p className="text-sm text-brand-900/75">

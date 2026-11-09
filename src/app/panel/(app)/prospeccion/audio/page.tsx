@@ -81,7 +81,7 @@ export default async function AudioPage({ searchParams }: PageProps<"/panel/pros
           <Tabs current={href({})} items={VOICE_FOLLOWUP_GROUPS.map((g) => ({ href: `/panel/prospeccion/audio?${new URLSearchParams({ grupo: g, ...(note ? { audio: note.id } : {}) })}`, label: VOICE_GROUP_LABEL[g], count: counts[g] }))} />
         </div>
         <p className="mt-2 text-xs text-brand-900/60">
-          Solo quienes ya recibieron su demo, siguen sin responder, les queda alguno de los tres mensajes y no pidieron la baja. Quien respondió se atiende a mano. El saludo y la presentación con la demo se mandan desde Chapa Labs (Odontólogos → Mandar audios y mensajes).
+          Los Seguimientos 2 y 3: quienes ya recibieron su demo, no respondieron después de nuestro último mensaje, no recibieron nada hoy, les queda alguno de los tres mensajes y no pidieron la baja. Quien respondió se atiende a mano. Los Pasos 1, 2 y 3 y el Seguimiento 1 se mandan desde Chapa Labs (Odontólogos → Audios y mensajes).
         </p>
         {note ? (
           <VoiceSender

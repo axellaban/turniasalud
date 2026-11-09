@@ -147,6 +147,7 @@ function itemOf(
       touches: r.touches,
       whatsapp,
       contactable: r.contactable,
+      permission: Boolean(r.permission_at),
       nextActionOn: r.next_action_on,
       lastContactAt: iso(r.last_contact_at),
       snoozedUntil: iso(ctx.state?.snooze_until),
@@ -269,9 +270,9 @@ export async function followupSnapshot(now = new Date()) {
         s.key === "sin-saludo"
           ? `Hasta ${b.cap} saludos por día, de lunes a sábado de 8:30 a 20`
           : s.key === "saludo-sin-demo"
-            ? "El mismo día del saludo (o apenas responde)"
+            ? "Paso 2 apenas responde el saludo; el link (Paso 3 o, sin respuesta en 24 h, Seguimiento 1) desde «Audios y mensajes»"
             : s.key === "demo-sin-abrir"
-              ? "Cadencia de Prospección: 2 y 4 días hábiles, 3 mensajes como máximo"
+              ? "Cadencia de Prospección: Seguimiento 2 al día hábil siguiente del link y el 3 (para reenviar) dos días hábiles después, 3 mensajes como máximo"
               : "48 h desde el último mensaje",
       exit: s.goal,
     })),

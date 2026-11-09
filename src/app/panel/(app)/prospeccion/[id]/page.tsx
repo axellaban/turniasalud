@@ -7,7 +7,7 @@ import { formatDateTime } from "@/lib/time";
 import { getOutreach, outreachDemoUrl, outreachEvents, outreachSettings, todayKey, type OutreachEvent } from "@/lib/sales/outreach";
 import { CHANNEL_LABEL, STATUS_LABEL, STATUS_TONE, displayOutreachPhone, googleSearchUrl, renderTemplate, type OutreachChannel, type OutreachStatus } from "@/lib/sales/outreach-messages";
 import { ActionButton, CallButton, CopyButton, InstagramButton, WhatsAppButton } from "../contact-buttons";
-import { contactPlan, isConsultorioLine, landlineOnly } from "../outreach-row";
+import { contactPlan, landlineOnly } from "../outreach-row";
 import { EditOutreachForm, NoteForm } from "./forms";
 
 export const metadata: Metadata = { title: "Prospección · Panel" };
@@ -59,10 +59,9 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
           <Card>
             <h2 className="font-display text-xl text-brand-950">Contactar</h2>
             {p.suppressed && <p className="mt-2 text-sm font-medium text-red-700">Pidió no recibir más mensajes: no se le escribe ni lo llama Sofi.</p>}
-            {p.phone && (p.shared.length > 0 || isConsultorioLine(p)) && (
+            {p.phone && p.shared.length > 0 && (
               <p className="mt-2 text-sm text-brand-900/75">
-                {p.shared.length > 0 && `Mismo teléfono que ${p.shared.map((s) => `${s.name}${s.touched ? " (ya contactado)" : ""}`).join(", ")}. `}
-                {isConsultorioLine(p) ? "Es el número del consultorio: el mensaje le pide a la recepción que se lo pase." : ""}
+                {`Mismo teléfono que ${p.shared.map((s) => `${s.name}${s.touched ? " (ya contactado)" : ""}`).join(", ")}.`}
               </p>
             )}
             {plan.whatsapp ? (
@@ -70,22 +69,38 @@ export default async function OutreachDetailPage({ params }: PageProps<"/panel/p
                 <p className="text-sm font-medium text-brand-900">WhatsApp · {displayOutreachPhone(p.phone)}</p>
                 {plan.early && (
                   <p className="mt-1 text-sm text-brand-900/75">
-                    El seguimiento toca el {p.next_action_on!.split("-").reverse().slice(0, 2).join("/")}. Si te respondió, marcalo abajo; si querés, podés adelantarlo.
+                    {plan.whatsapp.key === "whatsapp_sin_respuesta"
+                      ? "El Seguimiento 1 toca 24 horas después del Paso 2. Si te respondió, marcalo abajo y aparece el Paso 3; si querés, podés adelantarlo."
+                      : `El seguimiento toca el ${p.next_action_on!.split("-").reverse().slice(0, 2).join("/")}. Si te respondió, marcalo abajo; si querés, podés adelantarlo.`}
                   </p>
                 )}
-                <p className="mt-2 whitespace-pre-line rounded-2xl rounded-tl-md bg-[#dcf8c6] px-3.5 py-2.5 text-[15px] leading-snug text-brand-950">{plan.whatsapp.text}</p>
+                {plan.whatsapp.parts.map((part, i) => (
+                  <div key={i} className="mt-2">
+                    <p className="whitespace-pre-line rounded-2xl rounded-tl-md bg-[#dcf8c6] px-3.5 py-2.5 text-[15px] leading-snug text-brand-950">{part}</p>
+                    {i > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <CopyButton text={part} className={smallButtonClass}>
+                          Copiar el mensaje {i + 1}
+                        </CopyButton>
+                        <span className="text-xs text-brand-900/60">Mandalo aparte, después del primero: así lo pueden reenviar solo.</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <WhatsAppButton id={p.id} web={plan.whatsapp.web} app={plan.whatsapp.app} className={plan.early ? secondaryButtonClass : waClass}>
                     {plan.early ? "Adelantar el seguimiento" : "Abrir el chat con este mensaje"}
                   </WhatsAppButton>
-                  <CopyButton text={plan.whatsapp.text} className={smallButtonClass}>
-                    Copiar el mensaje
+                  <CopyButton text={plan.whatsapp.parts[0] ?? plan.whatsapp.text} className={smallButtonClass}>
+                    {plan.whatsapp.parts.length > 1 ? "Copiar el mensaje 1" : "Copiar el mensaje"}
                   </CopyButton>
                 </div>
                 <p className="mt-2 text-xs text-brand-900/60">
-                  {plan.whatsapp.key.startsWith("whatsapp_saludo")
-                    ? "Primero el saludo, sin link: así WhatsApp no bloquea tu número. Al abrirlo queda registrado y, cuando te responda, acá aparece la presentación con su demo."
-                    : "Lo mandás vos desde tu WhatsApp. Al abrirlo queda registrado y el seguimiento se programa solo (dos días hábiles; después, cuatro)."}
+                  {plan.whatsapp.key === "whatsapp_abridor"
+                    ? "Primero el saludo a la recepción, sin link: así WhatsApp no bloquea tu número. Al abrirlo queda registrado y, cuando te responda, acá aparece el Paso 2."
+                    : plan.whatsapp.key === "whatsapp_permiso"
+                      ? "Sin link: le pide permiso para pasárselo. Al abrirlo queda registrado; si responde, acá aparece el Paso 3 con su demo, y si no, el Seguimiento 1 a las 24 horas."
+                      : "Lo mandás vos desde tu WhatsApp. Al abrirlo queda registrado y el seguimiento se programa solo (el Seguimiento 2 al día hábil siguiente; el 3, dos días hábiles después)."}
                 </p>
               </div>
             ) : landlineOnly(p) ? (

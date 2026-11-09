@@ -2,7 +2,7 @@ import "server-only";
 import { sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { DEFAULT_TZ } from "@/lib/time";
-import { CLOSED, displayOutreachPhone, renderTemplate, whatsappLinks, type OutreachPerson, type OutreachStatus } from "./outreach-messages";
+import { CLOSED, displayOutreachPhone, renderTemplate, splitMessages, whatsappLinks, type OutreachPerson, type OutreachStatus } from "./outreach-messages";
 import { OutreachError, addOutreachNote, conversoSql, fijoSinRespuesta, outreachDemoUrl, recordTouch, userSpokeSql } from "./outreach";
 import {
   FOLLOWUP_STAGES,
@@ -75,7 +75,7 @@ export async function rows(id?: string) {
   const account = sql`(o.clinic_id is not null and exists (select 1 from clinic_access a where a.clinic_id = o.clinic_id and a.revoked_at is null))`;
   return sql<Row[]>`
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind, o.instagram,
-      o.website, o.touches, o.greeted_at, o.status, o.priority, o.next_action_on::text as next_action_on, o.signals, o.opened_at, o.demo_at, o.last_contact_at, o.first_contact_at, o.created_at,
+      o.website, o.touches, o.greeted_at, o.permission_at, o.status, o.priority, o.next_action_on::text as next_action_on, o.signals, o.opened_at, o.demo_at, o.last_contact_at, o.first_contact_at, o.created_at,
       exists (select 1 from sales_suppressions s where s.phone = o.phone) as suppressed,
       ${fijoSinRespuesta()} as landline,
       (o.phone is not null and o.phone_kind is distinct from 'fijo'
@@ -189,7 +189,9 @@ export async function prepareFollowup(id: string, stage: unknown) {
   const warnings: string[] = [];
   if (v.channel === "whatsapp" && !canWrite) warnings.push("No tiene un celular con WhatsApp: cargalo en su ficha de Prospección.");
   if (TOUCH_STAGES.includes(v.stage) && c.row.touches >= 3) warnings.push("Ya se le escribió tres veces: el envío no suma otro contacto en Prospección.");
-  const links = v.channel === "whatsapp" && canWrite ? whatsappLinks(c.row.phone!, message) : null;
+  // Con «---», son dos mensajes: el chat se abre con el primero y el segundo se copia (Chapa los muestra por separado).
+  const messages = splitMessages(message);
+  const links = v.channel === "whatsapp" && canWrite ? whatsappLinks(c.row.phone!, messages[0] ?? message) : null;
   const previous = c.mine.find((e) => e.version_id === v.id);
   return {
     id,
@@ -201,6 +203,7 @@ export async function prepareFollowup(id: string, stage: unknown) {
     name: c.row.name,
     phone: c.row.phone ? displayOutreachPhone(c.row.phone) : null,
     message,
+    messages,
     ready: v.channel === "tarea" || canWrite,
     warnings,
     whatsapp: links,

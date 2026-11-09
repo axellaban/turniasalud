@@ -3,8 +3,11 @@ import { AXEL_WHATSAPP } from "@/lib/sales/contacto-axel";
 import { CHAPA_PROSPECTING_ORIGIN } from "@/lib/sales/chapa-voice";
 import { OutreachError, outreachSettings } from "@/lib/sales/outreach";
 import { TEMPLATE_LABEL } from "@/lib/sales/outreach-messages";
+import { syncWhatsappReplies } from "@/lib/sales/whatsapp-sync";
 import {
+  forbidsLink,
   listVoiceNotes,
+  needsLink,
   reconnectVoiceBusiness,
   saveBrowserVoiceNote,
   sendVoiceTest,
@@ -31,7 +34,8 @@ import { saveVoiceRules, voiceRules, voiceRulesSchema } from "@/lib/sales/voice-
 import { verifyProspectingVoiceToken } from "@/lib/session";
 import { queueTurniaSheetSync } from "@/lib/sheets/turnia-sheet";
 
-export const maxDuration = 120;
+// «Leer las respuestas» recorre los chats de las dos líneas (hasta dos minutos y medio).
+export const maxDuration = 300;
 
 const headers = {
   "Access-Control-Allow-Origin": CHAPA_PROSPECTING_ORIGIN,
@@ -47,6 +51,8 @@ const secondsSchema = z.number().min(1).max(180).default(15);
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("rules"), rules: voiceRulesSchema }),
   z.object({ action: z.literal("reconnect"), relink: z.boolean() }),
+  // Lee los chats de las dos líneas (lo mismo que «Leer WhatsApp ahora»): así el Paso 2 y el 3 ven quién respondió.
+  z.object({ action: z.literal("sync") }),
   z.object({ action: z.literal("source"), person: z.uuid(), sender: z.string().regex(/^\d{4}$/), confirmed: z.boolean() }),
   z.object({ action: z.literal("detect"), sender: senderSchema }),
   // Sin `note` sale solo el texto.
@@ -108,14 +114,15 @@ export async function GET(request: Request) {
       withoutSender: usage.find((line) => line.ending === null)?.sent ?? 0,
     },
     notes: notes.map(({ id, label }) => ({ id, label })),
-    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders, reply, whatsapp_unavailable }) => ({
+    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders, reply, reply_at, whatsapp_unavailable }) => ({
       id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)),
       whatsappUnavailable: whatsapp_unavailable,
-      reply: reply?.slice(0, 160) ?? null,
+      reply: reply?.slice(0, 160) ?? null, replyAt: reply_at,
     })),
     stage: {
       textOnly: voiceTextOnly(group.data),
       needsSender: voiceNeedsSender(group.data),
+      link: needsLink(group.data) ? "required" : forbidsLink(group.data) ? "forbidden" : "optional",
       defaultText: VOICE_DEFAULT_TEXT[group.data],
       panelTemplates: VOICE_PANEL_TEMPLATES[group.data].map((key) => ({ label: TEMPLATE_LABEL[key].title, text: settings.templates[key] })),
     },
@@ -147,6 +154,14 @@ export async function POST(request: Request) {
     }, 400);
     const { data } = input;
     if (data.action === "rules") return json({ rules: await saveVoiceRules(data.rules) });
+    if (data.action === "sync") {
+      try {
+        const report = await syncWhatsappReplies("Audios y mensajes (Chapa)");
+        return json({ at: report.at, reused: Boolean(report.reused), nuevas: report.totals.nuevas, lines: report.lines });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "No se pudieron leer los chats." }, 409);
+      }
+    }
     if (data.action === "reconnect") {
       await reconnectVoiceBusiness(data.relink);
       return json({ ok: true });

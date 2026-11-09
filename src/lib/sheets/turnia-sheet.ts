@@ -5,7 +5,7 @@ import { env } from "@/lib/env";
 import { decryptSecret, encryptSecret } from "@/lib/calendar/crypto";
 import { GoogleError, accountEmail, exchangeCode, refreshAccessToken, revokeGrant } from "@/lib/calendar/google";
 import { LEAD_COLUMNS, leadsForSheet } from "@/lib/leads-sheet";
-import { userSpokeSql, type Outreach } from "@/lib/sales/outreach";
+import { lastReplySql, userSpokeSql, type Outreach } from "@/lib/sales/outreach";
 import { CHANNEL_LABEL, PHONE_KIND_LABEL, STATUS_LABEL, demoUrl, displayOutreachPhone } from "@/lib/sales/outreach-messages";
 import { DEFAULT_TZ, zonedParts } from "@/lib/time";
 import { SheetsApiError, createSpreadsheet, spreadsheetInfo, writeTabs, type Cell, type Tab } from "./google-sheets";
@@ -209,6 +209,8 @@ export const OUTREACH_COLUMNS = [
   "Código", "Nombre", "Trato", "Saludo", "Consultorio", "Zona", "Dirección", "Especialidad", "Teléfono", "De quién es el teléfono",
   "Instagram", "Email", "Web", "Prioridad", "Estado", "Mensajes", "Saludo enviado", "Primer contacto", "Último contacto", "Último canal", "Audio enviado", "Próximo paso",
   "Abrió su demo", "Veces que la abrió", "Probó la demo", "Clínica de la demo", "Conversó en la demo", "Cuenta creada", "Clínica de la cuenta", "Cuenta activa", "Cliente desde", "Operativa desde", "Interacciones del primer mes", "Link de su demo", "Señales", "Fuente", "Notas", "Actualizado",
+  // La secuencia de 09/11: cuándo salió el Paso 2 (el permiso para pasar el link) y la última respuesta (decide el Paso 3 o el Seguimiento 1).
+  "Paso 2 enviado", "Última respuesta",
 ];
 
 type OutreachRow = Omit<Outreach, "shared" | "suppressed"> & {
@@ -233,7 +235,7 @@ type OutreachRow = Omit<Outreach, "shared" | "suppressed"> & {
  */
 export async function outreachSheetRows(id?: string): Promise<Cell[][]> {
   const rows = await sql<OutreachRow[]>`
-    select o.*,
+    select o.*, ${lastReplySql()} as last_reply_at,
       (select min(s.created_at) from demo_sessions s where o.lead_id is not null and s.lead_id = o.lead_id and s.clinic_id is not null) as demo_clinic_at,
       (select min(v.started_at) from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
         where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()}) as demo_chat_at,
@@ -257,6 +259,7 @@ export async function outreachSheetRows(id?: string): Promise<Cell[][]> {
     p.instagram ? `@${p.instagram}` : "", p.email ?? "", p.website ?? "", p.priority, STATUS_LABEL[p.status] ?? p.status, p.touches,
     stamp(p.greeted_at), stamp(p.first_contact_at), stamp(p.last_contact_at), p.last_channel ? (CHANNEL_LABEL[p.last_channel] ?? p.last_channel) : "", stamp(p.audio_at), p.next_action_on ?? "",
     stamp(p.opened_at), p.opens, stamp(p.demo_at), stamp(p.demo_clinic_at), stamp(p.demo_chat_at), stamp(p.account_at), p.account_clinic ?? "", stamp(p.account_active_at), stamp(p.client_at), stamp(p.operational_at), p.clinic_id ? p.first_month ?? 0 : "", demoUrl(env.appUrl(), p.code), p.signals, p.source, p.notes, stamp(p.updated_at),
+    stamp(p.permission_at), stamp(p.last_reply_at),
   ]);
 }
 

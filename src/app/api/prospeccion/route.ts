@@ -150,18 +150,23 @@ async function apply(id: string, a: Action): Promise<void> {
       // (la plantilla dice si es el saludo).
       // Con «step» (0 el saludo, 1 la demo, 2 el seguimiento, 3 el último) el registro es idempotente por
       // estado: si la persona ya tiene ese paso, no se suma nada. Así se puede registrar en lote y repetir.
+      // La demo cuenta como la demo aunque no se haya registrado el Paso 2 (que no tiene número).
       if (typeof a.step === "number") {
         const [row] = await sql<Array<{ touches: number; greeted_at: string | null }>>`select touches, greeted_at from sales_outreach where id = ${id}`;
         if (a.step === 0 ? Boolean(row.greeted_at) || row.touches > 0 : row.touches >= a.step) return;
-        await recordTouch(id, channel);
+        await recordTouch(id, channel, { touch: a.step > 0 });
         return;
       }
+      // El paso del mensaje: el Paso 1 («saludo»), el Paso 2 («permiso») o uno de los tres.
+      const template = String(a.template ?? "");
+      const kind = (detail: string) => (detail === "saludo" || detail === "permiso" ? detail : "toque");
+      const sentKind = /abridor|saludo/.test(template) ? "saludo" : /permiso/.test(template) ? "permiso" : "toque";
       const [recent] = await sql<Array<{ detail: string }>>`
         select detail from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and channel = ${channel}
           and created_at > now() - interval '2 minutes' order by created_at desc limit 1`;
-      const greeting = /saludo/.test(String(a.template ?? ""));
-      if (recent && a.template && (recent.detail === "saludo") === greeting) return;
-      await recordTouch(id, channel);
+      if (recent && template && kind(recent.detail) === sentKind) return;
+      // Un mensaje con link (el Paso 3 o los Seguimientos 1, 2 y 3) es uno de los tres aunque no figure el Paso 2.
+      await recordTouch(id, channel, { touch: Boolean(template) && sentKind === "toque" && channel === "whatsapp" });
       return;
     }
     case "call":

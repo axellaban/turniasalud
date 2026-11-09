@@ -1406,3 +1406,40 @@ create table if not exists sales_whatsapp_syncs (
 );
 create index if not exists sales_whatsapp_syncs_idx on sales_whatsapp_syncs (started_at desc);
 alter table sales_whatsapp_syncs enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- La secuencia de WhatsApp (09/11): entre el saludo y la demo va el Paso 2, el gancho que pide
+-- permiso para pasar el link. Como el saludo, no es uno de los tres mensajes: queda en la historia
+-- («permiso») y acá, cuándo salió. Todos los mensajes le hablan a la recepción del consultorio.
+-- Ver PLAN_PROSPECCION.md → «La secuencia de WhatsApp».
+-- ---------------------------------------------------------------------------
+alter table sales_outreach add column if not exists permission_at timestamptz;
+
+-- Follow-up: los textos de la secuencia, a la recepción. Cada uno entra una sola vez como la versión
+-- siguiente de su etapa y queda activa (la que estaba y la que estaba a prueba se archivan); si después
+-- se cambia desde el panel, no se vuelve a pisar.
+do $$
+declare
+  r record;
+  n integer;
+begin
+  for r in select * from (values
+    ('sin-saludo', 'Paso 1 · al importarlo', 'Buenas! Hablo con la recepción de {destinatario}?', '{whatsapp,copy}'),
+    ('saludo-sin-demo', 'Paso 2 · cuando responde el saludo',
+     E'Qué tal! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\nSirve para que conteste sola las preguntas repetidas de obras sociales, precios y horarios fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\nSeguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?',
+     '{whatsapp,copy}'),
+    ('demo-sin-abrir', 'Seguimiento 2 · a las 24 h del link', 'Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!', '{whatsapp,copy}'),
+    ('abrio-sin-conversar', 'Seguimiento 2 · la abrió sin conversar', 'Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!', '{whatsapp,demo,copy}'),
+    -- Después de conversar con Sofi falta llegar a los doctores: el Seguimiento 3, dos mensajes (el segundo, para reenviar).
+    ('converso-sin-cuenta', 'Seguimiento 3 · para reenviar a los doctores',
+     E'Buenas! Para no robarte más tiempo a vos en recepción, te dejo acá abajo un resumen cortito listo por si querés tocar "Reenviar" y pasárselo directo al WhatsApp de los doctores así lo evalúan ellos:\n---\nHola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: {link} . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.',
+     '{whatsapp,demo,copy}')
+  ) as t(stage, trigger_label, body, ctas) loop
+    if not exists (select 1 from sales_followup_versions v where v.stage = r.stage and v.trigger_label = r.trigger_label) then
+      select coalesce(max(version), 0) + 1 into n from sales_followup_versions where stage = r.stage;
+      update sales_followup_versions set status = 'archived', status_at = now() where stage = r.stage and status <> 'archived';
+      insert into sales_followup_versions (stage, version, channel, trigger_label, body, ctas, status)
+      values (r.stage, n, 'whatsapp', r.trigger_label, r.body, r.ctas::text[], 'active');
+    end if;
+  end loop;
+end $$;

@@ -29,7 +29,7 @@ describe.runIf(base)("Follow-up de Turnia desde Chapa Labs", () => {
     return { status: res.status, body: await res.json() };
   };
   const op = (by: string, followup: Record<string, unknown>) => post({ by, followup });
-  type Item = { id: string; code: string; stage: string; group: string; priority: string; blocked: string | null; owner: string | null; versionId: string; claim: { by: string } | null };
+  type Item = { id: string; code: string; stage: string; group: string; priority: string; action: string | null; blocked: string | null; owner: string | null; versionId: string; claim: { by: string } | null };
   const find = (list: Item[], code: string) => list.find((q) => q.code === code);
 
   beforeAll(async () => {
@@ -69,7 +69,7 @@ describe.runIf(base)("Follow-up de Turnia desde Chapa Labs", () => {
     expect(find(body.queue, "ana-111")).toMatchObject({ stage: "sin-saludo", group: "nuevos", priority: "baja", blocked: null });
     expect(find(body.queue, "carla-333")).toBeUndefined();
     expect(body.funnel).toHaveLength(7);
-    expect(body.rules[0]).toMatchObject({ stage: "sin-saludo", action: "Saludo" });
+    expect(body.rules[0]).toMatchObject({ stage: "sin-saludo", action: "Paso 1: el saludo" });
   });
 
   it("Facu toma a Ana: Axel no puede, y al pedir la próxima recibe a Beto", async () => {
@@ -104,10 +104,14 @@ describe.runIf(base)("Follow-up de Turnia desde Chapa Labs", () => {
     const [ex] = await sql<Array<{ actor: string }>>`select actor from sales_followup_executions where outreach_id = ${ana.id}`;
     expect(ex.actor).toBe("Facu");
     expect(await sql`select 1 from sales_followup_claims where outreach_id = ${ana.id}`).toHaveLength(0);
-    // Ya saludada: ahora espera la demo, con prioridad alta.
+    // Ya saludada: el Paso 2 recién cuando responde el saludo.
     const after = await get("followup");
-    expect(find(after.body.queue, "ana-111")).toMatchObject({ stage: "saludo-sin-demo", group: "demos", priority: "alta" });
+    expect(find(after.body.queue, "ana-111")).toBeUndefined();
     expect(after.body.results.byActor).toEqual([expect.objectContaining({ actor: "Facu", executions: 1 })]);
+    // Respondió: el Paso 2 (pide permiso para pasar el link), con prioridad alta.
+    expect((await op("Facu", { op: "reply", inmobiliaria: "ana-111", texto: "Hola, sí, ¿qué necesitás?" })).status).toBe(200);
+    const replied = await get("followup");
+    expect(find(replied.body.queue, "ana-111")).toMatchObject({ stage: "saludo-sin-demo", group: "respuestas", priority: "alta", action: "Paso 2: pedir permiso" });
   });
 
   it("una respuesta con rechazo cierra a Beto en Prospección y lo saca de la cola", async () => {
