@@ -15,7 +15,7 @@ import {
   voiceBusinessConnection,
   voiceChannelStatus,
   voiceNoteAudio,
-  voiceSentToday,
+  voiceUsageToday,
   voiceSenderPhones,
   VoicePaceError,
   VoiceRecipientIneligibleError,
@@ -86,20 +86,27 @@ export async function GET(request: Request) {
   if (!group.success) return json({ error: "Elegí una etapa." }, 400);
   const sender = senderSchema.safeParse(params.get("sender") ?? undefined);
   if (!sender.success) return json({ error: "Elegí una línea de WhatsApp." }, 400);
-  const [notes, people, status, used, rules, settings] = await Promise.all([
+  const [notes, people, status, usage, rules, settings] = await Promise.all([
     listVoiceNotes(),
     voiceCandidates(group.data, note.success ? note.data : null, true),
     voiceChannelStatus(sender.data),
-    voiceSentToday(),
+    voiceUsageToday(),
     voiceRules(),
     outreachSettings(),
   ]);
+  const used = usage.reduce((sum, line) => sum + line.used, 0);
+  const senderOptions = voiceSenderPhones().map((phone) => phone.slice(-4));
+  const endings = [...new Set([...senderOptions, ...usage.flatMap((line) => line.ending ? [line.ending] : [])])];
   return json({
     ready: status.configured && status.ok,
     channelStatus: status.configured ? status.status : "CONFIG",
     sender: status.configured && status.ok ? status.me?.slice(-4) : null,
     testTo: testPhone(sender.data)?.slice(-4) ?? null,
-    senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
+    senderOptions,
+    sentToday: {
+      byLine: endings.map((ending) => ({ ending, sent: usage.find((line) => line.ending === ending)?.sent ?? 0 })),
+      withoutSender: usage.find((line) => line.ending === null)?.sent ?? 0,
+    },
     notes: notes.map(({ id, label }) => ({ id, label })),
     people: people.map(({ id, name, business_name, phone, sent, needs_review, senders, reply, whatsapp_unavailable }) => ({
       id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)),

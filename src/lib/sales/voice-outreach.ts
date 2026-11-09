@@ -572,13 +572,23 @@ function checkHours(now = new Date()) {
   if (hour < HOURS.from || hour >= HOURS.to) throw new OutreachError(`Los audios y mensajes salen de ${HOURS.from} a ${HOURS.to} (hora de Argentina).`);
 }
 
+// «Hoy» según el reloj de la base, el mismo que fecha cada envío.
+const countedToday = () => sql`outreach_id is not null and status <> 'error'
+  and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
+
 export async function voiceSentToday(db: Sql | TransactionSql = sql): Promise<number> {
-  // «Hoy» según el reloj de la base, el mismo que fecha cada envío.
   const [{ count }] = await db<Array<{ count: number }>>`
     select count(*)::int as count from sales_voice_sends
-    where outreach_id is not null and status <> 'error'
-      and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
+    where ${countedToday()}`;
   return count;
+}
+
+export async function voiceUsageToday() {
+  return sql<Array<{ ending: string | null; used: number; sent: number }>>`
+    select right(sender_phone, 4) as ending, count(*)::int as used,
+      count(*) filter (where status = 'enviado')::int as sent
+    from sales_voice_sends where ${countedToday()}
+    group by right(sender_phone, 4)`;
 }
 
 /** Normaliza una grabación del navegador una sola vez, antes de guardarla. */
@@ -696,8 +706,8 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
       if (seconds > 0) throw new VoicePaceError(seconds);
     }
     return tx<Array<{ id: string }>>`
-      insert into sales_voice_sends (voice_note_id, outreach_id, phone, status, stage)
-      select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando', ${group ?? null}
+      insert into sales_voice_sends (voice_note_id, outreach_id, phone, status, stage, sender_phone)
+      select ${noteId}::uuid, ${outreachId}::uuid, ${person.phone}, 'enviando', ${group ?? null}, ${config.phone ?? null}
       where not exists (
         select 1 from sales_voice_sends
         where outreach_id is not null and (outreach_id = ${outreachId} or phone = ${person.phone}) and status <> 'error'

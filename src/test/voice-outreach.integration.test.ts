@@ -413,6 +413,7 @@ describe.runIf(base)("audios de seguimiento", () => {
     const [row] = await sql`select status, touches, greeted_at is not null as greeted from sales_outreach where id = ${gabi}`;
     expect(row).toEqual({ status: "contactado", touches: 0, greeted: true });
     expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_greeting_sent", properties: { message_format: "texto", voice_stage: "saludo" } });
+    expect((await voice.voiceUsageToday()).find((row) => row.ending === "0000")).toMatchObject({ used: 1, sent: 1 });
     expect((await voice.voiceCandidates("presentacion", null)).find((c) => c.id === gabi)?.senders).toEqual(["5492235000000"]);
     expect(await voice.voiceGroupCounts()).toMatchObject({ saludo: 1, presentacion: 2 });
     expect(await (await send({ group: "saludo", person: gabi, text: "Hola" })).json()).toMatchObject({
@@ -506,5 +507,27 @@ describe.runIf(base)("audios de seguimiento", () => {
     await sql`update sales_outreach set phone = '+5492236000009' where id = ${person}`;
     await sql`update sales_voice_sends set created_at = now() - interval '25 hours' where outreach_id = ${person}`;
     expect(await list()).toContainEqual(expect.objectContaining({ id: person, whatsappUnavailable: false }));
+  });
+
+  it("separa el uso del cupo de lo aceptado hoy por línea y conserva los envíos sin emisor histórico", async () => {
+    const { GET } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const person = await id("compartido-i9");
+    await sql`update sales_voice_sends set created_at = now() - interval '25 hours' where outreach_id is not null`;
+    await sql`insert into sales_voice_sends (outreach_id, phone, status, sender_phone) values
+      (${person}, '+5492236000009', 'enviado', '5492235000000'),
+      (${person}, '+5492236000009', 'enviado', '5491130235483'),
+      (${person}, '+5492236000009', 'enviando', '5491130235483'),
+      (${person}, '+5492236000009', 'error', '5492235000000'),
+      (${person}, '+5492236000009', 'enviado', null),
+      (null, '+5492236000009', 'enviado', '5491130235483')`;
+    const response = await GET(new Request("https://turnia.example/api/prospeccion/audio?group=saludo&sender=5483", {
+      headers: { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}` },
+    }));
+    expect(await response.json()).toMatchObject({
+      used: 4,
+      sentToday: { byLine: [{ ending: "0000", sent: 1 }, { ending: "5483", sent: 1 }], withoutSender: 1 },
+    });
   });
 });
