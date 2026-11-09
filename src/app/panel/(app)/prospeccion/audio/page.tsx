@@ -5,7 +5,7 @@ import { displayOutreachPhone } from "@/lib/sales/outreach-messages";
 import { Card, Notice, PageHeader, Tabs, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import {
   VOICE_DEFAULT_TEXT,
-  VOICE_GROUPS,
+  VOICE_FOLLOWUP_GROUPS,
   VOICE_GROUP_LABEL,
   listVoiceNotes,
   voiceCandidates,
@@ -25,7 +25,7 @@ const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : u
 export default async function AudioPage({ searchParams }: PageProps<"/panel/prospeccion/audio">) {
   await requireAdmin();
   const params = await searchParams;
-  const group = (VOICE_GROUPS as readonly string[]).includes(one(params.grupo) ?? "") ? (one(params.grupo) as VoiceGroup) : "no_abrio";
+  const group = (VOICE_FOLLOWUP_GROUPS as readonly string[]).includes(one(params.grupo) ?? "") ? (one(params.grupo) as VoiceGroup) : "no_abrio";
   const [status, notes, counts, sentToday, rules] = await Promise.all([voiceChannelStatus(), listVoiceNotes(), voiceGroupCounts(), voiceSentToday(), voiceRules()]);
   const note = notes.find((n) => n.id === one(params.audio)) ?? notes[0] ?? null;
   const candidates = await voiceCandidates(group, note?.id ?? null);
@@ -78,10 +78,10 @@ export default async function AudioPage({ searchParams }: PageProps<"/panel/pros
       <Card className="mt-5">
         <h2 className="text-base font-semibold text-brand-950">2. A quién</h2>
         <div className="mt-3">
-          <Tabs current={href({})} items={VOICE_GROUPS.map((g) => ({ href: `/panel/prospeccion/audio?${new URLSearchParams({ grupo: g, ...(note ? { audio: note.id } : {}) })}`, label: VOICE_GROUP_LABEL[g], count: counts[g] }))} />
+          <Tabs current={href({})} items={VOICE_FOLLOWUP_GROUPS.map((g) => ({ href: `/panel/prospeccion/audio?${new URLSearchParams({ grupo: g, ...(note ? { audio: note.id } : {}) })}`, label: VOICE_GROUP_LABEL[g], count: counts[g] }))} />
         </div>
         <p className="mt-2 text-xs text-brand-900/60">
-          Solo quienes ya recibieron su demo, siguen sin responder, les queda alguno de los tres mensajes y no pidieron la baja. Quien respondió se atiende a mano.
+          Solo quienes ya recibieron su demo, siguen sin responder, les queda alguno de los tres mensajes y no pidieron la baja. Quien respondió se atiende a mano. El saludo y la presentación con la demo se mandan desde Chapa Labs (Odontólogos → Mandar audios y mensajes).
         </p>
         {note ? (
           <VoiceSender

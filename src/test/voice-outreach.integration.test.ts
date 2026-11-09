@@ -87,6 +87,14 @@ describe.runIf(base)("audios de seguimiento", () => {
     await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, opened_at, demo_at)
               values ('toco-f6', 'Fede Seis', 'Fede', '+5492236000006', 'movil', 'contactado', 1, now(), now())`;
     await sql`insert into sales_suppressions (phone, reason) values ('+5492236000005', 'prueba')`;
+    // Antes de la demo: una por saludar, un número compartido (se saluda una vez, por la de mejor
+    // prioridad) y uno ya saludado al que le falta la demo.
+    await sql`insert into sales_outreach (code, name, greeting, title, phone, phone_kind, status, touches, priority)
+              values ('saludo-g7', 'Gabriela Siete', 'Gabi', 'Dra.', '+5492236000007', 'movil', 'por_contactar', 0, 1),
+                     ('compartido-i9', 'Inés Nueve', 'Inés', '', '+5492236000009', 'movil', 'por_contactar', 0, 1),
+                     ('compartido-j9', 'Juan Nueve', 'Juan', '', '+5492236000009', 'movil', 'por_contactar', 0, 2)`;
+    await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, greeted_at, first_contact_at)
+              values ('saludado-h8', 'Hugo Ocho', 'Hugo', '+5492236000008', 'movil', 'contactado', 0, now() - interval '1 day', now() - interval '1 day')`;
   }, 60000);
 
   afterAll(async () => {
@@ -121,7 +129,9 @@ describe.runIf(base)("audios de seguimiento", () => {
   });
 
   it("arma los tres grupos con las definiciones del embudo, sin baja ni quien ya usó los tres mensajes", async () => {
-    expect(await voice.voiceGroupCounts()).toEqual({ no_abrio: 1, abrio: 2, hablo: 1 });
+    expect(await voice.voiceGroupCounts()).toEqual({ saludo: 2, presentacion: 1, no_abrio: 1, abrio: 2, hablo: 1 });
+    expect((await voice.voiceCandidates("saludo", null)).map((c) => c.name).sort()).toEqual(["Gabriela Siete", "Inés Nueve"]);
+    expect((await voice.voiceCandidates("presentacion", null)).map((c) => c.name)).toEqual(["Hugo Ocho"]);
     expect((await voice.voiceCandidates("hablo", null)).map((c) => c.name)).toEqual(["Caro Tres"]);
     expect((await voice.voiceCandidates("no_abrio", null)).map((c) => c.name)).toEqual(["Ana Uno"]);
   });
@@ -334,5 +344,63 @@ describe.runIf(base)("audios de seguimiento", () => {
       await sql`insert into sales_voice_sends (voice_note_id, outreach_id, phone, status) values (${n}, ${filler}, '+5492236000004', 'enviado')`;
     }
     expect(await actions.sendVoiceAction(noteId, await id("hablo-c3"), "", 12)).toMatchObject({ ok: false, message: expect.stringContaining("Seguí mañana") });
+  });
+
+  it("manda el saludo y la presentación como texto desde Chapa, sin audio ni link en el saludo", async () => {
+    const { GET, POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const url = "https://turnia.example/api/prospeccion/audio";
+    const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}`, "Content-Type": "application/json" };
+    const send = (body: Record<string, unknown>) => POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "send", ...body }) }));
+    const rest = () => sql`update sales_voice_sends set created_at = now() - interval '1 day' where outreach_id is not null`;
+    await rest(); // el tope del día de la prueba anterior y la pausa entre envíos
+    const gabi = await id("saludo-g7");
+    const hugo = await id("saludado-h8");
+
+    const stage = await (await GET(new Request(`${url}?group=saludo&sender=0000`, { headers }))).json();
+    expect(stage.stage).toMatchObject({ textOnly: true, needsSender: false, defaultText: "" });
+    expect(stage.stage.panelTemplates).toHaveLength(2);
+    expect(stage.people.map((p: { name: string }) => p.name).sort()).toEqual(["Gabriela Siete", "Inés Nueve"]);
+
+    const [{ id: note }] = await sql<Array<{ id: string }>>`insert into sales_voice_notes (label, mimetype, audio) values ('Saludo', 'audio/ogg', ${Buffer.from("ogg")}) returning id`;
+    expect(await (await send({ group: "saludo", note, person: gabi, text: "Hola" })).json()).toMatchObject({ error: expect.stringContaining("solo con texto") });
+    expect(await (await send({ group: "saludo", person: gabi, text: "Hola! Tu demo: {link}" })).json()).toMatchObject({ error: expect.stringContaining("sin link") });
+    expect(calls.some((c) => c.path.startsWith("/api/send") && c.path !== "/api/sendSeen")).toBe(false);
+
+    // El primer chat: no hace falta confirmar la línea, y queda confirmada para lo que sigue.
+    calls.length = 0;
+    const greeted = await send({ group: "saludo", person: gabi, text: "Hola! ¿Este es el consultorio de {destinatario}?" });
+    expect(greeted.status).toBe(200);
+    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ chatId: "5492236000007@c.us", text: "Hola! ¿Este es el consultorio de la Dra. Siete?" });
+    expect(calls.some((c) => c.path === "/api/sendVoice")).toBe(false);
+    const [row] = await sql`select status, touches, greeted_at is not null as greeted from sales_outreach where id = ${gabi}`;
+    expect(row).toEqual({ status: "contactado", touches: 0, greeted: true });
+    expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_greeting_sent", properties: { message_format: "texto", voice_stage: "saludo" } });
+    expect((await voice.voiceCandidates("presentacion", null)).find((c) => c.id === gabi)?.senders).toEqual(["5492235000000"]);
+    expect(await voice.voiceGroupCounts()).toMatchObject({ saludo: 1, presentacion: 2 });
+    expect(await (await send({ group: "saludo", person: gabi, text: "Hola" })).json()).toMatchObject({ error: expect.stringContaining("ya no le toca") });
+
+    // La presentación lleva el link; vacía, sale la del panel. A Hugo lo saludaron desde otra línea.
+    await rest();
+    expect(await (await send({ group: "presentacion", person: hugo, text: "Hola {saludo}, ¿cómo estás?" })).json()).toMatchObject({ error: expect.stringContaining("{link}") });
+    expect(await (await send({ group: "presentacion", person: hugo, text: "" })).json()).toMatchObject({ error: expect.stringContaining("WhatsApp emisor") });
+    calls.length = 0;
+    expect((await send({ group: "presentacion", person: gabi, text: "" })).status).toBe(200);
+    const pitch = String(calls.find((c) => c.path === "/api/sendText")!.body!.text);
+    expect(pitch).toContain("Hola Gabi");
+    expect(pitch).toContain("https://turnia.example/p/saludo-g7");
+    expect((await sql`select touches from sales_outreach where id = ${gabi}`)[0].touches).toBe(1);
+    expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_pitch_sent", properties: { message_format: "texto" } });
+    // Una sola vez por etapa: ya está en el seguimiento.
+    await rest();
+    expect((await send({ group: "presentacion", person: gabi, text: "" })).status).toBe(422);
+
+    // La prueba de un texto sale a tu número, con tus datos.
+    calls.length = 0;
+    const count = await voice.voiceSentToday();
+    expect((await POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "test", text: "¿Hablo con {saludo}?" }) }))).status).toBe(200);
+    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ text: "¿Hablo con Axel?" });
+    expect(await voice.voiceSentToday()).toBe(count);
   });
 });

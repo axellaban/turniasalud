@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { AXEL_WHATSAPP } from "@/lib/sales/contacto-axel";
 import { CHAPA_PROSPECTING_ORIGIN } from "@/lib/sales/chapa-voice";
-import { OutreachError } from "@/lib/sales/outreach";
+import { OutreachError, outreachSettings } from "@/lib/sales/outreach";
+import { TEMPLATE_LABEL } from "@/lib/sales/outreach-messages";
 import {
   listVoiceNotes,
   saveBrowserVoiceNote,
@@ -15,8 +16,12 @@ import {
   voiceSentToday,
   voiceSenderPhones,
   VoicePaceError,
+  VOICE_DEFAULT_TEXT,
   VOICE_GROUPS,
   VOICE_MAX_BYTES,
+  VOICE_PANEL_TEMPLATES,
+  voiceNeedsSender,
+  voiceTextOnly,
 } from "@/lib/sales/voice-outreach";
 import { saveVoiceRules, voiceRules, voiceRulesSchema } from "@/lib/sales/voice-rules";
 import { verifyProspectingVoiceToken } from "@/lib/session";
@@ -39,8 +44,9 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("rules"), rules: voiceRulesSchema }),
   z.object({ action: z.literal("source"), person: z.uuid(), sender: z.string().regex(/^\d{4}$/), confirmed: z.boolean() }),
   z.object({ action: z.literal("detect"), sender: senderSchema }),
-  z.object({ action: z.literal("test"), note: noteSchema, seconds: secondsSchema, sender: senderSchema }),
-  z.object({ action: z.literal("send"), note: noteSchema, person: z.uuid(), group: groupSchema, text: z.string().max(500), seconds: secondsSchema, sender: senderSchema }),
+  // Sin `note` sale solo el texto.
+  z.object({ action: z.literal("test"), note: noteSchema.nullish(), text: z.string().max(500).default(""), seconds: secondsSchema, sender: senderSchema }),
+  z.object({ action: z.literal("send"), note: noteSchema.nullish(), person: z.uuid(), group: groupSchema, text: z.string().max(500), seconds: secondsSchema, sender: senderSchema }),
 ]);
 
 const testPhone = (sender?: string) => sender === AXEL_WHATSAPP.slice(-4)
@@ -74,12 +80,13 @@ export async function GET(request: Request) {
   if (!group.success) return json({ error: "Elegí una etapa." }, 400);
   const sender = senderSchema.safeParse(params.get("sender") ?? undefined);
   if (!sender.success) return json({ error: "Elegí una línea de WhatsApp." }, 400);
-  const [notes, people, status, used, rules] = await Promise.all([
+  const [notes, people, status, used, rules, settings] = await Promise.all([
     listVoiceNotes(),
     voiceCandidates(group.data, note.success ? note.data : null),
     voiceChannelStatus(sender.data),
     voiceSentToday(),
     voiceRules(),
+    outreachSettings(),
   ]);
   return json({
     ready: status.configured && status.ok,
@@ -88,6 +95,12 @@ export async function GET(request: Request) {
     senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
     notes: notes.map(({ id, label }) => ({ id, label })),
     people: people.map(({ id, name, business_name, phone, sent, needs_review, senders }) => ({ id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)) })),
+    stage: {
+      textOnly: voiceTextOnly(group.data),
+      needsSender: voiceNeedsSender(group.data),
+      defaultText: VOICE_DEFAULT_TEXT[group.data],
+      panelTemplates: VOICE_PANEL_TEMPLATES[group.data].map((key) => ({ label: TEMPLATE_LABEL[key].title, text: settings.templates[key] })),
+    },
     remaining: Math.max(0, rules.dailyLimit - used),
     used,
     rules,
@@ -112,7 +125,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null);
     const input = actionSchema.safeParse(body);
     if (!input.success) return json({
-      error: body?.action === "rules" ? input.error.issues[0]?.message ?? "Revisá las reglas de envío." : "Revisá el audio, el destino y la etapa.",
+      error: body?.action === "rules" ? input.error.issues[0]?.message ?? "Revisá las reglas de envío." : "Revisá el audio o el mensaje, el destino y la etapa.",
     }, 400);
     const { data } = input;
     if (data.action === "rules") return json({ rules: await saveVoiceRules(data.rules) });
@@ -124,10 +137,10 @@ export async function POST(request: Request) {
     if (data.action === "test") {
       const phone = testPhone(data.sender);
       if (!phone) return json({ error: "Falta el otro WhatsApp para recibir la prueba." }, 422);
-      await sendVoiceTest(data.note, phone, "", data.seconds, data.sender);
+      await sendVoiceTest(data.note ?? null, phone, data.text, data.seconds, data.sender);
       return json({ ok: true });
     }
-    await sendVoiceToProspect(data.note, data.person, data.text, data.seconds, data.group, data.sender);
+    await sendVoiceToProspect(data.note ?? null, data.person, data.text, data.seconds, data.group, data.sender);
     queueTurniaSheetSync();
     return json({ ok: true });
   } catch (error) {
