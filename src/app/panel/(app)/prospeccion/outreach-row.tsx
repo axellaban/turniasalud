@@ -17,7 +17,7 @@ import {
   whatsappTemplateKey,
   type Templates,
 } from "@/lib/sales/outreach-messages";
-import { ActionButton, CallButton, InstagramButton, WhatsAppButton } from "./contact-buttons";
+import { ActionButton, CallButton, CopyButton, InstagramButton, WhatsAppButton } from "./contact-buttons";
 
 /** Las señales de la lista, sin lo que ya dice el teléfono (celular, compartido). */
 const signals = (p: Outreach) =>
@@ -122,6 +122,12 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
             {WA_LABEL[plan.whatsapp.key]}
           </WhatsAppButton>
         )}
+        {/* El Seguimiento 3 son dos mensajes: el chat se abre con el primero y el segundo (para reenviar) se pega aparte. */}
+        {plan.whatsapp && !plan.early && plan.whatsapp.parts.slice(1).map((part, i) => (
+          <CopyButton key={i} text={part} className={outlineClass}>
+            Copiar el mensaje {i + 2}
+          </CopyButton>
+        ))}
         {plan.instagram && !plan.early && <InstagramButton id={p.id} handle={plan.instagram.handle} message={plan.instagram.text} className={outlineClass} />}
         {!plan.closed && p.phone && p.phone_kind === "fijo" && (
           <CallButton id={p.id} phone={p.phone} className={outlineClass}>

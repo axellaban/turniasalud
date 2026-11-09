@@ -6,7 +6,7 @@ import { json, sql } from "@/lib/db";
 import { env } from "@/lib/env";
 import { DEFAULT_TZ, localDateKey } from "@/lib/time";
 import type { OutreachImportRow } from "./outreach-import";
-import { TALK_PLACES, type TalkPlace } from "./outreach-places";
+import { FORWARD_NOTE, TALK_PLACES, type TalkPlace } from "./outreach-places";
 import {
   CLOSED,
   DEFAULT_TEMPLATES,
@@ -17,6 +17,8 @@ import {
   demoUrl,
   mergeTemplates,
   nextFollowUp,
+  renderTemplate,
+  splitMessages,
   weekStart,
   type OutreachChannel,
   type OutreachPerson,
@@ -294,6 +296,36 @@ export async function recordTalkRequest(code: string, place: TalkPlace): Promise
     insert into sales_outreach_events (outreach_id, kind, channel, detail)
     select ${row.id}, 'pidio_hablar', 'whatsapp', ${TALK_PLACES[place]} where not exists (
       select 1 from sales_outreach_events where outreach_id = ${row.id} and kind = 'pidio_hablar' and created_at > now() - interval '6 hours')
+    returning id`;
+  return inserted.length > 0;
+}
+
+/**
+ * El mensaje para reenviarles a los doctores desde su demo: el último del Seguimiento 3 («Hola Doc! Nos
+ * armaron esta prueba…»), el de Panel → Prospección → Mensajes, con el link de su demo.
+ */
+export async function doctorsMessage(p: PublicOutreach): Promise<string> {
+  const { templates } = await outreachSettings();
+  const last = (text: string) => {
+    const parts = splitMessages(text);
+    return parts.length > 1 ? parts[parts.length - 1] : "";
+  };
+  const template = last(templates.whatsapp_reenviable) || last(DEFAULT_TEMPLATES.whatsapp_reenviable);
+  return renderTemplate(template, { ...p, phone: null, instagram: null, website: p.website ?? null, touches: 0 }, outreachDemoUrl(p.code));
+}
+
+/**
+ * Tocó «Reenviárselo a los doctores» en su demo (el mensaje del Seguimiento 3, listo para reenviar).
+ * No se sabe si lo mandó: queda como nota en su ficha, una vez cada 6 horas.
+ */
+export async function recordForward(code: string): Promise<boolean> {
+  if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code)) return false;
+  const inserted = await sql`
+    insert into sales_outreach_events (outreach_id, kind, channel, detail)
+    select o.id, 'nota', 'whatsapp', ${FORWARD_NOTE} from sales_outreach o
+    where o.code = ${code} and not exists (
+      select 1 from sales_outreach_events e where e.outreach_id = o.id and e.kind = 'nota' and e.detail = ${FORWARD_NOTE}
+        and e.created_at > now() - interval '6 hours')
     returning id`;
   return inserted.length > 0;
 }

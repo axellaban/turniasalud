@@ -538,7 +538,7 @@ describe.runIf(base)("audios de seguimiento", () => {
     calls.length = 0;
     expect((await send({ person: kari, text: "" })).status).toBe(200);
     expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({
-      text: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no les sirve, me ayudás un montón.",
+      text: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
     });
     const [row] = await sql`select status, touches from sales_outreach where id = ${kari}`;
     expect(row).toEqual({ status: "no_interesa", touches: 1 });

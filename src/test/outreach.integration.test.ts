@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
@@ -338,10 +339,39 @@ describe.runIf(base)("prospección a odontólogos", () => {
     expect(html).toContain("Consulta de ortodoncia");
     const pirera = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "pirera-g6h" }), searchParams: Promise.resolve({ vista: "panel" }) }));
     expect(pirera).toContain("Consultorio Odontológico Pirera");
-    // Escribirle a Axel queda en la ficha, con el mensaje escrito.
+    // Escribirle a Axel queda en la ficha, con el mensaje escrito. No dice quién es: la demo la puede probar la
+    // recepción o un doctor. Sin una línea de WAHA que le haya escrito (se le escribió a mano), el WhatsApp Business.
     expect(html).toContain("¿Preferís que te la muestre yo?");
-    expect(html).toContain(`wa.me/5491130235483?text=${encodeURIComponent("Hola Axel! Soy María. Prefiero que me muestres a Sofi funcionando en Consultorio Odontológico López.")}`);
+    expect(html).toContain(`wa.me/5491130235483?text=${encodeURIComponent("Hola Axel! Vi el simulador de Consultorio Odontológico López. ¿Me lo mostrás funcionando?")}`);
     expect(html).toContain('data-cta="talk_axel"');
+    // Si le escribió una línea de WAHA, la charla sigue en ese chat.
+    vi.stubEnv("WAHA_PROSPECCION", JSON.stringify({ url: "https://waha.example/", apiKey: "clave-de-prueba", session: "prospeccion", phone: "5492235000022" }));
+    const { demoContactLine } = await import("@/lib/sales/voice-outreach");
+    expect(await demoContactLine("lopez-j7k")).toBe("5491130235483");
+    await sql`insert into sales_voice_sends (outreach_id, phone, status, stage, sender_phone, created_at)
+              values (${lopez}, '+5492236147600', 'enviado', 'entrega', '5492235000022', now() - interval '1 hour'),
+                     (${lopez}, '+5492236147600', 'error', 'no_abrio:2', '5491130235483', now())`;
+    expect(await demoContactLine("lopez-j7k")).toBe("5492235000022");
+    const conLinea = renderToStaticMarkup(await page({ params: Promise.resolve({ code: "lopez-j7k" }), searchParams: Promise.resolve({ vista: "panel" }) }));
+    expect(conLinea).toContain("wa.me/5492235000022?text=");
+    // Una línea que ya no está configurada no cuenta.
+    vi.stubEnv("WAHA_PROSPECCION", "");
+    expect(await demoContactLine("lopez-j7k")).toBe("5491130235483");
+    await sql`delete from sales_voice_sends where outreach_id = ${lopez}`;
+
+    // El mensaje para reenviarles a los doctores: el segundo del Seguimiento 3, con su link.
+    expect(await outreach.doctorsMessage((await outreach.publicOutreach("lopez-j7k"))!)).toMatch(
+      /^Hola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: https:\/\/turnia\.example\/p\/lopez-j7k \./,
+    );
+    const { BotonReenviar } = await import("@/components/demo/axel");
+    const boton = renderToStaticMarkup(createElement(BotonReenviar, { texto: "Hola Doc! Probala: https://turnia.example/p/lopez-j7k", donde: "cierre", codigo: "lopez-j7k" }));
+    expect(boton).toContain(`href="https://wa.me/?text=${encodeURIComponent("Hola Doc! Probala: https://turnia.example/p/lopez-j7k")}"`);
+    expect(boton).toContain('data-cta="forward_doctors"');
+    expect(boton).toContain("Reenviárselo a los doctores");
+    const reenviar = () => abrir(new Request("https://turnia.example/api/p/lopez-j7k?accion=reenviar&donde=cierre", { method: "POST" }), ctx);
+    expect((await reenviar()).status).toBe(204);
+    await reenviar();
+    expect((await outreach.outreachEvents(lopez)).filter((e) => e.detail === "Tocó «Reenviárselo a los doctores» en su demo")).toHaveLength(1);
 
     // Tocó «Escribirle a Axel»: queda en su historia y su seguimiento pasa a hoy, una vez cada 6 horas.
     await sql`update sales_outreach set status = 'contactado', next_action_on = '2030-01-01' where id = ${lopez}`;

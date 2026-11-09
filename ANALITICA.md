@@ -177,7 +177,8 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `pricing_plan` | `core`, `growth` o `enterprise` | `pricing_card`: elige el plan y baja al formulario |
 | `pricing_join` | formulario de `/pricing` | `pricing_hero` |
 | `pricing_see_plans` | los planes | `pricing_hero`. Navegación |
-| `talk_axel` | `whatsapp` (abre el WhatsApp de Axel con el mensaje escrito) | `cierre` (al terminar una charla con Sofi), `demo` (arriba de la demo, durante la charla), `pagina` (la página de su demo, `/p/<código>`). Si la demo es de una persona de la prospección, también queda en su ficha |
+| `talk_axel` | `whatsapp` (abre el WhatsApp de Axel con el mensaje escrito; en `/p/<código>`, la línea que le escribió) | `cierre` (al terminar una charla con Sofi), `demo` (arriba de la demo, durante la charla), `pagina` (la página de su demo, `/p/<código>`). Si la demo es de una persona de la prospección, también queda en su ficha |
+| `forward_doctors` | `whatsapp` (compartir: abre WhatsApp con el mensaje para los doctores y se elige a quién) | `cierre` de `/p/<código>` (09/11). También queda en su ficha como nota |
 
 Para medir un botón nuevo: `{...cta("id", "zona", "destino")}` de `@/lib/analytics-shared`.
 

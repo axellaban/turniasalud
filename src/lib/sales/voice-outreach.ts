@@ -55,7 +55,7 @@ export const VOICE_GROUP_LABEL: Record<VoiceGroup, string> = {
   no_abrio: "Seguimientos 2 y 3 · No abrieron la demo",
   abrio: "Seguimientos 2 y 3 · La abrieron sin hablar con Sofi",
   hablo: "Seguimientos 2 y 3 · Hablaron con Sofi",
-  no_interesa: "Dijeron que no les interesa",
+  no_interesa: "Feedback de no interesados",
 };
 /**
  * Antes del link, solo texto (un audio o un link de un desconocido es lo que hace que WhatsApp bloquee
@@ -80,7 +80,7 @@ export const VOICE_DEFAULT_TEXT: Record<VoiceGroup, string> = {
   no_abrio: "",
   abrio: "",
   hablo: "",
-  no_interesa: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no les sirve, me ayudás un montón.",
+  no_interesa: "",
 };
 /** Los mensajes del panel que salen cuando se manda solo texto y el texto queda vacío. */
 export const VOICE_PANEL_TEMPLATES: Record<VoiceGroup, TemplateKey[]> = {
@@ -91,7 +91,7 @@ export const VOICE_PANEL_TEMPLATES: Record<VoiceGroup, TemplateKey[]> = {
   no_abrio: ["whatsapp_seguimiento", "whatsapp_reenviable"],
   abrio: ["whatsapp_seguimiento", "whatsapp_reenviable"],
   hablo: ["whatsapp_seguimiento", "whatsapp_reenviable"],
-  no_interesa: [],
+  no_interesa: ["whatsapp_feedback"],
 };
 
 /**
@@ -302,6 +302,28 @@ export function voiceSenderPhones(): string[] {
   let primary: string | undefined;
   try { primary = prospectWaha()?.phone; } catch { /* el estado del canal muestra el error de configuración */ }
   return [...new Set(primary ? [primary, AXEL_WHATSAPP] : [AXEL_WHATSAPP])];
+}
+
+/**
+ * El WhatsApp al que lleva «Escribirle a Axel» en la demo de una persona: la línea de la prospección
+ * que le escribió por última vez (por WAHA desde «Audios y mensajes», la que encontró la lectura de
+ * WhatsApp o la confirmada a mano), así la charla sigue en el mismo chat. Si no hay ninguna (le
+ * escribió a mano desde su celular, sin registrar la línea), el WhatsApp Business de Axel.
+ */
+export async function demoContactLine(code: string): Promise<string> {
+  const lines = new Set(voiceSenderPhones());
+  const rows = await sql<Array<{ phone: string }>>`
+    select x.phone from sales_outreach o cross join lateral (
+      select v.sender_phone as phone, v.created_at as at from sales_voice_sends v
+        where v.outreach_id = o.id and v.status = 'enviado' and v.sender_phone is not null
+      union all
+      select c.sender_phone, coalesce(c.last_sent_at, c.synced_at) from sales_whatsapp_chats c where c.outreach_id = o.id and c.sent > 0
+      union all
+      select w.sender_phone, w.created_at from sales_outreach_whatsapp_senders w where w.outreach_id = o.id
+    ) x
+    where o.code = ${code}
+    order by x.at desc nulls last`;
+  return rows.map((r) => r.phone.replace(/\D/g, "")).find((phone) => lines.has(phone)) ?? AXEL_WHATSAPP;
 }
 
 export async function setVoiceSender(person: string, ending: string, confirmed: boolean): Promise<void> {

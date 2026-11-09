@@ -6,8 +6,9 @@ import { DENTAL_TYPES } from "@/lib/demo/profile";
 import { isConfigured } from "@/lib/env";
 import { TAMANO } from "@/lib/og";
 import { demoPreviewVersion } from "@/lib/sales/demo-preview";
-import { publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
+import { doctorsMessage, publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
 import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
+import { demoContactLine } from "@/lib/sales/voice-outreach";
 import { DemoPersonal } from "./demo-personal";
 import { SeguimientoDemo } from "./seguimiento-demo";
 
@@ -38,7 +39,7 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
   if (!p) notFound();
   // Axel la abre desde el panel para ver lo que recibe el odontólogo: no cuenta como visita.
   const contar = (await searchParams).vista !== "panel";
-  const status = await demoStatus();
+  const [status, reenvio, linea] = await Promise.all([demoStatus(), doctorsMessage(p), demoContactLine(p.code)]);
   const lista = status.base && isConfigured().elevenlabs;
   // La demo se arma con lo que ya sabemos de su consultorio (al instante, sin leer su web): sus
   // tratamientos (Doctoralia) suman sus turnos de primera vez y el ejemplo que se le sugiere decir.
@@ -71,7 +72,8 @@ export default async function DemoPersonalPage({ params, searchParams }: PagePro
         contar={contar}
         lista={lista}
         datos={datos}
-        saludo={p.greeting || p.name.split(" ")[0]}
+        reenvio={reenvio}
+        linea={linea}
         ficha={{
           consultorio: consultorio(p),
           profesional: profesional(p),

@@ -1,15 +1,15 @@
 "use client";
 
 import { cta } from "@/lib/analytics-shared";
-import { mensajeParaAxel, whatsappAxel } from "@/lib/sales/contacto-axel";
+import { mensajeParaAxel, whatsappAxel, whatsappReenviar } from "@/lib/sales/contacto-axel";
 import type { TalkPlace } from "@/lib/sales/outreach-places";
 
 // «Escribirle a Axel»: el paso que sigue a la demo en todo el recorrido. Abre su WhatsApp con el
 // mensaje escrito, se mide en PostHog (`talk_axel`) y, si la demo es de una persona de la
 // prospección, queda en su ficha.
 
-function avisar(codigo: string, donde: TalkPlace) {
-  const url = `/api/p/${codigo}?accion=whatsapp&donde=${donde}`;
+function avisar(codigo: string, donde: TalkPlace, accion: "whatsapp" | "reenviar" = "whatsapp") {
+  const url = `/api/p/${codigo}?accion=${accion}&donde=${donde}`;
   try {
     if (navigator.sendBeacon(url)) return;
   } catch {}
@@ -37,12 +37,15 @@ export function BotonAxel({
   texto,
   donde,
   codigo,
+  numero,
   variante = "primario",
   className = "",
   children = "Escribirle a Axel",
 }: {
   texto: string;
   donde: TalkPlace;
+  /** El WhatsApp de Axel adonde lleva (la línea que le escribió); por defecto, su WhatsApp Business. */
+  numero?: string;
   /** La persona de la prospección (su /p/<código>); sin código, solo se mide en PostHog. */
   codigo?: string | null;
   variante?: keyof typeof ESTILO;
@@ -51,7 +54,7 @@ export function BotonAxel({
 }) {
   return (
     <a
-      href={whatsappAxel(texto)}
+      href={whatsappAxel(texto, numero)}
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => codigo && avisar(codigo, donde)}
@@ -60,6 +63,37 @@ export function BotonAxel({
     >
       <IconoWhatsapp className={variante === "enlace" ? "h-4 w-4" : "h-5 w-5"} />
       {children}
+    </a>
+  );
+}
+
+/**
+ * «Reenviárselo a los doctores»: abre WhatsApp con el mensaje para los doctores (el segundo del
+ * Seguimiento 3, con el link de su demo) y se elige a quién mandárselo. Lo usa la recepción, que es
+ * quien suele probar la demo. Se mide en PostHog (`forward_doctors`) y queda en su ficha.
+ */
+export function BotonReenviar({
+  texto,
+  donde,
+  codigo,
+  className = "",
+}: {
+  texto: string;
+  donde: TalkPlace;
+  codigo?: string | null;
+  className?: string;
+}) {
+  return (
+    <a
+      href={whatsappReenviar(texto)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => codigo && avisar(codigo, donde, "reenviar")}
+      {...cta("forward_doctors", donde, "whatsapp")}
+      className={`${ESTILO.primario} ${className}`}
+    >
+      <IconoWhatsapp className="h-5 w-5" />
+      Reenviárselo a los doctores
     </a>
   );
 }
