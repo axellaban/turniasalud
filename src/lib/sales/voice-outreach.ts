@@ -22,6 +22,8 @@ export class VoicePaceError extends OutreachError {
     super("Esperando la pausa entre envíos.");
   }
 }
+
+export class VoiceRecipientUnavailableError extends OutreachError {}
 export const VOICE_MAX_BYTES = 3 * 1024 * 1024;
 /** De 8 a 21 en Buenos Aires: nunca un audio ni un mensaje de un desconocido a la noche. */
 const HOURS = { from: 8, to: 21 };
@@ -313,6 +315,57 @@ export async function voiceChannelStatus(ending?: string): Promise<VoiceChannelS
   } catch (e) {
     return { configured: true, ok: false, status: "ERROR", me: null, problem: e instanceof Error ? e.message : String(e) };
   }
+}
+
+const businessEnding = AXEL_WHATSAPP.slice(-4);
+
+export async function voiceBusinessConnection() {
+  const channel = await voiceChannelStatus(businessEnding);
+  if (!channel.configured) return { status: "CONFIG", ready: false, hasAccount: false, qr: null };
+  const hasAccount = Boolean(channel.me);
+  const status = hasAccount && channel.me !== AXEL_WHATSAPP ? "WRONG_NUMBER" : channel.status;
+  let qr: string | null = null;
+  if (status === "SCAN_QR_CODE") {
+    const config = prospectWaha(businessEnding)!;
+    try {
+      const response = await waha(config, `/api/${config.session}/auth/qr`, { signal: AbortSignal.timeout(5000) });
+      const body = await response.json() as { mimetype?: string; data?: string };
+      if (body.mimetype === "image/png" && typeof body.data === "string"
+        && body.data.length <= 100_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(body.data)) {
+        qr = body.data;
+      }
+    } catch {
+      // La sesión puede haberse conectado o rotado el código mientras se pedía la imagen.
+    }
+  }
+  return { status, ready: channel.ok, hasAccount, qr };
+}
+
+export async function reconnectVoiceBusiness(relink: boolean) {
+  const config = prospectWaha(businessEnding);
+  if (!config) throw new OutreachError("Falta configurar el WhatsApp Business en Turnia.");
+  await sql.begin(async (tx) => {
+    const [lock] = await tx<Array<{ acquired: boolean }>>`
+      select pg_try_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-reconnect', 0)) as acquired`;
+    if (!lock.acquired) return;
+    const channel = await voiceChannelStatus(businessEnding);
+    if (!channel.configured || channel.status !== "FAILED" || (channel.me && channel.me !== config.phone)) return;
+    const path = `/api/sessions/${config.session}`;
+    const change = (action: string) => waha(config, `${path}/${action}`, {
+      method: "POST", body: "{}", signal: AbortSignal.timeout(8000),
+    });
+    try {
+      if (relink) {
+        const result = await change("logout");
+        const session = await result.json() as { status?: string };
+        if (session.status === "STOPPED") await change("start");
+      } else {
+        await change("restart");
+      }
+    } catch {
+      throw new OutreachError("WAHA no pudo recuperar la sesión. Revisá su estado y volvé a intentar.");
+    }
+  });
 }
 
 async function requireChannel(ending?: string): Promise<ProspectWaha> {
@@ -638,7 +691,7 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
   let outboundStarted = false;
   try {
     const chatId = await chatFor(config, person.phone.replace(/\D/g, ""));
-    if (!chatId) throw new OutreachError(`${person.name}: ese número no tiene WhatsApp.`);
+    if (!chatId) throw new VoiceRecipientUnavailableError(`${person.name}: ese número no tiene WhatsApp.`);
     await deliver(config, chatId, note, text, seconds, () => { outboundStarted = true; });
     await sql`update sales_voice_sends set status = 'enviado' where id = ${sendId}`;
   } catch (e) {
