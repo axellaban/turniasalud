@@ -93,7 +93,7 @@ export type OutreachPerson = {
  * Seguimiento 1), el Seguimiento 2 y el 3. Una línea con «---» separa dos mensajes que salen uno
  * después del otro.
  */
-export const TEMPLATE_KEYS = ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_entrega", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "whatsapp_feedback", "instagram", "llamada"] as const;
+export const TEMPLATE_KEYS = ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_permiso_turno", "whatsapp_entrega", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "whatsapp_feedback", "instagram", "llamada"] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export type Templates = Record<TemplateKey, string>;
 
@@ -105,6 +105,10 @@ export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }
   whatsapp_permiso: {
     title: "WhatsApp · Paso 2: el gancho de permiso",
     hint: "Cuando responden el Paso 1 («Hola, sí, ¿qué necesitás?»). Sin link: pide permiso para pasarlo.",
+  },
+  whatsapp_permiso_turno: {
+    title: "WhatsApp · Paso 2, si creen que sos un paciente",
+    hint: "Cuando contestan el Paso 1 como a un paciente («¿Es por un turno?», «¿Para cuándo?»). Aclara que no y sigue como el Paso 2. Sin link; tampoco cuenta como uno de los tres. Chapa Labs lo sugiere solo en «Responder».",
   },
   whatsapp_entrega: {
     title: "WhatsApp · Paso 3: la entrega y el puente al médico",
@@ -140,6 +144,10 @@ export const DEFAULT_TEMPLATES: Templates = {
   whatsapp_permiso:
     "Qué tal! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\n" +
     "Sirve para que conteste sola las preguntas repetidas de obras sociales, precios y horarios fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\n" +
+    "Seguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?",
+  whatsapp_permiso_turno:
+    "No, tranqui, no es por un turno! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\n" +
+    "Contesta sola las preguntas repetidas de obras sociales, precios y horarios, también fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\n" +
     "Seguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?",
   whatsapp_entrega:
     "Acá tenés: {link}\n\n" +
@@ -261,7 +269,7 @@ export function whatsappTemplateKey(person: SequenceFacts): TemplateKey | null {
 }
 
 /** Los mensajes que no cuentan como uno de los tres (el Paso 1 y el Paso 2), con el detalle que dejan en la historia. */
-export const NON_TOUCH_DETAIL = { whatsapp_abridor: "saludo", whatsapp_permiso: "permiso" } as const;
+export const NON_TOUCH_DETAIL = { whatsapp_abridor: "saludo", whatsapp_permiso: "permiso", whatsapp_permiso_turno: "permiso" } as const;
 
 /** Links de WhatsApp: wa.me (celular) y WhatsApp Web (computadora). */
 export function whatsappLinks(phone: string, text: string): { web: string; app: string } {

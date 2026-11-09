@@ -245,4 +245,39 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect((await post({ import: { csv: "telefono\n2235000009\n" } })).status).toBe(422);
     expect((await post({ import: { csv: "nombre\nX\n" } }, "Bearer otra")).status).toBe(401);
   });
+
+  it("«Responder» de Chapa: la respuesta a mano no cuenta, la línea queda confirmada y la derivación cambia el número", async () => {
+    await sql`insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, greeted_at, first_contact_at, last_contact_at)
+      values ('rita-777', 'Rita Prueba', 'Rita', '+5492235000077', 'movil', 'respondio', 1, now() - interval '3 days', now() - interval '3 days', now() - interval '3 days')`;
+    // Le contestamos a mano en la conversación: «Último contacto» se mueve, los mensajes no.
+    let r = await post({ code: "rita-777", action: { type: "conversation", channel: "whatsapp", line: "5483" } });
+    expect(r.status).toBe(200);
+    expect(col(r.body, "Mensajes")).toBe(1);
+    expect(col(r.body, "Estado")).toBe("Respondió");
+    expect(String(col(r.body, "Último contacto")).slice(0, 10)).toBe(new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10));
+    r = await post({ code: "rita-777", action: { type: "conversation", channel: "whatsapp", line: "5483" } });
+    const notes = await sql`select e.detail from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id where o.code = 'rita-777' and e.kind = 'nota'`;
+    expect(notes).toEqual([{ detail: "Le respondimos por WhatsApp (línea 5483)" }]);
+    // La línea queda confirmada para su número.
+    const senders = await sql`select w.sender_phone from sales_outreach_whatsapp_senders w join sales_outreach o on o.id = w.outreach_id where o.code = 'rita-777'`;
+    expect(senders).toEqual([{ sender_phone: "5491130235483" }]);
+    // Una línea que no es de la prospección no se acepta (y no registra nada).
+    expect((await post({ code: "rita-777", action: { type: "conversation", channel: "whatsapp", line: "9999" } })).status).toBe(422);
+    expect((await post({ code: "rita-777", action: { type: "sent", channel: "whatsapp", template: "whatsapp_seguimiento", line: "9999" } })).status).toBe(422);
+    expect((await sql`select touches from sales_outreach where code = 'rita-777'`)[0].touches).toBe(1);
+    // La recepción pasó el WhatsApp del doctor: mismo código y misma demo, número nuevo y nota con el anterior.
+    r = await post({ code: "rita-777", action: { type: "refer", phone: "223 500-0078", name: "Dr. Rita" } });
+    expect(r.status).toBe(200);
+    expect(col(r.body, "Código")).toBe("rita-777");
+    expect(col(r.body, "Link de su demo")).toMatch(/\/p\/rita-777$/);
+    const [rita] = await sql`select phone, phone_kind, notes from sales_outreach where code = 'rita-777'`;
+    expect(rita).toMatchObject({ phone: "+5492235000078", phone_kind: "movil" });
+    const refer = await sql`select e.detail from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id where o.code = 'rita-777' and e.detail like 'Derivación%'`;
+    expect(refer).toEqual([{ detail: "Derivación: pasaron el WhatsApp de Dr. Rita (+5492235000078). Antes: +5492235000077." }]);
+    expect((await post({ code: "rita-777", action: { type: "refer", phone: "223 500-0078" } })).status).toBe(422);
+    expect((await post({ code: "rita-777", action: { type: "refer", phone: "12" } })).status).toBe(422);
+    // A quien pidió la baja no se le registra nada.
+    await sql`update sales_outreach set status = 'baja' where code = 'rita-777'`;
+    expect((await post({ code: "rita-777", action: { type: "conversation", channel: "whatsapp" } })).status).toBe(422);
+  });
 });

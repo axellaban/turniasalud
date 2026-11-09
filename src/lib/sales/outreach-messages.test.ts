@@ -92,7 +92,7 @@ describe("prospección: mensajes y reglas", () => {
     expect(ofPractice({ name: "Luciana Landeras", title: "", business_name: "Ríe odontología - Luciana Landeras" })).toBe("de Ríe odontología");
     expect(ofPractice({ name: "Celia Palmieri", title: "", business_name: "Salva Tu Diente | Celia Palmieri Especialista" })).toBe("de Salva Tu Diente");
     expect(ofPractice({ name: "Carla Ruiz", title: "Dra.", business_name: "Clínica Dental Sur" })).toBe("de la Clínica Dental Sur");
-    for (const key of ["whatsapp_abridor", "whatsapp_permiso"] as const) {
+    for (const key of ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_permiso_turno"] as const) {
       expect(renderTemplate(DEFAULT_TEMPLATES[key], person, link)).not.toContain(link);
     }
     const permiso = renderTemplate(DEFAULT_TEMPLATES.whatsapp_permiso, person, link);

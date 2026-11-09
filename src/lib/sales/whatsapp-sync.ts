@@ -5,7 +5,7 @@ import { AXEL_WHATSAPP } from "./contacto-axel";
 import { nextFollowUp } from "./outreach-messages";
 import { WHATSAPP_SYNC_ACTOR, todayKey } from "./outreach";
 import { incomingReply } from "./followup-queue";
-import { listProspectChats, prospectWaha, voiceChannelStatus, waha, type ProspectWaha } from "./voice-outreach";
+import { listProspectChats, phoneFromChatId, prospectWaha, voiceChannelStatus, waha, type ProspectWaha } from "./voice-outreach";
 
 // La lectura diaria de WhatsApp: los chats de las dos líneas de la prospección (WAHA_PROSPECCION y
 // WAHA_PROSPECCION_5483), cruzados con la base. Por cada persona con chat se guarda qué se le mandó y
@@ -83,11 +83,15 @@ export function messageText(m: Message): string {
 }
 
 // Las respuestas automáticas de WhatsApp Business («Gracias por comunicarte…», «fuera del horario de
-// atención») no son una respuesta de la persona: no abren nada ni cuentan como «respondió».
-const AUTOMATIC = /respuesta autom[aá]tica|mensaje autom[aá]tico|fuera (del|de) (nuestro )?horario|(este|[eé]ste|ese) momento no (podemos|nos es posible|estamos)|no (podemos|pudimos) (atender|responder|contestar)|(te|le|les) (responderemos|contestaremos|responderé|contestaré)|horarios? de atenci[oó]n|a la brevedad|lo antes posible|dej[aá](nos|me|n) (tu|su) (consulta|mensaje)|nos encontramos (fuera|cerrados)|para (pedir |solicitar )?turnos?,? (comunicate|comuníquese|llam)/i;
+// atención») y los avisos del sistema («Esta empresa usa un servicio seguro de Meta…») no son una
+// respuesta de la persona: no abren nada ni cuentan como «respondió».
+// Chapa Labs tiene una copia en prospecting/core.js (isAutomaticReply): si cambia una, cambiar la otra.
+const AUTOMATIC = /respuesta autom[aá]tica|mensaje autom[aá]tico|fuera (del|de) (nuestro )?horario|(este|[eé]ste|ese) momento no (podemos|nos es posible|estamos)|no (podemos|pudimos) (atender|responder|contestar)|(te|le|les) (responderemos|contestaremos|responderé|contestaré)|horarios? de atenci[oó]n|nuestros? horarios?\b|a la brevedad|lo antes posible|dej[aá](nos|me|n) (tu|su) (consulta|mensaje|nombre)|nos encontramos (fuera|cerrados)|para (pedir |solicitar )?turnos?,? (comunicate|comuníquese|llam)|gracias por (comunicar(te|se|nos)|contactar(te|se|nos)|escribir(nos)?) (con|a)\b|esta empresa (usa|utiliza|trabaja con)|servicio seguro de meta|nos (comunicaremos|pondremos en contacto)/i;
 const AUTOMATIC_OPENER = /^\W*(hola\W+)?(muchas )?gracias por (tu |su )?(comunicar|escrib|contact|mensaje)/i;
-/** ¿Es una respuesta automática (de bienvenida o de ausencia) de WhatsApp Business? */
-export const isAutomaticReply = (text: string) => AUTOMATIC.test(text) || (AUTOMATIC_OPENER.test(text) && text.length > 60);
+const WELCOME = /^\W*(hola\W+)?bienvenid[oa]s?\b/i;
+/** ¿Es una respuesta automática (de bienvenida o de ausencia) de WhatsApp Business, o un aviso del sistema? */
+export const isAutomaticReply = (text: string) =>
+  AUTOMATIC.test(text) || (AUTOMATIC_OPENER.test(text) && text.length > 60) || (WELCOME.test(text) && text.length > 25);
 
 export type ChatSummary = {
   sent: number;
@@ -322,4 +326,59 @@ async function totals(report: SyncReport) {
     order by o.id, c.last_received_at desc`;
   report.pending.sort((a, b) => a.at.localeCompare(b.at));
   report.pending = report.pending.slice(0, 60);
+}
+
+/** Un chat de una persona en una línea, como lo dejó la última lectura (horas de Argentina, «AAAA-MM-DD HH:MM»). */
+export type InboxChat = {
+  /** Los últimos 4 números de la línea (0022, 5483). */
+  line: string;
+  /** Lo último que escribió la persona (sin las respuestas automáticas) y cuándo. */
+  inAt: string | null;
+  inText: string | null;
+  /** Nuestro último mensaje en ese chat (también los que salieron a mano desde el celular). */
+  outAt: string | null;
+  /** ¿El último mensaje del chat es nuestro? null si no se sabe. */
+  lastFromMe: boolean | null;
+  received: number;
+  sent: number;
+  /** El último texto guardado es una respuesta automática (una lectura vieja no la distinguía). */
+  automatic: boolean;
+  readAt: string;
+};
+export type InboxEntry = { chats: InboxChat[]; manual: { at: string; text: string; by: string } | null };
+
+/**
+ * Para «Responder» de Chapa Labs: por código, cada chat que leyó la lectura diaria (línea, lo último que
+ * escribió la persona, nuestro último mensaje y quién escribió último) y la última respuesta registrada a
+ * mano (la de las líneas que no se leen, o la que se cargó en Follow-up). No incluye chats de otro número
+ * (si se cambió el teléfono, por ejemplo por una derivación).
+ */
+export async function whatsappInbox(): Promise<{ readAt: string | null; byCode: Record<string, InboxEntry> }> {
+  const local = (col: ReturnType<typeof sql>) => sql`to_char(${col} at time zone ${DEFAULT_TZ}, 'YYYY-MM-DD HH24:MI')`;
+  const [chats, manual, last] = await Promise.all([
+    sql<Array<{ code: string; phone: string; chat_id: string | null; line: string; in_at: string | null; in_text: string | null; out_at: string | null; last_from_me: boolean | null; received: number; sent: number; read_at: string }>>`
+      select o.code, o.phone, c.chat_id, right(c.sender_phone, 4) as line, ${local(sql`c.last_received_at`)} as in_at, c.last_received_text as in_text,
+        ${local(sql`c.last_sent_at`)} as out_at, c.last_from_me, c.received, c.sent, ${local(sql`c.synced_at`)} as read_at
+      from sales_whatsapp_chats c join sales_outreach o on o.id = c.outreach_id
+      where (c.sent > 0 or c.received > 0) and o.phone is not null
+      order by o.code, c.sender_phone`,
+    sql<Array<{ code: string; at: string; text: string; by: string }>>`
+      select distinct on (a.outreach_id) o.code, ${local(sql`a.created_at`)} as at, coalesce(a.new_value, '') as text, a.actor as by
+      from sales_followup_audit a join sales_outreach o on o.id = a.outreach_id
+      where a.subject = 'reply' and a.actor <> ${SYNC_ACTOR}
+      order by a.outreach_id, a.created_at desc`,
+    sql<Array<{ at: string | null }>>`select ${local(sql`max(finished_at)`)} as at from sales_whatsapp_syncs`,
+  ]);
+  const byCode: Record<string, InboxEntry> = {};
+  const entry = (code: string) => (byCode[code] ??= { chats: [], manual: null });
+  for (const c of chats) {
+    const chatPhone = phoneFromChatId(c.chat_id);
+    if (chatPhone && chatPhone !== c.phone) continue;
+    entry(c.code).chats.push({
+      line: c.line, inAt: c.in_at, inText: c.in_text, outAt: c.out_at, lastFromMe: c.last_from_me,
+      received: c.received, sent: c.sent, automatic: Boolean(c.in_text && isAutomaticReply(c.in_text)), readAt: c.read_at,
+    });
+  }
+  for (const m of manual) entry(m.code).manual = { at: m.at, text: m.text.slice(0, 2000), by: m.by };
+  return { readAt: last[0]?.at ?? null, byCode };
 }
