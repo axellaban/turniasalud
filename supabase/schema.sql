@@ -1182,7 +1182,8 @@ alter table sales_voice_notes enable row level security;
 
 create table if not exists sales_voice_sends (
   id uuid primary key default gen_random_uuid(),
-  voice_note_id uuid not null references sales_voice_notes(id) on delete cascade,
+  -- null cuando sale solo texto (el saludo, o un mensaje sin audio).
+  voice_note_id uuid references sales_voice_notes(id) on delete cascade,
   -- null en las pruebas a un número propio: no cuentan en el embudo ni en el tope del día.
   outreach_id uuid references sales_outreach(id) on delete cascade,
   phone text not null,
@@ -1194,6 +1195,12 @@ create table if not exists sales_voice_sends (
 create unique index if not exists sales_voice_sends_once on sales_voice_sends (voice_note_id, outreach_id)
   where outreach_id is not null and status <> 'error';
 create index if not exists sales_voice_sends_day_idx on sales_voice_sends (created_at) where outreach_id is not null;
+-- 09/11: también salen mensajes de texto (el saludo y la presentación), con la etapa de cada envío.
+alter table sales_voice_sends alter column voice_note_id drop not null;
+alter table sales_voice_sends add column if not exists stage text;
+-- El mensaje de texto de una etapa sale una sola vez por persona.
+create unique index if not exists sales_voice_sends_text_once on sales_voice_sends (outreach_id, stage)
+  where outreach_id is not null and voice_note_id is null and status <> 'error';
 alter table sales_voice_sends enable row level security;
 
 -- Un contacto puede tener un chat iniciado desde cada una de las líneas de prospección.
