@@ -1,11 +1,15 @@
 "use client";
 
+import { Fragment } from "react";
 import { usePathname } from "next/navigation";
 import { selectClinic } from "../clinics-actions";
 import { confirmDiscardUnsaved } from "@/components/unsaved-changes";
 
-/** Cambia de clínica al elegirla y se queda en la misma sección del panel. */
-export function ClinicSelect({ current, options }: { current: string; options: Array<{ id: string; label: string }> }) {
+import type { ClinicOption } from "@/lib/clinic-options";
+
+/** Cambia de clínica al elegirla y se queda en la misma sección del panel. Con `group`, las opciones van agrupadas. */
+export function ClinicSelect({ current, options }: { current: string; options: ClinicOption[] }) {
+  const groups = [...new Set(options.map((o) => o.group ?? ""))];
   // Se queda en la misma sección (y pestaña); las páginas de un paciente o una
   // conversación vuelven a su listado, porque son de la clínica anterior.
   const section = usePathname().split("/").filter((part) => part && !/\d/.test(part)).slice(0, 3).map((part) => `/${part}`).join("");
@@ -25,7 +29,10 @@ export function ClinicSelect({ current, options }: { current: string; options: A
         }}
         className="min-w-0 max-w-full flex-1 truncate rounded-xl border border-brand-900/15 bg-white px-3 py-2 text-sm font-medium text-brand-950 sm:max-w-md"
       >
-        {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+        {groups.map((group) => {
+          const items = options.filter((o) => (o.group ?? "") === group).map((option) => <option key={option.id} value={option.id}>{option.label}</option>);
+          return group ? <optgroup key={group} label={group}>{items}</optgroup> : <Fragment key="">{items}</Fragment>;
+        })}
       </select>
       <noscript><button className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Abrir</button></noscript>
     </form>
