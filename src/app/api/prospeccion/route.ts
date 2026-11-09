@@ -6,8 +6,8 @@ import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
 import { FollowupError } from "@/lib/sales/followup";
 import { FollowupConflict, followupSnapshot, runFollowupOp } from "@/lib/sales/followup-queue";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
-import { manualWhatsappSenders } from "@/lib/sales/voice-outreach";
-import { lastWhatsappSync, syncWhatsappReplies } from "@/lib/sales/whatsapp-sync";
+import { manualWhatsappSenders, setVoiceSender, voiceSenderPhones } from "@/lib/sales/voice-outreach";
+import { lastWhatsappSync, syncWhatsappReplies, whatsappInbox } from "@/lib/sales/whatsapp-sync";
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABEL,
@@ -49,7 +49,9 @@ export const maxDuration = 300;
 //   POST { funnel }              guarda las metas del embudo: { perWeek, rates: { paso: 0.45 } }. perWeek es
 //                                la meta semanal de saludos de Panel → Prospección (la misma).
 //   GET ?vista=filas             la prospección como la planilla «Prospección» ({ header, rows, events }), leída
-//                                de la base: Chapa la usa en vez de la copia en Google Sheets.
+//                                de la base: Chapa la usa en vez de la copia en Google Sheets. Suma
+//                                `whatsappSenders` (la línea de cada uno) y `whatsappInbox` (por código, lo
+//                                último que escribió en cada chat y quién escribió último: «Responder» de Chapa).
 //   GET ?vista=followup          la cola de Follow-up como la de habita.: { summary, queue, scheduled, blocked,
 //                                inbox, funnel, timing, stages, rules, results, changes }.
 //   POST { followup: { op, ... }, by }  opera esa cola: claim, open, confirm, fail, release, situation, reply,
@@ -84,6 +86,11 @@ type Action = {
   channel?: string;
   /** «audio»: el mensaje salió como audio (se marca en «Audio enviado»). */
   format?: string;
+  /** Los últimos 4 números de la línea desde la que salió (0022, 5483): queda como su línea confirmada. */
+  line?: string;
+  /** «refer»: el número nuevo que pasaron (una derivación) y de quién es. */
+  phone?: string;
+  name?: string;
   outcome?: string;
   detail?: string;
   text?: string;
@@ -128,48 +135,105 @@ function editOf(fields: Record<string, unknown>): OutreachEdit {
   return edit;
 }
 
+/** La línea de la prospección que termina en esos 4 números (o null si no vino). */
+function lineOf(a: Action): string | null {
+  if (a.line === undefined || a.line === null || a.line === "") return null;
+  const ending = String(a.line).replace(/\D/g, "");
+  if (ending.length !== 4 || !voiceSenderPhones().some((p) => p.endsWith(ending))) throw new BadRequest("No encontramos esa línea de WhatsApp.");
+  return ending;
+}
+
 async function apply(id: string, a: Action): Promise<void> {
   switch (a.type) {
     case "sent": {
       const channel = SENT_CHANNEL[a.channel ?? "whatsapp"];
       if (!channel) throw new BadRequest("Canal desconocido.");
-      if (a.format === "audio") {
-        // Un audio de seguimiento mandado a mano. Cuenta como uno de los tres mensajes, salvo que ese
-        // día ya se haya registrado un mensaje (el texto y el audio salieron juntos: es uno solo).
-        const [today] = await sql`
-          select 1 from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and detail <> 'saludo'
-            and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
-        if (!today) await recordTouch(id, channel, { properties: { message_format: "audio" } });
-        // La nota dice si sumó un mensaje: así, si se desmarca, se sabe si hay que descontarlo.
-        const detail = today ? "Audio de seguimiento (a mano, con el mensaje del día)" : "Audio de seguimiento (a mano)";
-        await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'nota', ${channel}, ${detail})`;
+      // Desde qué línea salió: se valida antes de registrar y queda como su línea confirmada.
+      const line = channel === "whatsapp" ? lineOf(a) : null;
+      if (line) {
+        await sentStep(id, channel, a);
+        await setVoiceSender(id, line, true);
         return;
       }
-      // Un reintento (o un doble clic, o un agente que confirma dos veces) no suma otro mensaje: si ya
-      // hay uno por el mismo canal en los últimos 2 minutos, se toma como el mismo envío.
-      // El saludo y la demo pueden salir con segundos de diferencia: solo es reintento si es el mismo paso
-      // (la plantilla dice si es el saludo).
-      // Con «step» (0 el saludo, 1 la demo, 2 el seguimiento, 3 el último) el registro es idempotente por
-      // estado: si la persona ya tiene ese paso, no se suma nada. Así se puede registrar en lote y repetir.
-      // La demo cuenta como la demo aunque no se haya registrado el Paso 2 (que no tiene número).
-      if (typeof a.step === "number") {
-        const [row] = await sql<Array<{ touches: number; greeted_at: string | null }>>`select touches, greeted_at from sales_outreach where id = ${id}`;
-        if (a.step === 0 ? Boolean(row.greeted_at) || row.touches > 0 : row.touches >= a.step) return;
-        await recordTouch(id, channel, { touch: a.step > 0 });
-        return;
-      }
-      // El paso del mensaje: el Paso 1 («saludo»), el Paso 2 («permiso») o uno de los tres.
-      const template = String(a.template ?? "");
-      const kind = (detail: string) => (detail === "saludo" || detail === "permiso" ? detail : "toque");
-      const sentKind = /abridor|saludo/.test(template) ? "saludo" : /permiso/.test(template) ? "permiso" : "toque";
-      const [recent] = await sql<Array<{ detail: string }>>`
-        select detail from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and channel = ${channel}
-          and created_at > now() - interval '2 minutes' order by created_at desc limit 1`;
-      if (recent && template && kind(recent.detail) === sentKind) return;
-      // Un mensaje con link (el Paso 3 o los Seguimientos 1, 2 y 3) es uno de los tres aunque no figure el Paso 2.
-      await recordTouch(id, channel, { touch: Boolean(template) && sentKind === "toque" && channel === "whatsapp" });
+      return sentStep(id, channel, a);
+    }
+    case "conversation": {
+      // Un mensaje dentro de una conversación abierta (le contestamos a mano desde WhatsApp): no es un paso de
+      // la secuencia ni cuenta como uno de los tres mensajes. Mueve «Último contacto» (así deja de figurar como
+      // «falta contestarle») y deja la nota. Un reintento en 2 minutos no repite la nota.
+      const line = lineOf(a);
+      const [row] = await sql<Array<{ status: string; suppressed: boolean }>>`
+        select o.status, exists (select 1 from sales_suppressions s where s.phone = o.phone) as suppressed from sales_outreach o where o.id = ${id}`;
+      if (!row) throw new BadRequest("No encontramos ese contacto.");
+      if (row.status === "baja" || row.suppressed) throw new OutreachError("Pidió no recibir más mensajes.");
+      const detail = `Le respondimos por WhatsApp${line ? ` (línea ${line})` : ""}${a.detail ? `: ${String(a.detail).slice(0, 200)}` : ""}`;
+      const [recent] = await sql`select 1 from sales_outreach_events where outreach_id = ${id} and kind = 'nota' and detail = ${detail} and created_at > now() - interval '2 minutes'`;
+      if (recent) return;
+      await sql`update sales_outreach set last_contact_at = now(), last_channel = 'whatsapp', updated_at = now() where id = ${id}`;
+      await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'nota', 'whatsapp', ${detail})`;
+      if (line) await setVoiceSender(id, line, true);
       return;
     }
+    case "refer": {
+      // Una derivación: la recepción pasó el WhatsApp de otra persona (el doctor) para la misma cuenta. Queda ese
+      // número (su código y su demo no cambian) y la nota con el anterior, así no hay que crear otra ficha.
+      const [before] = await sql<Array<{ phone: string | null }>>`select phone from sales_outreach where id = ${id}`;
+      if (!before) throw new BadRequest("No encontramos ese contacto.");
+      const edit = editOf({ phone: a.phone, phoneKind: "celular" });
+      if (!edit.phone) throw new BadRequest("Falta el número nuevo.");
+      if (edit.phone === before.phone) throw new BadRequest("Es el mismo número que ya tiene.");
+      await updateOutreach(id, edit);
+      const who = String(a.name ?? "").trim().slice(0, 80);
+      await addOutreachNote(id, `Derivación: pasaron el WhatsApp de ${who || "otra persona"} (${edit.phone}). Antes: ${before.phone ?? "sin número"}.`);
+      return;
+    }
+    default:
+      return applyOther(id, a);
+  }
+}
+
+/** Un mensaje enviado: el saludo, el Paso 2, uno de los tres o un audio (las reglas de siempre). */
+async function sentStep(id: string, channel: OutreachChannel, a: Action): Promise<void> {
+  if (a.format === "audio") {
+    // Un audio de seguimiento mandado a mano. Cuenta como uno de los tres mensajes, salvo que ese
+    // día ya se haya registrado un mensaje (el texto y el audio salieron juntos: es uno solo).
+    const [today] = await sql`
+      select 1 from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and detail <> 'saludo'
+        and (created_at at time zone ${DEFAULT_TZ})::date = (now() at time zone ${DEFAULT_TZ})::date`;
+    if (!today) await recordTouch(id, channel, { properties: { message_format: "audio" } });
+    // La nota dice si sumó un mensaje: así, si se desmarca, se sabe si hay que descontarlo.
+    const detail = today ? "Audio de seguimiento (a mano, con el mensaje del día)" : "Audio de seguimiento (a mano)";
+    await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'nota', ${channel}, ${detail})`;
+    return;
+  }
+  // Un reintento (o un doble clic, o un agente que confirma dos veces) no suma otro mensaje: si ya
+  // hay uno por el mismo canal en los últimos 2 minutos, se toma como el mismo envío.
+  // El saludo y la demo pueden salir con segundos de diferencia: solo es reintento si es el mismo paso
+  // (la plantilla dice si es el saludo).
+  // Con «step» (0 el saludo, 1 la demo, 2 el seguimiento, 3 el último) el registro es idempotente por
+  // estado: si la persona ya tiene ese paso, no se suma nada. Así se puede registrar en lote y repetir.
+  // La demo cuenta como la demo aunque no se haya registrado el Paso 2 (que no tiene número).
+  if (typeof a.step === "number") {
+    const [row] = await sql<Array<{ touches: number; greeted_at: string | null }>>`select touches, greeted_at from sales_outreach where id = ${id}`;
+    if (a.step === 0 ? Boolean(row.greeted_at) || row.touches > 0 : row.touches >= a.step) return;
+    await recordTouch(id, channel, { touch: a.step > 0 });
+    return;
+  }
+  // El paso del mensaje: el Paso 1 («saludo»), el Paso 2 («permiso») o uno de los tres.
+  const template = String(a.template ?? "");
+  const kind = (detail: string) => (detail === "saludo" || detail === "permiso" ? detail : "toque");
+  const sentKind = /abridor|saludo/.test(template) ? "saludo" : /permiso/.test(template) ? "permiso" : "toque";
+  const [recent] = await sql<Array<{ detail: string }>>`
+    select detail from sales_outreach_events where outreach_id = ${id} and kind = 'mensaje' and channel = ${channel}
+      and created_at > now() - interval '2 minutes' order by created_at desc limit 1`;
+  if (recent && template && kind(recent.detail) === sentKind) return;
+  // Un mensaje con link (el Paso 3 o los Seguimientos 1, 2 y 3) es uno de los tres aunque no figure el Paso 2.
+  await recordTouch(id, channel, { touch: Boolean(template) && sentKind === "toque" && channel === "whatsapp" });
+  return;
+}
+
+async function applyOther(id: string, a: Action): Promise<void> {
+  switch (a.type) {
     case "call":
       await recordTouch(id, "telefono");
       if (a.detail) await addOutreachNote(id, a.detail);
@@ -252,8 +316,8 @@ export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const vista = new URL(request.url).searchParams.get("vista");
   if (vista === "filas") {
-    const [rows, events, whatsappSenders] = await Promise.all([outreachSheetRows(), activity(), manualWhatsappSenders()]);
-    return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events, whatsappSenders }, { headers: NO_STORE });
+    const [rows, events, whatsappSenders, whatsappInboxData] = await Promise.all([outreachSheetRows(), activity(), manualWhatsappSenders(), whatsappInbox()]);
+    return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events, whatsappSenders, whatsappInbox: whatsappInboxData }, { headers: NO_STORE });
   }
   if (vista === "followup") {
     const [snapshot, whatsapp] = await Promise.all([followupSnapshot(), lastWhatsappSync()]);

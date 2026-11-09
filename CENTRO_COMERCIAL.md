@@ -40,6 +40,18 @@ El documento general del sistema está en Chapa Labs: [`docs/CENTRO_COMERCIAL.md
 - **Quién la dispara:** Chapa Labs, todos los días a las 8 de Argentina (cron de Vercel en chapa-labs), y su botón «Leer WhatsApp ahora». Por la API: `POST /api/prospeccion { by, followup: { op: "whatsapp-sync" } }`; si se pide antes de 10 minutos devuelve la última. La última lectura viene en `GET ?vista=followup` como `whatsapp` y en `GET ?vista=whatsapp`.
 - **Si una línea falla:** el resumen dice cuál y por qué (sin configurar, sesión caída, o NOWEB sin historial: hay que prender el store de la sesión en WAHA para que devuelva chats y mensajes).
 - **Lo que no ve:** lo que se mandó desde otro número que no esté en WAHA.
+- **Más respuestas automáticas (09/11):** se sumaron las cortas («Gracias por comunicarte con Odontología Sur!»), las de bienvenida («¡Bienvenido a…!»), «Nuestro horario es…» y el aviso del sistema «Esta empresa usa un servicio seguro de Meta…». En la lectura del 09/11, 4 de 15 «Respondió» eran eso. La próxima lectura los corrige sola (si nadie los tocó). Chapa tiene una copia de la regla (`prospecting/core.js`, `isAutomaticReply`): si cambia una, cambiar la otra.
+
+### «Responder» de Chapa Labs (09/11)
+
+La bandeja de quienes escribieron último, para contestar en cualquier orden. Turnia le da los datos y registra lo que se contesta:
+
+- **`GET ?vista=filas` suma `whatsappInbox`:** `{ readAt, byCode: { código: { chats, manual } } }`. `chats` tiene, por línea, lo último que escribió la persona (`inAt`, `inText`, sin las automáticas), nuestro último mensaje (`outAt`), si el último es nuestro (`lastFromMe`) y si el texto guardado es automático (`automatic`, para lo que leyó una lectura vieja). `manual` es la última respuesta cargada a mano (Follow-up → «Registrar una respuesta»): sirve para la línea que no se lee. No incluye el chat de un número anterior (por ejemplo, después de una derivación). Sale de `whatsappInbox()` en `whatsapp-sync.ts`.
+- **`POST { code, action }`, acciones nuevas:**
+  - `sent` acepta `line` («0022» o «5483»): la línea queda confirmada para su número. Una línea que no es de la prospección se rechaza antes de registrar nada.
+  - `conversation` (`line` y `detail` opcionales): le contestamos a mano dentro de una conversación. No es un paso de la secuencia ni cuenta como uno de los tres mensajes: mueve «Último contacto» y deja la nota «Le respondimos por WhatsApp». Un reintento en 2 minutos no la repite. No se registra a quien pidió la baja.
+  - `refer` (`phone`, `name`): una derivación. La recepción pasó el WhatsApp de otra persona: queda ese número como celular, con el mismo código y la misma demo, y una nota con el anterior.
+- **Mensaje nuevo, `whatsapp_permiso_turno`:** el Paso 2 para cuando contestan el saludo como si fueras un paciente («¿Es por un turno?»; pasó en 3 de las 6 respuestas del 09/11). Empieza aclarando que no es por un turno y sigue como el Paso 2. Sin link y sin contar, como el Paso 2. Se edita en Panel → Prospección → Mensajes. El panel de Turnia no lo elige solo: lo sugiere Chapa cuando lee la respuesta.
 
 ## La prospección al 08/11
 

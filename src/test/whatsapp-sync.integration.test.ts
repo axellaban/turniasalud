@@ -179,6 +179,28 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     expect(r.pending.find((p) => p.code === "beto-b2")).toMatchObject({ line: "5483", text: "¿Cuánto sale?" });
   });
 
+  it("«Responder» de Chapa: por código, lo último que escribió en cada línea y la respuesta cargada a mano", async () => {
+    const [dani] = await sql<Array<{ id: string }>>`select id from sales_outreach where code = 'dani-d4'`;
+    // Una respuesta registrada a mano (por ejemplo, de una línea que no se lee).
+    await (await import("@/lib/sales/followup-queue")).incomingReply(dani.id, "¿Es por un turno?", "Axel");
+    const res = await route.GET(new Request("https://turnia.example/api/prospeccion?vista=filas", { headers: { authorization: `Bearer ${SECRET}` } }));
+    type Inbox = { readAt: string | null; byCode: Record<string, import("@/lib/sales/whatsapp-sync").InboxEntry> };
+    const { whatsappInbox: inbox } = (await res.json()) as { whatsappInbox: Inbox };
+    expect(inbox.readAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(inbox.byCode["ana-a1"].chats).toEqual([expect.objectContaining({ line: "0000", inText: "Hola, me interesa", lastFromMe: false, received: 1, sent: 1, automatic: false })]);
+    expect(inbox.byCode["ana-a1"].chats[0].inAt! > inbox.byCode["ana-a1"].chats[0].outAt!).toBe(true);
+    expect(inbox.byCode["beto-b2"].chats).toEqual([expect.objectContaining({ line: "5483", inText: "¿Cuánto sale?", lastFromMe: false })]);
+    // Lo de Fede era automático: no queda como respuesta.
+    expect(inbox.byCode["fede-f6"].chats[0]).toMatchObject({ inText: null, received: 0, lastFromMe: true });
+    expect(inbox.byCode["dani-d4"].manual).toMatchObject({ text: "¿Es por un turno?", by: "Axel" });
+    // Lo que leyó la lectura no figura como «a mano».
+    expect(inbox.byCode["ana-a1"].manual).toBeNull();
+    // Si se cambió el número (una derivación), el chat del número anterior no se muestra.
+    await sql`update sales_outreach set phone = '+5492236000099' where code = 'caro-c3'`;
+    const again = (await (await route.GET(new Request("https://turnia.example/api/prospeccion?vista=filas", { headers: { authorization: `Bearer ${SECRET}` } }))).json()) as { whatsappInbox: Inbox };
+    expect(again.whatsappInbox.byCode["caro-c3"]).toBeUndefined();
+  });
+
   it("resume un chat: solo cuenta lo que llegó después de nuestro primer mensaje", () => {
     const s = wa.summarizeChat([
       { timestamp: 10, fromMe: false, body: "antes" },
@@ -203,8 +225,15 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
       "Gracias por comunicarte con el Dr Miguel Gentili. Te responderemos a la brevedad. Muchas gracias",
       "Gracias por comunicarse con el Consultorio del Dr X. Nuestros horarios de atención son de lunes a viernes.",
       "Gracias por tu mensaje. En este momento no podemos responder, pero lo haremos lo antes posible.",
+      // Las que se escapaban (09/11): cortas, de bienvenida o el aviso de Meta.
+      "Gracias por comunicarte con Odontología Sur!",
+      "Gracias por contactarte con Consultorio Pérez 🦷",
+      "Esta empresa usa un servicio seguro de Meta para administrar este chat. Toca para obtener más información.",
+      "¡Bienvenido a Odontología Integral Luro! ¿En qué podemos ayudarte?",
+      "Hola! Nuestro horario es de lunes a viernes de 9 a 18 hs.",
     ]) expect(wa.isAutomaticReply(t)).toBe(true);
-    for (const t of ["Gracias,", "No estamos interesados. Gracias.", "Gracias por escribir! Me interesa, ¿cuánto sale?", "en este momento estoy atendiendo, te escribo luego", "Audio"]) {
+    for (const t of ["Gracias,", "No estamos interesados. Gracias.", "Gracias por escribir! Me interesa, ¿cuánto sale?", "en este momento estoy atendiendo, te escribo luego", "Audio",
+      "Hola, sí, ¿es por un turno?", "Sí, es la recepción. ¿Quién habla?", "Bienvenido!", "Dale, pasame el link"]) {
       expect(wa.isAutomaticReply(t)).toBe(false);
     }
   });
