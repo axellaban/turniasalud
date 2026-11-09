@@ -5,7 +5,7 @@ import { z } from "zod";
 import { sql, type Sql, type TransactionSql } from "@/lib/db";
 import { DEFAULT_TZ, zonedParts } from "@/lib/time";
 import { MAX_TOUCHES, outreachPhone, renderTemplate, whatsappTemplateKey, type OutreachPerson, type TemplateKey } from "./outreach-messages";
-import { OutreachError, conversoSql, outreachDemoUrl, outreachSettings, recordTouch } from "./outreach";
+import { OutreachError, conversoSql, outreachDemoUrl, outreachSettings, recordTouch, setOutreachStatus } from "./outreach";
 import { DEFAULT_VOICE_RULES, voiceRules } from "./voice-rules";
 
 // Audios de seguimiento (MVP): Axel graba una vez y el panel lo manda como nota de voz nativa
@@ -29,9 +29,11 @@ const HOURS = { from: 8, to: 21 };
 /**
  * Las etapas, en el orden del embudo. Las dos primeras van antes de la demo: el saludo (el primer
  * mensaje, solo texto y sin link) y la presentación con el link de su demo a quien ya saludamos. Las
- * otras tres son el seguimiento. En todas menos el saludo se puede mandar un audio, un texto o los dos.
+ * otras tres son el seguimiento, y la última es para quien dijo que no: un mensaje (solo texto) que
+ * cierra la charla y le pide en una línea por qué no le sirve. En el resto se puede mandar un audio,
+ * un texto o los dos.
  */
-export const VOICE_GROUPS = ["saludo", "presentacion", "no_abrio", "abrio", "hablo"] as const;
+export const VOICE_GROUPS = ["saludo", "presentacion", "no_abrio", "abrio", "hablo", "no_interesa"] as const;
 export type VoiceGroup = (typeof VOICE_GROUPS)[number];
 /** Las del seguimiento (después de la demo): las que muestra el panel de Turnia. */
 export const VOICE_FOLLOWUP_GROUPS = ["no_abrio", "abrio", "hablo"] as const satisfies readonly VoiceGroup[];
@@ -41,9 +43,10 @@ export const VOICE_GROUP_LABEL: Record<VoiceGroup, string> = {
   no_abrio: "No abrieron la demo",
   abrio: "La abrieron sin hablar con Sofi",
   hablo: "Hablaron con Sofi",
+  no_interesa: "Dijeron que no les interesa",
 };
 /** El saludo es solo texto: un audio o un link de un desconocido es lo que hace que WhatsApp bloquee el número. */
-export const voiceTextOnly = (g: VoiceGroup) => g === "saludo";
+export const voiceTextOnly = (g: VoiceGroup) => g === "saludo" || g === "no_interesa";
 /** El saludo es el primer chat: no hay una línea que confirmar. En el resto, sale desde la línea que ya le escribió. */
 export const voiceNeedsSender = (g: VoiceGroup) => g !== "saludo";
 /** El texto que va antes del audio: el nombre y el link, que una grabación sola no puede decir. */
@@ -53,6 +56,7 @@ export const VOICE_DEFAULT_TEXT: Record<VoiceGroup, string> = {
   no_abrio: "Hola {saludo}! Te dejo un audio cortito. Tu demo: {link}",
   abrio: "Hola {saludo}! Tu demo: {link}",
   hablo: "Hola {saludo}!",
+  no_interesa: "Gracias por contestarme, {saludo}. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
 };
 /** Los mensajes del panel que salen cuando se manda solo texto y el texto queda vacío. */
 export const VOICE_PANEL_TEMPLATES: Record<VoiceGroup, TemplateKey[]> = {
@@ -61,7 +65,15 @@ export const VOICE_PANEL_TEMPLATES: Record<VoiceGroup, TemplateKey[]> = {
   no_abrio: ["whatsapp_2", "whatsapp_3"],
   abrio: ["whatsapp_2", "whatsapp_3", "whatsapp_demo"],
   hablo: ["whatsapp_demo", "whatsapp_3"],
+  no_interesa: [],
 };
+
+/**
+ * «No, gracias» y parecidos en la última respuesta que leyó la lectura diaria de WhatsApp: así entra
+ * quien dijo que no aunque en la base siga «Respondió». Para Postgres (`~*`).
+ */
+export const NO_INTERESA_PATTERN =
+  "(^|[^a-záéíóúñ])no(,| )+(me |nos |les? )?(interesa|interesad)|no (estoy|estamos) interesad|(^|[^a-záéíóúñ])no,? (muchas )?gracias|no por (ahora|el momento)|no (lo |la )?necesit|no es para (m[ií]|nosotros)";
 
 // Mismas definiciones que el embudo de Chapa Labs: abrió = entró a su /p/… (o tocó «Probar»),
 // habló con Sofi = conversó con ella (no alcanza con tocar «Probar la demo»).
@@ -89,6 +101,9 @@ const stageFilter = (g: VoiceGroup) =>
         select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id
           and (x.touches > 0 or x.status <> 'por_contactar' or x.greeted_at is not null or (x.priority, x.name, x.id) < (o.priority, o.name, o.id)))`
   : g === "presentacion" ? sql`o.status = 'contactado' and o.touches = 0 and o.greeted_at is not null`
+  : g === "no_interesa" ? sql`(o.status = 'no_interesa' or (o.status = 'respondio' and exists (
+      select 1 from sales_whatsapp_chats c
+      where c.outreach_id = o.id and c.last_from_me is false and c.last_received_text ~* ${NO_INTERESA_PATTERN})))`
   : sql`${followup()} and ${groupFilter(g)}`;
 
 /** Sin etapa (el panel de Turnia) es el seguimiento con audio, como antes. */
@@ -96,7 +111,15 @@ const eligible = (g?: VoiceGroup) => sql`${reachable()} and ${g ? stageFilter(g)
 /** Las etapas que salen desde la línea que ya le escribió: todas menos el saludo. */
 const withSender = () => sql`${reachable()} and (${followup()} or ${stageFilter("presentacion")})`;
 
-export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[] };
+export type VoiceCandidate = OutreachPerson & { id: string; opened_at: string | null; demo_at: string | null; sent: boolean; needs_review: boolean; senders: string[]; reply: string | null };
+
+/**
+ * Las líneas que ya tienen un chat con esa persona: las confirmadas a mano o al mandar desde acá, y
+ * aquellas donde la lectura diaria de WhatsApp encontró que nos contestó.
+ */
+const senderPhones = () => sql`
+  select w.sender_phone from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone
+  union select c.sender_phone from sales_whatsapp_chats c where c.outreach_id = o.id and c.received > 0`;
 
 export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
   const [row] = await sql<Array<Record<VoiceGroup, number>>>`
@@ -104,7 +127,8 @@ export async function voiceGroupCounts(): Promise<Record<VoiceGroup, number>> {
            count(*) filter (where ${stageFilter("presentacion")})::int as presentacion,
            count(*) filter (where ${stageFilter("no_abrio")})::int as no_abrio,
            count(*) filter (where ${stageFilter("abrio")})::int as abrio,
-           count(*) filter (where ${stageFilter("hablo")})::int as hablo
+           count(*) filter (where ${stageFilter("hablo")})::int as hablo,
+           count(*) filter (where ${stageFilter("no_interesa")})::int as no_interesa
     from sales_outreach o where ${reachable()}`;
   return row;
 }
@@ -114,7 +138,9 @@ export async function voiceCandidates(group: VoiceGroup, noteId: string | null):
     select o.id, o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.phone, o.phone_kind,
       o.instagram, o.website, o.touches, o.greeted_at, o.opened_at, o.demo_at,
       coalesce(delivery.reserved, false) as sent, coalesce(delivery.needs_review, false) as needs_review,
-      array(select w.sender_phone from sales_outreach_whatsapp_senders w where w.outreach_id = o.id and w.phone = o.phone order by w.sender_phone) as senders
+      array(select x.sender_phone from (${senderPhones()}) x order by x.sender_phone) as senders,
+      (select c.last_received_text from sales_whatsapp_chats c where c.outreach_id = o.id and c.received > 0
+        order by c.last_received_at desc nulls last limit 1) as reply
     from sales_outreach o
     left join lateral (
       select bool_or(v.status <> 'error') as reserved,
@@ -559,7 +585,10 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
   if (!person) throw new OutreachError("No encontramos ese contacto.");
   if (!person.ok || !person.phone) throw new OutreachError(`A ${person.name} ya no le toca en este grupo o ya no puede recibir el seguimiento.`);
   const custom = template.trim();
-  const text = custom ? renderTemplate(custom, person, outreachDemoUrl(person.code)).trim() : note ? "" : await panelMessage(person);
+  const fallback = group && !VOICE_PANEL_TEMPLATES[group].length
+    ? renderTemplate(VOICE_DEFAULT_TEXT[group], person, outreachDemoUrl(person.code)).trim()
+    : await panelMessage(person);
+  const text = custom ? renderTemplate(custom, person, outreachDemoUrl(person.code)).trim() : note ? "" : fallback;
   if (!note && !text) throw new OutreachError("Escribí el mensaje o elegí un audio.");
   if (group === "saludo" && /\{link\}|https?:\/\/|www\./i.test(`${custom} ${text}`)) {
     throw new OutreachError("El saludo va sin link: que un desconocido mande un link de entrada es lo que hace que WhatsApp bloquee el número.");
@@ -580,8 +609,7 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
     }
     if (group && voiceNeedsSender(group)) {
       const [verified] = await tx`
-        select 1 from sales_outreach_whatsapp_senders w
-        where w.outreach_id = ${outreachId} and w.phone = ${person.phone} and w.sender_phone = ${config.phone ?? ""}
+        select 1 from sales_outreach o where o.id = ${outreachId} and ${config.phone ?? ""} in (${senderPhones()})
       `;
       if (!verified) throw new OutreachError("Confirmá primero que ya le escribiste desde el WhatsApp emisor.");
     }
@@ -621,6 +649,17 @@ export async function sendVoiceToProspect(noteId: string | null, outreachId: str
     throw e;
   }
   // Ya salió: lo que sigue solo registra. Si falla, el envío no se repite (queda «enviado»).
+  if (group === "no_interesa") {
+    // No es uno de los tres mensajes: cierra la charla. Queda en la historia y, si seguía «Respondió», pasa a «No le interesa».
+    try {
+      await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${outreachId}, 'mensaje', 'whatsapp', ${`Pedido de feedback: «${text.slice(0, 300)}»`})`;
+      await sql`update sales_outreach set last_contact_at = now(), last_channel = 'whatsapp', updated_at = now() where id = ${outreachId}`;
+      await setOutreachStatus(outreachId, "no_interesa", "dijo que no por WhatsApp");
+    } catch (e) {
+      console.error("Pedido de feedback enviado pero no se pudo registrar", e instanceof Error ? e.message : e);
+    }
+    return { name: person.name };
+  }
   try {
     await recordTouch(outreachId, "whatsapp", { properties: { message_format: note ? "audio" : "texto", voice_note: note?.label ?? null, voice_stage: group ?? null } });
     if (note) await sql`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${outreachId}, 'nota', 'whatsapp', ${`Audio de seguimiento: «${note.label}»`})`;
