@@ -599,4 +599,18 @@ describe.runIf(base)("audios de seguimiento", () => {
       sentToday: { byLine: [{ ending: "0000", sent: 1 }, { ending: "5483", sent: 1 }], withoutSender: 1 },
     });
   });
+
+  it("expone para la cola manual las líneas verificadas del teléfono actual y acepta evidencia en ambos números", async () => {
+    const person = await id("compartido-i9");
+    await voice.setVoiceSender(person, "0000", true);
+    await sql`insert into sales_whatsapp_chats (outreach_id, sender_phone, chat_id, sent, received)
+      values (${person}, '5491130235483', '5492236000009@s.whatsapp.net', 1, 0)`;
+
+    const current = await voice.manualWhatsappSenders();
+    expect(current.options).toEqual(["0000", "5483"]);
+    expect(current.byCode["compartido-i9"]).toEqual(["0000", "5483"]);
+
+    await sql`update sales_outreach set phone = '+5492236000089' where id = ${person}`;
+    expect((await voice.manualWhatsappSenders()).byCode["compartido-i9"]).toBeUndefined();
+  });
 });
