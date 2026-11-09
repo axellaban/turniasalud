@@ -6,6 +6,7 @@ import { ensureDemoPreviews } from "@/lib/sales/demo-preview";
 import { FollowupError } from "@/lib/sales/followup";
 import { FollowupConflict, followupSnapshot, runFollowupOp } from "@/lib/sales/followup-queue";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
+import { manualWhatsappSenders } from "@/lib/sales/voice-outreach";
 import { lastWhatsappSync, syncWhatsappReplies } from "@/lib/sales/whatsapp-sync";
 import {
   TEMPLATE_KEYS,
@@ -251,8 +252,8 @@ export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const vista = new URL(request.url).searchParams.get("vista");
   if (vista === "filas") {
-    const [rows, events] = await Promise.all([outreachSheetRows(), activity()]);
-    return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events }, { headers: NO_STORE });
+    const [rows, events, whatsappSenders] = await Promise.all([outreachSheetRows(), activity(), manualWhatsappSenders()]);
+    return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events, whatsappSenders }, { headers: NO_STORE });
   }
   if (vista === "followup") {
     const [snapshot, whatsapp] = await Promise.all([followupSnapshot(), lastWhatsappSync()]);

@@ -304,6 +304,32 @@ export function voiceSenderPhones(): string[] {
   return [...new Set(primary ? [primary, AXEL_WHATSAPP] : [AXEL_WHATSAPP])];
 }
 
+/** Líneas con evidencia de un envío al teléfono actual. No asigna una línea por defecto. */
+export async function manualWhatsappSenders() {
+  const lines = voiceSenderPhones();
+  const rows = await sql<Array<{ code: string; phone: string; sender_phone: string; chat_id: string | null }>>`
+    select o.code, o.phone, s.sender_phone, s.chat_id
+    from sales_outreach o join (
+      select outreach_id, phone, sender_phone, null::text as chat_id from sales_outreach_whatsapp_senders
+      union
+      select outreach_id, phone, sender_phone, null from sales_voice_sends where status = 'enviado' and outreach_id is not null
+      union
+      select outreach_id, null, sender_phone, chat_id from sales_whatsapp_chats where sent > 0
+    ) s on s.outreach_id = o.id and (s.phone = o.phone or s.chat_id is not null)
+    where o.phone is not null and s.sender_phone in ${sql(lines)}`;
+  const byCode = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.chat_id && phoneFromChatId(row.chat_id) !== row.phone) continue;
+    const senders = byCode.get(row.code) ?? new Set<string>();
+    senders.add(row.sender_phone.slice(-4));
+    byCode.set(row.code, senders);
+  }
+  return {
+    options: lines.map((phone) => phone.slice(-4)),
+    byCode: Object.fromEntries([...byCode].map(([code, senders]) => [code, [...senders].sort()])),
+  };
+}
+
 /**
  * El WhatsApp al que lleva «Escribirle a Axel» en la demo de una persona: la línea de la prospección
  * que le escribió por última vez (por WAHA desde «Audios y mensajes», la que encontró la lectura de
