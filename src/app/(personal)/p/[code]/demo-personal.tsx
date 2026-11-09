@@ -4,13 +4,13 @@ import { DEMO_VERSION_ACTUAL } from "@/lib/demo-version";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
-import { BotonAxel } from "@/components/demo/axel";
+import { BotonAxel, BotonReenviar } from "@/components/demo/axel";
 import { EsferaCielo } from "@/components/demo/esfera-cielo";
 import { useCharlaDemo, type DemoCredential, type DemoMode } from "@/components/demo/use-charla-demo";
 import { Logo } from "@/components/logo";
 import { Chevron, Icono } from "@/components/site/iconos";
 import { analyticsId, track } from "@/lib/analytics";
-import { mensajeParaAxel } from "@/lib/sales/contacto-axel";
+import { mensajeDesdeDemo } from "@/lib/sales/contacto-axel";
 
 // La demo de cada odontólogo en una sola pantalla: la esfera de Sofi que late y le pide que le hable,
 // el chat arriba a la derecha (para escribirle en lugar de hablarle) y la ficha de su consultorio abajo.
@@ -36,8 +36,11 @@ export function DemoPersonal(props: {
   /** La demo está disponible (base y ElevenLabs configurados). */
   lista: boolean;
   datos: Datos;
-  saludo: string;
   ficha: FichaPersonal;
+  /** El mensaje para los doctores (el segundo del Seguimiento 3), con el link de esta demo. */
+  reenvio: string;
+  /** El WhatsApp de Axel que le escribió (la línea de WAHA o, a mano, su WhatsApp Business). */
+  linea: string;
   /** Lo que se le sugiere decir, empezando por su tratamiento principal. */
   ejemplos: string[];
 }) {
@@ -48,7 +51,7 @@ export function DemoPersonal(props: {
   );
 }
 
-function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Parameters<typeof DemoPersonal>[0]) {
+function Pantalla({ code, contar, lista, datos, ficha, reenvio, linea, ejemplos }: Parameters<typeof DemoPersonal>[0]) {
   const sesion = useRef<string | null>(null);
   const fichaRef = useRef<HTMLDialogElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -131,19 +134,23 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
 
   // Lo último que se dijo, como subtítulo debajo de la esfera.
   const ultima = [...lines].reverse().find((l) => l.role !== "system");
+  // Desde el 09/11 la demo la suele probar la recepción (la secuencia le escribe a ella): el cierre le pide
+  // que se la reenvíe a los doctores, con el mensaje ya armado, y deja escribirle a Axel en el mismo chat
+  // de la prospección (la línea que le escribió).
   const cierre = (
     <div className="animar-aparecer mx-auto max-w-sm text-center">
-      {/* Una sola frase, concreta: lo que ella reconoce como suyo (pedido del usuario, 07/11). */}
       <p className="text-balance text-[18px] font-medium leading-snug text-brand-950">
-        {saludo}, escribime y en 15 minutos probamos a {AGENTE}, sin costo, con los horarios, tratamientos y obras sociales de tu centro.
+        Si ves que responde bien, reenviáselo a los doctores: a ellos les rellena solos los huecos de turnos que se cancelan sobre la hora.
       </p>
-      <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: ficha.consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-4" />
+      <BotonReenviar texto={reenvio} donde="cierre" codigo={codigo} className="mt-4" />
+      <p className="mt-5 text-sm text-tinta">¿Le encontraste algún error o lo quieren ver con sus horarios y obras sociales? En 15 minutos lo dejamos andando, sin costo.</p>
+      <BotonAxel variante="secundario" numero={linea} texto={mensajeDesdeDemo({ consultorio: ficha.consultorio, probo: true })} donde="cierre" codigo={codigo} className="mt-2" />
     </div>
   );
   const enPausa = (
     <div className="animar-aparecer mx-auto max-w-sm text-center">
       <p className="text-[15px] leading-relaxed text-tinta">La demo está pausada por unos minutos. Escribime y te la muestro yo.</p>
-      <BotonAxel texto={mensajeParaAxel({ saludo, consultorio: ficha.consultorio, probo: false })} donde="pagina" codigo={codigo} className="mt-4" />
+      <BotonAxel numero={linea} texto={mensajeDesdeDemo({ consultorio: ficha.consultorio, probo: false })} donde="pagina" codigo={codigo} className="mt-4" />
     </div>
   );
   const avisos = (error || aviso) && (
@@ -429,7 +436,8 @@ function Pantalla({ code, contar, lista, datos, saludo, ficha, ejemplos }: Param
             <BotonAxel
               variante="secundario"
               className="mt-3 w-full"
-              texto={mensajeParaAxel({ saludo, consultorio: ficha.consultorio, probo: enCharla })}
+              numero={linea}
+              texto={mensajeDesdeDemo({ consultorio: ficha.consultorio, probo: enCharla })}
               donde={enCharla ? "demo" : "pagina"}
               codigo={codigo}
             />

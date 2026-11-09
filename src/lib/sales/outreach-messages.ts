@@ -88,11 +88,12 @@ export type OutreachPerson = {
  * - Seguimiento 2: a las 24 h del link, si no habló más (un audio de unos 12 segundos; este es el guion).
  * - Seguimiento 3: a las 48-72 h, el «Caballo de Troya»: dos mensajes, el segundo listo para que la
  *   recepción lo reenvíe a los doctores. Después no se le escribe más.
+ * - Feedback de no interesados: a quien respondió que no, una vez, cierra la charla y pide en una línea por qué.
  * Los Pasos 1 y 2 no cuentan como uno de los tres mensajes: los tres son el link (Paso 3 o
  * Seguimiento 1), el Seguimiento 2 y el 3. Una línea con «---» separa dos mensajes que salen uno
  * después del otro.
  */
-export const TEMPLATE_KEYS = ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_entrega", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "instagram", "llamada"] as const;
+export const TEMPLATE_KEYS = ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_entrega", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "whatsapp_feedback", "instagram", "llamada"] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export type Templates = Record<TemplateKey, string>;
 
@@ -121,6 +122,10 @@ export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }
     title: "WhatsApp · Seguimiento 3: el mensaje para reenviar",
     hint: "A las 48-72 horas. Son dos mensajes (los separa la línea «---»): el segundo queda solo, para que lo mantengan apretado y lo reenvíen a los doctores. Después no se le escribe más.",
   },
+  whatsapp_feedback: {
+    title: "WhatsApp · Feedback de no interesados",
+    hint: "A quien respondió que no le interesa: una sola vez, cierra la charla y le pide en una línea por qué. No cuenta como uno de los tres mensajes.",
+  },
   instagram: { title: "Instagram: mensaje directo", hint: "Sin link: los pedidos de mensaje con links se filtran. Si contesta, le pasás el link." },
   llamada: { title: "Llamada: guion", hint: "No se envía: es para leer mientras llamás. El objetivo es conseguir el WhatsApp de quien decide." },
 };
@@ -148,6 +153,7 @@ export const DEFAULT_TEMPLATES: Templates = {
     "Buenas! Para no robarte más tiempo a vos en recepción, te dejo acá abajo un resumen cortito listo por si querés tocar \"Reenviar\" y pasárselo directo al WhatsApp de los doctores así lo evalúan ellos:" +
     MESSAGE_BREAK +
     "Hola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: {link} . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.",
+  whatsapp_feedback: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
   instagram:
     "Hola {saludo}! Soy Axel, de Turnia. Armé una demo de Sofi con tu consultorio: contesta el WhatsApp cuando estás atendiendo o fuera de horario y da los turnos sola. ¿Te paso el link para probarla? Es un minuto.",
   llamada:
