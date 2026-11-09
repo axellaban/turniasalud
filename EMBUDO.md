@@ -2,17 +2,18 @@
 
 Definido con el usuario el 1/11/2026. Es el embudo que se sigue cada semana, desde el primer saludo a un odontólogo hasta el cliente que paga. La tabla de abajo se actualiza una vez por semana; las definiciones no se cambian sin acordarlo.
 
-## Las siete etapas
+## Las ocho etapas
 
 | # | Etapa | Qué cuenta | De dónde sale |
 | --- | --- | --- | --- |
-| 1 | **Saludos enviados** | Odontólogos a los que se les mandó el saludo sin link («Saludar por WhatsApp»). | PostHog: `prospect_greeting_sent` |
-| 2 | **Demos enviadas** | Odontólogos a los que se les mandó el primer mensaje con su demo personal (`/p/<código>`). | PostHog: `prospect_pitch_sent` |
-| 3 | **Demos visitadas** | Abrieron su demo personal. No cuenta la vista desde el panel ni el tráfico interno. | PostHog: `personal_demo_viewed` con `preview` = `false` |
-| 4 | **Hablaron con Sofi** | En al menos una charla de su demo (voz o chat) **la persona escribió o habló**. Abrir la llamada o el chat y no decir nada no cuenta: Sofi saluda primero. | PostHog: `demo_conversation_ended` con `user_messages` > 0 (en la base, `conversoSql`) |
-| 5 | **Cuentas creadas** | Consultorios con acceso propio al panel: se les creó un código en Panel → Configuración → «Acceso del consultorio» y no se revocó. | Base: `clinic_access` |
-| 6 | **Cuentas activas** | Cuentas que esa semana cumplieron el criterio de abajo. | Base: `conversations` y `appointments` |
-| 7 | **Clientes pagos** | Consultorios que pagaron al menos un mes. Se registran marcando «Cliente» en Panel → Prospección **cuando entra el primer pago**, no cuando dicen que sí. | Base: `sales_outreach`, estado `cliente` |
+| 1 | **Saludos enviados** | Odontólogos a los que se les mandó el saludo sin link (el Paso 1). | PostHog: `prospect_greeting_sent` |
+| 2 | **Respondieron el saludo** | Contestaron el Paso 1: la primera respuesta registrada (pasó a «Respondió», por la lectura de WhatsApp o a mano) o se les mandó el Paso 2, que va solo a quien respondió. Desde el 09/11. | PostHog: `prospect_status_changed` con `status_to` = `respondio`, o `prospect_permission_sent` |
+| 3 | **Demos enviadas** | Odontólogos a los que se les mandó el link de su demo personal (`/p/<código>`): el Paso 3 o el Seguimiento 1. | PostHog: `prospect_pitch_sent` |
+| 4 | **Demos visitadas** | Abrieron su demo personal. No cuenta la vista desde el panel ni el tráfico interno. | PostHog: `personal_demo_viewed` con `preview` = `false` |
+| 5 | **Hablaron con Sofi** | En al menos una charla de su demo (voz o chat) **la persona escribió o habló**. Abrir la llamada o el chat y no decir nada no cuenta: Sofi saluda primero. | PostHog: `demo_conversation_ended` con `user_messages` > 0 (en la base, `conversoSql`) |
+| 6 | **Cuentas creadas** | Consultorios con acceso propio al panel: se les creó un código en Panel → Configuración → «Acceso del consultorio» y no se revocó. | Base: `clinic_access` |
+| 7 | **Cuentas activas** | Cuentas que esa semana cumplieron el criterio de abajo. | Base: `conversations` y `appointments` |
+| 8 | **Clientes pagos** | Consultorios que pagaron al menos un mes. Se registran marcando «Cliente» en Panel → Prospección **cuando entra el primer pago**, no cuando dicen que sí. | Base: `sales_outreach`, estado `cliente` |
 
 ### Criterio de cuenta activa
 
@@ -29,11 +30,18 @@ Por qué este criterio:
 
 Los umbrales están en `scripts/embudo.mjs` (`ACTIVE_MIN_PATIENTS` y `ACTIVE_MIN_APPOINTMENTS`). Si se cambian, anotarlo acá con la fecha.
 
+### Cambio del 09/11: «Respondieron el saludo»
+
+- **Por qué:** desde el 09/11 la secuencia le escribe a la recepción y el link sale recién cuando responde: Paso 1 (el saludo), Paso 2 (pide permiso, cuando responde) y Paso 3 o Seguimiento 1 (el link). Ver `PLAN_PROSPECCION.md` → «Los mensajes».
+- **La etapa:** cuenta, en la semana en que pasó por primera vez, a quien respondió (cambió a «Respondió») o recibió el Paso 2. Antes del 09/11 la demo salía sin esperar respuesta y las respuestas se marcaban a mano: en las semanas 1 y 2 la etapa queda baja y no hay que leerla como conversión.
+- **En Chapa Labs** («Embudo contra la meta» y «Funnel de demos») el paso tiene la misma definición con los datos de la base: «Última respuesta» después del saludo, estado «Respondió» o «Paso 2 enviado». Allá, como en todos sus pasos, quien llegó más lejos también cuenta.
+- **La tabla de abajo** suma la fila con el próximo `npm run embudo`.
+
 ### Cambio del 08/11: «Demos con interacción» pasa a «Hablaron con Sofi»
 
-- **Antes:** la etapa 4 contaba `demo_conversation_started`, que salía cuando empezaba la charla aunque la persona no dijera nada.
+- **Antes:** la etapa de «Hablaron con Sofi» (entonces la 4) contaba `demo_conversation_started`, que salía cuando empezaba la charla aunque la persona no dijera nada.
 - **Por qué cambió:** el 07/11 la demo personal pasó a una sola pantalla y se sacó el botón «Probar la demo» (turniasalud#138). Ahora tocar la esfera arma la demo y empieza la charla en el mismo gesto, así que «empezó la charla» dejó de ser una interacción. Además, desde el 06/11 la base ya no cuenta como conversación la que solo tiene el saludo de Sofi (#128).
-- **Ahora:** la etapa 4 cuenta a quien escribió o habló. Es la misma definición que «Hablaron con Sofi» en Chapa Labs y «Conversó en la demo» en la planilla, y es la única que significa lo mismo en las dos versiones de la demo.
+- **Ahora:** esa etapa cuenta a quien escribió o habló. Es la misma definición que «Hablaron con Sofi» en Chapa Labs y «Conversó en la demo» en la planilla, y es la única que significa lo mismo en las dos versiones de la demo.
 - **Historia:** la tabla de abajo se recalculó con esta definición desde la semana 1. La semana 1 sigue en 1, porque `ache-kthmf` escribió un mensaje.
 
 ## Las dos versiones de la demo personal (para ver cuál convierte mejor)
@@ -61,7 +69,7 @@ Los umbrales están en `scripts/embudo.mjs` (`ACTIVE_MIN_PATIENTS` y `ACTIVE_MIN
 - **Excepción, «Cuentas activas»:** se mide de nuevo cada semana, porque es un estado. En la columna «Total» va el valor de la última semana.
 - **Se descuenta lo deshecho:** un saludo o una demo enviada que se deshizo con «Deshacer contacto» no cuenta.
 - **No hay corte por cohorte:** una etapa no exige haber pasado por la anterior. Por ejemplo, alguien puede abrir su demo en la semana 2 aunque el mensaje se haya mandado en la 1.
-- **Las etapas 5 y 6 cuentan todas las cuentas**, vengan o no de la prospección (por ejemplo, el piloto Guerra–Mininni). Desde el 4/11 existe el vínculo entre la persona y su clínica (`sales_outreach.clinic_id`, acción `account` de `/api/prospeccion`), pero el script todavía no lo usa.
+- **Las etapas 6 y 7 cuentan todas las cuentas**, vengan o no de la prospección (por ejemplo, el piloto Guerra–Mininni). Desde el 4/11 existe el vínculo entre la persona y su clínica (`sales_outreach.clinic_id`, acción `account` de `/api/prospeccion`), pero el script todavía no lo usa.
 
 ## Cómo actualizar la tabla
 
@@ -73,18 +81,19 @@ POSTHOG_PERSONAL_API_KEY=phx_… DATABASE_URL=postgres://… npm run embudo
 
 - **Qué imprime:** la tabla en Markdown con todas las semanas desde la 1. Pegarla abajo y anotar lo que llame la atención.
 - **`POSTHOG_PERSONAL_API_KEY`:** clave personal de PostHog. Está en el entorno de las sesiones de Claude.
-- **`DATABASE_URL`:** la base de Neon de producción, la misma que usa Vercel. Sin esa variable, las etapas 5 a 7 salen «sin base».
+- **`DATABASE_URL`:** la base de Neon de producción, la misma que usa Vercel. Sin esa variable, las etapas 6 a 8 salen «sin base».
 - **Opcionales:** `POSTHOG_PROJECT_ID` (por defecto, 518346) y `POSTHOG_HOST` (por defecto, `https://us.posthog.com`).
 
 **Cuidado con el proyecto de PostHog.** El 518346 se llama «Default project» y lo comparten Loreado y Copiloto, que tienen miles de eventos propios. El script filtra los eventos de Turnia (prospectos `prospecto:<código>`, `app_env` = `production`, sin `is_internal`). Al armar gráficos a mano en PostHog hay que poner los mismos filtros. A la larga conviene mover Turnia a un proyecto propio.
 
 ## Tabla semanal
 
-Al 08/11, con la etapa 4 ya como «Hablaron con Sofi». Las etapas 5 a 7 necesitan `DATABASE_URL`: no estaba en la sesión que la generó.
+Al 08/11, con «Hablaron con Sofi» ya con su definición nueva. Las etapas de cuentas y clientes necesitan `DATABASE_URL`: no estaba en la sesión que la generó. «Respondieron el saludo» (09/11) se suma con la próxima corrida.
 
 | Etapa | Semana 1 (26/10–1/11) | Semana 2 (2/11–8/11) | Total |
 | --- | ---: | ---: | ---: |
 | Saludos enviados | 92 | 123 | 215 |
+| Respondieron el saludo | sin medir | sin medir | sin medir |
 | Demos enviadas | 41 | 108 | 149 |
 | Demos visitadas | 2 | 17 | 19 |
 | Hablaron con Sofi | 1 | 10 | 11 |
