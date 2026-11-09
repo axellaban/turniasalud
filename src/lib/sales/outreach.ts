@@ -13,6 +13,7 @@ import {
   MAX_TOUCHES,
   OUTREACH_STATUSES,
   TEMPLATE_KEYS,
+  addBusinessDays,
   demoUrl,
   mergeTemplates,
   nextFollowUp,
@@ -31,6 +32,8 @@ export class OutreachError extends Error {}
 export type Outreach = OutreachPerson & {
   id: string;
   greeted_at: string | null;
+  permission_at: string | null;
+  last_reply_at: string | null;
   email: string | null;
   priority: number;
   signals: string;
@@ -71,9 +74,27 @@ const TZ = DEFAULT_TZ;
 export const todayKey = () => localDateKey(new Date(), TZ);
 export const outreachDemoUrl = (code: string) => demoUrl(env.appUrl(), code);
 
+/** Quien registra las respuestas que lee la lectura diaria de WhatsApp (src/lib/sales/whatsapp-sync.ts). */
+export const WHATSAPP_SYNC_ACTOR = "WhatsApp (lectura diaria)";
+
+/**
+ * Cuándo respondió por última vez (`o` es la persona): el último mensaje suyo que leyó la lectura de
+ * WhatsApp, con su hora real, o una respuesta registrada a mano (en Follow-up o con «Respondió» en el
+ * panel). Lo que anota la propia lectura no cuenta: llega horas después y su hora no es la de la respuesta.
+ */
+export const lastReplySql = () => sql`greatest(
+  (select max(c.last_received_at) from sales_whatsapp_chats c where c.outreach_id = o.id),
+  (select max(a.created_at) from sales_followup_audit a where a.outreach_id = o.id and a.subject = 'reply' and a.actor <> ${WHATSAPP_SYNC_ACTOR}),
+  (select max(e.created_at) from sales_outreach_events e where e.outreach_id = o.id and e.kind = 'estado'
+    and split_part(e.detail, ':', 1) = 'respondio' and position(${WHATSAPP_SYNC_ACTOR} in e.detail) = 0))`;
+
+/** Respondió después de ese momento (una columna de `o`, como `o.greeted_at`). */
+export const repliedSinceSql = (since: ReturnType<typeof sql>) => sql`coalesce(${lastReplySql()} > ${since}, false)`;
+
 // Se arma en cada consulta: el cliente de la base se conecta recién en la primera.
 const withExtras = () => sql`
   o.*,
+  ${lastReplySql()} as last_reply_at,
   coalesce((select json_agg(json_build_object('name', x.name, 'touched', x.touches > 0 or x.status <> 'por_contactar') order by x.name)
             from sales_outreach x where x.phone = o.phone and x.id <> o.id), '[]'::json) as shared,
   exists (select 1 from sales_suppressions s where s.phone = o.phone) as suppressed`;
@@ -301,25 +322,29 @@ const prospectEvent = (event: string, o: ProspectFacts, properties: Record<strin
   captureLater(event, prospectDistinctId(o.code), { ...properties, prospect_priority: o.priority, prospect_phone_kind: o.phone_kind ?? null }, prospectPerson(o));
 
 const TOUCH_DETAIL = ["primero", "seguimiento", "último"];
-/** El saludo sin link queda en la historia como un mensaje más, pero no es un toque. */
+/** El Paso 1 (el saludo sin link) y el Paso 2 (el gancho que pide permiso) quedan en la historia como mensajes, pero no son toques. */
 const GREETING = "saludo";
+const PERMISSION = "permiso";
 
 /**
- * Registra un contacto. El primer WhatsApp es el saludo sin link: no suma un toque y la presentación
- * con la demo toca ese mismo día (cuando responde). Después, cada mensaje (WhatsApp, Instagram,
- * email) suma un toque y programa el seguimiento; una llamada o una visita quedan en la historia sin
- * consumir los mensajes. `before`: le había escrito antes de usar el panel (no cuenta para la meta de hoy).
+ * Registra un contacto. El primer WhatsApp es el Paso 1, el saludo sin link: no suma un toque. El
+ * segundo es el Paso 2, el gancho que pide permiso para pasar el link (cuando responde el saludo):
+ * tampoco suma, y si no responde, el Seguimiento 1 toca al día hábil siguiente. Después, cada mensaje
+ * (WhatsApp, Instagram, email) suma un toque y programa el seguimiento; una llamada o una visita
+ * quedan en la historia sin consumir los mensajes. `before`: le había escrito antes de usar el panel
+ * (no cuenta para la meta de hoy). `touch`: es uno de los tres mensajes aunque no haya salido el
+ * Paso 2 (lleva el link: se registra un envío en lote o desde Chapa con su paso).
  */
 export async function recordTouch(
   id: string,
   channel: OutreachChannel,
-  opts: { before?: boolean; properties?: Record<string, string | number | boolean | null> } = {},
+  opts: { before?: boolean; touch?: boolean; properties?: Record<string, string | number | boolean | null> } = {},
 ): Promise<Outreach> {
   const today = todayKey();
   const message = channel === "whatsapp" || channel === "instagram" || channel === "email";
   const updated = await sql.begin(async (tx) => {
-    const [row] = await tx<Array<{ touches: number; status: OutreachStatus; phone: string | null; greeted_at: string | null }>>`
-      select touches, status, phone, greeted_at from sales_outreach where id = ${id} for update`;
+    const [row] = await tx<Array<{ touches: number; status: OutreachStatus; phone: string | null; greeted_at: string | null; permission_at: string | null }>>`
+      select touches, status, phone, greeted_at, permission_at from sales_outreach where id = ${id} for update`;
     if (!row) throw new OutreachError("No encontramos ese contacto.");
     if (row.status === "baja") throw new OutreachError("Pidió no recibir más mensajes.");
     if (row.phone) {
@@ -328,7 +353,7 @@ export async function recordTouch(
     }
     if (message && row.touches >= MAX_TOUCHES) throw new OutreachError("Ya le escribiste tres veces: mejor esperar a que responda.");
     const open = row.status === "por_contactar" || row.status === "contactado";
-    if (channel === "whatsapp" && !opts.before && row.touches === 0 && !row.greeted_at) {
+    if (channel === "whatsapp" && !opts.before && !opts.touch && row.touches === 0 && !row.greeted_at) {
       const [out] = await tx<Array<{ id: string }>>`
         update sales_outreach set greeted_at = now(), first_contact_at = coalesce(first_contact_at, now()), last_contact_at = now(),
           last_channel = ${channel}, status = case when status = 'por_contactar' then 'contactado' else status end,
@@ -336,6 +361,14 @@ export async function recordTouch(
         where id = ${id} returning id`;
       await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'mensaje', ${channel}, ${GREETING})`;
       return { id: out.id, event: "prospect_greeting_sent" };
+    }
+    if (channel === "whatsapp" && !opts.before && !opts.touch && row.touches === 0 && !row.permission_at) {
+      const [out] = await tx<Array<{ id: string }>>`
+        update sales_outreach set permission_at = now(), last_contact_at = now(), last_channel = ${channel},
+          next_action_on = ${open ? addBusinessDays(today, 1) : tx`next_action_on`}, updated_at = now()
+        where id = ${id} returning id`;
+      await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail) values (${id}, 'mensaje', ${channel}, ${PERMISSION})`;
+      return { id: out.id, event: "prospect_permission_sent" };
     }
     const touches = message ? row.touches + 1 : row.touches;
     const next = !open ? undefined : message ? nextFollowUp(today, touches) : row.status === "por_contactar" ? nextFollowUp(today, 1) : undefined;
@@ -352,7 +385,7 @@ export async function recordTouch(
     const detail = opts.before ? "ya le había escrito" : message ? TOUCH_DETAIL[touches - 1] : "";
     await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail)
              values (${id}, ${message ? "mensaje" : channel === "telefono" ? "llamada" : "visita"}, ${channel}, ${detail})`;
-    // Para PostHog: la presentación con la demo (el primer mensaje), un seguimiento o un contacto sin mensaje.
+    // Para PostHog: la demo (el primer mensaje: el Paso 3 o el Seguimiento 1), un seguimiento o un contacto sin mensaje.
     const event = opts.before ? "prospect_prior_contact_logged" : !message ? "prospect_offline_contact_logged" : touches === 1 ? "prospect_pitch_sent" : "prospect_followup_sent";
     return { id: out.id, event };
   });
@@ -419,30 +452,36 @@ export async function undoLastTouch(id: string): Promise<void> {
     if (!last) throw new OutreachError("No hay contactos para deshacer.");
     await tx`delete from sales_outreach_events where id = ${last.id}`;
     const left = await contacts();
-    const isTouch = (e: (typeof left)[number]) => e.kind === "mensaje" && e.detail !== GREETING;
+    const isTouch = (e: (typeof left)[number]) => e.kind === "mensaje" && e.detail !== GREETING && e.detail !== PERMISSION;
     const touches = left.filter(isTouch).length;
     const greeting = left.find((e) => e.kind === "mensaje" && e.detail === GREETING);
+    const permission = left.find((e) => e.kind === "mensaje" && e.detail === PERMISSION);
     if (!left.length) {
       await tx`
-        update sales_outreach set touches = 0, greeted_at = null, first_contact_at = null, last_contact_at = null, last_channel = null, next_action_on = null,
+        update sales_outreach set touches = 0, greeted_at = null, permission_at = null, first_contact_at = null, last_contact_at = null, last_channel = null, next_action_on = null,
           status = case when status = 'contactado' then 'por_contactar' else status end, updated_at = now()
         where id = ${id}`;
     } else {
       // El seguimiento se cuenta desde el último mensaje que quedó (o desde la llamada, si no hubo mensajes).
-      // Si solo quedó el saludo, la presentación vuelve a tocar desde ese día.
-      const base = left.find(isTouch) ?? greeting ?? left[0];
+      // Si solo quedó el saludo, el Paso 2 vuelve a tocar desde ese día; si quedó el Paso 2, el Seguimiento 1 al día hábil siguiente.
+      const base = left.find(isTouch) ?? permission ?? greeting ?? left[0];
       const from = localDateKey(new Date(base.created_at), TZ);
-      const next = row.status !== "contactado" ? undefined : !touches && greeting ? from : nextFollowUp(from, Math.max(touches, 1));
+      const next = row.status !== "contactado" ? undefined
+        : touches ? nextFollowUp(from, touches)
+        : permission ? addBusinessDays(from, 1)
+        : greeting ? from
+        : nextFollowUp(from, 1);
       await tx`
-        update sales_outreach set touches = ${touches}, greeted_at = ${greeting?.created_at ?? null}, last_contact_at = ${left[0].created_at}, last_channel = ${left[0].channel},
+        update sales_outreach set touches = ${touches}, greeted_at = ${greeting?.created_at ?? null}, permission_at = ${permission?.created_at ?? null},
+          last_contact_at = ${left[0].created_at}, last_channel = ${left[0].channel},
           next_action_on = ${next === undefined ? tx`next_action_on` : next}, updated_at = now()
         where id = ${id}`;
     }
     await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', 'Se deshizo un contacto (prueba o error).')`;
-    return { row: { ...row, touches }, kind: last.kind, greeting: last.detail === GREETING };
+    return { row: { ...row, touches }, kind: last.kind, greeting: last.detail === GREETING ? "saludo" : last.detail === PERMISSION ? "permiso" : null };
   });
   // PostHog no borra eventos: queda registrado que el anterior fue una prueba o un error.
-  prospectEvent("prospect_contact_undone", undone.row, { contact_kind: undone.greeting ? "saludo" : undone.kind, touch_number: undone.row.touches });
+  prospectEvent("prospect_contact_undone", undone.row, { contact_kind: undone.greeting ?? undone.kind, touch_number: undone.row.touches });
 }
 
 /**

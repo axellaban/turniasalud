@@ -165,9 +165,9 @@ describe.runIf(base)("audios de seguimiento", () => {
   });
 
   it("arma los tres grupos con las definiciones del embudo, sin baja ni quien ya usó los tres mensajes", async () => {
-    expect(await voice.voiceGroupCounts()).toEqual({ saludo: 2, presentacion: 1, no_abrio: 1, abrio: 2, hablo: 1, no_interesa: 0 });
+    // Hugo está saludado pero no respondió: todavía no le toca el Paso 2.
+    expect(await voice.voiceGroupCounts()).toEqual({ saludo: 2, permiso: 0, entrega: 0, sin_respuesta: 0, no_abrio: 1, abrio: 2, hablo: 1, no_interesa: 0 });
     expect((await voice.voiceCandidates("saludo", null)).map((c) => c.name).sort()).toEqual(["Gabriela Siete", "Inés Nueve"]);
-    expect((await voice.voiceCandidates("presentacion", null)).map((c) => c.name)).toEqual(["Hugo Ocho"]);
     expect((await voice.voiceCandidates("hablo", null)).map((c) => c.name)).toEqual(["Caro Tres"]);
     expect((await voice.voiceCandidates("no_abrio", null)).map((c) => c.name)).toEqual(["Ana Uno"]);
   });
@@ -204,7 +204,10 @@ describe.runIf(base)("audios de seguimiento", () => {
     calls.length = 0;
     expect(await actions.sendVoiceAction(noteId, ana, "", 12)).toMatchObject({ ok: false });
     expect(calls.some((c) => c.path === "/api/sendVoice")).toBe(false);
-    expect((await voice.voiceCandidates("no_abrio", noteId))[0].sent).toBe(true);
+    // Ya le escribimos hoy: sale de la lista hasta mañana, y mañana figura con ese audio ya mandado.
+    expect((await voice.voiceCandidates("no_abrio", noteId)).find((c) => c.id === ana)).toBeUndefined();
+    await sql`update sales_outreach set last_contact_at = last_contact_at - interval '1 day' where id = ${ana}`;
+    expect((await voice.voiceCandidates("no_abrio", noteId)).find((c) => c.id === ana)?.sent).toBe(true);
 
     // A quien pidió la baja o ya recibió los tres, no.
     expect(await actions.sendVoiceAction(noteId, await id("baja-e5"), "", 12)).toMatchObject({ ok: false });
@@ -347,6 +350,8 @@ describe.runIf(base)("audios de seguimiento", () => {
         insert into sales_voice_notes (label, mimetype, audio) values ('Reglas configurables', 'audio/ogg', ${Buffer.from("ogg")}) returning id`;
       const person = await id("toco-f6");
       await voice.setVoiceSender(person, "0000", true);
+      // Le escribimos en la prueba anterior: como si fuera al día siguiente.
+      await sql`update sales_outreach set last_contact_at = now() - interval '1 day' where id = ${person}`;
       await sql`update sales_voice_sends set created_at = now() - interval '1 minute' where outreach_id is not null`;
       calls.length = 0;
       const payload = { action: "send", note, person, sender: "0000", group: "abrio", text: "" };
@@ -382,21 +387,24 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect(await actions.sendVoiceAction(noteId, await id("hablo-c3"), "", 12)).toMatchObject({ ok: false, message: expect.stringContaining("Seguí mañana") });
   });
 
-  it("manda el saludo y la presentación como texto desde Chapa, sin audio ni link en el saludo", async () => {
+  it("manda la secuencia como texto desde Chapa: el saludo, el Paso 2 a quien respondió y el link en el 3 o el Seguimiento 1", async () => {
     const { GET, POST } = await import("@/app/api/prospeccion/audio/route");
     const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
     const { createProspectingVoiceToken } = await import("@/lib/session");
+    const { setOutreachStatus } = await import("@/lib/sales/outreach");
     const url = "https://turnia.example/api/prospeccion/audio";
     const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}`, "Content-Type": "application/json" };
     const send = (body: Record<string, unknown>) => POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "send", ...body }) }));
     const rest = () => sql`update sales_voice_sends set created_at = now() - interval '1 day' where outreach_id is not null`;
+    const names = async (group: Parameters<typeof voice.voiceCandidates>[0]) => (await voice.voiceCandidates(group, null)).map((c) => c.name).sort();
     await rest(); // el tope del día de la prueba anterior y la pausa entre envíos
     const gabi = await id("saludo-g7");
     const hugo = await id("saludado-h8");
 
+    // Paso 1: solo texto, sin link y sin confirmar la línea (es el primer chat).
     const stage = await (await GET(new Request(`${url}?group=saludo&sender=0000`, { headers }))).json();
-    expect(stage.stage).toMatchObject({ textOnly: true, needsSender: false, defaultText: "" });
-    expect(stage.stage.panelTemplates).toHaveLength(2);
+    expect(stage.stage).toMatchObject({ textOnly: true, needsSender: false, defaultText: "", link: "forbidden" });
+    expect(stage.stage.panelTemplates).toEqual([{ label: expect.stringContaining("Paso 1"), text: "Buenas! Hablo con la recepción de {destinatario}?" }]);
     expect(stage.people.map((p: { name: string }) => p.name).sort()).toEqual(["Gabriela Siete", "Inés Nueve"]);
 
     const [{ id: note }] = await sql<Array<{ id: string }>>`insert into sales_voice_notes (label, mimetype, audio) values ('Saludo', 'audio/ogg', ${Buffer.from("ogg")}) returning id`;
@@ -404,43 +412,104 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect(await (await send({ group: "saludo", person: gabi, text: "Hola! Tu demo: {link}" })).json()).toMatchObject({ error: expect.stringContaining("sin link") });
     expect(calls.some((c) => c.path.startsWith("/api/send") && c.path !== "/api/sendSeen")).toBe(false);
 
-    // El primer chat: no hace falta confirmar la línea, y queda confirmada para lo que sigue.
     calls.length = 0;
-    const greeted = await send({ group: "saludo", person: gabi, text: "Hola! ¿Este es el consultorio de {destinatario}?" });
-    expect(greeted.status).toBe(200);
-    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ chatId: "5492236000007@c.us", text: "Hola! ¿Este es el consultorio de la Dra. Siete?" });
+    expect((await send({ group: "saludo", person: gabi, text: "" })).status).toBe(200);
+    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ chatId: "5492236000007@c.us", text: "Buenas! Hablo con la recepción de la Dra. Siete?" });
     expect(calls.some((c) => c.path === "/api/sendVoice")).toBe(false);
     const [row] = await sql`select status, touches, greeted_at is not null as greeted from sales_outreach where id = ${gabi}`;
     expect(row).toEqual({ status: "contactado", touches: 0, greeted: true });
     expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_greeting_sent", properties: { message_format: "texto", voice_stage: "saludo" } });
     expect((await voice.voiceUsageToday()).find((row) => row.ending === "0000")).toMatchObject({ used: 1, sent: 1 });
-    expect((await voice.voiceCandidates("presentacion", null)).find((c) => c.id === gabi)?.senders).toEqual(["5492235000000"]);
-    expect(await voice.voiceGroupCounts()).toMatchObject({ saludo: 1, presentacion: 2 });
+    expect(await voice.voiceGroupCounts()).toMatchObject({ saludo: 1, permiso: 0 });
     expect(await (await send({ group: "saludo", person: gabi, text: "Hola" })).json()).toMatchObject({
       error: expect.stringContaining("ya no le toca"), code: "recipient_ineligible",
     });
 
-    // La presentación lleva el link; vacía, sale la del panel. A Hugo lo saludaron desde otra línea.
+    // Paso 2: solo a quien respondió el saludo. Gabi respondió (lo leyó la lectura de WhatsApp) y a Hugo lo
+    // marcaron a mano; a Hugo lo saludaron desde otra línea.
+    expect(await names("permiso")).toEqual([]);
+    await sql`update sales_outreach set greeted_at = now() - interval '10 minutes' where id = ${gabi}`;
+    await sql`insert into sales_whatsapp_chats (outreach_id, sender_phone, chat_id, sent, received, last_received_at, last_received_text, last_from_me)
+              values (${gabi}, '5492235000000', '5492236000007@c.us', 1, 1, now() - interval '5 minutes', 'Sí, ¿qué necesitás?', false)`;
+    await setOutreachStatus(hugo, "respondio");
+    expect(await names("permiso")).toEqual(["Gabriela Siete", "Hugo Ocho"]);
+    expect((await voice.voiceCandidates("permiso", null)).find((c) => c.id === gabi)).toMatchObject({ senders: ["5492235000000"], reply: "Sí, ¿qué necesitás?" });
+    const permiso = await (await GET(new Request(`${url}?group=permiso&sender=0000`, { headers }))).json();
+    expect(permiso.stage).toMatchObject({ textOnly: true, needsSender: true, link: "forbidden" });
     await rest();
-    expect(await (await send({ group: "presentacion", person: hugo, text: "Hola {saludo}, ¿cómo estás?" })).json()).toMatchObject({ error: expect.stringContaining("{link}") });
-    expect(await (await send({ group: "presentacion", person: hugo, text: "" })).json()).toMatchObject({ error: expect.stringContaining("WhatsApp emisor") });
+    expect(await (await send({ group: "permiso", person: gabi, text: "¿Te paso el link? {link}" })).json()).toMatchObject({ error: expect.stringContaining("Paso 2 va sin link") });
+    expect(await (await send({ group: "permiso", person: hugo, text: "" })).json()).toMatchObject({ error: expect.stringContaining("WhatsApp emisor") });
     calls.length = 0;
-    expect((await send({ group: "presentacion", person: gabi, text: "" })).status).toBe(200);
+    expect((await send({ group: "permiso", person: gabi, text: "" })).status).toBe(200);
+    const hook = String(calls.find((c) => c.path === "/api/sendText")!.body!.text);
+    expect(hook).toMatch(/^Qué tal! Soy Axel\. Sé que en recepción/);
+    expect(hook).toContain("cargada con los datos de la Dra. Siete.");
+    expect(hook).not.toContain("https://");
+    // No es uno de los tres mensajes: queda como «permiso» y el Seguimiento 1 toca al día hábil siguiente.
+    const [asked] = await sql`select touches, status, permission_at is not null as asked from sales_outreach where id = ${gabi}`;
+    expect(asked).toEqual({ touches: 0, status: "contactado", asked: true });
+    expect((await sql`select detail from sales_outreach_events where outreach_id = ${gabi} and kind = 'mensaje' order by created_at`).map((e) => e.detail)).toEqual(["saludo", "permiso"]);
+    expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_permission_sent", properties: { voice_stage: "permiso" } });
+    expect(await names("permiso")).toEqual(["Hugo Ocho"]);
+
+    // Sin respuesta al Paso 2: el Seguimiento 1 recién a las 24 horas. Si responde, el Paso 3.
+    expect(await names("entrega")).toEqual([]);
+    expect(await names("sin_respuesta")).toEqual([]);
+    await sql`update sales_outreach set permission_at = now() - interval '25 hours' where id = ${gabi}`;
+    await sql`update sales_whatsapp_chats set last_received_at = now() - interval '26 hours' where outreach_id = ${gabi}`;
+    expect(await names("sin_respuesta")).toEqual(["Gabriela Siete"]);
+    await sql`update sales_whatsapp_chats set last_received_at = now(), last_received_text = 'Dale, pasame' where outreach_id = ${gabi}`;
+    expect(await names("sin_respuesta")).toEqual([]);
+    expect(await names("entrega")).toEqual(["Gabriela Siete"]);
+
+    // Paso 3: lleva el link; vacío, sale el del panel. Ahí sí es el primero de los tres mensajes.
+    const entrega = await (await GET(new Request(`${url}?group=entrega&sender=0000`, { headers }))).json();
+    expect(entrega.stage).toMatchObject({ textOnly: true, link: "required" });
+    await rest();
+    expect(await (await send({ group: "entrega", person: gabi, text: "Acá tenés!" })).json()).toMatchObject({ error: expect.stringContaining("{link}") });
+    calls.length = 0;
+    expect((await send({ group: "entrega", person: gabi, text: "" })).status).toBe(200);
     const pitch = String(calls.find((c) => c.path === "/api/sendText")!.body!.text);
-    expect(pitch).toContain("Hola Gabi");
+    expect(pitch).toMatch(/^Acá tenés: https:\/\/turnia\.example\/p\/saludo-g7\n/);
     expect(pitch).toContain("https://turnia.example/p/saludo-g7");
     expect((await sql`select touches from sales_outreach where id = ${gabi}`)[0].touches).toBe(1);
-    expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_pitch_sent", properties: { message_format: "texto" } });
-    // Una sola vez por etapa: ya está en el seguimiento.
+    expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_pitch_sent", properties: { message_format: "texto", voice_stage: "entrega" } });
+    // Una sola vez: ya está en el seguimiento.
     await rest();
-    expect((await send({ group: "presentacion", person: gabi, text: "" })).status).toBe(422);
+    expect((await send({ group: "entrega", person: gabi, text: "" })).status).toBe(422);
 
     // La prueba de un texto sale a tu número, con tus datos.
     calls.length = 0;
     const count = await voice.voiceSentToday();
-    expect((await POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "test", text: "¿Hablo con {saludo}?" }) }))).status).toBe(200);
-    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ text: "¿Hablo con Axel?" });
+    expect((await POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ action: "test", text: "Hablo con la recepción {del_consultorio}?" }) }))).status).toBe(200);
+    expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({ text: "Hablo con la recepción del Consultorio de prueba?" });
     expect(await voice.voiceSentToday()).toBe(count);
+  });
+
+  it("el Seguimiento 3 sale como dos mensajes: el segundo, solo, para reenviar a los doctores", async () => {
+    const { POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}`, "Content-Type": "application/json" };
+    await sql`update sales_voice_sends set created_at = now() - interval '1 day' where outreach_id is not null`;
+    // Ya recibió el link y el Seguimiento 2, hace dos días, y no respondió.
+    await sql`insert into sales_outreach (code, name, greeting, title, phone, phone_kind, status, touches, greeted_at, first_contact_at, last_contact_at)
+              values ('reenvio-n4', 'Nora Trece', 'Nora', 'Dra.', '+5492236000013', 'movil', 'contactado', 2, now() - interval '5 days', now() - interval '5 days', now() - interval '2 days')`;
+    const nora = await id("reenvio-n4");
+    await voice.setVoiceSender(nora, "0000", true);
+    calls.length = 0;
+    const sent = await POST(new Request("https://turnia.example/api/prospeccion/audio", {
+      method: "POST", headers, body: JSON.stringify({ action: "send", group: "no_abrio", person: nora, text: "" }),
+    }));
+    expect(sent.status).toBe(200);
+    const texts = calls.filter((c) => c.path === "/api/sendText").map((c) => String(c.body!.text));
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toMatch(/^Buenas! Para no robarte más tiempo a vos en recepción/);
+    expect(texts[1]).toBe(
+      "Hola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: https://turnia.example/p/reenvio-n4 . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.",
+    );
+    // Es el tercero de los tres: no se le escribe más.
+    expect((await sql`select touches, next_action_on from sales_outreach where id = ${nora}`)[0]).toEqual({ touches: 3, next_action_on: null });
   });
 
   it("a quien dijo que no le pide feedback una vez, sin sumar un mensaje, y lo pasa a «No le interesa»", async () => {
@@ -469,7 +538,7 @@ describe.runIf(base)("audios de seguimiento", () => {
     calls.length = 0;
     expect((await send({ person: kari, text: "" })).status).toBe(200);
     expect(calls.find((c) => c.path === "/api/sendText")!.body).toMatchObject({
-      text: "Gracias por contestarme, Kari. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
+      text: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no les sirve, me ayudás un montón.",
     });
     const [row] = await sql`select status, touches from sales_outreach where id = ${kari}`;
     expect(row).toEqual({ status: "no_interesa", touches: 1 });

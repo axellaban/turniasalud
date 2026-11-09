@@ -48,22 +48,30 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
     expect((await post({ code: "ana-111", action: { type: "sent" } }, "")).status).toBe(401);
   });
 
-  it("el primer WhatsApp es el saludo; el segundo, la demo, y copia la planilla", async () => {
+  it("el primer WhatsApp es el saludo; el segundo, el Paso 2; después, la demo, y copia la planilla", async () => {
     mocks.after.length = 0;
-    let r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_saludo" } });
+    let r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_abridor" } });
     expect(r.status).toBe(200);
     expect(col(r.body, "Estado")).toBe("Contactado");
     expect(col(r.body, "Mensajes")).toBe(0);
     expect(col(r.body, "Saludo enviado")).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     expect(mocks.after.length).toBeGreaterThan(0);
     // El mismo saludo confirmado otra vez es un reintento: no suma.
-    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_saludo" } });
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_abridor" } });
     expect(col(r.body, "Mensajes")).toBe(0);
-    // Respondió enseguida: la demo sale un minuto después del saludo y sí cuenta.
-    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_1" } });
+    expect(col(r.body, "Paso 2 enviado")).toBe("");
+    // Respondió enseguida: el Paso 2 sale un minuto después del saludo y tampoco cuenta (un reintento, tampoco).
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_permiso" } });
+    expect(col(r.body, "Mensajes")).toBe(0);
+    expect(col(r.body, "Paso 2 enviado")).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_permiso" } });
+    expect(col(r.body, "Mensajes")).toBe(0);
+    // Dijo que sí: la demo (Paso 3) sí cuenta, aunque salga enseguida.
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_entrega" } });
     expect(col(r.body, "Mensajes")).toBe(1);
-    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_1" } });
+    r = await post({ code: "ana-111", action: { type: "sent", channel: "whatsapp", template: "whatsapp_entrega" } });
     expect(col(r.body, "Mensajes")).toBe(1);
+    expect(r.body.header).toEqual(expect.arrayContaining(["Paso 2 enviado", "Última respuesta"]));
     expect(r.body.header).toContain("Clínica de la demo");
     expect(r.body.header).toContain("Conversó en la demo");
   });
@@ -153,16 +161,17 @@ describe.runIf(base)("API de prospección para Chapa Labs", () => {
   it("lee y guarda los mensajes, sin tocar los demás ni las metas", async () => {
     const get = async () => (await route.GET(new Request("https://turnia.example/api/prospeccion", { headers: { authorization: `Bearer ${SECRET}` } }))).json();
     const before = await get();
-    expect(before.templates.map((t: { key: string }) => t.key)).toContain("whatsapp_saludo");
+    expect(before.templates.map((t: { key: string }) => t.key)).toEqual(expect.arrayContaining(["whatsapp_abridor", "whatsapp_permiso", "whatsapp_entrega"]));
     expect(before.weeklyGoal).toBe(250);
-    const r = await post({ templates: { whatsapp_saludo: "¡Hola! ¿Hablo con {saludo}?" } });
+    const r = await post({ templates: { whatsapp_abridor: "Buenas! ¿Es la recepción de {destinatario}?" } });
     expect(r.status).toBe(200);
     const after = await get();
     const text = (k: string, x: { templates: Array<{ key: string; text: string }> }) => x.templates.find((t) => t.key === k)?.text;
-    expect(text("whatsapp_saludo", after)).toBe("¡Hola! ¿Hablo con {saludo}?");
-    expect(text("whatsapp_1", after)).toBe(text("whatsapp_1", before));
+    expect(text("whatsapp_abridor", after)).toBe("Buenas! ¿Es la recepción de {destinatario}?");
+    expect(text("whatsapp_entrega", after)).toBe(text("whatsapp_entrega", before));
     expect((await post({ templates: { no_existe: "x" } })).status).toBe(422);
-    expect((await post({ templates: { whatsapp_1: "  " } })).status).toBe(422);
+    expect((await post({ templates: { whatsapp_1: "Hola" } })).status).toBe(422);
+    expect((await post({ templates: { whatsapp_entrega: "  " } })).status).toBe(422);
     expect((await route.GET(new Request("https://turnia.example/api/prospeccion"))).status).toBe(401);
   });
 

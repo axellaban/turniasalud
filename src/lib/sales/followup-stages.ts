@@ -29,6 +29,7 @@ export type Cta = (typeof CTA_KEYS)[number];
 export const CTA_LABEL: Record<Cta, string> = { whatsapp: "Abrir WhatsApp", demo: "Link demo", panel: "Link panel", copy: "Copiar mensaje" };
 /** Las variables de los mensajes de Prospección, más {panel}. */
 export const VARIABLES = [
+  ["{del_consultorio}", "«del Consultorio Odontológico Pérez» o «del consultorio de la Dra. Pérez»"],
   ["{saludo}", "nombre de pila"],
   ["{nombre}", "nombre completo"],
   ["{destinatario}", "«la Dra. Pérez» o el nombre completo"],

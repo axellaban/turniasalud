@@ -65,7 +65,7 @@ export const defaultPriority = (g: Group): Priority => DEFAULT_PRIORITY[g];
 /** Lo que dice la acción en la cola: la meta de la etapa. */
 export function actionLabel(stage: StageKey) {
   const s = FOLLOWUP_STAGES.find((x) => x.key === stage)!;
-  return stage === "sin-saludo" ? "Saludo" : stage === "saludo-sin-demo" ? "Mandar la demo" : `Llevar a: ${s.goal.toLowerCase()}`;
+  return stage === "sin-saludo" ? "Paso 1: el saludo" : stage === "saludo-sin-demo" ? "Paso 2: pedir permiso" : `Llevar a: ${s.goal.toLowerCase()}`;
 }
 
 export type PlanInput = {
@@ -75,6 +75,8 @@ export type PlanInput = {
   whatsapp: boolean;
   /** Sin saludar: el mismo número no lo recibió otro. */
   contactable: boolean;
+  /** Ya salió el Paso 2 (el gancho que pide permiso para pasar el link). */
+  permission?: boolean;
   /** El próximo paso de Prospección (día, AAAA-MM-DD), la cadencia de días hábiles de su panel. */
   nextActionOn: string | null;
   lastContactAt: string | null;
@@ -116,6 +118,12 @@ export function planFor(p: PlanInput, group: Group, now: Date): Plan {
   if (p.sentThisVersion) return { pending: false, actionReason: "Ya se mandó el mensaje de esta etapa: espera que avance o responda.", dueAt: null, blocked: null };
   if (TOUCH_STAGES.includes(p.stage) && p.touches >= 3 && group !== "respuestas")
     return { pending: false, actionReason: "Ya se le escribió tres veces: no se escribe más hasta que responda.", dueAt: null, blocked: null };
+  // Entre el saludo y la demo va el Paso 2, solo a quien respondió el saludo. El link (Paso 3 o Seguimiento 1) sale desde
+  // «Audios y mensajes»: depende de si respondió el Paso 2, y eso lo dice la lectura de WhatsApp.
+  if (p.stage === "saludo-sin-demo" && p.permission)
+    return { pending: false, actionReason: "Ya salió el Paso 2: la demo va desde «Audios y mensajes» (Paso 3 si responde; si no, el Seguimiento 1 a las 24 h).", dueAt: null, blocked: null };
+  if (p.stage === "saludo-sin-demo" && group !== "respuestas")
+    return { pending: false, actionReason: "Esperando que responda el saludo: el Paso 2 va cuando contesta.", dueAt: null, blocked: null };
   const out = (blocked: string | null, dueAt: string | null = null): Plan => ({ pending: true, actionReason: null, dueAt, blocked });
   if (p.snoozedUntil && Date.parse(p.snoozedUntil) > now.getTime()) return out(`Reprogramada hasta el ${new Date(p.snoozedUntil).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}.`);
   if (!p.hasVersion) return out("Falta el texto de esta etapa: creá una versión en Follow-up.");

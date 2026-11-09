@@ -6,11 +6,13 @@ import {
   CHANNEL_LABEL,
   CLOSED,
   MAX_TOUCHES,
+  PERMISSION_WAIT_HOURS,
   STATUS_LABEL,
   STATUS_TONE,
   displayOutreachPhone,
   isBusinessLine,
   renderTemplate,
+  splitMessages,
   whatsappLinks,
   whatsappTemplateKey,
   type Templates,
@@ -35,34 +37,43 @@ export const landlineOnly = (p: Outreach) =>
 export const isConsultorioLine = (p: Outreach) => isBusinessLine(p.phone_kind) || p.shared.length >= 2;
 
 /**
- * Qué se le manda y por dónde, según cuántas veces se le escribió y si probó la demo. `early`: el
- * seguimiento todavía no toca (se puede adelantar desde la ficha, no desde la lista).
+ * Qué se le manda y por dónde, según el paso de la secuencia en que está (siempre a la recepción).
+ * `early`: el próximo todavía no toca (el seguimiento antes de su día, o el Seguimiento 1 antes de las 24 h
+ * del Paso 2); se puede adelantar desde la ficha, no desde la lista.
  */
 export function contactPlan(p: Outreach, templates: Templates, link: string, today: string) {
   const closed = CLOSED.includes(p.status) || p.suppressed;
-  const key = closed || !p.phone || landlineOnly(p) ? null : whatsappTemplateKey(p, isConsultorioLine(p));
+  const key = closed || !p.phone || landlineOnly(p) ? null : whatsappTemplateKey(p);
   const text = key ? renderTemplate(templates[key], p, link) : "";
-  const whatsapp = key && p.phone ? { key, text, ...whatsappLinks(p.phone, text) } : null;
+  // Con «---» son dos mensajes: el chat se abre con el primero y el segundo se copia aparte.
+  const parts = splitMessages(text);
+  const whatsapp = key && p.phone ? { key, text, parts, ...whatsappLinks(p.phone, parts[0] ?? text) } : null;
   const instagram = !closed && p.instagram && p.touches < MAX_TOUCHES ? { handle: p.instagram, text: renderTemplate(templates.instagram, p, link) } : null;
-  const early = p.status === "contactado" && p.touches > 0 && Boolean(p.next_action_on && p.next_action_on > today);
+  const waiting = key === "whatsapp_sin_respuesta" && Boolean(p.permission_at) && Date.now() - Date.parse(p.permission_at!) < PERMISSION_WAIT_HOURS * 3600_000;
+  const early = waiting || (p.status === "contactado" && p.touches > 0 && Boolean(p.next_action_on && p.next_action_on > today));
   return { closed, whatsapp, instagram, early };
 }
 
 const WA_LABEL: Record<string, string> = {
-  whatsapp_saludo: "Saludar por WhatsApp",
-  whatsapp_saludo_consultorio: "Saludar al consultorio",
-  whatsapp_1: "Mandar la demo",
-  whatsapp_consultorio: "Mandar la demo al consultorio",
-  whatsapp_2: "Mandar seguimiento",
-  whatsapp_3: "Mandar el último",
-  whatsapp_demo: "Preguntar por la demo",
+  whatsapp_abridor: "Paso 1: saludar",
+  whatsapp_permiso: "Paso 2: pedir permiso",
+  whatsapp_entrega: "Paso 3: mandar la demo",
+  whatsapp_sin_respuesta: "Seguimiento 1: mandar la demo",
+  whatsapp_seguimiento: "Seguimiento 2",
+  whatsapp_reenviable: "Seguimiento 3: para reenviar",
 };
 
 const waClass = "inline-flex items-center justify-center gap-1 rounded-full bg-[#15803d] px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-[#166534]";
 const outlineClass = "inline-flex items-center justify-center rounded-full px-3 py-1.5 text-sm font-medium text-brand-800 ring-1 ring-brand-200 hover:bg-brand-50";
 
-/** Se le mandó el saludo y todavía no la presentación con la demo. */
+/** Se le mandó el saludo y todavía no la demo (le falta el Paso 2, o el 3 o el Seguimiento 1). */
 export const awaitingPitch = (p: Outreach) => p.touches === 0 && Boolean(p.greeted_at);
+
+/** En qué quedó quien todavía no recibió la demo. */
+const pitchStatus = (p: Outreach) =>
+  !p.permission_at ? "Saludado: cuando responda, el Paso 2"
+  : p.last_reply_at && Date.parse(p.last_reply_at) > Date.parse(p.permission_at) ? "Respondió el Paso 2: mandale la demo (Paso 3)"
+  : "Paso 2 enviado: si responde, el Paso 3; si no, el Seguimiento 1 a las 24 h";
 
 export function OutreachRow({ p, templates, link, today }: { p: Outreach; templates: Templates; link: string; today: string }) {
   const plan = contactPlan(p, templates, link, today);
@@ -95,7 +106,7 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
         )}
         {p.first_contact_at && (
           <p className="mt-1 text-xs text-brand-900/60">
-            {p.touches > 0 ? `${p.touches} ${p.touches === 1 ? "mensaje" : "mensajes"}` : awaitingPitch(p) ? "Saludado: cuando responda, mandale la demo" : "Contactado"}
+            {p.touches > 0 ? `${p.touches} ${p.touches === 1 ? "mensaje" : "mensajes"}` : awaitingPitch(p) ? pitchStatus(p) : "Contactado"}
             {p.last_channel ? ` · último por ${CHANNEL_LABEL[p.last_channel] ?? p.last_channel}, el ${formatDate(p.last_contact_at!)}` : ""}
             {p.next_action_on && !plan.closed
               ? p.next_action_on <= today
@@ -129,11 +140,10 @@ export function OutreachRow({ p, templates, link, today }: { p: Outreach; templa
         )}
         {p.status === "contactado" && (
           <>
-            {!awaitingPitch(p) && (
-              <ActionButton id={p.id} kind="status" value="respondio" className={smallButtonClass}>
-                Respondió
-              </ActionButton>
-            )}
+            {/* Que respondió el saludo o el Paso 2 lo lee la lectura de WhatsApp; si no lo vio, se marca a mano. */}
+            <ActionButton id={p.id} kind="status" value="respondio" className={smallButtonClass}>
+              Respondió
+            </ActionButton>
             <ActionButton id={p.id} kind="status" value="no_interesa" className={smallButtonClass}>
               No le interesa
             </ActionButton>

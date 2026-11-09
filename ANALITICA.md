@@ -88,12 +88,13 @@ PostHog suma solo `$pageview`, `$pageleave`, autocaptura, `$device_type`, UTM y 
 | Evento | Cuándo | Propiedades |
 | --- | --- | --- |
 | `prospect_greeting_sent` | «Saludar por WhatsApp» (el saludo sin link) | `channel`, `touch_number` = 0 |
-| `prospect_pitch_sent` | El primer mensaje con la demo | `channel`, `touch_number` = 1, `opened_demo`, `tried_demo` |
+| `prospect_permission_sent` | El Paso 2 (el gancho que pide permiso para pasar el link, sin link; 09/11) | `channel`, `touch_number` = 0 |
+| `prospect_pitch_sent` | El primer mensaje con la demo (el Paso 3 o el Seguimiento 1) | `channel`, `touch_number` = 1, `opened_demo`, `tried_demo` |
 | `prospect_followup_sent` | Seguimientos (2.º y 3.º mensaje). Si salió como nota de voz desde Prospección → Mandar audio, trae `message_format: "audio"` y `voice_note` (el nombre de la grabación) | ídem |
 | `prospect_offline_contact_logged` | Llamada o visita registrada | `channel` |
 | `prospect_prior_contact_logged` | «Ya le había escrito» | `channel` |
 | `prospect_status_changed` | Cambio de estado | `status_from`, `status_to` (`respondio`, `reunion`, `cliente`, `no_interesa`, `sin_canal`, `baja`, …) |
-| `prospect_contact_undone` | «Deshacer contacto» | `contact_kind` (`saludo`, `mensaje`, `llamada`, `visita`). PostHog no borra eventos: el anterior queda, este dice que fue una prueba |
+| `prospect_contact_undone` | «Deshacer contacto» | `contact_kind` (`saludo`, `permiso`, `mensaje`, `llamada`, `visita`). PostHog no borra eventos: el anterior queda, este dice que fue una prueba |
 
 Todos llevan `prospect_priority` y `prospect_phone_kind`, y actualizan las propiedades de la persona.
 
@@ -218,7 +219,7 @@ En PostHog están creados (08/11) en el tablero «Turnia · Prospección», con 
 Los pasos, para armarlo a mano:
 
 1. `prospect_greeting_sent`
-2. `prospect_pitch_sent`
+2. `prospect_pitch_sent` (entre los dos, desde el 09/11, `prospect_permission_sent`: el Paso 2; no es un paso del embudo)
 3. `personal_demo_viewed` con `preview` = `false`
 4. `demo_started` con `source` = `personal` (diagnóstico: no significa lo mismo en A y B)
 5. `demo_conversation_ended` con `user_messages` > 0 (**habló con Sofi**; hasta el 08/11 este paso era `demo_conversation_started`, que con la esfera sale apenas la toca)

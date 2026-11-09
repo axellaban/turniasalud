@@ -69,55 +69,85 @@ export type OutreachPerson = {
   instagram: string | null;
   website: string | null;
   touches: number;
-  /** Cuándo se le mandó el saludo de WhatsApp (sin link). No cuenta como toque. */
+  /** Cuándo se le mandó el Paso 1 (el saludo de WhatsApp, sin link). No cuenta como toque. */
   greeted_at?: string | null;
+  /** Cuándo se le mandó el Paso 2 (el gancho que pide permiso para pasar el link). Tampoco cuenta como toque. */
+  permission_at?: string | null;
+  /** Cuándo respondió por última vez (lo que leyó la lectura de WhatsApp o lo que se registró a mano). */
+  last_reply_at?: string | null;
 };
 
-export const TEMPLATE_KEYS = ["whatsapp_saludo", "whatsapp_saludo_consultorio", "whatsapp_1", "whatsapp_consultorio", "whatsapp_2", "whatsapp_3", "whatsapp_demo", "instagram", "llamada"] as const;
+/**
+ * La secuencia de WhatsApp (09/11). Los números de los consultorios los lee la recepción, así que
+ * todos los mensajes le hablan a ella (no hay versión para el celular de la persona):
+ * - Paso 1, el abridor: confirma que es la recepción y, cuando responde, habilita los links.
+ * - Paso 2, el gancho de permiso: cuando responde el Paso 1. Sin link: pregunta si se lo puede pasar.
+ * - Paso 3, la entrega y el puente al médico: cuando dice que sí. El link de su demo y el pedido de
+ *   reenviárselo a los doctores.
+ * - Seguimiento 1: si no respondió el Paso 2 en 24 h, el link directo igual.
+ * - Seguimiento 2: a las 24 h del link, si no habló más (un audio de unos 12 segundos; este es el guion).
+ * - Seguimiento 3: a las 48-72 h, el «Caballo de Troya»: dos mensajes, el segundo listo para que la
+ *   recepción lo reenvíe a los doctores. Después no se le escribe más.
+ * Los Pasos 1 y 2 no cuentan como uno de los tres mensajes: los tres son el link (Paso 3 o
+ * Seguimiento 1), el Seguimiento 2 y el 3. Una línea con «---» separa dos mensajes que salen uno
+ * después del otro.
+ */
+export const TEMPLATE_KEYS = ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_entrega", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "instagram", "llamada"] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export type Templates = Record<TemplateKey, string>;
 
 export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }> = {
-  whatsapp_saludo: {
-    title: "WhatsApp: saludo a la persona",
-    hint: "Va siempre primero, sin link: que un desconocido mande un link de entrada es lo que hace que WhatsApp bloquee el número. Cuando responde, le mandás la presentación.",
+  whatsapp_abridor: {
+    title: "WhatsApp · Paso 1: el abridor",
+    hint: "Va siempre primero y sin link: confirma que es la recepción y, cuando responde, habilita los links. Que un desconocido mande un link de entrada es lo que hace que WhatsApp bloquee el número.",
   },
-  whatsapp_saludo_consultorio: { title: "WhatsApp: saludo al número del consultorio", hint: "Lo mismo, para el fijo o el celular del consultorio: lo lee la recepción." },
-  whatsapp_1: { title: "WhatsApp: presentación a la persona", hint: "Después del saludo, para su celular. Lleva el link de su demo." },
-  whatsapp_consultorio: {
-    title: "WhatsApp: presentación al número del consultorio",
-    hint: "Fijo, celular del consultorio o un número que comparten varios: lo lee la recepción. Le pide que se lo pase a quien decide, sin que suene a reemplazo.",
+  whatsapp_permiso: {
+    title: "WhatsApp · Paso 2: el gancho de permiso",
+    hint: "Cuando responden el Paso 1 («Hola, sí, ¿qué necesitás?»). Sin link: pide permiso para pasarlo.",
   },
-  whatsapp_2: { title: "WhatsApp: seguimiento", hint: "Dos días hábiles después, si no respondió." },
-  whatsapp_3: { title: "WhatsApp: último mensaje", hint: "Cuatro días hábiles después del seguimiento. Después no se le escribe más." },
-  whatsapp_demo: { title: "WhatsApp: después de probar la demo", hint: "Reemplaza al seguimiento cuando ya la probó. No le digas que viste que la probó: preguntale." },
+  whatsapp_entrega: {
+    title: "WhatsApp · Paso 3: la entrega y el puente al médico",
+    hint: "Cuando dicen «Dale, pasame» o «Sí, a ver». Lleva el link de su demo y le pide que se lo reenvíe a los doctores.",
+  },
+  whatsapp_sin_respuesta: {
+    title: "WhatsApp · Seguimiento 1: sin respuesta al Paso 2",
+    hint: "A las 24 horas, si clavó el visto en el Paso 2 y no pidió el link: el link directo igual.",
+  },
+  whatsapp_seguimiento: {
+    title: "WhatsApp · Seguimiento 2: a las 24 h del link",
+    hint: "Si no habló más después del link. Va como audio de unos 12 segundos: este es el guion (y el texto, si sale escrito).",
+  },
+  whatsapp_reenviable: {
+    title: "WhatsApp · Seguimiento 3: el mensaje para reenviar",
+    hint: "A las 48-72 horas. Son dos mensajes (los separa la línea «---»): el segundo queda solo, para que lo mantengan apretado y lo reenvíen a los doctores. Después no se le escribe más.",
+  },
   instagram: { title: "Instagram: mensaje directo", hint: "Sin link: los pedidos de mensaje con links se filtran. Si contesta, le pasás el link." },
   llamada: { title: "Llamada: guion", hint: "No se envía: es para leer mientras llamás. El objetivo es conseguir el WhatsApp de quien decide." },
 };
 
+/** Separa dos mensajes que salen uno después del otro (como en Follow-up de Chapa Labs). */
+export const MESSAGE_BREAK = "\n---\n";
+/** Los mensajes de un texto con «---» entre medio (uno solo si no tiene). */
+export const splitMessages = (text: string) => text.split(/\n[ \t]*-{3,}[ \t]*\n/).map((t) => t.trim()).filter(Boolean);
+
 export const DEFAULT_TEMPLATES: Templates = {
-  whatsapp_saludo: "¡Buenas! ¿Hablo con {saludo}?",
-  whatsapp_saludo_consultorio: "¡Buenas! ¿Hablo con el consultorio de {destinatario}?",
-  whatsapp_1:
-    "Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia.\n" +
-    "Te armé una demo con tu consultorio: Sofi contesta el WhatsApp cuando estás atendiendo o fuera de horario, responde las consultas y da el turno.\n" +
-    "Probala en un minuto, como si fueras un paciente: {link}\n" +
-    "Si te interesa, te la muestro en 15 minutos. Y si no, avisame y no te escribo más.",
-  whatsapp_consultorio:
-    "Hola, ¿cómo están? Soy Axel, de Turnia.\n" +
-    "Le armé a {destinatario} una demo con el consultorio: Sofi contesta el WhatsApp a la noche y los fines de semana, y deja los turnos dados para que a la mañana no haya mensajes acumulados.\n" +
-    "¿Se la pueden pasar? Es este link: {link}\n" +
-    "¡Gracias! Y si no les interesa, me avisan y no escribo más.",
-  whatsapp_2:
-    "Hola {saludo}, te escribo de nuevo por si quedó tapado entre mensajes.\n" +
-    "Se viene la temporada y con los turistas aumentan las consultas por WhatsApp a cualquier hora. Sofi las contesta al instante y deja el turno dado.\n" +
-    "La demo con tu consultorio sigue acá: {link}\n" +
-    "¿Te la muestro esta semana? Son 15 minutos.",
-  whatsapp_3:
-    "Hola {saludo}, último mensaje, prometido. ¿Te sirve que te muestre la demo en 15 minutos esta semana, o lo dejamos acá? Cualquiera de las dos está perfecto.",
-  whatsapp_demo:
-    "Hola {saludo}, ¿llegaste a probar la demo? ¿Qué te pareció?\n" +
-    "Si te sirve, la dejamos andando con tus horarios y tus tratamientos. Te muestro cómo en 15 minutos, ¿te queda bien esta semana?",
+  whatsapp_abridor: "Buenas! Hablo con la recepción de {destinatario}?",
+  whatsapp_permiso:
+    "Qué tal! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\n" +
+    "Sirve para que conteste sola las preguntas repetidas de obras sociales, precios y horarios fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\n" +
+    "Seguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?",
+  whatsapp_entrega:
+    "Acá tenés: {link}\n\n" +
+    "Mandale un audio o escribile haciéndole alguna pregunta difícil como si fueras un paciente real!\n\n" +
+    "Si ves que responde bien, reenviale el link a los doctores: además de sacarte preguntas repetidas a vos, a ellos les rellena solos los huecos de turnos que se cancelan sobre la hora. Avisame si le encontraste algún error!",
+  whatsapp_sin_respuesta:
+    "Buenas! Sé que en recepción no paran un segundo, así que te dejo directo acá la prueba que armé para {destinatario} por si querés chusmear en 20 segundos si cargué bien los datos: {link}",
+  whatsapp_seguimiento:
+    "Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!",
+  whatsapp_reenviable:
+    "Buenas! Para no robarte más tiempo a vos en recepción, te dejo acá abajo un resumen cortito listo por si querés tocar \"Reenviar\" y pasárselo directo al WhatsApp de los doctores así lo evalúan ellos:" +
+    MESSAGE_BREAK +
+    "Hola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: {link} . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.",
   instagram:
     "Hola {saludo}! Soy Axel, de Turnia. Armé una demo de Sofi con tu consultorio: contesta el WhatsApp cuando estás atendiendo o fuera de horario y da los turnos sola. ¿Te paso el link para probarla? Es un minuto.",
   llamada:
@@ -125,11 +155,12 @@ export const DEFAULT_TEMPLATES: Templates = {
 };
 
 export const TEMPLATE_VARIABLES = [
-  ["{saludo}", "nombre de pila"],
-  ["{nombre}", "nombre completo"],
+  ["{del_consultorio}", "«del Consultorio Odontológico Pérez» o «del consultorio de la Dra. Pérez»"],
   ["{destinatario}", "«la Dra. Pérez» o el nombre completo"],
   ["{consultorio}", "nombre del consultorio en la demo"],
   ["{link}", "su demo"],
+  ["{saludo}", "nombre de pila"],
+  ["{nombre}", "nombre completo"],
   ["{zona}", "ciudad"],
 ] as const;
 
@@ -169,37 +200,62 @@ export function ofBusiness(name: string): string {
   return `de ${name}`;
 }
 
+/** Un nombre que ya es el de un consultorio («Consultorios Dentales», «Dental Studio»), no el de una persona. */
+const BUSINESS_WORDS = /\b(consultorios?|cl[ií]nicas?|centro|odontolog[ií]a|dental|dentales|estudio|instituto|sonrisas?)\b/i;
+
+/**
+ * Cómo se nombra el consultorio en «la recepción …»: «del Consultorio Odontológico Moreta», «de AB
+ * Consultorios» o, sin el nombre del consultorio, «del consultorio de la Dra. Moreta». Del nombre del
+ * consultorio queda lo que va antes de « | » o « - » (en Google Maps suelen sumar la especialidad).
+ */
+export function ofPractice(person: Pick<OutreachPerson, "name" | "title" | "business_name">): string {
+  const business = (person.business_name || "").split(/\s+[|–-]\s+/)[0].trim();
+  if (business) return ofBusiness(business);
+  if (!person.title && BUSINESS_WORDS.test(person.name)) return ofBusiness(person.name);
+  return `del consultorio de ${recipientLabel(person)}`;
+}
+
 export function renderTemplate(template: string, person: OutreachPerson, link: string): string {
   const values: Record<string, string> = {
     saludo: person.greeting || person.name.split(/\s+/)[0] || "",
     nombre: person.name,
     destinatario: recipientLabel(person),
     consultorio: person.business_name || `el consultorio de ${person.name}`,
+    del_consultorio: ofPractice(person),
     link,
     zona: person.zone,
   };
   return template
-    .replace(/\{(saludo|nombre|destinatario|consultorio|link|zona)\}/g, (_, key: string) => values[key])
+    .replace(/\{(saludo|nombre|destinatario|consultorio|del_consultorio|link|zona)\}/g, (_, key: string) => values[key])
     // «a el Dr. Arias» → «al Dr. Arias»; «de el Dr.» → «del Dr.».
     .replace(/\b([Aa]|[Dd]e) el Dr\./g, "$1l Dr.");
 }
 
+/** Lo que se sabe para elegir el próximo mensaje de WhatsApp. */
+export type SequenceFacts = Pick<OutreachPerson, "touches" | "greeted_at" | "permission_at" | "last_reply_at">;
+
+/** Respondió después del Paso 2 (lo que decide entre el Paso 3 y el Seguimiento 1). */
+export const repliedToPermission = (p: SequenceFacts) =>
+  Boolean(p.permission_at && p.last_reply_at && Date.parse(p.last_reply_at) > Date.parse(p.permission_at));
+
+/** El Seguimiento 1 espera 24 horas desde el Paso 2. */
+export const PERMISSION_WAIT_HOURS = 24;
+
 /**
- * Qué mensaje de WhatsApp toca: el saludo sin link, la presentación con la demo (a la persona o, si
- * el número es del consultorio, a la recepción), el seguimiento o el último. `null` cuando ya se le
- * escribió tres veces.
+ * Qué mensaje de WhatsApp toca, siempre a la recepción: el Paso 1 (sin link), el 2 (pide permiso,
+ * sin link), el 3 si respondió el 2 o el Seguimiento 1 si no, y los Seguimientos 2 y 3. `null`
+ * cuando ya se le escribió tres veces.
  */
-export function whatsappTemplateKey(
-  person: Pick<OutreachPerson, "touches" | "phone_kind" | "greeted_at"> & { demo_at?: string | null },
-  sharedPhone: boolean,
-): TemplateKey | null {
+export function whatsappTemplateKey(person: SequenceFacts): TemplateKey | null {
   if (person.touches >= MAX_TOUCHES) return null;
-  const reception = isBusinessLine(person.phone_kind) || sharedPhone;
-  if (person.touches === 0 && !person.greeted_at) return reception ? "whatsapp_saludo_consultorio" : "whatsapp_saludo";
-  if (person.touches === 0) return reception ? "whatsapp_consultorio" : "whatsapp_1";
-  if (person.demo_at) return "whatsapp_demo";
-  return person.touches === 1 ? "whatsapp_2" : "whatsapp_3";
+  if (person.touches === 0 && !person.greeted_at) return "whatsapp_abridor";
+  if (person.touches === 0 && !person.permission_at) return "whatsapp_permiso";
+  if (person.touches === 0) return repliedToPermission(person) ? "whatsapp_entrega" : "whatsapp_sin_respuesta";
+  return person.touches === 1 ? "whatsapp_seguimiento" : "whatsapp_reenviable";
 }
+
+/** Los mensajes que no cuentan como uno de los tres (el Paso 1 y el Paso 2), con el detalle que dejan en la historia. */
+export const NON_TOUCH_DETAIL = { whatsapp_abridor: "saludo", whatsapp_permiso: "permiso" } as const;
 
 /** Links de WhatsApp: wa.me (celular) y WhatsApp Web (computadora). */
 export function whatsappLinks(phone: string, text: string): { web: string; app: string } {
@@ -272,10 +328,13 @@ export function addBusinessDays(key: string, days: number): string {
   return out;
 }
 
-/** Cuándo toca el próximo mensaje después del toque número `touches` (1, 2 o 3). */
+/**
+ * Cuándo toca el próximo mensaje después del toque número `touches` (1, 2 o 3): el Seguimiento 2 al
+ * día hábil siguiente del link y el 3 dos días hábiles después (48-72 h).
+ */
 export function nextFollowUp(today: string, touches: number): string | null {
   if (touches >= MAX_TOUCHES) return null;
-  return addBusinessDays(today, touches === 1 ? 2 : 4);
+  return addBusinessDays(today, touches === 1 ? 1 : 2);
 }
 
 /** El lunes de la semana de una fecha aaaa-mm-dd. */

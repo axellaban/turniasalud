@@ -67,7 +67,7 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
     <>
       <PageHeader
         title="Prospección"
-        description="Odontólogos de Mar del Plata y Miramar, cada uno con su demo armada. Escribile a la persona que decide, de a uno, desde tu WhatsApp."
+        description="Odontólogos de Mar del Plata y Miramar, cada uno con su demo armada. Le escribís a la recepción del consultorio, de a uno, desde tu WhatsApp."
         actions={
           <>
             <Link href="/panel/follow-up" className={secondaryButtonClass}>
@@ -178,13 +178,13 @@ export default async function ProspeccionPage({ searchParams }: PageProps<"/pane
               {awaiting.length > 0 && (
                 <CollapsibleSection
                   id="esperan"
-                  title="Esperan la demo"
+                  title="Esperan el Paso 2 o la demo"
                   count={awaiting.length}
-                  summary="Los saludaste: mandales la demo cuando te respondan"
+                  summary="Los saludaste: el Paso 2 cuando respondan; la demo después"
                   defaultOpen={folds.esperan ?? false}
                 >
                   <p className="text-sm text-brand-900/70">
-                    Cuando alguien te contesta el saludo, tocá «Mandar la demo». Si no contesta, sigue acá hasta que le escribas o lo marques.
+                    Cuando alguien te contesta el saludo, tocá «Paso 2: pedir permiso». Si responde el Paso 2, «Paso 3: mandar la demo»; si en 24 horas no contestó, el Seguimiento 1. Si no contesta el saludo, sigue acá hasta que le escribas o lo marques.
                   </p>
                   <ul className="mt-2 divide-y divide-brand-900/5">{awaiting.map(row)}</ul>
                 </CollapsibleSection>
