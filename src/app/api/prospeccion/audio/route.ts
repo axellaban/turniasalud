@@ -18,6 +18,7 @@ import {
   voiceSentToday,
   voiceSenderPhones,
   VoicePaceError,
+  VoiceRecipientIneligibleError,
   VoiceRecipientUnavailableError,
   VOICE_DEFAULT_TEXT,
   VOICE_GROUPS,
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
   if (!sender.success) return json({ error: "Elegí una línea de WhatsApp." }, 400);
   const [notes, people, status, used, rules, settings] = await Promise.all([
     listVoiceNotes(),
-    voiceCandidates(group.data, note.success ? note.data : null),
+    voiceCandidates(group.data, note.success ? note.data : null, true),
     voiceChannelStatus(sender.data),
     voiceSentToday(),
     voiceRules(),
@@ -100,8 +101,9 @@ export async function GET(request: Request) {
     testTo: testPhone(sender.data)?.slice(-4) ?? null,
     senderOptions: voiceSenderPhones().map((phone) => phone.slice(-4)),
     notes: notes.map(({ id, label }) => ({ id, label })),
-    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders, reply }) => ({
+    people: people.map(({ id, name, business_name, phone, sent, needs_review, senders, reply, whatsapp_unavailable }) => ({
       id, name, practice: business_name, last4: phone?.slice(-4), sent, needsReview: needs_review, senders: senders.map((number) => number.slice(-4)),
+      whatsappUnavailable: whatsapp_unavailable,
       reply: reply?.slice(0, 160) ?? null,
     })),
     stage: {
@@ -158,6 +160,7 @@ export async function POST(request: Request) {
     return json({ ok: true });
   } catch (error) {
     if (error instanceof VoicePaceError) return json({ error: error.message, retryAfter: error.retryAfter }, 429);
+    if (error instanceof VoiceRecipientIneligibleError) return json({ error: error.message, code: "recipient_ineligible" }, 422);
     if (error instanceof VoiceRecipientUnavailableError) return json({ error: error.message, code: "recipient_unavailable" }, 422);
     if (error instanceof OutreachError) return json({ error: error.message }, 422);
     console.error("chapa_prospecting_voice", error instanceof Error ? error.message : error);

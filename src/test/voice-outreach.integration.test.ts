@@ -415,7 +415,9 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect(mocks.capture.at(-1)).toMatchObject({ event: "prospect_greeting_sent", properties: { message_format: "texto", voice_stage: "saludo" } });
     expect((await voice.voiceCandidates("presentacion", null)).find((c) => c.id === gabi)?.senders).toEqual(["5492235000000"]);
     expect(await voice.voiceGroupCounts()).toMatchObject({ saludo: 1, presentacion: 2 });
-    expect(await (await send({ group: "saludo", person: gabi, text: "Hola" })).json()).toMatchObject({ error: expect.stringContaining("ya no le toca") });
+    expect(await (await send({ group: "saludo", person: gabi, text: "Hola" })).json()).toMatchObject({
+      error: expect.stringContaining("ya no le toca"), code: "recipient_ineligible",
+    });
 
     // La presentación lleva el link; vacía, sale la del panel. A Hugo lo saludaron desde otra línea.
     await rest();
@@ -476,5 +478,33 @@ describe.runIf(base)("audios de seguimiento", () => {
     expect((await send({ person: kari, text: "" })).status).toBe(422);
     // A Marta no le escribimos desde esta línea: hay que confirmarla.
     expect(await (await send({ person: marta, text: "" })).json()).toMatchObject({ error: expect.stringContaining("WhatsApp emisor") });
+  });
+
+  it("recuerda por 24 horas un rechazo de WAHA en ambas líneas y no lo traslada a un teléfono corregido", async () => {
+    const { GET, POST } = await import("@/app/api/prospeccion/audio/route");
+    const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
+    const { createProspectingVoiceToken } = await import("@/lib/session");
+    const url = "https://turnia.example/api/prospeccion/audio";
+    const headers = { Origin: CHAPA_PROSPECTING_ORIGIN, Authorization: `Bearer ${createProspectingVoiceToken()}` };
+    const person = await id("compartido-i9");
+    const send = (sender: string) => POST(new Request(url, {
+      method: "POST", headers, body: JSON.stringify({ action: "send", group: "saludo", person, sender, text: "Hola" }),
+    }));
+    const list = async () => (await (await GET(new Request(`${url}?group=saludo&sender=5483`, { headers }))).json()).people;
+    exists = false;
+    const before = await voice.voiceSentToday();
+    expect(await (await send("0000")).json()).toMatchObject({ code: "recipient_unavailable" });
+    expect(await voice.voiceSentToday()).toBe(before);
+    expect(await list()).toContainEqual(expect.objectContaining({ id: person, sent: false, whatsappUnavailable: true }));
+
+    calls.length = 0;
+    expect(await (await send("5483")).json()).toMatchObject({ code: "recipient_unavailable" });
+    expect(calls).toHaveLength(0);
+
+    await sql`update sales_outreach set phone = '+5492236000089' where id = ${person}`;
+    expect(await list()).toContainEqual(expect.objectContaining({ id: person, whatsappUnavailable: false }));
+    await sql`update sales_outreach set phone = '+5492236000009' where id = ${person}`;
+    await sql`update sales_voice_sends set created_at = now() - interval '25 hours' where outreach_id = ${person}`;
+    expect(await list()).toContainEqual(expect.objectContaining({ id: person, whatsappUnavailable: false }));
   });
 });
