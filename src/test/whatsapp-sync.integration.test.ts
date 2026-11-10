@@ -210,6 +210,8 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
       return { status: res.status, body: (await res.json()) as { search: import("@/lib/sales/whatsapp-sync").ChatSearch; error?: string } };
     };
     const before = sent.length;
+    // No depende de lo que guardó la lectura: sirve para una línea que todavía no se leyó.
+    await sql`delete from sales_whatsapp_chats`;
     const { status: code, body } = await search("CUANTO, precio");
     expect(code).toBe(200);
     expect(body.search.terms).toEqual(["cuanto", "precio"]);

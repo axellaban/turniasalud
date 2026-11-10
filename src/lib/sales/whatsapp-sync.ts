@@ -399,7 +399,8 @@ export const searchTerms = (query: string) =>
   [...new Set(fold(query.slice(0, 200)).split(/[\s,|]+/).filter((t) => t.length >= 3))].slice(0, 12);
 
 /**
- * Busca en el historial de las dos líneas (los últimos 100 mensajes de cada chat donde le escribimos)
+ * Busca en el historial de las dos líneas (los últimos 100 mensajes de cada chat con una persona de la base
+ * a la que le escribimos)
  * lo que escribió la persona con alguna de las palabras, por ejemplo «precio costo cuanto». La lectura
  * diaria solo guarda el último mensaje de cada chat; esto lee el resto. Solo lee: no guarda ni cambia nada.
  */
@@ -415,13 +416,25 @@ export async function searchWhatsappChats(query: string): Promise<ChatSearch> {
     if (!status.ok) { out.lines.push({ line: label, status: "error", problem: status.problem ?? "WAHA no está listo." }); continue; }
     const config = prospectWaha(ending)!;
     const session = encodeURIComponent(config.session);
-    const chats = await sql<Array<{ code: string; name: string; phone: string; chat_id: string }>>`
-      select o.code, o.name, o.phone, c.chat_id from sales_whatsapp_chats c join sales_outreach o on o.id = c.outreach_id
-      where c.sender_phone = ${config.phone!} and c.chat_id is not null and c.sent > 0
-      order by o.code`;
+    // Como la lectura diaria: la lista de chats de la línea, cruzada con las personas por su número actual
+    // (así sirve también para una línea que todavía no se leyó, y no trae el chat de un número anterior).
+    let list: Awaited<ReturnType<typeof listProspectChats>>;
+    try {
+      list = await listProspectChats(config, async () => (await sql<Array<{ phone: string }>>`
+        select distinct phone from sales_outreach
+        where phone is not null and phone_kind is distinct from 'fijo' and last_contact_at is not null
+        order by phone limit 1500`).map((r) => r.phone));
+    } catch (e) {
+      out.lines.push({ line: label, status: "error", problem: e instanceof Error ? e.message : String(e) });
+      continue;
+    }
+    const digits = [...list.byPhone.keys()].map((p) => p.replace(/\D/g, ""));
+    const people = await sql<Array<{ code: string; name: string; phone: string }>>`
+      select code, name, phone from sales_outreach
+      where phone is not null and regexp_replace(phone, '[^0-9]', '', 'g') = any(${digits}::text[])
+      order by code`;
+    const chats = people.flatMap((p) => { const chat_id = list.byPhone.get(p.phone); return chat_id ? [{ ...p, chat_id }] : []; });
     const read = await inParallel(chats, PARALLEL, async (c) => {
-      const chatPhone = phoneFromChatId(c.chat_id);
-      if (chatPhone && chatPhone !== c.phone) return; // el chat de un número viejo
       let messages: Message[];
       try {
         const res = await waha(config, `/api/${session}/chats/${encodeURIComponent(c.chat_id)}/messages?limit=${HISTORY}&downloadMedia=false`, { signal: AbortSignal.timeout(15000) });
@@ -430,7 +443,9 @@ export async function searchWhatsappChats(query: string): Promise<ChatSearch> {
         console.error("búsqueda en un chat de la prospección", e instanceof Error ? e.message.slice(0, 160) : e);
         return;
       }
-      for (const m of Array.isArray(messages) ? messages : []) {
+      const all = Array.isArray(messages) ? messages : [];
+      if (!all.some((m) => m.fromMe)) return; // un chat donde nunca le escribimos desde esta línea
+      for (const m of all) {
         const text = m.fromMe ? "" : messageText(m);
         if (!text || isAutomaticReply(text)) continue;
         const folded = fold(text);
