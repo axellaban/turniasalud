@@ -1269,7 +1269,7 @@ create table if not exists sales_followup_commercial_stages (
     'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
   entry_situation text not null check (entry_situation in (
     'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
-    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+    'mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
   created_at timestamptz not null default now(),
   unique (technical_stage,entry_situation)
 );
@@ -1287,7 +1287,7 @@ create table if not exists sales_followup_state_catalog (
     'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
   maps_to text check (maps_to is null or maps_to in (
     'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
-    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+    'mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
   active boolean not null default false,
   removed_at timestamptz,
   updated_by text,
@@ -1307,7 +1307,7 @@ create table if not exists sales_followup_situation_overrides (
   commercial_stage text not null,
   key text not null check (key in (
     'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
-    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+    'mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
   label text not null check (length(btrim(label)) between 2 and 80),
   description text not null default '' check (length(description)<=800),
   examples text not null default '' check (length(examples)<=2000),
@@ -1330,7 +1330,7 @@ create table if not exists sales_followup_rule_controls (
   enabled boolean not null default true,
   situations text[] not null default '{}'::text[]
     check (situations <@ array['sin_respuesta','confirmo_numero','interesado',
-      'neutro','pregunta_precios','mas_adelante','derivo']::text[]),
+      'neutro','pregunta_precios','mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo']::text[]),
   after_hours integer not null default 0 check (after_hours between 0 and 720),
   hours_from integer not null default 8 check (hours_from between 0 and 23),
   hours_to integer not null default 21 check (hours_to between 0 and 23),
@@ -1524,3 +1524,34 @@ begin
     end if;
   end loop;
 end $$;
+
+
+-- Expand existing CHECK constraints as well as CREATE TABLE IF NOT EXISTS.
+-- These are canonical, non-terminal situations, available after first contact.
+alter table sales_followup_commercial_stages
+  drop constraint if exists sales_followup_commercial_stages_entry_situation_check;
+alter table sales_followup_commercial_stages
+  add constraint sales_followup_commercial_stages_entry_situation_check
+  check (entry_situation in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto'));
+alter table sales_followup_state_catalog
+  drop constraint if exists sales_followup_state_catalog_maps_to_check;
+alter table sales_followup_state_catalog
+  add constraint sales_followup_state_catalog_maps_to_check
+  check (maps_to is null or maps_to in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto'));
+alter table sales_followup_situation_overrides
+  drop constraint if exists sales_followup_situation_overrides_key_check;
+alter table sales_followup_situation_overrides
+  add constraint sales_followup_situation_overrides_key_check
+  check (key in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto'));
+alter table sales_followup_rule_controls
+  drop constraint if exists sales_followup_rule_controls_situations_check;
+alter table sales_followup_rule_controls
+  add constraint sales_followup_rule_controls_situations_check
+  check (situations <@ array[
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante',
+    'recontactar_vacaciones','recontactar_mas_adelante','derivo']::text[]);
+alter table sales_followup_state
+  drop constraint if exists sales_followup_state_situation_check;
+alter table sales_followup_state
+  add constraint sales_followup_state_situation_check
+  check (situation is null or situation in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto'));

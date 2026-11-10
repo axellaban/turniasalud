@@ -10,6 +10,8 @@ export const SITUATIONS = {
   neutro: "Neutro",
   pregunta_precios: "Pregunta precios",
   mas_adelante: "Pide más adelante",
+  recontactar_vacaciones: "Recontactar · Vacaciones",
+  recontactar_mas_adelante: "Recontactar · Más adelante",
   derivo: "Derivó",
   rechazo: "Rechazo",
   no_contactar: "No contactar",
@@ -114,6 +116,10 @@ export function outsideHours(group: Group, now: Date): string | null {
 
 /** Qué toca con esta persona ahora, y por qué no se puede si no se puede (habita.: blockReason). */
 export function planFor(p: PlanInput, group: Group, now: Date): Plan {
+  // A request to recontact is a pause, not permission to run the normal cadence.
+  // Rules can be configured separately, but never send immediately on classification.
+  if (p.situation === "recontactar_vacaciones" || p.situation === "recontactar_mas_adelante")
+    return { pending: false, actionReason: "Recontacto pendiente de programación.", dueAt: null, blocked: null };
   if (CLOSED_SITUATIONS.includes(p.situation)) return { pending: false, actionReason: SITUATIONS[p.situation], dueAt: null, blocked: null };
   if (p.sentThisVersion) return { pending: false, actionReason: "Ya se mandó el mensaje de esta etapa: espera que avance o responda.", dueAt: null, blocked: null };
   if (TOUCH_STAGES.includes(p.stage) && p.touches >= 3 && group !== "respuestas")

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPriority, currentSituation, derivedSituation, groupOf, outsideHours, planFor, type PlanInput } from "./followup-plan";
+import { byPriority, currentSituation, derivedSituation, groupOf, outsideHours, planFor, isSituation, type PlanInput } from "./followup-plan";
 
 // Las reglas de la cola de Follow-up (traídas de habita.): qué toca, qué la bloquea y en qué orden.
 const TUE_11 = new Date("2026-11-10T14:00:00Z");
@@ -44,5 +44,29 @@ describe("cola de Follow-up", () => {
       { id: "a", priority: "alta", group: "respuestas", rank: 3, since: "2026-11-09", ads: false },
     ] as const;
     expect([...q].sort(byPriority).map((x) => x.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+
+describe("Recontacto como situación, sin avance de etapa ni envíos automáticos", () => {
+  it("pausa la cadencia normal desde Saludado y en etapas posteriores", () => {
+    for (const situation of ["recontactar_vacaciones", "recontactar_mas_adelante"] as const) {
+      for (const stage of ["saludo-sin-demo", "demo-sin-abrir", "cuenta-sin-actividad"] as const) {
+        const result = planFor({ ...base, stage, situation }, "seguimientos", TUE_11);
+        expect(result.pending).toBe(false);
+        expect(result.actionReason).toContain("Recontacto");
+      }
+    }
+  });
+});
+
+describe("recontactar sin adelantar mensajes", () => {
+  it("reconoce ambos motivos y conserva el estado manual", () => {
+    for (const situation of ["recontactar_vacaciones", "recontactar_mas_adelante"] as const) {
+      expect(isSituation(situation)).toBe(true);
+      expect(currentSituation("sin_respuesta", { situation, step: 0 }, 0)).toMatchObject({ situation, manual: true });
+      expect(planFor({ ...base, stage: "saludo-sin-demo", situation }, "seguimientos", TUE_11))
+        .toMatchObject({ pending: false, dueAt: null });
+    }
   });
 });
