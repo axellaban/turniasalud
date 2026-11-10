@@ -46,3 +46,16 @@ describe("cola de Follow-up", () => {
     expect([...q].sort(byPriority).map((x) => x.id)).toEqual(["a", "b", "c"]);
   });
 });
+
+
+describe("Recontacto como situación, sin avance de etapa ni envíos automáticos", () => {
+  it("pausa la cadencia normal desde Saludado y en etapas posteriores", () => {
+    for (const situation of ["recontactar_vacaciones", "recontactar_mas_adelante"] as const) {
+      for (const stage of ["saludo-sin-demo", "demo-sin-abrir", "cuenta-sin-uso"] as const) {
+        const result = planFor({ ...base, stage, situation }, "seguimientos", TUE_11);
+        expect(result.pending).toBe(false);
+        expect(result.actionReason).toContain("Recontacto");
+      }
+    }
+  });
+});
