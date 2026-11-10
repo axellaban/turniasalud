@@ -236,6 +236,16 @@ export async function followupSnapshot(now = new Date()) {
     if ((b.stepNow.get(e.outreach_id) ?? -1) > e.from_step) cur.conversions++;
     byActor.set(k, cur);
   }
+  // Mostrar en Chapa el texto literal de la respuesta entrante, como en la bandeja de Habita.
+  // La auditoría es la fuente de verdad y la lectura no crea ni modifica mensajes.
+  const latestReplyRows = await sql<Array<{ outreach_id: string; new_value: string | null; created_at: string }>>`
+    select distinct on (outreach_id) outreach_id, new_value, created_at
+      from sales_followup_audit
+     where subject = 'reply'
+     order by outreach_id, created_at desc
+     limit 5000
+  `.catch(() => []);
+  const latestReply = new Map(latestReplyRows.map((row) => [row.outreach_id, row]));
   const changes = await sql<Array<{ outreach_id: string | null; subject: string; new_value: string | null; actor: string | null; created_at: string }>>`
     select outreach_id, subject, new_value, actor, created_at from sales_followup_audit order by created_at desc limit 20`;
   return {
@@ -254,7 +264,14 @@ export async function followupSnapshot(now = new Date()) {
     queue,
     scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))),
     blocked: all.filter((q) => q.action && q.blocked).sort(byPriority),
-    inbox: queue.filter((q) => q.group === "respuestas"),
+    // Igual que en Habita: la bandeja existe incluso si un horario bloquea el próximo envío.
+    inbox: all.filter((q) => q.group === "respuestas" && q.action && !q.snoozedUntil).map((q) => ({
+      ...q,
+      latestReply: latestReply.get(q.id)?.new_value ?? q.situationNote ?? "",
+      latestReplyAt: latestReply.get(q.id)?.created_at ?? q.lastContactAt ?? null,
+    })),
+    noInteresados: all.filter((q) => q.situation === "rechazo" && !q.action),
+
     funnel,
     timing,
     stages: FOLLOWUP_STAGES.map((s) => {
