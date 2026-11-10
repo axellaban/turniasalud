@@ -16,6 +16,7 @@ import {
   type Row,
 } from "./followup";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
+import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation } from "./followup-catalog";
 import {
   CLAIM_SECONDS,
   CLOSED_SITUATIONS,
@@ -210,6 +211,14 @@ const median = (xs: number[]) => {
 export async function followupSnapshot(now = new Date()) {
   const b = await board(now);
   const all = [...b.items.values()];
+  const catalog = await commercialCatalog();
+  const stageFor = (technical: string) => TURNIA_COMMERCIAL.find(s => (s.technical as readonly string[]).includes(technical))?.key ?? "";
+  const customFor = (q: QueueItem) => catalog.states.filter(s => s.active && s.source === "product" && s.product_stage === q.stage && s.commercial_stage === stageFor(q.stage)).map(s => s.key);
+  const decorate = (q: QueueItem) => ({
+    ...q,
+    productSituations: customFor(q),
+    catalogSituation: catalog.states.find(s => s.active && s.source !== "product" && s.maps_to === q.situation && s.commercial_stage === stageFor(q.stage))?.key ?? null,
+  });
   const live = now.toISOString();
   const queue = all.filter(ready).sort(byPriority);
   const counted = b.people.filter((r) => placeOf(r).stage || placeOf(r).step >= 0);
@@ -250,6 +259,9 @@ export async function followupSnapshot(now = new Date()) {
     select outreach_id, subject, new_value, actor, created_at from sales_followup_audit order by created_at desc limit 20`;
   return {
     labels: { situations: SITUATIONS, groups: GROUP_LABEL },
+    catalog: { ...catalog, stages: catalog.stages.map(s => ({
+      ...s, waiting: all.filter(q => q.stage === s.technical_stage && q.situation === s.entry_situation).length,
+    })) },
     summary: {
       ready: queue.filter((q) => !(q.claim && q.claim.until > live)).length,
       replies: all.filter((q) => ready(q) && q.group === "respuestas").length,
@@ -261,12 +273,12 @@ export async function followupSnapshot(now = new Date()) {
       newToday: b.newToday,
       cap: b.cap,
     },
-    queue,
-    scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))),
-    blocked: all.filter((q) => q.action && q.blocked).sort(byPriority),
+    queue: queue.map(decorate),
+    scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))).map(decorate),
+    blocked: all.filter((q) => q.action && q.blocked).sort(byPriority).map(decorate),
     // Igual que en Habita: la bandeja existe incluso si un horario bloquea el próximo envío.
     inbox: all.filter((q) => q.group === "respuestas" && q.action && !q.snoozedUntil).map((q) => ({
-      ...q,
+      ...decorate(q),
       latestReply: latestReply.get(q.id)?.new_value ?? q.situationNote ?? "",
       latestReplyAt: latestReply.get(q.id)?.created_at ?? q.lastContactAt ?? null,
     })),
@@ -566,6 +578,12 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return createFollowupVersion((b.valores as Record<string, unknown>) ?? {});
     case "version-status":
       return setFollowupVersionStatus(b.id, b.estado);
+    case "stage-create":
+      return createCommercialStage((b.valores as Record<string, unknown>) ?? {});
+    case "state-save":
+      return saveCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
+    case "state-delete":
+      return deleteCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
     case "version-update":
     case "rule-save":
       throw new FollowupError("En Turnia las versiones no se editan (se crea una nueva) y las esperas siguen la cadencia de Prospección.");
