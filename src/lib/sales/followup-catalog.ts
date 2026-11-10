@@ -26,7 +26,7 @@ export type CustomState = {
   source: "whatsapp" | "manual" | "product"; product_stage: string | null;
   maps_to: string | null; active: boolean;
 };
-export type Override = { commercial_stage: string; key: string; label: string; description: string; examples: string; removed: boolean };
+export type Override = { commercial_stage: string; key: string; label: string; description: string; examples: string; removed: boolean; enabled: boolean };
 
 const txt = (v: unknown) => typeof v === "string" ? v.trim() : "";
 const isCustom = (v: unknown) => /^custom_[a-z0-9_]{3,60}$/.test(txt(v));
@@ -44,7 +44,7 @@ export async function commercialCatalog() {
         from sales_followup_commercial_stages order by created_at asc limit 200`,
       sql<CustomState[]>`select key,label,description,examples,commercial_stage,source,product_stage,maps_to,active
         from sales_followup_state_catalog where removed_at is null order by created_at asc limit 500`,
-      sql<Override[]>`select commercial_stage,key,label,description,examples,removed
+      sql<Override[]>`select commercial_stage,key,label,description,examples,removed,enabled
         from sales_followup_situation_overrides order by commercial_stage,key limit 1000`,
     ]);
   } catch {
@@ -119,6 +119,34 @@ export async function saveCommercialSituation(values: Record<string, unknown>, a
     if (!rows.length) fail("La situación ya no existe en esta etapa.");
   }
   return { key };
+}
+
+/** Habilitar una clasificación no crea acciones nuevas ni reactiva bajas permanentes. */
+export async function toggleCommercialSituation(values: Record<string, unknown>, actor: string) {
+  const stage=txt(values.commercial_stage),key=txt(values.key),enabled=values.enabled;
+  if(typeof enabled!=="boolean")fail("La situación debe indicar si queda habilitada o deshabilitada.");
+  const catalog=await commercialCatalog();
+  if(!catalog.available)fail("Primero aplicá la migración del catálogo de Turnia.");
+  if(!validCommercial(stage,catalog.stages))fail("Etapa comercial desconocida.");
+  if(isSituation(key)){
+    if(CLOSED_SITUATIONS.includes(key as keyof typeof SITUATIONS) && key!=="rechazo" && !enabled)
+      fail("Las solicitudes de no contactar deben permanecer habilitadas y visibles.");
+    await sql`insert into sales_followup_situation_overrides
+      (commercial_stage,key,label,description,examples,removed,enabled,updated_by,updated_at)
+      values (${stage},${key},${SITUATIONS[key as keyof typeof SITUATIONS]},'','',false,${enabled},${actor},now())
+      on conflict (commercial_stage,key) do update set
+      removed=false,enabled=excluded.enabled,updated_by=excluded.updated_by,updated_at=now()`;
+  }else{
+    if(!isCustom(key))fail("Situación personalizada desconocida.");
+    const state=catalog.states.find(s=>s.key===key&&s.commercial_stage===stage);
+    if(!state)fail("La situación no pertenece a esta etapa.");
+    if(enabled&&!state.maps_to&&!state.product_stage)
+      fail("Elegí primero una equivalencia o condición de producto.");
+    await sql`update sales_followup_state_catalog
+      set active=${enabled},updated_by=${actor},updated_at=now()
+      where commercial_stage=${stage} and key=${key} and removed_at is null`;
+  }
+  return {key,enabled};
 }
 
 export async function deleteCommercialSituation(values: Record<string, unknown>, actor: string) {
