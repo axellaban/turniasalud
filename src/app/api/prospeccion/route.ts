@@ -7,7 +7,7 @@ import { FollowupError } from "@/lib/sales/followup";
 import { FollowupConflict, followupSnapshot, runFollowupOp } from "@/lib/sales/followup-queue";
 import { parseOutreachImport } from "@/lib/sales/outreach-import";
 import { manualWhatsappSenders, setVoiceSender, voiceSenderPhones } from "@/lib/sales/voice-outreach";
-import { lastWhatsappSync, syncWhatsappReplies, whatsappInbox } from "@/lib/sales/whatsapp-sync";
+import { lastWhatsappSync, searchWhatsappChats, syncWhatsappReplies, whatsappInbox } from "@/lib/sales/whatsapp-sync";
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABEL,
@@ -61,6 +61,9 @@ export const maxDuration = 300;
 //   POST { followup: { op: "whatsapp-sync" }, by }  lee los chats de las dos líneas de WAHA de la prospección
 //                                y registra las respuestas nuevas (src/lib/sales/whatsapp-sync.ts). Chapa lo
 //                                dispara una vez por día; si se pide antes de 10 minutos, devuelve la última.
+//   POST { followup: { op: "whatsapp-search", q }, by }  busca en el historial de las dos líneas (los últimos
+//                                100 mensajes de cada chat) lo que escribieron las personas con alguna de las
+//                                palabras de q («precio costo cuanto»). Solo lee: { search: { terms, lines, matches } }.
 //   POST { import: { csv, overwrite } }  importa una lista como Panel → Prospección → Importar lista (las
 //                                mismas columnas y reglas; overwrite = «Reemplazar los datos de los que ya
 //                                están»). Devuelve cuántas personas nuevas y cuántas actualizadas.
@@ -418,6 +421,10 @@ async function followupOp(body: { followup?: unknown; by?: unknown }) {
   const f = body.followup && typeof body.followup === "object" ? (body.followup as Record<string, unknown>) : null;
   if (!f) return NextResponse.json({ error: "Falta la operación." }, { status: 400 });
   const actor = (typeof body.by === "string" ? body.by.trim().slice(0, 80) : "") || "Chapa Labs";
+  if (f.op === "whatsapp-search") {
+    if (typeof f.q !== "string" || !f.q.trim()) return NextResponse.json({ error: "Falta qué buscar." }, { status: 400 });
+    return NextResponse.json({ search: await searchWhatsappChats(f.q) }, { headers: NO_STORE });
+  }
   if (f.op === "whatsapp-sync") {
     try {
       const report = await syncWhatsappReplies(actor);

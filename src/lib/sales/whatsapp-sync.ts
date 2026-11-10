@@ -382,3 +382,63 @@ export async function whatsappInbox(): Promise<{ readAt: string | null; byCode: 
   for (const m of manual) entry(m.code).manual = { at: m.at, text: m.text.slice(0, 2000), by: m.by };
   return { readAt: last[0]?.at ?? null, byCode };
 }
+
+/** Lo que encontró la búsqueda en el historial: un mensaje de la persona (no las respuestas automáticas). */
+export type ChatMatch = { code: string; name: string; line: string; at: string; text: string };
+export type ChatSearch = {
+  query: string;
+  terms: string[];
+  lines: Array<{ line: string; status: LineReport["status"]; chats?: number; read?: number; problem?: string }>;
+  matches: ChatMatch[];
+};
+
+const HISTORY = 100;
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+/** Las palabras de la búsqueda (sin tildes ni mayúsculas; separadas por espacios, comas o «|»). */
+export const searchTerms = (query: string) =>
+  [...new Set(fold(query.slice(0, 200)).split(/[\s,|]+/).filter((t) => t.length >= 3))].slice(0, 12);
+
+/**
+ * Busca en el historial de las dos líneas (los últimos 100 mensajes de cada chat donde le escribimos)
+ * lo que escribió la persona con alguna de las palabras, por ejemplo «precio costo cuanto». La lectura
+ * diaria solo guarda el último mensaje de cada chat; esto lee el resto. Solo lee: no guarda ni cambia nada.
+ */
+export async function searchWhatsappChats(query: string): Promise<ChatSearch> {
+  const terms = searchTerms(query);
+  const out: ChatSearch = { query: query.slice(0, 200), terms, lines: [], matches: [] };
+  if (!terms.length) return out;
+  const deadline = Date.now() + BUDGET_MS;
+  const local = (s: number) => new Date(s * 1000).toLocaleString("sv-SE", { timeZone: DEFAULT_TZ }).slice(0, 16);
+  for (const { ending, label } of lines()) {
+    const status = await voiceChannelStatus(ending);
+    if (!status.configured) { out.lines.push({ line: label, status: "sin_configurar" }); continue; }
+    if (!status.ok) { out.lines.push({ line: label, status: "error", problem: status.problem ?? "WAHA no está listo." }); continue; }
+    const config = prospectWaha(ending)!;
+    const session = encodeURIComponent(config.session);
+    const chats = await sql<Array<{ code: string; name: string; phone: string; chat_id: string }>>`
+      select o.code, o.name, o.phone, c.chat_id from sales_whatsapp_chats c join sales_outreach o on o.id = c.outreach_id
+      where c.sender_phone = ${config.phone!} and c.chat_id is not null and c.sent > 0
+      order by o.code`;
+    const read = await inParallel(chats, PARALLEL, async (c) => {
+      const chatPhone = phoneFromChatId(c.chat_id);
+      if (chatPhone && chatPhone !== c.phone) return; // el chat de un número viejo
+      let messages: Message[];
+      try {
+        const res = await waha(config, `/api/${session}/chats/${encodeURIComponent(c.chat_id)}/messages?limit=${HISTORY}&downloadMedia=false`, { signal: AbortSignal.timeout(15000) });
+        messages = (await res.json()) as Message[];
+      } catch (e) {
+        console.error("búsqueda en un chat de la prospección", e instanceof Error ? e.message.slice(0, 160) : e);
+        return;
+      }
+      for (const m of Array.isArray(messages) ? messages : []) {
+        const text = m.fromMe ? "" : messageText(m);
+        if (!text || isAutomaticReply(text)) continue;
+        const folded = fold(text);
+        if (terms.some((t) => folded.includes(t))) out.matches.push({ code: c.code, name: c.name, line: label, at: local(seconds(m.timestamp)), text });
+      }
+    }, deadline);
+    out.lines.push({ line: label, status: "ok", chats: chats.length, read });
+  }
+  out.matches.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return out;
+}
