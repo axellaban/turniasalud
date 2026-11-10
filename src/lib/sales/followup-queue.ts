@@ -471,8 +471,6 @@ const STATUS_FOR: Partial<Record<Situation, OutreachStatus>> = {
   neutro: "respondio",
   pregunta_precios: "respondio",
   mas_adelante: "respondio",
-  recontactar_vacaciones: "respondio",
-  recontactar_mas_adelante: "respondio",
   derivo: "respondio",
   rechazo: "no_interesa",
   no_contactar: "baja",
