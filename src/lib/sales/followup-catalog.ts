@@ -123,8 +123,9 @@ export async function saveCommercialSituation(values: Record<string, unknown>, a
 
 /** Habilitar una clasificación no crea acciones nuevas ni reactiva bajas permanentes. */
 export async function toggleCommercialSituation(values: Record<string, unknown>, actor: string) {
-  const stage=txt(values.commercial_stage),key=txt(values.key),enabled=values.enabled;
-  if(typeof enabled!=="boolean")fail("La situación debe indicar si queda habilitada o deshabilitada.");
+  const stage=txt(values.commercial_stage),key=txt(values.key);
+  if(typeof values.enabled!=="boolean")throw new FollowupError("La situación debe indicar si queda habilitada o deshabilitada.");
+  const enabled: boolean=values.enabled;
   const catalog=await commercialCatalog();
   if(!catalog.available)fail("Primero aplicá la migración del catálogo de Turnia.");
   if(!validCommercial(stage,catalog.stages))fail("Etapa comercial desconocida.");
@@ -139,7 +140,7 @@ export async function toggleCommercialSituation(values: Record<string, unknown>,
   }else{
     if(!isCustom(key))fail("Situación personalizada desconocida.");
     const state=catalog.states.find(s=>s.key===key&&s.commercial_stage===stage);
-    if(!state)fail("La situación no pertenece a esta etapa.");
+    if(!state)throw new FollowupError("La situación no pertenece a esta etapa.");
     if(enabled&&!state.maps_to&&!state.product_stage)
       fail("Elegí primero una equivalencia o condición de producto.");
     await sql`update sales_followup_state_catalog
