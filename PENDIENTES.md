@@ -1,5 +1,19 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Paridad con Commercial OS de Chapa Labs (09/11/2026)
+
+La nueva UI de Chapa Labs se comparte con habita. y Turnia: General, Cola, Respuestas, Embudo por etapas, Prospectos, Reglas y Mensajes, Resultados y Etapas/Situaciones. **Turnia mantiene su cola y su embudo existentes** con confirmación de envío, horarios y secuencia a recepción; no hay cambio en sus datos ni cadencias por este rediseño.
+
+**Pendiente para paridad funcional real (no fingir editor):**
+1. Exponer `catalog: { stages, states, overrides, available }` en `GET /api/prospeccion?vista=followup`, adaptado a sus etapas `FOLLOWUP_STAGES`, sin copiar las claves de habita.
+2. Persistencia y validación de situaciones custom por etapa, manteniendo estados de baja y clasificación de respuestas automáticas.
+3. Reglas editables, orden y condiciones, con equivalentes seguros de `rule-save` y versiones editables `version-update`. No usar la secuencia de habita.: Turnia conserva saludo sin link, Paso 2 permiso, 3 mensajes, límites y horario.
+4. Tests con Postgres real y reconciliación con Turnia Panel → Prospección y PostHog antes de habilitar edición en Chapa.
+5. Revisar autenticación del operador y las dos líneas WAHA, evitando envíos repetidos en sesiones simultáneas.
+
+El catálogo en Chapa se muestra por ahora en modo lectura para Turnia, con enlace al editor nativo. La paridad visual en Chapa sí está disponible; la paridad de API **todavía no**.
+
+
 Actualizado: 08/11/2026 (Argentina). El centro comercial (Chapa Labs + Turnia + habita.) y la prospección tienen su traspaso en [`CENTRO_COMERCIAL.md`](CENTRO_COMERCIAL.md). Este archivo junta, en un solo lugar y por prioridad, todo lo que queda. El detalle de cada tema está en los documentos enlazados. No contiene credenciales.
 
 ## Antes de empezar
