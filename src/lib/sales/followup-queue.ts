@@ -471,6 +471,8 @@ const STATUS_FOR: Partial<Record<Situation, OutreachStatus>> = {
   neutro: "respondio",
   pregunta_precios: "respondio",
   mas_adelante: "respondio",
+  recontactar_vacaciones: "respondio",
+  recontactar_mas_adelante: "respondio",
   derivo: "respondio",
   rechazo: "no_interesa",
   no_contactar: "baja",
@@ -484,7 +486,9 @@ export async function setSituation(id: string, raw: unknown, note: unknown, acto
   const [person] = await rows(id);
   if (!person) throw new FollowupError("No encontramos ese contacto.");
   const text = typeof note === "string" ? note.trim().slice(0, 2000) : "";
-  const { step } = placeOf(person);
+  const { step, stage } = placeOf(person);
+  if ((raw === "recontactar_vacaciones" || raw === "recontactar_mas_adelante") && stage === "sin-saludo")
+    throw new FollowupError("Recontactar se habilita desde Saludado/Contactado en adelante.");
   await saveState(id, { situation: raw, situation_step: step, situation_note: text || null }, actor);
   await audit(id, "situation", `${raw}${text ? ` · «${text.slice(0, 200)}»` : ""}`, actor);
   let warning: string | null = null;
