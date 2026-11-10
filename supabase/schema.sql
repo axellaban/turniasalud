@@ -1673,6 +1673,22 @@ create table if not exists sales_followup_situation_overrides (
 );
 alter table sales_followup_situation_overrides enable row level security;
 
+-- Editable, restrictive-only overlays on Turnia's canonical Follow-up cadence.
+-- Existing planFor remains the maximum-send authority; these controls can only pause/delay/filter.
+create table if not exists sales_followup_rule_controls (
+  stage text primary key check (stage in ('sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar','converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  name text not null default '' check (length(name)<=120),
+  enabled boolean not null default true,
+  situations text[] not null default '{}'::text[] check (situations <@ array['sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo']::text[]),
+  after_hours integer not null default 0 check (after_hours between 0 and 720),
+  hours_from integer not null default 8 check (hours_from between 0 and 23),
+  hours_to integer not null default 21 check (hours_to between 0 and 23),
+  days integer[] not null default array[1,2,3,4,5,6] check (days <@ array[1,2,3,4,5,6] and cardinality(days) > 0),
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+alter table sales_followup_rule_controls enable row level security;
+
 create table if not exists sales_followup_versions (
   id uuid primary key default gen_random_uuid(),
   stage text not null check (stage in ('sin-saludo', 'saludo-sin-demo', 'demo-sin-abrir', 'abrio-sin-conversar', 'converso-sin-cuenta', 'cuenta-sin-actividad', 'activa-sin-pago')),
