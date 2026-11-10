@@ -1260,409 +1260,54 @@ alter table chat_usage enable row level security;
 -- (A/B 50/50). Cada ejecución guarda el paso del embudo en que estaba la persona: convierte si
 -- después pasó de ese paso. Ver PLAN_PROSPECCION.md → «Follow-up».
 -- ---------------------------------------------------------------------------
--- Commercial OS: catálogo editable de etapas y situaciones de Turnia.
--- Datos de configuración únicamente. No altera el motor de cadencias ni las bajas.
+-- Commercial OS / Turnia: datos de configuración aditivos, sin tocar la cadencia ni los envíos.
 create table if not exists sales_followup_commercial_stages (
-  key text primary key check (key ~ '^etapa_[a-z0-9-]{8,60}
-  id uuid primary key default gen_random_uuid(),
-  stage text not null check (stage in ('sin-saludo', 'saludo-sin-demo', 'demo-sin-abrir', 'abrio-sin-conversar', 'converso-sin-cuenta', 'cuenta-sin-actividad', 'activa-sin-pago')),
-  version integer not null check (version > 0),
-  channel text not null check (channel in ('whatsapp', 'tarea')),
-  trigger_label text not null default '' check (length(trigger_label) <= 120),
-  body text not null check (length(btrim(body)) between 1 and 1500),
-  ctas text[] not null default '{}' check (ctas <@ array['whatsapp', 'demo', 'panel', 'copy']::text[]),
-  status text not null default 'archived' check (status in ('active', 'test', 'archived')),
-  created_at timestamptz not null default now(),
-  status_at timestamptz not null default now(),
-  unique (stage, version)
-);
-create unique index if not exists sales_followup_versions_one_active on sales_followup_versions (stage) where status = 'active';
-create unique index if not exists sales_followup_versions_one_test on sales_followup_versions (stage) where status = 'test';
-alter table sales_followup_versions enable row level security;
-
-create or replace function sales_followup_version_frozen() returns trigger language plpgsql as $$
-begin
-  if tg_op = 'DELETE' then raise exception 'FOLLOWUP_VERSION_FROZEN'; end if;
-  if new.stage is distinct from old.stage or new.version is distinct from old.version or new.channel is distinct from old.channel
-     or new.trigger_label is distinct from old.trigger_label or new.body is distinct from old.body or new.ctas is distinct from old.ctas
-     or new.created_at is distinct from old.created_at then
-    raise exception 'FOLLOWUP_VERSION_FROZEN';
-  end if;
-  return new;
-end $$;
-drop trigger if exists sales_followup_versions_frozen on sales_followup_versions;
-create trigger sales_followup_versions_frozen before update or delete on sales_followup_versions
-  for each row execute function sales_followup_version_frozen();
-
-create table if not exists sales_followup_executions (
-  id uuid primary key default gen_random_uuid(),
-  version_id uuid not null references sales_followup_versions(id) on delete restrict,
-  stage text not null,
-  outreach_id uuid not null references sales_outreach(id) on delete cascade,
-  -- El paso del embudo al ejecutarla: -1 sin saludar, 0 saludado, 1 demo enviada, 2 la abrió,
-  -- 3 conversó con Sofi, 4 cuenta creada, 5 cuenta activa, 6 cliente pago.
-  from_step smallint not null check (from_step between -1 and 6),
-  status text not null check (status in ('opened', 'sent', 'failed')),
-  reason text check (reason is null or length(reason) <= 300),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  sent_at timestamptz,
-  unique (version_id, outreach_id)
-);
-create index if not exists sales_followup_executions_outreach_idx on sales_followup_executions (outreach_id);
-alter table sales_followup_executions enable row level security;
-
--- La V1 de cada etapa, activa: las tres primeras son los mensajes de fábrica de Prospección.
-insert into sales_followup_versions (stage, version, channel, trigger_label, body, ctas, status) values
-  ('sin-saludo', 1, 'whatsapp', 'Al importarlo', '¡Buenas! ¿Hablo con {saludo}?', '{whatsapp,copy}', 'active'),
-  ('saludo-sin-demo', 1, 'whatsapp', 'Cuando responde el saludo',
-   E'Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia.\nTe armé una demo con tu consultorio: Sofi contesta el WhatsApp cuando estás atendiendo o fuera de horario, responde las consultas y da el turno.\nProbala en un minuto, como si fueras un paciente: {link}\nSi te interesa, te la muestro en 15 minutos. Y si no, avisame y no te escribo más.',
-   '{whatsapp,demo,copy}', 'active'),
-  ('demo-sin-abrir', 1, 'whatsapp', '2 días hábiles sin abrirla',
-   E'Hola {saludo}, te escribo de nuevo por si quedó tapado entre mensajes.\nSe viene la temporada y con los turistas aumentan las consultas por WhatsApp a cualquier hora. Sofi las contesta al instante y deja el turno dado.\nLa demo con tu consultorio sigue acá: {link}\n¿Te la muestro esta semana? Son 15 minutos.',
-   '{whatsapp,demo,copy}', 'active'),
-  ('abrio-sin-conversar', 1, 'whatsapp', '1 día después de abrirla',
-   E'Hola {saludo}, ¿llegaste a hablar con Sofi? Tocá «Probar la demo» y escribile como si fueras un paciente: en un minuto ves cómo da el turno.\n{link}',
-   '{whatsapp,demo,copy}', 'active'),
-  ('converso-sin-cuenta', 1, 'whatsapp', '1 día después de conversar',
-   E'Hola {saludo}, ¿qué te pareció Sofi?\nSi te sirve, la dejamos andando con tus horarios y tus tratamientos. Te muestro cómo en 15 minutos, ¿te queda bien esta semana?',
-   '{whatsapp,copy}', 'active'),
-  ('cuenta-sin-actividad', 1, 'whatsapp', 'Esta semana sin pacientes',
-   E'Hola {saludo}, tu panel de Turnia ya está listo: {panel}\nCargá tus horarios y conectá el WhatsApp del consultorio, y Sofi empieza a dar turnos. ¿Lo vemos juntos en 15 minutos?',
-   '{whatsapp,panel,copy}', 'active'),
-  ('activa-sin-pago', 1, 'whatsapp', 'Con la cuenta activa',
-   E'Hola {saludo}, Sofi ya está dando turnos en tu consultorio. ¿Te paso cómo seguir con el plan para que no se corte?',
-   '{whatsapp,copy}', 'active')
-on conflict (stage, version) do nothing;
-
--- ---------------------------------------------------------------------------
--- Follow-up como en habita. (08/11): la cola que se opera desde Chapa Labs. Por persona: la
--- situación de la conversación (vale mientras siga en el mismo paso del embudo), la prioridad a
--- mano, la reprogramación y el responsable; las tomas de 10 minutos para que dos personas no le
--- escriban a la vez; y quién hizo cada cambio. Ver src/lib/sales/followup-queue.ts.
--- ---------------------------------------------------------------------------
-alter table sales_followup_executions add column if not exists actor text check (actor is null or length(actor) <= 80);
-
-create table if not exists sales_followup_state (
-  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
-  situation text check (situation is null or situation in ('sin_respuesta', 'confirmo_numero', 'interesado', 'neutro', 'pregunta_precios', 'mas_adelante', 'derivo', 'rechazo', 'no_contactar', 'sin_whatsapp', 'numero_incorrecto')),
-  situation_step smallint,
-  situation_note text check (situation_note is null or length(situation_note) <= 2000),
-  situation_at timestamptz,
-  priority text check (priority is null or priority in ('alta', 'media', 'baja')),
-  snooze_until timestamptz,
-  snooze_reason text check (snooze_reason is null or length(snooze_reason) <= 300),
-  owner text check (owner is null or length(owner) <= 80),
-  updated_by text,
-  updated_at timestamptz not null default now()
-);
-alter table sales_followup_state enable row level security;
-
-create table if not exists sales_followup_claims (
-  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
-  actor text not null check (length(actor) between 1 and 80),
-  stage text not null,
-  claimed_at timestamptz not null default now(),
-  locked_until timestamptz not null
-);
-alter table sales_followup_claims enable row level security;
-
-create table if not exists sales_followup_audit (
-  id uuid primary key default gen_random_uuid(),
-  outreach_id uuid references sales_outreach(id) on delete cascade,
-  subject text not null check (subject in ('situation', 'priority', 'snooze', 'owner', 'reply')),
-  new_value text check (new_value is null or length(new_value) <= 2300),
-  actor text,
-  created_at timestamptz not null default now()
-);
-create index if not exists sales_followup_audit_idx on sales_followup_audit (outreach_id, created_at desc);
-alter table sales_followup_audit enable row level security;
-
--- ---------------------------------------------------------------------------
--- Lectura diaria de WhatsApp (08/11): una vez por día se leen los chats de las dos líneas de la
--- prospección (WAHA_PROSPECCION y WAHA_PROSPECCION_5483) y se anota, por persona y línea, qué se le
--- mandó y qué contestó. Una respuesta nueva pasa a «Respuestas para atender». Solo lee: no manda nada.
--- ---------------------------------------------------------------------------
-create table if not exists sales_whatsapp_chats (
-  outreach_id uuid not null references sales_outreach(id) on delete cascade,
-  sender_phone text not null,
-  chat_id text not null,
-  sent int not null default 0,
-  received int not null default 0,
-  first_sent_at timestamptz,
-  last_sent_at timestamptz,
-  replied_at timestamptz,
-  last_received_at timestamptz,
-  last_received_text text check (last_received_text is null or length(last_received_text) <= 2000),
-  last_from_me boolean,
-  synced_at timestamptz not null default now(),
-  primary key (outreach_id, sender_phone)
-);
-alter table sales_whatsapp_chats enable row level security;
-
-create table if not exists sales_whatsapp_syncs (
-  id uuid primary key default gen_random_uuid(),
-  started_at timestamptz not null default now(),
-  finished_at timestamptz,
-  trigger text not null,
-  report jsonb not null default '{}'::jsonb
-);
-create index if not exists sales_whatsapp_syncs_idx on sales_whatsapp_syncs (started_at desc);
-alter table sales_whatsapp_syncs enable row level security;
-
--- ---------------------------------------------------------------------------
--- La secuencia de WhatsApp (09/11): entre el saludo y la demo va el Paso 2, el gancho que pide
--- permiso para pasar el link. Como el saludo, no es uno de los tres mensajes: queda en la historia
--- («permiso») y acá, cuándo salió. Todos los mensajes le hablan a la recepción del consultorio.
--- Ver PLAN_PROSPECCION.md → «La secuencia de WhatsApp».
--- ---------------------------------------------------------------------------
-alter table sales_outreach add column if not exists permission_at timestamptz;
-
--- Follow-up: los textos de la secuencia, a la recepción. Cada uno entra una sola vez como la versión
--- siguiente de su etapa y queda activa (la que estaba y la que estaba a prueba se archivan); si después
--- se cambia desde el panel, no se vuelve a pisar.
-do $$
-declare
-  r record;
-  n integer;
-begin
-  for r in select * from (values
-    ('sin-saludo', 'Paso 1 · al importarlo', 'Buenas! Hablo con la recepción de {destinatario}?', '{whatsapp,copy}'),
-    ('saludo-sin-demo', 'Paso 2 · cuando responde el saludo',
-     E'Qué tal! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\nSirve para que conteste sola las preguntas repetidas de obras sociales, precios y horarios fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\nSeguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?',
-     '{whatsapp,copy}'),
-    ('demo-sin-abrir', 'Seguimiento 2 · a las 24 h del link', 'Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!', '{whatsapp,copy}'),
-    ('abrio-sin-conversar', 'Seguimiento 2 · la abrió sin conversar', 'Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!', '{whatsapp,demo,copy}'),
-    -- Después de conversar con Sofi falta llegar a los doctores: el Seguimiento 3, dos mensajes (el segundo, para reenviar).
-    ('converso-sin-cuenta', 'Seguimiento 3 · para reenviar a los doctores',
-     E'Buenas! Para no robarte más tiempo a vos en recepción, te dejo acá abajo un resumen cortito listo por si querés tocar "Reenviar" y pasárselo directo al WhatsApp de los doctores así lo evalúan ellos:\n---\nHola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: {link} . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.',
-     '{whatsapp,demo,copy}')
-  ) as t(stage, trigger_label, body, ctas) loop
-    if not exists (select 1 from sales_followup_versions v where v.stage = r.stage and v.trigger_label = r.trigger_label) then
-      select coalesce(max(version), 0) + 1 into n from sales_followup_versions where stage = r.stage;
-      update sales_followup_versions set status = 'archived', status_at = now() where stage = r.stage and status <> 'archived';
-      insert into sales_followup_versions (stage, version, channel, trigger_label, body, ctas, status)
-      values (r.stage, n, 'whatsapp', r.trigger_label, r.body, r.ctas::text[], 'active');
-    end if;
-  end loop;
-end $$;
-),
+  key text primary key check (key ~ '^etapa_[a-z0-9-]{8,60}$'),
   label text not null check (length(btrim(label)) between 2 and 80),
-  technical_stage text not null check (technical_stage in ('sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar','converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
-  entry_situation text not null check (entry_situation in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+  technical_stage text not null check (technical_stage in (
+    'sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar',
+    'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  entry_situation text not null check (entry_situation in (
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
+    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
   created_at timestamptz not null default now(),
   unique (technical_stage,entry_situation)
 );
 alter table sales_followup_commercial_stages enable row level security;
 
 create table if not exists sales_followup_state_catalog (
-  key text not null check (key ~ '^custom_[a-z0-9_]{3,60}
-  id uuid primary key default gen_random_uuid(),
-  stage text not null check (stage in ('sin-saludo', 'saludo-sin-demo', 'demo-sin-abrir', 'abrio-sin-conversar', 'converso-sin-cuenta', 'cuenta-sin-actividad', 'activa-sin-pago')),
-  version integer not null check (version > 0),
-  channel text not null check (channel in ('whatsapp', 'tarea')),
-  trigger_label text not null default '' check (length(trigger_label) <= 120),
-  body text not null check (length(btrim(body)) between 1 and 1500),
-  ctas text[] not null default '{}' check (ctas <@ array['whatsapp', 'demo', 'panel', 'copy']::text[]),
-  status text not null default 'archived' check (status in ('active', 'test', 'archived')),
-  created_at timestamptz not null default now(),
-  status_at timestamptz not null default now(),
-  unique (stage, version)
-);
-create unique index if not exists sales_followup_versions_one_active on sales_followup_versions (stage) where status = 'active';
-create unique index if not exists sales_followup_versions_one_test on sales_followup_versions (stage) where status = 'test';
-alter table sales_followup_versions enable row level security;
-
-create or replace function sales_followup_version_frozen() returns trigger language plpgsql as $$
-begin
-  if tg_op = 'DELETE' then raise exception 'FOLLOWUP_VERSION_FROZEN'; end if;
-  if new.stage is distinct from old.stage or new.version is distinct from old.version or new.channel is distinct from old.channel
-     or new.trigger_label is distinct from old.trigger_label or new.body is distinct from old.body or new.ctas is distinct from old.ctas
-     or new.created_at is distinct from old.created_at then
-    raise exception 'FOLLOWUP_VERSION_FROZEN';
-  end if;
-  return new;
-end $$;
-drop trigger if exists sales_followup_versions_frozen on sales_followup_versions;
-create trigger sales_followup_versions_frozen before update or delete on sales_followup_versions
-  for each row execute function sales_followup_version_frozen();
-
-create table if not exists sales_followup_executions (
-  id uuid primary key default gen_random_uuid(),
-  version_id uuid not null references sales_followup_versions(id) on delete restrict,
-  stage text not null,
-  outreach_id uuid not null references sales_outreach(id) on delete cascade,
-  -- El paso del embudo al ejecutarla: -1 sin saludar, 0 saludado, 1 demo enviada, 2 la abrió,
-  -- 3 conversó con Sofi, 4 cuenta creada, 5 cuenta activa, 6 cliente pago.
-  from_step smallint not null check (from_step between -1 and 6),
-  status text not null check (status in ('opened', 'sent', 'failed')),
-  reason text check (reason is null or length(reason) <= 300),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  sent_at timestamptz,
-  unique (version_id, outreach_id)
-);
-create index if not exists sales_followup_executions_outreach_idx on sales_followup_executions (outreach_id);
-alter table sales_followup_executions enable row level security;
-
--- La V1 de cada etapa, activa: las tres primeras son los mensajes de fábrica de Prospección.
-insert into sales_followup_versions (stage, version, channel, trigger_label, body, ctas, status) values
-  ('sin-saludo', 1, 'whatsapp', 'Al importarlo', '¡Buenas! ¿Hablo con {saludo}?', '{whatsapp,copy}', 'active'),
-  ('saludo-sin-demo', 1, 'whatsapp', 'Cuando responde el saludo',
-   E'Hola {saludo}, ¿cómo estás? Soy Axel, de Turnia.\nTe armé una demo con tu consultorio: Sofi contesta el WhatsApp cuando estás atendiendo o fuera de horario, responde las consultas y da el turno.\nProbala en un minuto, como si fueras un paciente: {link}\nSi te interesa, te la muestro en 15 minutos. Y si no, avisame y no te escribo más.',
-   '{whatsapp,demo,copy}', 'active'),
-  ('demo-sin-abrir', 1, 'whatsapp', '2 días hábiles sin abrirla',
-   E'Hola {saludo}, te escribo de nuevo por si quedó tapado entre mensajes.\nSe viene la temporada y con los turistas aumentan las consultas por WhatsApp a cualquier hora. Sofi las contesta al instante y deja el turno dado.\nLa demo con tu consultorio sigue acá: {link}\n¿Te la muestro esta semana? Son 15 minutos.',
-   '{whatsapp,demo,copy}', 'active'),
-  ('abrio-sin-conversar', 1, 'whatsapp', '1 día después de abrirla',
-   E'Hola {saludo}, ¿llegaste a hablar con Sofi? Tocá «Probar la demo» y escribile como si fueras un paciente: en un minuto ves cómo da el turno.\n{link}',
-   '{whatsapp,demo,copy}', 'active'),
-  ('converso-sin-cuenta', 1, 'whatsapp', '1 día después de conversar',
-   E'Hola {saludo}, ¿qué te pareció Sofi?\nSi te sirve, la dejamos andando con tus horarios y tus tratamientos. Te muestro cómo en 15 minutos, ¿te queda bien esta semana?',
-   '{whatsapp,copy}', 'active'),
-  ('cuenta-sin-actividad', 1, 'whatsapp', 'Esta semana sin pacientes',
-   E'Hola {saludo}, tu panel de Turnia ya está listo: {panel}\nCargá tus horarios y conectá el WhatsApp del consultorio, y Sofi empieza a dar turnos. ¿Lo vemos juntos en 15 minutos?',
-   '{whatsapp,panel,copy}', 'active'),
-  ('activa-sin-pago', 1, 'whatsapp', 'Con la cuenta activa',
-   E'Hola {saludo}, Sofi ya está dando turnos en tu consultorio. ¿Te paso cómo seguir con el plan para que no se corte?',
-   '{whatsapp,copy}', 'active')
-on conflict (stage, version) do nothing;
-
--- ---------------------------------------------------------------------------
--- Follow-up como en habita. (08/11): la cola que se opera desde Chapa Labs. Por persona: la
--- situación de la conversación (vale mientras siga en el mismo paso del embudo), la prioridad a
--- mano, la reprogramación y el responsable; las tomas de 10 minutos para que dos personas no le
--- escriban a la vez; y quién hizo cada cambio. Ver src/lib/sales/followup-queue.ts.
--- ---------------------------------------------------------------------------
-alter table sales_followup_executions add column if not exists actor text check (actor is null or length(actor) <= 80);
-
-create table if not exists sales_followup_state (
-  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
-  situation text check (situation is null or situation in ('sin_respuesta', 'confirmo_numero', 'interesado', 'neutro', 'pregunta_precios', 'mas_adelante', 'derivo', 'rechazo', 'no_contactar', 'sin_whatsapp', 'numero_incorrecto')),
-  situation_step smallint,
-  situation_note text check (situation_note is null or length(situation_note) <= 2000),
-  situation_at timestamptz,
-  priority text check (priority is null or priority in ('alta', 'media', 'baja')),
-  snooze_until timestamptz,
-  snooze_reason text check (snooze_reason is null or length(snooze_reason) <= 300),
-  owner text check (owner is null or length(owner) <= 80),
-  updated_by text,
-  updated_at timestamptz not null default now()
-);
-alter table sales_followup_state enable row level security;
-
-create table if not exists sales_followup_claims (
-  outreach_id uuid primary key references sales_outreach(id) on delete cascade,
-  actor text not null check (length(actor) between 1 and 80),
-  stage text not null,
-  claimed_at timestamptz not null default now(),
-  locked_until timestamptz not null
-);
-alter table sales_followup_claims enable row level security;
-
-create table if not exists sales_followup_audit (
-  id uuid primary key default gen_random_uuid(),
-  outreach_id uuid references sales_outreach(id) on delete cascade,
-  subject text not null check (subject in ('situation', 'priority', 'snooze', 'owner', 'reply')),
-  new_value text check (new_value is null or length(new_value) <= 2300),
-  actor text,
-  created_at timestamptz not null default now()
-);
-create index if not exists sales_followup_audit_idx on sales_followup_audit (outreach_id, created_at desc);
-alter table sales_followup_audit enable row level security;
-
--- ---------------------------------------------------------------------------
--- Lectura diaria de WhatsApp (08/11): una vez por día se leen los chats de las dos líneas de la
--- prospección (WAHA_PROSPECCION y WAHA_PROSPECCION_5483) y se anota, por persona y línea, qué se le
--- mandó y qué contestó. Una respuesta nueva pasa a «Respuestas para atender». Solo lee: no manda nada.
--- ---------------------------------------------------------------------------
-create table if not exists sales_whatsapp_chats (
-  outreach_id uuid not null references sales_outreach(id) on delete cascade,
-  sender_phone text not null,
-  chat_id text not null,
-  sent int not null default 0,
-  received int not null default 0,
-  first_sent_at timestamptz,
-  last_sent_at timestamptz,
-  replied_at timestamptz,
-  last_received_at timestamptz,
-  last_received_text text check (last_received_text is null or length(last_received_text) <= 2000),
-  last_from_me boolean,
-  synced_at timestamptz not null default now(),
-  primary key (outreach_id, sender_phone)
-);
-alter table sales_whatsapp_chats enable row level security;
-
-create table if not exists sales_whatsapp_syncs (
-  id uuid primary key default gen_random_uuid(),
-  started_at timestamptz not null default now(),
-  finished_at timestamptz,
-  trigger text not null,
-  report jsonb not null default '{}'::jsonb
-);
-create index if not exists sales_whatsapp_syncs_idx on sales_whatsapp_syncs (started_at desc);
-alter table sales_whatsapp_syncs enable row level security;
-
--- ---------------------------------------------------------------------------
--- La secuencia de WhatsApp (09/11): entre el saludo y la demo va el Paso 2, el gancho que pide
--- permiso para pasar el link. Como el saludo, no es uno de los tres mensajes: queda en la historia
--- («permiso») y acá, cuándo salió. Todos los mensajes le hablan a la recepción del consultorio.
--- Ver PLAN_PROSPECCION.md → «La secuencia de WhatsApp».
--- ---------------------------------------------------------------------------
-alter table sales_outreach add column if not exists permission_at timestamptz;
-
--- Follow-up: los textos de la secuencia, a la recepción. Cada uno entra una sola vez como la versión
--- siguiente de su etapa y queda activa (la que estaba y la que estaba a prueba se archivan); si después
--- se cambia desde el panel, no se vuelve a pisar.
-do $$
-declare
-  r record;
-  n integer;
-begin
-  for r in select * from (values
-    ('sin-saludo', 'Paso 1 · al importarlo', 'Buenas! Hablo con la recepción de {destinatario}?', '{whatsapp,copy}'),
-    ('saludo-sin-demo', 'Paso 2 · cuando responde el saludo',
-     E'Qué tal! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\nSirve para que conteste sola las preguntas repetidas de obras sociales, precios y horarios fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\nSeguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?',
-     '{whatsapp,copy}'),
-    ('demo-sin-abrir', 'Seguimiento 2 · a las 24 h del link', 'Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!', '{whatsapp,copy}'),
-    ('abrio-sin-conversar', 'Seguimiento 2 · la abrió sin conversar', 'Buenas! ¿Cómo va? Che, te consulto rápido: ¿pudiste hacerle alguna pregunta difícil al link que te pasé ayer o mostrárselo a los doctores? Avisame si le pifié en alguna obra social así ya lo corrijo!', '{whatsapp,demo,copy}'),
-    -- Después de conversar con Sofi falta llegar a los doctores: el Seguimiento 3, dos mensajes (el segundo, para reenviar).
-    ('converso-sin-cuenta', 'Seguimiento 3 · para reenviar a los doctores',
-     E'Buenas! Para no robarte más tiempo a vos en recepción, te dejo acá abajo un resumen cortito listo por si querés tocar "Reenviar" y pasárselo directo al WhatsApp de los doctores así lo evalúan ellos:\n---\nHola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: {link} . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.',
-     '{whatsapp,demo,copy}')
-  ) as t(stage, trigger_label, body, ctas) loop
-    if not exists (select 1 from sales_followup_versions v where v.stage = r.stage and v.trigger_label = r.trigger_label) then
-      select coalesce(max(version), 0) + 1 into n from sales_followup_versions where stage = r.stage;
-      update sales_followup_versions set status = 'archived', status_at = now() where stage = r.stage and status <> 'archived';
-      insert into sales_followup_versions (stage, version, channel, trigger_label, body, ctas, status)
-      values (r.stage, n, 'whatsapp', r.trigger_label, r.body, r.ctas::text[], 'active');
-    end if;
-  end loop;
-end $$;
-),
+  key text not null check (key ~ '^custom_[a-z0-9_]{3,60}$'),
   commercial_stage text not null,
   label text not null check (length(btrim(label)) between 2 and 80),
   description text not null default '' check (length(description)<=800),
   examples text not null default '' check (length(examples)<=2000),
   source text not null default 'whatsapp' check (source in ('whatsapp','manual','product')),
-  product_stage text check (product_stage is null or product_stage in ('sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar','converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
-  maps_to text check (maps_to is null or maps_to in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+  product_stage text check (product_stage is null or product_stage in (
+    'sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar',
+    'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  maps_to text check (maps_to is null or maps_to in (
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
+    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
   active boolean not null default false,
   removed_at timestamptz,
   updated_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (commercial_stage,key),
-  check ((source='product' and product_stage is not null and maps_to is null) or (source <> 'product' and product_stage is null)),
+  check ((source='product' and product_stage is not null and maps_to is null)
+    or (source <> 'product' and product_stage is null)),
   check (not active or maps_to is not null or product_stage is not null)
 );
-create index if not exists sales_followup_state_catalog_active on sales_followup_state_catalog(commercial_stage)
-  where active = true and removed_at is null;
+create index if not exists sales_followup_state_catalog_active
+  on sales_followup_state_catalog(commercial_stage)
+  where active=true and removed_at is null;
 alter table sales_followup_state_catalog enable row level security;
 
 create table if not exists sales_followup_situation_overrides (
   commercial_stage text not null,
-  key text not null check (key in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+  key text not null check (key in (
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
+    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
   label text not null check (length(btrim(label)) between 2 and 80),
   description text not null default '' check (length(description)<=800),
   examples text not null default '' check (length(examples)<=2000),
@@ -1672,20 +1317,25 @@ create table if not exists sales_followup_situation_overrides (
   updated_at timestamptz not null default now(),
   primary key (commercial_stage,key)
 );
-alter table sales_followup_situation_overrides add column if not exists enabled boolean not null default true;
+alter table sales_followup_situation_overrides
+  add column if not exists enabled boolean not null default true;
 alter table sales_followup_situation_overrides enable row level security;
 
--- Editable, restrictive-only overlays on Turnia's canonical Follow-up cadence.
--- Existing planFor remains the maximum-send authority; these controls can only pause/delay/filter.
+-- Restricciones opcionales. Nunca permiten adelantar un paso del motor nativo.
 create table if not exists sales_followup_rule_controls (
-  stage text primary key check (stage in ('sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar','converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  stage text primary key check (stage in (
+    'sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar',
+    'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
   name text not null default '' check (length(name)<=120),
   enabled boolean not null default true,
-  situations text[] not null default '{}'::text[] check (situations <@ array['sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','derivo']::text[]),
+  situations text[] not null default '{}'::text[]
+    check (situations <@ array['sin_respuesta','confirmo_numero','interesado',
+      'neutro','pregunta_precios','mas_adelante','derivo']::text[]),
   after_hours integer not null default 0 check (after_hours between 0 and 720),
   hours_from integer not null default 8 check (hours_from between 0 and 23),
   hours_to integer not null default 21 check (hours_to between 0 and 23),
-  days integer[] not null default array[1,2,3,4,5,6] check (days <@ array[1,2,3,4,5,6] and cardinality(days) > 0),
+  days integer[] not null default array[1,2,3,4,5,6]
+    check (days <@ array[1,2,3,4,5,6] and cardinality(days)>0),
   updated_by text,
   updated_at timestamptz not null default now()
 );
