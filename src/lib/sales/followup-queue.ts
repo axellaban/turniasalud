@@ -329,8 +329,8 @@ export async function followupSnapshot(now = new Date()) {
       hours_to: controlByStage.get(s.key)?.hours_to ?? 21,
       days: controlByStage.get(s.key)?.days ?? [1,2,3,4,5,6],
       action: "principal",
+      action_label: actionLabel(s.key),
       title: s.title,
-      action: actionLabel(s.key),
       wait:
         s.key === "sin-saludo"
           ? `Hasta ${b.cap} saludos por día, de lunes a sábado de 8:30 a 20`
