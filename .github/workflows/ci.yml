@@ -34,5 +34,9 @@ jobs:
       - run: npx next typegen
       - run: npm run typecheck
       - run: npx eslint src
+      # Validar la migración sobre Postgres descartable y detectar errores de DDL antes de los tests.
+      - run: npm run db:migrate
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/turnia_test
       - run: npm test
       - run: npm run build

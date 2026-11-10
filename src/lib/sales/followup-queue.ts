@@ -16,6 +16,7 @@ import {
   type Row,
 } from "./followup";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
+import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
   CLAIM_SECONDS,
   CLOSED_SITUATIONS,
@@ -100,7 +101,7 @@ const iso = (v: unknown) => (v ? new Date(String(v)).toISOString() : null);
 const UUID = /^[0-9a-f-]{36}$/i;
 
 async function board(now = new Date()) {
-  const [people, vs, ex, states, claims, settings, [{ n: newToday }]] = await Promise.all([
+  const [people, vs, ex, states, claims, settings, [{ n: newToday }], controls] = await Promise.all([
     rows(),
     versions(),
     executions(),
@@ -108,7 +109,9 @@ async function board(now = new Date()) {
     sql<Claim[]>`select outreach_id, actor, stage, locked_until from sales_followup_claims where locked_until > ${now}`,
     outreachSettings(),
     sql<Array<{ n: number }>>`select count(*)::int as n from sales_outreach where greeted_at is not null and (greeted_at at time zone ${DEFAULT_TZ})::date = ${todayKey()}::date`,
+    ruleControls(),
   ]);
+  const controlOf = new Map(controls.map((rule) => [rule.stage, rule]));
   const stateOf = new Map(states.map((s) => [s.outreach_id, s]));
   const claimOf = new Map(claims.map((c) => [c.outreach_id, c]));
   const exOf = new Map<string, FollowupExecution[]>();
@@ -120,16 +123,16 @@ async function board(now = new Date()) {
     const { step, stage } = placeOf(r);
     stepNow.set(r.id, step);
     if (!stage) continue;
-    items.set(r.id, itemOf(r, stage, step, { vs, mine: exOf.get(r.id) ?? [], state: stateOf.get(r.id), claim: claimOf.get(r.id), newToday, cap }, now));
+    items.set(r.id, itemOf(r, stage, step, { vs, mine: exOf.get(r.id) ?? [], state: stateOf.get(r.id), claim: claimOf.get(r.id), rule: controlOf.get(stage), newToday, cap }, now));
   }
-  return { people, vs, ex, items, stepNow, newToday, cap, states };
+  return { people, vs, ex, items, stepNow, newToday, cap, states, controls };
 }
 
 function itemOf(
   r: Row,
   stage: StageKey,
   step: number,
-  ctx: { vs: Awaited<ReturnType<typeof versions>>; mine: FollowupExecution[]; state?: State; claim?: Claim; newToday: number; cap: number },
+  ctx: { vs: Awaited<ReturnType<typeof versions>>; mine: FollowupExecution[]; state?: State; claim?: Claim; rule?: RuleControl; newToday: number; cap: number },
   now: Date,
 ): QueueItem {
   const whatsapp = Boolean(r.phone && r.phone_kind !== "fijo");
@@ -159,6 +162,30 @@ function itemOf(
     group,
     now,
   );
+  // Cada configuración nueva solo puede restringir el plan original.
+  // Jamás reabre bajas, adelanta el link, excede el límite de contactos o saltea los horarios.
+  const policy = ctx.rule;
+  let pending = plan.pending;
+  let actionReason = plan.actionReason;
+  let blocked = plan.blocked;
+  let dueAt = plan.dueAt;
+  if (pending && policy) {
+    if (!policy.enabled || (policy.situations.length > 0 && !policy.situations.includes(situation))) {
+      pending = false;
+      actionReason = !policy.enabled ? "Regla pausada por el equipo." : "Esta situación no habilita una acción.";
+    } else {
+      const art = new Date(now.getTime() - 3 * 3600_000);
+      const day = art.getUTCDay();
+      const hour = art.getUTCHours() * 60 + art.getUTCMinutes();
+      if (!policy.days.includes(day)) blocked ??= "Día no habilitado para esta regla.";
+      if (hour < policy.hours_from * 60 || hour >= policy.hours_to * 60)
+        blocked ??= "Fuera de la ventana restringida de la regla.";
+      if (policy.after_hours > 0 && r.last_contact_at) {
+        const restrictiveDue = new Date(Date.parse(String(r.last_contact_at)) + policy.after_hours * 3600_000).toISOString();
+        if (!dueAt || restrictiveDue > dueAt) dueAt = restrictiveDue;
+      }
+    }
+  }
   const manualPriority = isPriority(ctx.state?.priority) ? (ctx.state!.priority as Priority) : null;
   return {
     id: r.id,
@@ -176,8 +203,8 @@ function itemOf(
     situationLabel: SITUATIONS[situation],
     situationManual: manual,
     situationNote: manual ? ctx.state?.situation_note ?? null : null,
-    action: plan.pending ? actionLabel(stage) : null,
-    actionReason: plan.actionReason,
+    action: pending ? actionLabel(stage) : null,
+    actionReason,
     group,
     groupLabel: GROUP_LABEL[group],
     priority: manualPriority ?? defaultPriority(group),
@@ -190,8 +217,8 @@ function itemOf(
     lastContactAt: iso(r.last_contact_at),
     since: String(iso(r.last_contact_at) ?? iso(r.first_contact_at) ?? iso(r.created_at)),
     snoozedUntil: iso(ctx.state?.snooze_until) && Date.parse(String(ctx.state!.snooze_until)) > now.getTime() ? iso(ctx.state!.snooze_until) : null,
-    dueAt: plan.dueAt,
-    blocked: plan.blocked,
+    dueAt,
+    blocked,
     claim: ctx.claim ? { by: ctx.claim.actor, until: iso(ctx.claim.locked_until)! } : null,
     versionId: v?.id ?? null,
     version: v?.version ?? null,
@@ -210,6 +237,14 @@ const median = (xs: number[]) => {
 export async function followupSnapshot(now = new Date()) {
   const b = await board(now);
   const all = [...b.items.values()];
+  const catalog = await commercialCatalog();
+  const stageFor = (technical: string) => TURNIA_COMMERCIAL.find(s => (s.technical as readonly string[]).includes(technical))?.key ?? "";
+  const customFor = (q: QueueItem) => catalog.states.filter(s => s.active && s.source === "product" && s.product_stage === q.stage && s.commercial_stage === stageFor(q.stage)).map(s => s.key);
+  const decorate = (q: QueueItem) => ({
+    ...q,
+    productSituations: customFor(q),
+    catalogSituation: catalog.states.find(s => s.active && s.source !== "product" && s.maps_to === q.situation && s.commercial_stage === stageFor(q.stage))?.key ?? null,
+  });
   const live = now.toISOString();
   const queue = all.filter(ready).sort(byPriority);
   const counted = b.people.filter((r) => placeOf(r).stage || placeOf(r).step >= 0);
@@ -227,6 +262,7 @@ export async function followupSnapshot(now = new Date()) {
     // ya no es un paso propio desde que tocar la esfera empieza la charla.
     { from: "Demo visitada", to: "Habló con Sofi", medianHours: gaps(b.people.map((r) => hours(r.opened_at, r.converso_at))) },
   ];
+  const controlByStage = new Map(b.controls.map(c => [c.stage, c]));
   const sent = b.ex.filter((e) => e.status === "sent");
   const byActor = new Map<string, { executions: number; conversions: number }>();
   for (const e of sent) {
@@ -250,6 +286,9 @@ export async function followupSnapshot(now = new Date()) {
     select outreach_id, subject, new_value, actor, created_at from sales_followup_audit order by created_at desc limit 20`;
   return {
     labels: { situations: SITUATIONS, groups: GROUP_LABEL },
+    catalog: { ...catalog, stages: catalog.stages.map(s => ({
+      ...s, waiting: all.filter(q => q.stage === s.technical_stage && q.situation === s.entry_situation).length,
+    })) },
     summary: {
       ready: queue.filter((q) => !(q.claim && q.claim.until > live)).length,
       replies: all.filter((q) => ready(q) && q.group === "respuestas").length,
@@ -261,12 +300,12 @@ export async function followupSnapshot(now = new Date()) {
       newToday: b.newToday,
       cap: b.cap,
     },
-    queue,
-    scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))),
-    blocked: all.filter((q) => q.action && q.blocked).sort(byPriority),
+    queue: queue.map(decorate),
+    scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))).map(decorate),
+    blocked: all.filter((q) => q.action && q.blocked).sort(byPriority).map(decorate),
     // Igual que en Habita: la bandeja existe incluso si un horario bloquea el próximo envío.
     inbox: all.filter((q) => q.group === "respuestas" && q.action && !q.snoozedUntil).map((q) => ({
-      ...q,
+      ...decorate(q),
       latestReply: latestReply.get(q.id)?.new_value ?? q.situationNote ?? "",
       latestReplyAt: latestReply.get(q.id)?.created_at ?? q.lastContactAt ?? null,
     })),
@@ -280,9 +319,19 @@ export async function followupSnapshot(now = new Date()) {
       return { key: s.key, title: s.title, goal: s.goal, waiting: all.filter((q) => q.stage === s.key).length, versions: own.map((v, i) => ({ ...v, stats: stats[i] })) };
     }),
     rules: FOLLOWUP_STAGES.map((s) => ({
+      key: s.key,
       stage: s.key,
-      title: s.title,
+      name: controlByStage.get(s.key)?.name || s.title,
+      enabled: controlByStage.get(s.key)?.enabled !== false,
+      situations: controlByStage.get(s.key)?.situations || [],
+      after_hours: controlByStage.get(s.key)?.after_hours ?? 0,
+      hours_from: controlByStage.get(s.key)?.hours_from ?? 8,
+      hours_to: controlByStage.get(s.key)?.hours_to ?? 21,
+      days: controlByStage.get(s.key)?.days ?? [1,2,3,4,5,6],
       action: actionLabel(s.key),
+      action_key: "principal",
+      action_label: actionLabel(s.key),
+      title: s.title,
       wait:
         s.key === "sin-saludo"
           ? `Hasta ${b.cap} saludos por día, de lunes a sábado de 8:30 a 20`
@@ -566,9 +615,18 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return createFollowupVersion((b.valores as Record<string, unknown>) ?? {});
     case "version-status":
       return setFollowupVersionStatus(b.id, b.estado);
-    case "version-update":
+    case "stage-create":
+      return createCommercialStage((b.valores as Record<string, unknown>) ?? {});
+    case "state-save":
+      return saveCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
+    case "state-delete":
+      return deleteCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
+    case "state-toggle":
+      return toggleCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
     case "rule-save":
-      throw new FollowupError("En Turnia las versiones no se editan (se crea una nueva) y las esperas siguen la cadencia de Prospección.");
+      return saveRuleControl(b.key, (b.valores as Record<string, unknown>) ?? {}, actor);
+    case "version-update":
+      throw new FollowupError("Las versiones de Turnia son inmutables: creá una versión nueva para preservar las métricas históricas.");
     default:
       throw new FollowupError("Operación de Follow-up desconocida.");
   }

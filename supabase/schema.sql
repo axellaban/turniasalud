@@ -1260,6 +1260,87 @@ alter table chat_usage enable row level security;
 -- (A/B 50/50). Cada ejecución guarda el paso del embudo en que estaba la persona: convierte si
 -- después pasó de ese paso. Ver PLAN_PROSPECCION.md → «Follow-up».
 -- ---------------------------------------------------------------------------
+-- Commercial OS / Turnia: datos de configuración aditivos, sin tocar la cadencia ni los envíos.
+create table if not exists sales_followup_commercial_stages (
+  key text primary key check (key ~ '^etapa_[a-z0-9-]{8,60}$'),
+  label text not null check (length(btrim(label)) between 2 and 80),
+  technical_stage text not null check (technical_stage in (
+    'sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar',
+    'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  entry_situation text not null check (entry_situation in (
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
+    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+  created_at timestamptz not null default now(),
+  unique (technical_stage,entry_situation)
+);
+alter table sales_followup_commercial_stages enable row level security;
+
+create table if not exists sales_followup_state_catalog (
+  key text not null check (key ~ '^custom_[a-z0-9_]{3,60}$'),
+  commercial_stage text not null,
+  label text not null check (length(btrim(label)) between 2 and 80),
+  description text not null default '' check (length(description)<=800),
+  examples text not null default '' check (length(examples)<=2000),
+  source text not null default 'whatsapp' check (source in ('whatsapp','manual','product')),
+  product_stage text check (product_stage is null or product_stage in (
+    'sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar',
+    'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  maps_to text check (maps_to is null or maps_to in (
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
+    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+  active boolean not null default false,
+  removed_at timestamptz,
+  updated_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (commercial_stage,key),
+  check ((source='product' and product_stage is not null and maps_to is null)
+    or (source <> 'product' and product_stage is null)),
+  check (not active or maps_to is not null or product_stage is not null)
+);
+create index if not exists sales_followup_state_catalog_active
+  on sales_followup_state_catalog(commercial_stage)
+  where active=true and removed_at is null;
+alter table sales_followup_state_catalog enable row level security;
+
+create table if not exists sales_followup_situation_overrides (
+  commercial_stage text not null,
+  key text not null check (key in (
+    'sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios',
+    'mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto')),
+  label text not null check (length(btrim(label)) between 2 and 80),
+  description text not null default '' check (length(description)<=800),
+  examples text not null default '' check (length(examples)<=2000),
+  removed boolean not null default false,
+  enabled boolean not null default true,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  primary key (commercial_stage,key)
+);
+alter table sales_followup_situation_overrides
+  add column if not exists enabled boolean not null default true;
+alter table sales_followup_situation_overrides enable row level security;
+
+-- Restricciones opcionales. Nunca permiten adelantar un paso del motor nativo.
+create table if not exists sales_followup_rule_controls (
+  stage text primary key check (stage in (
+    'sin-saludo','saludo-sin-demo','demo-sin-abrir','abrio-sin-conversar',
+    'converso-sin-cuenta','cuenta-sin-actividad','activa-sin-pago')),
+  name text not null default '' check (length(name)<=120),
+  enabled boolean not null default true,
+  situations text[] not null default '{}'::text[]
+    check (situations <@ array['sin_respuesta','confirmo_numero','interesado',
+      'neutro','pregunta_precios','mas_adelante','derivo']::text[]),
+  after_hours integer not null default 0 check (after_hours between 0 and 720),
+  hours_from integer not null default 8 check (hours_from between 0 and 23),
+  hours_to integer not null default 21 check (hours_to between 0 and 23),
+  days integer[] not null default array[1,2,3,4,5,6]
+    check (days <@ array[1,2,3,4,5,6] and cardinality(days)>0),
+  updated_by text,
+  updated_at timestamptz not null default now()
+);
+alter table sales_followup_rule_controls enable row level security;
+
 create table if not exists sales_followup_versions (
   id uuid primary key default gen_random_uuid(),
   stage text not null check (stage in ('sin-saludo', 'saludo-sin-demo', 'demo-sin-abrir', 'abrio-sin-conversar', 'converso-sin-cuenta', 'cuenta-sin-actividad', 'activa-sin-pago')),
