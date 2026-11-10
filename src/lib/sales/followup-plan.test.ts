@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPriority, currentSituation, derivedSituation, groupOf, outsideHours, planFor, type PlanInput } from "./followup-plan";
+import { byPriority, currentSituation, derivedSituation, groupOf, outsideHours, planFor, isSituation, type PlanInput } from "./followup-plan";
 
 // Las reglas de la cola de Follow-up (traídas de habita.): qué toca, qué la bloquea y en qué orden.
 const TUE_11 = new Date("2026-11-10T14:00:00Z");
@@ -56,6 +56,17 @@ describe("Recontacto como situación, sin avance de etapa ni envíos automático
         expect(result.pending).toBe(false);
         expect(result.actionReason).toContain("Recontacto");
       }
+    }
+  });
+});
+
+describe("recontactar sin adelantar mensajes", () => {
+  it("reconoce ambos motivos y conserva el estado manual", () => {
+    for (const situation of ["recontactar_vacaciones", "recontactar_mas_adelante"] as const) {
+      expect(isSituation(situation)).toBe(true);
+      expect(currentSituation("sin_respuesta", { situation, step: 0 }, 0)).toMatchObject({ situation, manual: true });
+      expect(planFor({ ...base, stage: "saludo-sin-demo", situation }, "seguimientos", TUE_11))
+        .toMatchObject({ pending: false, dueAt: null });
     }
   });
 });
