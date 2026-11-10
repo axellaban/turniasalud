@@ -16,7 +16,7 @@ import {
   type Row,
 } from "./followup";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
-import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
+import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
   CLAIM_SECONDS,
   CLOSED_SITUATIONS,
@@ -620,6 +620,8 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
       return saveCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
     case "state-delete":
       return deleteCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
+    case "state-toggle":
+      return toggleCommercialSituation((b.valores as Record<string, unknown>) ?? {}, actor);
     case "rule-save":
       return saveRuleControl(b.key, (b.valores as Record<string, unknown>) ?? {}, actor);
     case "version-update":
