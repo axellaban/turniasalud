@@ -141,3 +141,46 @@ export async function deleteCommercialSituation(values: Record<string, unknown>,
   }
   return { key };
 }
+
+/** Turnia's native cadence remains authoritative; a rule control can only narrow eligibility. */
+export type RuleControl = {
+  stage: string; name: string; enabled: boolean; situations: string[];
+  after_hours: number; hours_from: number; hours_to: number; days: number[];
+};
+export async function ruleControls(): Promise<RuleControl[]> {
+  try {
+    return await sql<RuleControl[]>`select stage,name,enabled,situations,after_hours,hours_from,hours_to,days
+      from sales_followup_rule_controls order by stage`;
+  } catch {
+    return []; // Preserve the canonical cadence before the catalog migration.
+  }
+}
+export async function saveRuleControl(key: unknown, input: Record<string, unknown>, actor: string) {
+  const stage=txt(key)||txt(input.stage);
+  if(!isStageKey(stage)) fail("Etapa técnica desconocida de Turnia.");
+  if(input.stage && input.stage!==stage) fail("No se puede trasladar una regla de etapa sin crear una nueva configuración.");
+  const name=txt(input.name).slice(0,120);
+  const enabled=input.enabled!==false;
+  const situations=Array.isArray(input.situations) ? [...new Set(input.situations.map(txt))] : [];
+  if(situations.some(s=>!isSituation(s) || CLOSED_SITUATIONS.includes(s as keyof typeof SITUATIONS)))
+    fail("Solo pueden disparar una acción las situaciones abiertas reconocidas por Turnia.");
+  const afterHours=Number(input.after_hours??0);
+  const hoursFrom=Number(input.hours_from??8);
+  const hoursTo=Number(input.hours_to??21);
+  const days=Array.isArray(input.days) ? [...new Set(input.days.map(Number))] : [1,2,3,4,5,6];
+  if(!Number.isInteger(afterHours)||afterHours<0||afterHours>720)fail("La espera debe ser entre 0 y 720 horas.");
+  if(!Number.isInteger(hoursFrom)||!Number.isInteger(hoursTo)||hoursFrom<0||hoursFrom>23||hoursTo<0||hoursTo>23||hoursFrom>=hoursTo)
+    fail("El horario configurado es inválido.");
+  if(!days.length||days.some(d=>!Number.isInteger(d)||d<1||d>6))
+    fail("Las reglas de Turnia solo se ejecutan de lunes a sábado.");
+  // Seguimiento de Turnia: las esperas configuradas se suman como mínimo,
+  // nunca adelantan el paso 2, el link autorizado ni el límite de 3 contactos.
+  await sql`insert into sales_followup_rule_controls
+    (stage,name,enabled,situations,after_hours,hours_from,hours_to,days,updated_by,updated_at)
+    values (${stage},${name},${enabled},${situations},${afterHours},${hoursFrom},${hoursTo},${days},${actor},now())
+    on conflict (stage) do update set
+    name=excluded.name,enabled=excluded.enabled,situations=excluded.situations,
+    after_hours=excluded.after_hours,hours_from=excluded.hours_from,hours_to=excluded.hours_to,
+    days=excluded.days,updated_by=excluded.updated_by,updated_at=now()`;
+  return {stage};
+}
