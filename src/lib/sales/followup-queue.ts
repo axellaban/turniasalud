@@ -328,7 +328,8 @@ export async function followupSnapshot(now = new Date()) {
       hours_from: controlByStage.get(s.key)?.hours_from ?? 8,
       hours_to: controlByStage.get(s.key)?.hours_to ?? 21,
       days: controlByStage.get(s.key)?.days ?? [1,2,3,4,5,6],
-      action: "principal",
+      action: actionLabel(s.key),
+      action_key: "principal",
       action_label: actionLabel(s.key),
       title: s.title,
       wait:
