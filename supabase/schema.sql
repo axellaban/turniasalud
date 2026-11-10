@@ -1667,10 +1667,12 @@ create table if not exists sales_followup_situation_overrides (
   description text not null default '' check (length(description)<=800),
   examples text not null default '' check (length(examples)<=2000),
   removed boolean not null default false,
+  enabled boolean not null default true,
   updated_by text,
   updated_at timestamptz not null default now(),
   primary key (commercial_stage,key)
 );
+alter table sales_followup_situation_overrides add column if not exists enabled boolean not null default true;
 alter table sales_followup_situation_overrides enable row level security;
 
 -- Editable, restrictive-only overlays on Turnia's canonical Follow-up cadence.
