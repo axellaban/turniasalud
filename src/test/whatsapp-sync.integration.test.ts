@@ -201,6 +201,29 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     expect(again.whatsappInbox.byCode["caro-c3"]).toBeUndefined();
   });
 
+  it("busca en el historial de las dos líneas lo que escribieron (sin tildes ni respuestas automáticas) y no manda nada", async () => {
+    const search = async (q: string) => {
+      const res = await route.POST(new Request("https://turnia.example/api/prospeccion", {
+        method: "POST", headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+        body: JSON.stringify({ by: "Axel", followup: { op: "whatsapp-search", q } }),
+      }));
+      return { status: res.status, body: (await res.json()) as { search: import("@/lib/sales/whatsapp-sync").ChatSearch; error?: string } };
+    };
+    const before = sent.length;
+    const { status: code, body } = await search("CUANTO, precio");
+    expect(code).toBe(200);
+    expect(body.search.terms).toEqual(["cuanto", "precio"]);
+    expect(body.search.lines.map((l) => [l.line, l.status])).toEqual([["0000", "ok"], ["5483", "ok"]]);
+    expect(body.search.matches).toEqual([expect.objectContaining({ code: "beto-b2", name: "Beto Dos", line: "5483", text: "¿Cuánto sale?" })]);
+    expect(body.search.matches[0].at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    // Lo nuestro y lo automático no cuentan; el chat de un número anterior (Caro) no se lee.
+    expect((await search("hola")).body.search.matches.map((m) => m.code)).toEqual(["ana-a1"]);
+    expect((await search("horario")).body.search.matches).toEqual([]);
+    expect((await search("gracias")).body.search.matches).toEqual([]);
+    expect((await search("  ")).status).toBe(400);
+    expect(sent.length).toBe(before);
+  });
+
   it("resume un chat: solo cuenta lo que llegó después de nuestro primer mensaje", () => {
     const s = wa.summarizeChat([
       { timestamp: 10, fromMe: false, body: "antes" },
