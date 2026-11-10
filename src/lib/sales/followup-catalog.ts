@@ -131,7 +131,7 @@ export async function deleteCommercialSituation(values: Record<string, unknown>,
       fail("Las bajas y los teléfonos sin canal siempre deben estar visibles.");
     await sql`insert into sales_followup_situation_overrides
       (commercial_stage,key,label,description,examples,removed,updated_by,updated_at)
-      values (${stage},${key},${SITUATIONS[key]},'','',true,${actor},now())
+      values (${stage},${key},${SITUATIONS[key as keyof typeof SITUATIONS]},'','',true,${actor},now())
       on conflict (commercial_stage,key) do update set removed=true,updated_by=excluded.updated_by,updated_at=now()`;
   } else {
     if(!isCustom(key)) fail("Situación personalizada inválida.");
