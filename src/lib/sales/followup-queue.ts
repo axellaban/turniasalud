@@ -15,6 +15,7 @@ import {
   versions,
   type Row,
 } from "./followup";
+import { executionDays, weeklyByType, type QueueDayRow } from "./followup-results";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
 import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
@@ -233,10 +234,45 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 };
 
+// ── La foto diaria de la cola (supabase/schema.sql, sales_followup_queue_days) ──
+// Lo pendiente de cada día, para «¿Se ejecutó la cola?» en los Resultados de Chapa. Se guarda al
+// calcular la cola para Chapa (como mucho una vez cada 10 minutos por instancia). Nunca bloquea: si
+// falta la tabla, Resultados avisa que todavía no hay foto.
+const QUEUE_DAYS = 35;
+let queueDayWrittenAt = 0;
+async function recordQueueDay(all: QueueItem[], now: Date) {
+  if (now.getTime() - queueDayWrittenAt < 10 * 60_000) return;
+  queueDayWrittenAt = now.getTime();
+  const day = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
+  const rows = all.filter((q) => q.action && q.execution?.status !== "sent").map((q) => ({
+    day, outreach_id: q.id, stage: q.stage, state: q.dueAt ? "programada" : q.blocked ? "bloqueada" : "lista", last_seen_at: now,
+  }));
+  for (let i = 0; i < rows.length; i += 500)
+    await sql`insert into sales_followup_queue_days ${sql(rows.slice(i, i + 500), "day", "outreach_id", "stage", "state", "last_seen_at")}
+      on conflict (day, outreach_id, stage) do update set state = excluded.state, last_seen_at = excluded.last_seen_at`;
+}
+async function queueDays(now: Date): Promise<QueueDayRow[] | null> {
+  try {
+    const since = new Date(now.getTime() - 3 * 3_600_000 - (QUEUE_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+    return await sql<QueueDayRow[]>`select day::text as day, outreach_id, stage, state from sales_followup_queue_days where day >= ${since}::date`;
+  } catch {
+    return null;
+  }
+}
+
 /** Lo que Chapa muestra: la cola, lo programado, lo bloqueado, las respuestas, el embudo y los resultados. */
 export async function followupSnapshot(now = new Date()) {
   const b = await board(now);
   const all = [...b.items.values()];
+  await recordQueueDay(all, now).catch(() => console.error("followup_queue_day_failed"));
+  const [days, bots] = await Promise.all([
+    queueDays(now),
+    // Quién ejecutó: hasta que el esquema tenga executed_by (o si nunca hubo un bot), todo es humano.
+    sql<Array<{ id: string }>>`select id from sales_followup_executions where executed_by = 'bot'`.catch(() => []),
+  ]);
+  const botIds = new Set(bots.map((x) => x.id));
+  const dayExecutions = b.ex.map((e) => ({ ...e, sent_at: iso(e.sent_at), updated_at: String(iso(e.updated_at)), executed_by: botIds.has(e.id) ? ("bot" as const) : ("humano" as const) }));
+  const label = (stage: string) => (isStageKey(stage) ? actionLabel(stage) : stage);
   const catalog = await commercialCatalog();
   const stageFor = (technical: string) => TURNIA_COMMERCIAL.find(s => (s.technical as readonly string[]).includes(technical))?.key ?? "";
   const customFor = (q: QueueItem) => catalog.states.filter(s => s.active && s.source === "product" && s.product_stage === q.stage && s.commercial_stage === stageFor(q.stage)).map(s => s.key);
@@ -345,6 +381,15 @@ export async function followupSnapshot(now = new Date()) {
     results: {
       byActor: [...byActor].map(([actor, x]) => ({ actor, ...x, rate: x.executions ? x.conversions / x.executions : null })),
       totals: { executions: sent.length, failed: b.ex.filter((e) => e.status === "failed").length },
+      // Lo mismo que habita. (amoblaia results.execution): la cola día por día y por tipo de acción.
+      // Exitosa: con la definición de Turnia, la persona avanzó de paso después del envío.
+      execution: {
+        available: days !== null,
+        stages: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, s.title])),
+        days: executionDays(days ?? [], dayExecutions, b.stepNow, label),
+      },
+      actionLabels: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, actionLabel(s.key)])),
+      weeklyByType: weeklyByType(dayExecutions, b.stepNow, label),
     },
     changes,
   };
