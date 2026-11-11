@@ -114,6 +114,8 @@ describe.runIf(base)("Follow-up de Turnia desde Chapa Labs", () => {
     expect(after.body.results.execution.available).toBe(true);
     // El envío lleva la hora real de la base (now()), no la del reloj falso: acá alcanza con la foto.
     expect(today).toMatchObject({ day: "2026-11-10", captured: true });
+    // Las cohortes con el embudo de Follow-up, desde Saludado.
+    expect(after.body.results.cohortFunnel.stages.map((s: { title: string }) => s.title)).toEqual(["Saludado", "Demo enviada", "Demo visitada", "Conversó con Sofi", "Cuenta creada", "Cuenta activa", "Cliente"]);
     // Respondió: el Paso 2 (pide permiso para pasar el link), con prioridad alta.
     expect((await op("Facu", { op: "reply", inmobiliaria: "ana-111", texto: "Hola, sí, ¿qué necesitás?" })).status).toBe(200);
     const replied = await get("followup");
