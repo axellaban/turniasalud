@@ -50,6 +50,7 @@ describe("lo que le corresponde a hoy (Turnia)", () => {
       { stage: "sin-saludo", state: "bloqueada" as const }, { stage: "sin-saludo", state: "lista" as const },
       { stage: "demo-sin-abrir", state: "lista" as const },
     ];
-    expect(capFirstContacts(rows, "sin-saludo", 2).map((r) => r.state)).toEqual(["lista", "lista", "bloqueada", "programada", "lista"]);
+    // El trabado por un dato tampoco es de hoy.
+    expect(capFirstContacts(rows, "sin-saludo", 2).map((r) => r.state)).toEqual(["lista", "lista", "programada", "programada", "lista"]);
   });
 });

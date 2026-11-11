@@ -164,5 +164,6 @@ export function queueDayState(q: QueueDayInput, now = new Date()): QueueDayRow["
 /** El tope diario de saludos: de los primeros contactos listos, solo los que entran en el cupo que queda hoy. */
 export function capFirstContacts<T extends { stage: string }>(rows: Array<T & { state: QueueDayRow["state"] }>, firstStage: string, remaining: number) {
   let left = Math.max(0, remaining);
-  return rows.map((r) => (r.stage === firstStage && r.state === "lista" ? (left-- > 0 ? r : { ...r, state: "programada" as const }) : r));
+  // Un prospecto trabado por un dato (sin WhatsApp, posible duplicado) nunca se asigna a hoy: tampoco cuenta.
+  return rows.map((r) => (r.stage !== firstStage ? r : r.state === "lista" ? (left-- > 0 ? r : { ...r, state: "programada" as const }) : r.state === "bloqueada" ? { ...r, state: "programada" as const } : r));
 }
