@@ -484,7 +484,7 @@ export async function open(t: Task, actor: string) {
 }
 
 /** El mensaje salió: cuenta como ejecución (y como contacto de Prospección en las tres primeras etapas). Idempotente. */
-export async function confirm(t: Task, actor: string) {
+export async function confirm(t: Task, actor: string, executedBy: "humano" | "bot" = "humano") {
   // Un reintento (o un doble clic) de un envío ya confirmado: aunque ya haya pasado de etapa, no suma nada.
   if (typeof t.id === "string" && UUID.test(t.id) && typeof t.versionId === "string" && UUID.test(t.versionId)) {
     const [done] = await sql<Array<{ status: string; updated_at: string; actor: string | null; reason: string | null }>>`
@@ -493,6 +493,9 @@ export async function confirm(t: Task, actor: string) {
   }
   const it = await sameTask(t, actor);
   const out = await markFollowup({ id: it.id, stage: it.stage, versionId: t.versionId ?? it.versionId, status: "sent", actor });
+  // Confirmado desde el modo extensión de Chapa (?agente=1): lo ejecutó la extensión del navegador, no una persona.
+  if (executedBy === "bot")
+    await sql`update sales_followup_executions set executed_by = 'bot' where outreach_id = ${it.id} and version_id = ${t.versionId ?? it.versionId} and status = 'sent'`.catch(() => null);
   await unlock(it.id, actor);
   const after = await one(it.id).catch(() => null);
   return { ...out, item: after };
@@ -660,7 +663,7 @@ export async function runFollowupOp(op: unknown, b: Record<string, unknown>, act
     case "open":
       return open(task, actor);
     case "confirm":
-      return confirm(task, actor);
+      return confirm(task, actor, b.ejecutor === "bot" ? "bot" : "humano");
     case "fail":
       return fail({ ...task, reason: b.motivo, kind: b.tipo }, actor);
     case "release":

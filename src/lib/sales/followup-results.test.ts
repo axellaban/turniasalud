@@ -23,7 +23,7 @@ describe("executionDays (Turnia)", () => {
   });
   it("counts each type's sends and conversions per week", () => {
     const out = weeklyByType([ex("a", "sin-saludo", "2026-11-10T13:00:00Z")], new Map([["a", 0]]), label, 1, now);
-    expect(out["Paso 1: el saludo"]).toEqual([{ week: "2026-11-13", executed: 1, conversions: 1 }]);
+    expect(out["Paso 1: el saludo"]).toEqual([{ week: "2026-11-15", executed: 1, conversions: 1 }]);
   });
 });
 
@@ -32,7 +32,7 @@ describe("funnelCohorts (Turnia)", () => {
     const T = [0, 1, 2, 3, 4, 5, 6];
     const p = (firstContact: string | null, step: number, greetingVersion: number | null = 2) => ({ firstContact, step, greetingVersion });
     const list = [p("2026-11-09T13:00:00Z", 0), p("2026-11-10T13:00:00Z", 2), p("2026-11-10T14:00:00Z", 6), p(null, -1)];
-    expect(funnelCohorts(list, T, "contacto", 1, now)).toEqual([{ cohort: "2026-11-13", size: 3, reached: [3, 2, 2, 1, 1, 1, 1] }]);
+    expect(funnelCohorts(list, T, "contacto", 1, now)).toEqual([{ cohort: "2026-11-15", size: 3, reached: [3, 2, 2, 1, 1, 1, 1] }]);
     expect(funnelCohorts(list, T, "version", 8, now)).toEqual([{ cohort: "Saludo V2", size: 3, reached: [3, 2, 2, 1, 1, 1, 1] }]);
   });
 });
