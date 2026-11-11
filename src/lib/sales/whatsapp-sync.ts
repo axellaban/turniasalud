@@ -62,7 +62,7 @@ export type SyncReport = {
     abiertas: number;
     /** Personas que una lectura anterior abrió por una respuesta automática y volvieron a como estaban. */
     corregidas: number;
-    /** Personas sin nada registrado a las que ya les habíamos escrito por fuera del panel (quedaron registradas). */
+    /** Personas con pasos que salieron por fuera del panel y no estaban registrados (quedaron registrados con su fecha). */
     registradas?: number;
   };
   /** Las que esperan respuesta, de la más vieja a la más nueva (hasta 60). */
@@ -110,6 +110,8 @@ export type ChatSummary = {
   newReplies: Array<{ at: number; text: string }>;
   /** Nuestros mensajes, del más viejo al más nuevo (para reconstruir los pasos que salieron por fuera del panel). */
   ours: Array<{ at: number; text: string }>;
+  /** El chat entero sin las respuestas automáticas, del más viejo al más nuevo. */
+  timeline: Array<{ at: number; fromMe: boolean; text: string }>;
 };
 
 /**
@@ -139,6 +141,7 @@ export function summarizeChat(messages: Message[], since: number | null, hadSent
     lastFromMe: last ? last.fromMe : null,
     newReplies: replies.filter((m) => since === null || m.at > since),
     ours: mine.map((m) => ({ at: m.at, text: m.text })),
+    timeline: list,
   };
 }
 
@@ -147,19 +150,34 @@ const DEMO_LINK = /\/p\/[a-z0-9-]{3,}/i;
 
 export type ChatSteps = { greetingAt: number | null; permissionAt: number | null; touches: number[] };
 
+const dayOf = (at: number) => localDateKey(new Date(at * 1000), DEFAULT_TZ);
+
 /**
- * Los pasos de la secuencia que ya salieron en un chat, para quien no tiene nada registrado: antes del
- * link, el primero es el saludo (Paso 1) y el segundo el pedido de permiso (Paso 2); el mensaje con el
- * link es el primero de los tres y cada uno de los siguientes, un seguimiento (hasta tres).
+ * Los pasos de la secuencia que ya salieron en un chat (el chat entero; sin `fromMe`, es nuestro): antes
+ * del link, nuestro primer mensaje es el saludo (Paso 1) y el segundo el pedido de permiso (Paso 2). El
+ * mensaje con el link es el primero de los tres. Después, un seguimiento es un mensaje nuestro que no
+ * contesta algo que escribieron (el anterior del chat también es nuestro) y es de otro día: lo que se
+ * contesta en una conversación no es un seguimiento, y lo que sale el mismo día (texto y audio, o el
+ * Seguimiento 3 partido en dos) cuenta una vez. Hasta tres.
  */
-export function stepsFromChat(ours: Array<{ at: number; text: string }>): ChatSteps {
-  const link = ours.findIndex((m) => DEMO_LINK.test(m.text));
-  const before = link === -1 ? ours : ours.slice(0, link);
-  return {
-    greetingAt: before[0]?.at ?? null,
-    permissionAt: before[1]?.at ?? null,
-    touches: link === -1 ? [] : ours.slice(link, link + 3).map((m) => m.at),
-  };
+export function stepsFromChat(chat: Array<{ at: number; text: string; fromMe?: boolean }>): ChatSteps {
+  const list = chat.map((m) => ({ ...m, fromMe: m.fromMe ?? true }));
+  const link = list.findIndex((m) => m.fromMe && DEMO_LINK.test(m.text));
+  const before = (link === -1 ? list : list.slice(0, link)).filter((m) => m.fromMe);
+  const touches: number[] = [];
+  if (link !== -1) {
+    touches.push(list[link].at);
+    let day = dayOf(list[link].at);
+    for (let i = link + 1; i < list.length && touches.length < 3; i++) {
+      const m = list[i];
+      if (!m.fromMe) continue;
+      const answer = !list[i - 1].fromMe;
+      const d = dayOf(m.at);
+      if (!answer && d !== day) touches.push(m.at);
+      day = d;
+    }
+  }
+  return { greetingAt: before[0]?.at ?? null, permissionAt: before[1]?.at ?? null, touches };
 }
 
 const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
@@ -292,16 +310,21 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
         last_received_text = case when ${complete} then excluded.last_received_text else coalesce(excluded.last_received_text, sales_whatsapp_chats.last_received_text) end,
         last_from_me = case when ${complete} then excluded.last_from_me else coalesce(excluded.last_from_me, sales_whatsapp_chats.last_from_me) end,
         synced_at = now()`;
-    // Lo que se le mandó por fuera del panel (desde el celular o WhatsApp Web) queda registrado, así no
-    // vuelve a la cola como si nunca le hubiéramos escrito. Solo con el chat entero y si no tiene nada
-    // registrado; si comparten el número, solo a quien nombra el saludo y si nadie más fue contactado.
-    if (complete && s.ours.length && !person.touches && !person.greeted && (person.status === "por_contactar" || person.status === "contactado")) {
-      const others = (samePhone.get(person.phone) ?? []).filter((p) => p.id !== person.id);
+    // Lo que se le mandó por fuera del panel (desde el celular o WhatsApp Web) queda registrado con su
+    // fecha: a quien no tenía nada y a quien le faltan pasos (solo se suma, nunca se resta). Solo con el
+    // chat entero. Si comparten el número: si nadie tiene nada, a quien nombra el saludo; si no, solo a
+    // quien está más adelante (así el consultorio cuenta una vez).
+    if (complete && s.ours.length && person.status !== "baja") {
+      const group = samePhone.get(person.phone) ?? [person];
+      const registered = group.filter((p) => p.touches || p.greeted);
+      const lead = [...registered].sort((a, b) => b.touches - a.touches || Number(b.greeted) - Number(a.greeted) || a.code.localeCompare(b.code))[0];
       const first = s.ours[0].text;
-      const mine = !others.length || (!others.some((p) => p.touches || p.greeted) && mentions(first, person) && !others.some((p) => mentions(first, p)));
+      const mine = registered.length
+        ? lead?.id === person.id
+        : group.length === 1 || (mentions(first, person) && !group.some((p) => p.id !== person.id && mentions(first, p)));
       if (mine) {
         try {
-          if (await registerFromChat(person.id, person.phone, sender, stepsFromChat(s.ours))) report.totals.registradas = (report.totals.registradas ?? 0) + 1;
+          if (await registerFromChat(person.id, person.phone, sender, stepsFromChat(s.timeline))) report.totals.registradas = (report.totals.registradas ?? 0) + 1;
         } catch (e) {
           console.error("pasos leídos de WhatsApp", e instanceof Error ? e.message.slice(0, 160) : e);
         }
@@ -323,43 +346,49 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
 }
 
 /**
- * Registra los pasos que salieron por fuera del panel (ver stepsFromChat), con su fecha, a quien no
- * tiene nada registrado. Confirma la línea para su número. Devuelve si registró algo.
+ * Registra con su fecha los pasos que salieron por fuera del panel (ver stepsFromChat) y que todavía no
+ * figuran: el saludo y el permiso si faltan, y los mensajes con link que superan los registrados. Nunca
+ * resta ni cambia lo que ya estaba. Confirma la línea para su número. Devuelve si registró algo.
  */
 async function registerFromChat(id: string, phone: string, sender: string, steps: ChatSteps): Promise<boolean> {
-  const all = [steps.greetingAt, steps.permissionAt, ...steps.touches].filter((v): v is number => v !== null);
-  if (!all.length) return false;
-  const first = Math.min(...all);
-  const last = Math.max(...all);
-  const lastDay = localDateKey(new Date(last * 1000), DEFAULT_TZ);
   const today = todayKey();
-  const n = steps.touches.length;
-  const next = n ? nextFollowUp(lastDay, n) : steps.permissionAt ? addBusinessDays(lastDay, 1) : today;
   return sql.begin(async (tx) => {
-    const [row] = await tx<Array<{ touches: number; status: string; greeted: boolean }>>`
-      select touches, status, (greeted_at is not null or permission_at is not null) as greeted from sales_outreach where id = ${id} for update`;
-    if (!row || row.touches || row.greeted || (row.status !== "por_contactar" && row.status !== "contactado")) return false;
+    const [row] = await tx<Array<{ touches: number; status: string; greeted_at: string | null; permission_at: string | null }>>`
+      select touches, status, greeted_at, permission_at from sales_outreach where id = ${id} for update`;
+    if (!row || row.status === "baja") return false;
+    // El saludo y el permiso son pasos de antes del link: solo se completan si todavía no tiene ninguno de los tres.
+    const greeting = !row.greeted_at && row.touches === 0 && steps.greetingAt !== null ? steps.greetingAt : null;
+    const permission = !row.permission_at && row.touches === 0 && steps.permissionAt !== null ? steps.permissionAt : null;
+    const extra = steps.touches.slice(row.touches);
+    const events: Array<[number, string]> = [
+      ...(greeting === null ? [] : [[greeting, "saludo"] as [number, string]]),
+      ...(permission === null ? [] : [[permission, "permiso"] as [number, string]]),
+      ...extra.map((at, i) => [at, ["primero", "seguimiento", "último"][row.touches + i]] as [number, string]),
+    ];
+    if (!events.length) return false;
+    const ats = events.map(([at]) => at);
+    const first = Math.min(...ats);
+    const last = Math.max(...ats);
+    const touches = row.touches + extra.length;
+    const open = row.status === "por_contactar" || row.status === "contactado";
+    const lastDay = dayOf(last);
+    const next = touches ? nextFollowUp(lastDay, touches) : permission !== null || row.permission_at ? addBusinessDays(lastDay, 1) : today;
     await tx`
       update sales_outreach set
-        greeted_at = ${steps.greetingAt === null ? null : iso(steps.greetingAt)},
-        permission_at = ${steps.permissionAt === null ? null : iso(steps.permissionAt)},
-        touches = ${n},
-        first_contact_at = coalesce(first_contact_at, ${iso(first)}),
+        greeted_at = coalesce(greeted_at, ${greeting === null ? null : iso(greeting)}),
+        permission_at = coalesce(permission_at, ${permission === null ? null : iso(permission)}),
+        touches = ${touches},
+        first_contact_at = least(coalesce(first_contact_at, ${iso(first)}), ${iso(first)}),
         last_contact_at = greatest(coalesce(last_contact_at, ${iso(last)}), ${iso(last)}),
-        last_channel = 'whatsapp',
+        last_channel = coalesce(last_channel, 'whatsapp'),
         status = case when status = 'por_contactar' then 'contactado' else status end,
-        next_action_on = ${next === null ? null : next < today ? today : next},
+        next_action_on = ${open ? (next === null ? null : next < today ? today : next) : tx`next_action_on`},
         updated_at = now()
       where id = ${id}`;
-    const events: Array<[number, string]> = [
-      ...(steps.greetingAt === null ? [] : [[steps.greetingAt, "saludo"] as [number, string]]),
-      ...(steps.permissionAt === null ? [] : [[steps.permissionAt, "permiso"] as [number, string]]),
-      ...steps.touches.map((at, i) => [at, ["primero", "seguimiento", "último"][i]] as [number, string]),
-    ];
     for (const [at, detail] of events) {
       await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail, created_at) values (${id}, 'mensaje', 'whatsapp', ${detail}, ${iso(at)})`;
     }
-    await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', ${`La lectura de WhatsApp encontró mensajes nuestros en la línea ${sender.slice(-4)} que no estaban registrados: quedaron con su fecha.`})`;
+    await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', ${`La lectura de WhatsApp encontró mensajes nuestros en la línea ${sender.slice(-4)} que no estaban registrados (${events.map(([, d]) => d).join(", ")}): quedaron con su fecha.`})`;
     await tx`insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone) values (${id}, ${phone}, ${sender}) on conflict do nothing`;
     return true;
   });
