@@ -315,6 +315,9 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     // Juan comparte el número con Kari, que ya recibió el saludo: no está para saludar.
     const all = await (await import("@/lib/sales/followup")).rows();
     expect(all.find((p) => p.code === "juan-j10")?.contactable).toBe(false);
+    // Cada uno sabe en qué línea está su chat (la cola de Chapa lo muestra y filtra por línea).
+    expect(all.find((p) => p.code === "hugo-h8")?.lines).toEqual(["0000"]);
+    expect(all.find((p) => p.code === "juan-j10")?.lines).toEqual(["0000"]);
     // Una lectura más no vuelve a registrar nada.
     await older();
     expect((await sync()).body.whatsapp.totals.registradas).toBe(0);

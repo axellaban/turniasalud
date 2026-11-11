@@ -53,6 +53,8 @@ export type Row = OutreachPerson & {
   converso_at: string | null;
   account: boolean;
   active: boolean;
+  /** Las líneas de la prospección (los últimos 4 números) con un chat o confirmadas para su número. */
+  lines: string[];
 };
 
 const facts = (r: Row) => ({
@@ -82,6 +84,9 @@ export async function rows(id?: string) {
         and not exists (select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id and (x.touches > 0 or x.status <> 'por_contactar'))
         and ${noChatYet()}) as contactable,
       ${conversoSql()} as converso,
+      array(select distinct right(l.sender, 4) from (
+        select c.sender_phone as sender from sales_whatsapp_chats c join sales_outreach x on x.id = c.outreach_id where x.phone = o.phone and (c.sent > 0 or c.received > 0)
+        union select w.sender_phone from sales_outreach_whatsapp_senders w where w.phone = o.phone) l order by 1) as lines,
       (select min(v.started_at) from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
         where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()}) as converso_at,
       ${account} as account,

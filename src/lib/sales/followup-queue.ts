@@ -67,6 +67,8 @@ export type QueueItem = {
   business: string;
   zone: string;
   phone: string | null;
+  /** Las líneas (0022, 5483) con un chat o confirmadas para su número: para operar las dos en paralelo. */
+  lines: string[];
   whatsapp: boolean;
   demoUrl: string;
   stage: StageKey;
@@ -196,6 +198,7 @@ function itemOf(
     business: r.business_name,
     zone: r.zone,
     phone: r.phone ? displayOutreachPhone(r.phone) : null,
+    lines: r.lines ?? [],
     whatsapp,
     demoUrl: outreachDemoUrl(r.code),
     stage,
