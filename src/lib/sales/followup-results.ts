@@ -142,3 +142,27 @@ export function funnelCohorts(people: CohortPerson[], thresholds: readonly numbe
     return { cohort: w, size: own.length, reached: count(own) };
   });
 }
+
+// ── Qué le corresponde a hoy ────────────────────────────────────────────────
+// Igual que habita.: pendiente de hoy es lo que la cola le asigna a hoy. No cuenta («programada»): lo que
+// excede el tope diario de saludos, lo programado o reprogramado para otro día, lo que espera que la
+// persona conteste y lo de un día no hábil. Lo trabado por un dato a corregir sí cuenta («bloqueada»).
+
+export type QueueDayInput = { dueAt?: string | null; snoozedUntil?: string | null; blocked?: string | null };
+const NOT_TODAY = [/^Sin cupo para primer contacto/i, /^Tope de \d+ contactos nuevos/i, /esper(á|ando) que (conteste|responda)/i, /los domingos no se escribe/i, /^D[ií]a no habilitado/i];
+export function queueDayState(q: QueueDayInput, now = new Date()): QueueDayRow["state"] {
+  const endOfToday = Date.parse(`${artDay(now)}T00:00:00-03:00`) + DAY;
+  if (q.dueAt && Date.parse(q.dueAt) >= endOfToday) return "programada";
+  if (q.snoozedUntil && Date.parse(q.snoozedUntil) >= endOfToday) return "programada";
+  const b = q.blocked;
+  if (!b) return "lista";
+  if (NOT_TODAY.some((r) => r.test(b))) return "programada";
+  if (/^(Programada para|Reprogramada|Fuera de horario|Fuera de la ventana)/i.test(b)) return new Date(now.getTime() - 3 * 3_600_000).getUTCDay() === 0 ? "programada" : "lista";
+  return "bloqueada";
+}
+
+/** El tope diario de saludos: de los primeros contactos listos, solo los que entran en el cupo que queda hoy. */
+export function capFirstContacts<T extends { stage: string }>(rows: Array<T & { state: QueueDayRow["state"] }>, firstStage: string, remaining: number) {
+  let left = Math.max(0, remaining);
+  return rows.map((r) => (r.stage === firstStage && r.state === "lista" ? (left-- > 0 ? r : { ...r, state: "programada" as const }) : r));
+}

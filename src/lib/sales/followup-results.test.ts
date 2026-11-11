@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executionDays, funnelCohorts, lastDays, weeklyByType, type DayExecution, type QueueDayRow } from "./followup-results";
+import { capFirstContacts, executionDays, funnelCohorts, lastDays, queueDayState, weeklyByType, type DayExecution, type QueueDayRow } from "./followup-results";
 
 const now = new Date("2026-11-11T15:00:00Z");
 const label = (stage: string) => (stage === "sin-saludo" ? "Paso 1: el saludo" : "Llevar a: demo visitada");
@@ -34,5 +34,22 @@ describe("funnelCohorts (Turnia)", () => {
     const list = [p("2026-11-09T13:00:00Z", 0), p("2026-11-10T13:00:00Z", 2), p("2026-11-10T14:00:00Z", 6), p(null, -1)];
     expect(funnelCohorts(list, T, "contacto", 1, now)).toEqual([{ cohort: "2026-11-13", size: 3, reached: [3, 2, 2, 1, 1, 1, 1] }]);
     expect(funnelCohorts(list, T, "version", 8, now)).toEqual([{ cohort: "Saludo V2", size: 3, reached: [3, 2, 2, 1, 1, 1, 1] }]);
+  });
+});
+
+describe("lo que le corresponde a hoy (Turnia)", () => {
+  it("deja afuera el tope de saludos, lo de otro día y lo que espera respuesta", () => {
+    expect(queueDayState({ blocked: "Tope de 50 contactos nuevos por día: ya se saludó a 50 hoy." }, now)).toBe("programada");
+    expect(queueDayState({ blocked: "Sin WhatsApp: es un fijo o no tiene celular." }, now)).toBe("bloqueada");
+    expect(queueDayState({ dueAt: "2026-11-13T12:00:00.000Z" }, now)).toBe("programada");
+    expect(queueDayState({ blocked: "Fuera de horario: de lunes a sábado, de 8:30 a 20." }, now)).toBe("lista");
+  });
+  it("de los saludos listos, solo los que entran en el cupo que queda hoy", () => {
+    const rows = [
+      { stage: "sin-saludo", state: "lista" as const }, { stage: "sin-saludo", state: "lista" as const },
+      { stage: "sin-saludo", state: "bloqueada" as const }, { stage: "sin-saludo", state: "lista" as const },
+      { stage: "demo-sin-abrir", state: "lista" as const },
+    ];
+    expect(capFirstContacts(rows, "sin-saludo", 2).map((r) => r.state)).toEqual(["lista", "lista", "bloqueada", "programada", "lista"]);
   });
 });

@@ -15,7 +15,7 @@ import {
   versions,
   type Row,
 } from "./followup";
-import { executionDays, funnelCohorts, weeklyByType, type QueueDayRow } from "./followup-results";
+import { capFirstContacts, executionDays, funnelCohorts, queueDayState, weeklyByType, type QueueDayRow } from "./followup-results";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
 import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
@@ -242,13 +242,18 @@ const QUEUE_DAYS = 35;
 /** El paso del embudo de un cliente pago: la etapa «Cliente», que no tiene cola. */
 const CLIENT_STEP = 6;
 let queueDayWrittenAt = 0;
-async function recordQueueDay(all: QueueItem[], now: Date) {
+async function recordQueueDay(all: QueueItem[], now: Date, cap: { cap: number; newToday: number }) {
   if (now.getTime() - queueDayWrittenAt < 10 * 60_000) return;
   queueDayWrittenAt = now.getTime();
   const day = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
-  const rows = all.filter((q) => q.action && q.execution?.status !== "sent").map((q) => ({
-    day, outreach_id: q.id, stage: q.stage, state: q.dueAt ? "programada" : q.blocked ? "bloqueada" : "lista", last_seen_at: now,
-  }));
+  // Solo lo que la cola le asigna a hoy (followup-results.ts → queueDayState), con el tope diario de saludos.
+  const rows = capFirstContacts(
+    all.filter((q) => q.action && q.execution?.status !== "sent").sort(byPriority).map((q) => ({
+      day, outreach_id: q.id, stage: q.stage as string, state: queueDayState({ dueAt: q.dueAt, snoozedUntil: q.snoozedUntil, blocked: q.blocked }, now), last_seen_at: now,
+    })),
+    "sin-saludo",
+    cap.cap - cap.newToday,
+  );
   for (let i = 0; i < rows.length; i += 500)
     await sql`insert into sales_followup_queue_days ${sql(rows.slice(i, i + 500), "day", "outreach_id", "stage", "state", "last_seen_at")}
       on conflict (day, outreach_id, stage) do update set state = excluded.state, last_seen_at = excluded.last_seen_at`;
@@ -266,7 +271,7 @@ async function queueDays(now: Date): Promise<QueueDayRow[] | null> {
 export async function followupSnapshot(now = new Date()) {
   const b = await board(now);
   const all = [...b.items.values()];
-  await recordQueueDay(all, now).catch(() => console.error("followup_queue_day_failed"));
+  await recordQueueDay(all, now, { cap: b.cap, newToday: b.newToday }).catch(() => console.error("followup_queue_day_failed"));
   const [days, bots] = await Promise.all([
     queueDays(now),
     // Quién ejecutó: hasta que el esquema tenga executed_by (o si nunca hubo un bot), todo es humano.
