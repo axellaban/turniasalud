@@ -323,11 +323,64 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     expect((await sync()).body.whatsapp.totals.registradas).toBe(0);
   });
 
+  it("completa hacia adelante a quien tenía pasos a medias o ya figuraba como «Respondió»", async () => {
+    const add = (code: string, phone: string, status: string, touches: number, greeted: boolean) => sql`
+      insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, greeted_at, first_contact_at, last_contact_at)
+      values (${code}, ${code}, ${code}, ${phone}, 'movil', ${status}, ${touches}, ${greeted ? sql`now() - interval '9 days'` : null},
+        ${greeted ? sql`now() - interval '9 days'` : null}, ${greeted ? sql`now() - interval '9 days'` : null})`;
+    // Leo: el saludo estaba registrado; el link y un seguimiento salieron desde el celular.
+    await add("leo-l12", "+5492236000012", "contactado", 0, true);
+    // Mia: figuraba como «Respondió» sin nada registrado.
+    await add("mia-m13", "+5492236000013", "respondio", 0, false);
+    // Noe: ya tenía registrado todo lo que muestra el chat: no cambia.
+    await add("noe-n14", "+5492236000014", "contactado", 1, true);
+    extraChats.push("5492236000012@c.us", "5492236000013@c.us", "5492236000014@c.us");
+    const D = 86400;
+    messages["prospeccion/5492236000012@c.us"] = [
+      { id: "l1", timestamp: T, fromMe: true, body: "Buenas! Hablo con la recepción?" },
+      { id: "l2", timestamp: T + D, fromMe: true, body: "Te dejo la prueba: https://turnia.example/p/leo-l12" },
+      { id: "l3", timestamp: T + D + 60, fromMe: false, body: "¿Cuánto sale?" },
+      { id: "l4", timestamp: T + D + 120, fromMe: true, body: "Depende de cuántos mensajes manejan." },
+      { id: "l5", timestamp: T + 3 * D, fromMe: true, body: "¿Pudieron verla?" },
+    ];
+    messages["prospeccion/5492236000013@c.us"] = [
+      { id: "m1", timestamp: T, fromMe: true, body: "Buenas! Hablo con la recepción?" },
+      { id: "m2", timestamp: T + 60, fromMe: false, body: "Sí, ¿quién habla?" },
+    ];
+    messages["prospeccion/5492236000014@c.us"] = [
+      { id: "n1", timestamp: T, fromMe: true, body: "Buenas!" },
+      { id: "n2", timestamp: T + D, fromMe: true, body: "https://turnia.example/p/noe-n14" },
+    ];
+    await older();
+    const r = (await sync()).body.whatsapp;
+    expect(r.totals.registradas).toBe(2);
+    const rows = await sql<Array<{ code: string; touches: number; greeted: boolean; status: string }>>`
+      select code, touches, greeted_at is not null as greeted, status from sales_outreach where code in ('leo-l12', 'mia-m13', 'noe-n14') order by code`;
+    expect(rows).toEqual([
+      // Preguntó el precio: además queda en «Respondió».
+      { code: "leo-l12", touches: 2, greeted: true, status: "respondio" },
+      { code: "mia-m13", touches: 0, greeted: true, status: "respondio" },
+      { code: "noe-n14", touches: 1, greeted: true, status: "contactado" },
+    ]);
+    const leo = await sql<Array<{ detail: string }>>`
+      select e.detail from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id
+      where o.code = 'leo-l12' and e.kind = 'mensaje' order by e.created_at`;
+    expect(leo.map((e) => e.detail)).toEqual(["primero", "seguimiento"]);
+    await older();
+    expect((await sync()).body.whatsapp.totals.registradas).toBe(0);
+  });
+
   it("los pasos que ya salieron en un chat: saludo, permiso y, desde el link, los tres mensajes", () => {
     const m = (at: number, text: string) => ({ at, text });
     expect(wa.stepsFromChat([m(1, "Buenas!")])).toEqual({ greetingAt: 1, permissionAt: null, touches: [] });
-    expect(wa.stepsFromChat([m(1, "Buenas!"), m(2, "¿Te paso el link?"), m(3, "https://x.example/p/ana-a1b"), m(4, "¿La vieron?"), m(5, "Audio"), m(6, "Otro")]))
-      .toEqual({ greetingAt: 1, permissionAt: 2, touches: [3, 4, 5] });
+    const D = 86400;
+    // Después del link, un seguimiento por día (el texto y el audio del mismo día son uno), hasta tres.
+    expect(wa.stepsFromChat([m(1, "Buenas!"), m(2, "¿Te paso el link?"), m(3, "https://x.example/p/ana-a1b"), m(3 + D, "¿La vieron?"), m(4 + D, "Audio"), m(3 + 2 * D, "Reenviable"), m(3 + 3 * D, "Otro")]))
+      .toEqual({ greetingAt: 1, permissionAt: 2, touches: [3, 3 + D, 3 + 2 * D] });
+    // Lo que se contesta en una conversación no es un seguimiento.
+    const them = (at: number, text: string) => ({ at, text, fromMe: false });
+    expect(wa.stepsFromChat([m(1, "Buenas!"), them(5, "Sí"), m(6, "¿Te paso el link?"), them(7, "Dale"), m(8, "https://x.example/p/ana-a1b"), them(8 + D, "¿Cuánto sale?"), m(9 + D, "Depende…")]))
+      .toEqual({ greetingAt: 1, permissionAt: 6, touches: [8] });
     // Si el primero ya lleva el link, no hubo saludo ni permiso.
     expect(wa.stepsFromChat([m(1, "Hola! https://x.example/p/ana-a1b")])).toEqual({ greetingAt: null, permissionAt: null, touches: [1] });
     expect(wa.mentions("Buenas! Hablo con la recepción de la Dra. Varesé?", { name: "Lucía Varese" })).toBe(true);
