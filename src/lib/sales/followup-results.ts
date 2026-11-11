@@ -26,7 +26,9 @@ export type DayTypeCount = {
   failed: number;
   scheduled: number;
 };
-export type ExecutionDay = { day: string; captured: boolean; types: DayTypeCount[] };
+/** La misma cuenta por etapa técnica de la cola: para cruzar la ejecución de cada etapa con el paso del embudo al que lleva. */
+export type DayStageCount = { stage: string; pending: number; executed: number; success: number };
+export type ExecutionDay = { day: string; captured: boolean; types: DayTypeCount[]; stages: DayStageCount[] };
 
 const DAY = 86_400_000;
 /** YYYY-MM-DD en Buenos Aires (UTC-3 todo el año). */
@@ -68,6 +70,7 @@ export function executionDays(rows: QueueDayRow[], executions: DayExecution[], s
   }
   return days.map((day) => {
     const types = new Map<string, DayTypeCount>();
+    const stages = new Map<string, DayStageCount>();
     for (const c of byDay.get(day)?.values() ?? []) {
       const type = label(c.stage);
       if (!types.has(type)) types.set(type, { type, stages: [], pending: 0, human: 0, bot: 0, successHuman: 0, successBot: 0, blocked: 0, unclaimed: 0, failed: 0, scheduled: 0 });
@@ -75,15 +78,19 @@ export function executionDays(rows: QueueDayRow[], executions: DayExecution[], s
       if (!t.stages.includes(c.stage)) t.stages.push(c.stage);
       if (!c.sent && !c.failed && c.state === "programada") { t.scheduled++; continue; }
       t.pending++;
+      if (!stages.has(c.stage)) stages.set(c.stage, { stage: c.stage, pending: 0, executed: 0, success: 0 });
+      const st = stages.get(c.stage)!;
+      st.pending++;
+      if (c.sent) st.executed++;
       if (c.sent) {
         const bot = c.sent.executed_by === "bot";
         if (bot) t.bot++; else t.human++;
-        if (converted(c.sent, stepNow)) { if (bot) t.successBot++; else t.successHuman++; }
+        if (converted(c.sent, stepNow)) { st.success++; if (bot) t.successBot++; else t.successHuman++; }
       } else if (c.failed) t.failed++;
       else if (c.state === "bloqueada") t.blocked++;
       else t.unclaimed++;
     }
-    return { day, captured: captured.has(day), types: [...types.values()].sort((a, b) => b.pending - a.pending || a.type.localeCompare(b.type)) };
+    return { day, captured: captured.has(day), types: [...types.values()].sort((a, b) => b.pending - a.pending || a.type.localeCompare(b.type)), stages: [...stages.values()] };
   });
 }
 

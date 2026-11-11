@@ -19,6 +19,7 @@ describe("executionDays (Turnia)", () => {
       type: "Paso 1: el saludo", stages: ["sin-saludo"], pending: 4, human: 1, bot: 1, successHuman: 1, successBot: 0, blocked: 1, unclaimed: 1, failed: 0, scheduled: 1,
     });
     expect(day.types.find((t) => t.stages.includes("demo-sin-abrir"))).toMatchObject({ pending: 1, failed: 1 });
+    expect(day.stages.find((s) => s.stage === "sin-saludo")).toEqual({ stage: "sin-saludo", pending: 4, executed: 2, success: 1 });
   });
   it("counts each type's sends and conversions per week", () => {
     const out = weeklyByType([ex("a", "sin-saludo", "2026-11-10T13:00:00Z")], new Map([["a", 0]]), label, 1, now);
