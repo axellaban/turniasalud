@@ -94,10 +94,10 @@ export function executionDays(rows: QueueDayRow[], executions: DayExecution[], s
   });
 }
 
-/** Viernes de cierre de la semana (sábado a viernes) de un instante, en Buenos Aires: las mismas semanas que habita. */
+/** Domingo de cierre de la semana (lunes a domingo) de un instante, en Buenos Aires: las mismas semanas que habita. */
 export function weekOf(iso: string) {
   const t = new Date(Date.parse(iso) - 3 * 3_600_000);
-  t.setUTCDate(t.getUTCDate() + ((5 - t.getUTCDay() + 7) % 7));
+  t.setUTCDate(t.getUTCDate() + ((7 - t.getUTCDay()) % 7));
   return t.toISOString().slice(0, 10);
 }
 export function lastWeeks(n: number, now = new Date()) {
