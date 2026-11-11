@@ -15,7 +15,7 @@ import {
   versions,
   type Row,
 } from "./followup";
-import { executionDays, weeklyByType, type QueueDayRow } from "./followup-results";
+import { executionDays, funnelCohorts, weeklyByType, type QueueDayRow } from "./followup-results";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
 import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
@@ -239,6 +239,8 @@ const median = (xs: number[]) => {
 // calcular la cola para Chapa (como mucho una vez cada 10 minutos por instancia). Nunca bloquea: si
 // falta la tabla, Resultados avisa que todavía no hay foto.
 const QUEUE_DAYS = 35;
+/** El paso del embudo de un cliente pago: la etapa «Cliente», que no tiene cola. */
+const CLIENT_STEP = 6;
 let queueDayWrittenAt = 0;
 async function recordQueueDay(all: QueueItem[], now: Date) {
   if (now.getTime() - queueDayWrittenAt < 10 * 60_000) return;
@@ -389,6 +391,18 @@ export async function followupSnapshot(now = new Date()) {
         days: executionDays(days ?? [], dayExecutions, b.stepNow, label),
       },
       actionLabels: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, actionLabel(s.key)])),
+      // Las cohortes con las etapas comerciales de Follow-up desde Saludado (las del Embudo del panel).
+      cohortFunnel: (() => {
+        const stages = TURNIA_COMMERCIAL.filter((c) => c.key !== "prospectado").map((c) => ({
+          key: c.key, title: c.label,
+          from: c.technical.length ? Math.min(...c.technical.map((t) => stageInfo(t as StageKey).step)) : CLIENT_STEP,
+        }));
+        const greeting = new Map<string, number>();
+        for (const e of b.ex) if (e.status === "sent" && e.stage === "sin-saludo") greeting.set(e.outreach_id, b.vs.find((v) => v.id === e.version_id)?.version ?? 0);
+        const people = b.people.map((r) => ({ firstContact: iso(r.greeted_at), step: b.stepNow.get(r.id) ?? -1, greetingVersion: greeting.get(r.id) ?? null }));
+        const t = stages.map((x) => x.from);
+        return { stages: stages.map(({ key, title }) => ({ key, title })), contacto: funnelCohorts(people, t, "contacto"), version: funnelCohorts(people, t, "version") };
+      })(),
       weeklyByType: weeklyByType(dayExecutions, b.stepNow, label),
     },
     changes,

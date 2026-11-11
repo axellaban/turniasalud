@@ -119,3 +119,26 @@ export function weeklyByType(executions: DayExecution[], stepNow: Map<string, nu
   }
   return out;
 }
+
+// ── Cohortes con el embudo de Follow-up ────────────────────────────────────
+// Como en habita.: cada cohorte (semana del saludo o versión del saludo) contada con las etapas
+// comerciales de Follow-up desde Saludado, con el paso del embudo de hoy (placeOf).
+
+export type CohortPerson = { firstContact: string | null; step: number; greetingVersion: number | null };
+export type FunnelCohortRow = { cohort: string; size: number; reached: number[] };
+
+/** `thresholds[i]`: el primer paso del embudo de la etapa i (quien está en ese paso o más adelante llegó). */
+export function funnelCohorts(people: CohortPerson[], thresholds: readonly number[], by: "contacto" | "version", weeks = 8, now = new Date()): FunnelCohortRow[] {
+  const count = (own: CohortPerson[]) => thresholds.map((t) => own.filter((p) => p.step >= t).length);
+  if (by === "version") {
+    const keys = [...new Set(people.filter((p) => p.firstContact).map((p) => p.greetingVersion))].sort((a, b) => (a ?? 0) - (b ?? 0));
+    return keys.map((k) => {
+      const own = people.filter((p) => p.firstContact && p.greetingVersion === k);
+      return { cohort: k === null ? "Antes de Follow-up" : `Saludo V${k}`, size: own.length, reached: count(own) };
+    });
+  }
+  return lastWeeks(weeks, now).map((w) => {
+    const own = people.filter((p) => p.firstContact && weekOf(p.firstContact) === w);
+    return { cohort: w, size: own.length, reached: count(own) };
+  });
+}
