@@ -495,7 +495,7 @@ export async function confirm(t: Task, actor: string, executedBy: "humano" | "bo
   const out = await markFollowup({ id: it.id, stage: it.stage, versionId: t.versionId ?? it.versionId, status: "sent", actor });
   // Confirmado desde el modo extensión de Chapa (?agente=1): lo ejecutó la extensión del navegador, no una persona.
   if (executedBy === "bot")
-    await sql`update sales_followup_executions set executed_by = 'bot' where outreach_id = ${it.id} and version_id = ${t.versionId ?? it.versionId} and status = 'sent'`.catch(() => null);
+    await sql`update sales_followup_executions set executed_by = 'bot' where outreach_id = ${it.id} and version_id = ${String(t.versionId ?? it.versionId)} and status = 'sent'`.catch(() => null);
   await unlock(it.id, actor);
   const after = await one(it.id).catch(() => null);
   return { ...out, item: after };
