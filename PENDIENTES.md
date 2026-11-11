@@ -1,5 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
+
+`GET /api/prospeccion?vista=followup` suma, en `results`, lo mismo que habita.: `execution` (la cola día por día y por tipo de acción: pendientes, ejecutadas por persona o bot, exitosas, bloqueadas, sin tomar, no salieron y reprogramadas), `weeklyByType` y `actionLabels`. Lógica en `src/lib/sales/followup-results.ts`; tabla `sales_followup_queue_days` y columna `sales_followup_executions.executed_by` en `supabase/schema.sql` (se aplican solas en el próximo build de producción).
+
+- **Exitosa** en Turnia: la persona avanzó de paso después del envío (su definición de conversión de siempre; Turnia no guarda cuándo, así que no hay ventana).
+- La foto se guarda cuando Chapa pide la cola (como mucho cada 10 minutos). Turnia no tiene cron: un día en que nadie abre Chapa queda solo con lo ejecutado.
+- Hoy no hay envíos automáticos: todo cuenta como «humano» hasta que un bot registre `executed_by = 'bot'`.
+- Las cohortes con las etapas del panel (Por contactar … Cliente Fundador) se calculan en Chapa con las cuentas que ya manda Turnia; no hizo falta cambiar nada acá.
+
 ## Paridad con Commercial OS de Chapa Labs (09/11/2026)
 
 La nueva UI de Chapa Labs se comparte con habita. y Turnia: General, Cola, Respuestas, Embudo por etapas, Prospectos, Reglas y Mensajes, Resultados y Etapas/Situaciones. **Turnia mantiene su cola y su embudo existentes** con confirmación de envío, horarios y secuencia a recepción; no hay cambio en sus datos ni cadencias por este rediseño.

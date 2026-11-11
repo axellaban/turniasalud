@@ -1555,3 +1555,24 @@ alter table sales_followup_state
 alter table sales_followup_state
   add constraint sales_followup_state_situation_check
   check (situation is null or situation in ('sin_respuesta','confirmo_numero','interesado','neutro','pregunta_precios','mas_adelante','recontactar_vacaciones','recontactar_mas_adelante','derivo','rechazo','no_contactar','sin_whatsapp','numero_incorrecto'));
+
+-- ---------------------------------------------------------------------------
+-- Resultados en Chapa Labs: la foto diaria de la cola y quién ejecutó (como habita., amoblaia
+-- 202612110001). Qué acciones estuvieron pendientes cada día (hora de Buenos Aires), guardado al
+-- calcular la cola para Chapa; y si cada envío lo hizo una persona o un bot (hoy todo es humano).
+-- Ver src/lib/sales/followup-results.ts.
+-- ---------------------------------------------------------------------------
+create table if not exists sales_followup_queue_days (
+  day date not null,
+  outreach_id uuid not null references sales_outreach(id) on delete cascade,
+  stage text not null,
+  state text not null check (state in ('lista', 'bloqueada', 'programada')),
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  primary key (day, outreach_id, stage)
+);
+create index if not exists sales_followup_queue_days_day_idx on sales_followup_queue_days (day);
+alter table sales_followup_queue_days enable row level security;
+alter table sales_followup_executions add column if not exists executed_by text not null default 'humano';
+alter table sales_followup_executions drop constraint if exists sales_followup_executions_executed_by_check;
+alter table sales_followup_executions add constraint sales_followup_executions_executed_by_check check (executed_by in ('humano', 'bot'));

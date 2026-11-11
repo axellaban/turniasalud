@@ -108,6 +108,12 @@ describe.runIf(base)("Follow-up de Turnia desde Chapa Labs", () => {
     const after = await get("followup");
     expect(find(after.body.queue, "ana-111")).toBeUndefined();
     expect(after.body.results.byActor).toEqual([expect.objectContaining({ actor: "Facu", executions: 1 })]);
+    // La foto diaria de la cola y la ejecución del día, por tipo de acción, para Resultados en Chapa.
+    expect((await sql`select 1 from sales_followup_queue_days where day = '2026-11-10'`).length).toBeGreaterThan(0);
+    const today = after.body.results.execution.days.at(-1);
+    expect(after.body.results.execution.available).toBe(true);
+    // El envío lleva la hora real de la base (now()), no la del reloj falso: acá alcanza con la foto.
+    expect(today).toMatchObject({ day: "2026-11-10", captured: true });
     // Respondió: el Paso 2 (pide permiso para pasar el link), con prioridad alta.
     expect((await op("Facu", { op: "reply", inmobiliaria: "ana-111", texto: "Hola, sí, ¿qué necesitás?" })).status).toBe(200);
     const replied = await get("followup");
