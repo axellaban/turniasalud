@@ -5,6 +5,7 @@
 `GET /api/prospeccion?vista=followup` suma, en `results`, lo mismo que habita.: `execution` (la cola día por día y por tipo de acción: pendientes, ejecutadas por persona o bot, exitosas, bloqueadas, sin tomar, no salieron y reprogramadas), `weeklyByType` y `actionLabels`. Lógica en `src/lib/sales/followup-results.ts`; tabla `sales_followup_queue_days` y columna `sales_followup_executions.executed_by` en `supabase/schema.sql` (se aplican solas en el próximo build de producción).
 
 - **Exitosa** en Turnia: la persona avanzó de paso después del envío (su definición de conversión de siempre; Turnia no guarda cuándo, así que no hay ventana).
+- **11/11 (revisión):** la cola cuenta también los mensajes que salieron sin «Confirmar envío» (`messageExecutions` en `followup-results.ts`, desde `sales_outreach_events` kind «mensaje»): antes daba 0 ejecutadas. El saludo es exitoso si respondieron después (`sales_whatsapp_chats.last_received_at`); el resto, si avanzó de paso.
 - La foto se guarda cuando Chapa pide la cola (como mucho cada 10 minutos). Turnia no tiene cron: un día en que nadie abre Chapa queda solo con lo ejecutado.
 - Hoy no hay envíos automáticos: todo cuenta como «humano» hasta que un bot registre `executed_by = 'bot'`.
 - Las cohortes con las etapas del panel (Por contactar … Cliente Fundador) se calculan en Chapa con las cuentas que ya manda Turnia; no hizo falta cambiar nada acá.
