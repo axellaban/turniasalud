@@ -48,7 +48,7 @@ export function TemplatesForm({
           <textarea
             id={`tpl-${key}`}
             name={key}
-            rows={key === "whatsapp_abridor" ? 2 : key === "whatsapp_permiso" || key === "whatsapp_permiso_turno" || key === "whatsapp_entrega" ? 7 : 4}
+            rows={key === "whatsapp_abridor" ? 2 : ["whatsapp_permiso", "whatsapp_permiso_turno", "whatsapp_permiso_profesional", "whatsapp_entrega", "whatsapp_entrega_profesional", "whatsapp_hablaste_doctor"].includes(key) ? 7 : 4}
             maxLength={1500}
             value={values[key]}
             onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}

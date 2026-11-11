@@ -2,7 +2,7 @@ import "server-only";
 import { json, sql } from "@/lib/db";
 import { DEFAULT_TZ, localDateKey } from "@/lib/time";
 import { AXEL_WHATSAPP } from "./contacto-axel";
-import { nextFollowUp } from "./outreach-messages";
+import { addBusinessDays, nextFollowUp } from "./outreach-messages";
 import { WHATSAPP_SYNC_ACTOR, todayKey } from "./outreach";
 import { incomingReply } from "./followup-queue";
 import { listProspectChats, phoneFromChatId, prospectWaha, voiceChannelStatus, waha, type ProspectWaha } from "./voice-outreach";
@@ -62,6 +62,8 @@ export type SyncReport = {
     abiertas: number;
     /** Personas que una lectura anterior abrió por una respuesta automática y volvieron a como estaban. */
     corregidas: number;
+    /** Personas sin nada registrado a las que ya les habíamos escrito por fuera del panel (quedaron registradas). */
+    registradas?: number;
   };
   /** Las que esperan respuesta, de la más vieja a la más nueva (hasta 60). */
   pending: PendingReply[];
@@ -106,6 +108,8 @@ export type ChatSummary = {
   lastFromMe: boolean | null;
   /** Lo que contestó después de `since` (segundos), del más viejo al más nuevo. */
   newReplies: Array<{ at: number; text: string }>;
+  /** Nuestros mensajes, del más viejo al más nuevo (para reconstruir los pasos que salieron por fuera del panel). */
+  ours: Array<{ at: number; text: string }>;
 };
 
 /**
@@ -134,7 +138,37 @@ export function summarizeChat(messages: Message[], since: number | null, hadSent
     lastReceivedText: replies.at(-1)?.text ?? null,
     lastFromMe: last ? last.fromMe : null,
     newReplies: replies.filter((m) => since === null || m.at > since),
+    ours: mine.map((m) => ({ at: m.at, text: m.text })),
   };
+}
+
+/** El link de la demo personal (/p/<código>): desde ese mensaje empiezan los tres que cuentan. */
+const DEMO_LINK = /\/p\/[a-z0-9-]{3,}/i;
+
+export type ChatSteps = { greetingAt: number | null; permissionAt: number | null; touches: number[] };
+
+/**
+ * Los pasos de la secuencia que ya salieron en un chat, para quien no tiene nada registrado: antes del
+ * link, el primero es el saludo (Paso 1) y el segundo el pedido de permiso (Paso 2); el mensaje con el
+ * link es el primero de los tres y cada uno de los siguientes, un seguimiento (hasta tres).
+ */
+export function stepsFromChat(ours: Array<{ at: number; text: string }>): ChatSteps {
+  const link = ours.findIndex((m) => DEMO_LINK.test(m.text));
+  const before = link === -1 ? ours : ours.slice(0, link);
+  return {
+    greetingAt: before[0]?.at ?? null,
+    permissionAt: before[1]?.at ?? null,
+    touches: link === -1 ? [] : ours.slice(link, link + 3).map((m) => m.at),
+  };
+}
+
+const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+/** ¿El mensaje nombra a esta persona (su apellido o su consultorio)? Para elegir entre dos que comparten el número. */
+export function mentions(text: string, p: { name: string; business_name?: string | null }): boolean {
+  const t = fold(text);
+  const surname = fold(p.name.trim().split(/\s+/).at(-1) ?? "");
+  const business = fold(p.business_name ?? "");
+  return (surname.length >= 4 && t.includes(surname)) || (business.length >= 5 && t.includes(business));
 }
 
 async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<void>, deadline: number): Promise<number> {
@@ -150,7 +184,7 @@ async function inParallel<T>(items: T[], n: number, fn: (item: T) => Promise<voi
   return done;
 }
 
-type Person = { id: string; code: string; name: string; status: string; phone: string };
+type Person = { id: string; code: string; name: string; status: string; phone: string; business_name: string | null; touches: number; greeted: boolean };
 type Prev = { outreach_id: string; sent: number; last_received_at: string | null };
 
 /** Las líneas de la prospección configuradas, sin repetir el número. */
@@ -188,7 +222,7 @@ export async function syncWhatsappReplies(trigger: string): Promise<SyncReport> 
     at: new Date().toISOString(),
     trigger,
     lines: [],
-    totals: { conversaciones: 0, respondieron: 0, esperanRespuesta: 0, nuevas: 0, abiertas: 0, corregidas: 0 },
+    totals: { conversaciones: 0, respondieron: 0, esperanRespuesta: 0, nuevas: 0, abiertas: 0, corregidas: 0, registradas: 0 },
     pending: [],
   };
   try {
@@ -218,8 +252,10 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
   const chats = await listProspectChats(config, contacted);
   const digits = [...chats.byPhone.keys()].map((p) => p.replace(/\D/g, ""));
   const people = await sql<Person[]>`
-    select id, code, name, status, phone from sales_outreach
+    select id, code, name, status, phone, business_name, touches, (greeted_at is not null or permission_at is not null) as greeted from sales_outreach
     where phone is not null and regexp_replace(phone, '[^0-9]', '', 'g') = any(${digits}::text[])`;
+  const samePhone = new Map<string, Person[]>();
+  for (const p of people) samePhone.set(p.phone, [...(samePhone.get(p.phone) ?? []), p]);
   const prev = new Map((await sql<Prev[]>`
     select outreach_id, sent, last_received_at::text from sales_whatsapp_chats where sender_phone = ${sender}`).map((p) => [p.outreach_id, p]));
   const session = encodeURIComponent(config.session);
@@ -256,6 +292,21 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
         last_received_text = case when ${complete} then excluded.last_received_text else coalesce(excluded.last_received_text, sales_whatsapp_chats.last_received_text) end,
         last_from_me = case when ${complete} then excluded.last_from_me else coalesce(excluded.last_from_me, sales_whatsapp_chats.last_from_me) end,
         synced_at = now()`;
+    // Lo que se le mandó por fuera del panel (desde el celular o WhatsApp Web) queda registrado, así no
+    // vuelve a la cola como si nunca le hubiéramos escrito. Solo con el chat entero y si no tiene nada
+    // registrado; si comparten el número, solo a quien nombra el saludo y si nadie más fue contactado.
+    if (complete && s.ours.length && !person.touches && !person.greeted && (person.status === "por_contactar" || person.status === "contactado")) {
+      const others = (samePhone.get(person.phone) ?? []).filter((p) => p.id !== person.id);
+      const first = s.ours[0].text;
+      const mine = !others.length || (!others.some((p) => p.touches || p.greeted) && mentions(first, person) && !others.some((p) => mentions(first, p)));
+      if (mine) {
+        try {
+          if (await registerFromChat(person.id, person.phone, sender, stepsFromChat(s.ours))) report.totals.registradas = (report.totals.registradas ?? 0) + 1;
+        } catch (e) {
+          console.error("pasos leídos de WhatsApp", e instanceof Error ? e.message.slice(0, 160) : e);
+        }
+      }
+    }
     if (complete && !s.received && (await undoAutomaticOpen(person.id))) report.totals.corregidas++;
     if (s.newReplies.length) {
       report.totals.nuevas += s.newReplies.length;
@@ -269,6 +320,49 @@ async function syncLine(config: ProspectWaha, label: string, deadline: number, r
   }, deadline);
 
   return { line: label, status: "ok", chats: chats.ids.length, prospects: people.length, read, unread: people.length - read };
+}
+
+/**
+ * Registra los pasos que salieron por fuera del panel (ver stepsFromChat), con su fecha, a quien no
+ * tiene nada registrado. Confirma la línea para su número. Devuelve si registró algo.
+ */
+async function registerFromChat(id: string, phone: string, sender: string, steps: ChatSteps): Promise<boolean> {
+  const all = [steps.greetingAt, steps.permissionAt, ...steps.touches].filter((v): v is number => v !== null);
+  if (!all.length) return false;
+  const first = Math.min(...all);
+  const last = Math.max(...all);
+  const lastDay = localDateKey(new Date(last * 1000), DEFAULT_TZ);
+  const today = todayKey();
+  const n = steps.touches.length;
+  const next = n ? nextFollowUp(lastDay, n) : steps.permissionAt ? addBusinessDays(lastDay, 1) : today;
+  return sql.begin(async (tx) => {
+    const [row] = await tx<Array<{ touches: number; status: string; greeted: boolean }>>`
+      select touches, status, (greeted_at is not null or permission_at is not null) as greeted from sales_outreach where id = ${id} for update`;
+    if (!row || row.touches || row.greeted || (row.status !== "por_contactar" && row.status !== "contactado")) return false;
+    await tx`
+      update sales_outreach set
+        greeted_at = ${steps.greetingAt === null ? null : iso(steps.greetingAt)},
+        permission_at = ${steps.permissionAt === null ? null : iso(steps.permissionAt)},
+        touches = ${n},
+        first_contact_at = coalesce(first_contact_at, ${iso(first)}),
+        last_contact_at = greatest(coalesce(last_contact_at, ${iso(last)}), ${iso(last)}),
+        last_channel = 'whatsapp',
+        status = case when status = 'por_contactar' then 'contactado' else status end,
+        next_action_on = ${next === null ? null : next < today ? today : next},
+        updated_at = now()
+      where id = ${id}`;
+    const events: Array<[number, string]> = [
+      ...(steps.greetingAt === null ? [] : [[steps.greetingAt, "saludo"] as [number, string]]),
+      ...(steps.permissionAt === null ? [] : [[steps.permissionAt, "permiso"] as [number, string]]),
+      ...steps.touches.map((at, i) => [at, ["primero", "seguimiento", "último"][i]] as [number, string]),
+    ];
+    for (const [at, detail] of events) {
+      await tx`insert into sales_outreach_events (outreach_id, kind, channel, detail, created_at) values (${id}, 'mensaje', 'whatsapp', ${detail}, ${iso(at)})`;
+    }
+    await tx`insert into sales_outreach_events (outreach_id, kind, detail) values (${id}, 'nota', ${`La lectura de WhatsApp encontró mensajes nuestros en la línea ${sender.slice(-4)} que no estaban registrados: quedaron con su fecha.`})`;
+    await tx`insert into sales_outreach_whatsapp_senders (outreach_id, phone, sender_phone) values (${id}, ${phone}, ${sender}) on conflict do nothing`;
+    return true;
+  });
 }
 
 /**
@@ -393,7 +487,6 @@ export type ChatSearch = {
 };
 
 const HISTORY = 100;
-const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 /** Las palabras de la búsqueda (sin tildes ni mayúsculas; separadas por espacios, comas o «|»). */
 export const searchTerms = (query: string) =>
   [...new Set(fold(query.slice(0, 200)).split(/[\s,|]+/).filter((t) => t.length >= 3))].slice(0, 12);
