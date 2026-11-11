@@ -1,7 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { DEFAULT_TZ } from "@/lib/time";
-import { displayOutreachPhone, type OutreachStatus } from "./outreach-messages";
+import { CLOSED, displayOutreachPhone, type OutreachStatus } from "./outreach-messages";
 import { OutreachError, addOutreachNote, outreachDemoUrl, outreachSettings, setOutreachStatus, todayKey } from "./outreach";
 import {
   FollowupError,
@@ -15,6 +15,7 @@ import {
   versions,
   type Row,
 } from "./followup";
+import { commercialChart, type ChartPeriod } from "./followup-chart";
 import { capFirstContacts, executionDays, funnelCohorts, queueDayState, weeklyByType, type QueueDayRow } from "./followup-results";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
 import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
@@ -268,7 +269,8 @@ async function queueDays(now: Date): Promise<QueueDayRow[] | null> {
 }
 
 /** Lo que Chapa muestra: la cola, lo programado, lo bloqueado, las respuestas, el embudo y los resultados. */
-export async function followupSnapshot(now = new Date()) {
+/** period: el del «Funnel comercial» (periodo hoy|7|30|mes|todo, o desde/hasta); no cambia nada más. */
+export async function followupSnapshot(now = new Date(), period: ChartPeriod = {}) {
   const b = await board(now);
   const all = [...b.items.values()];
   await recordQueueDay(all, now, { cap: b.cap, newToday: b.newToday }).catch(() => console.error("followup_queue_day_failed"));
@@ -355,6 +357,19 @@ export async function followupSnapshot(now = new Date()) {
     noInteresados: all.filter((q) => q.situation === "rechazo" && !q.action),
 
     funnel,
+    // «Funnel comercial» de Chapa (el mismo de habita.), con los pasos de Turnia.
+    ...commercialChart(
+      b.people.map((r) => ({
+        id: r.id,
+        name: r.name,
+        phone: r.phone && r.phone_kind !== "fijo" ? r.phone : null,
+        greetedAt: iso(r.greeted_at),
+        step: b.stepNow.get(r.id) ?? -1,
+        lost: CLOSED.includes(r.status) && r.status !== "cliente",
+      })),
+      period,
+      now,
+    ),
     timing,
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = b.vs.filter((v) => v.stage === s.key);

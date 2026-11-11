@@ -78,6 +78,15 @@ La bandeja de quienes escribieron último, para contestar en cualquier orden. Tu
 - **Límites:** no se esquivan bloqueos ni límites de los sitios (verificaciones de bots, 429).
 - **Revisión pendiente:** el lunes 9/11 en horario de atención había que repetir las búsquedas de Google con anuncios para Mar del Plata y Miramar, cruzarlas con la base y anotar en «Señales» a los anunciantes nuevos. Quedó programado en la sesión de IA que hizo este trabajo; si no hay rastro de que se hizo, hacerlo a mano.
 
+### «Funnel comercial» en Chapa (11/11/2026)
+
+`GET /api/prospeccion?vista=followup` suma `chart`, `lostAt` y `chartRows`, lo mismo que manda habita., así Chapa → Turnia → Embudo muestra el mismo «Funnel comercial» que habita. Se calcula en `src/lib/sales/followup-chart.ts`:
+
+- **Pasos:** son los de `stepOf`: Saludados, Demo enviada, Visitaron la demo, Conversaron con Sofi, Cuenta creada, Cuenta activa y Clientes pagos. Cada barra cuenta a quien llegó a ese paso o más lejos.
+- **Período:** `periodo` (`hoy`, `7`, `30`, `mes` o `todo`) o `desde` y `hasta`. Cuenta a los saludados en esas fechas, por la fecha del saludo en Buenos Aires.
+- **Perdidos:** los cerrados en ese paso (no le interesa, sin canal o baja).
+- **Cambios desde Chapa:** solo la situación. La etapa sale de lo que hizo cada persona.
+
 ## Qué sigue, en orden
 
 1. **Tanda real de 10** desde Chapa (Hoy → Turnia), en horario. Comprobar que la otra persona ve «Lo tiene…» y que el contacto aparece en Panel → Prospección.
