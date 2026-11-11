@@ -38,10 +38,56 @@ export function lastDays(n: number, now = new Date()) {
   for (let i = n - 1; i >= 0; i--) out.push(artDay(now.getTime() - i * DAY));
   return out;
 }
-const converted = (e: DayExecution, stepNow: Map<string, number>) => (stepNow.get(e.outreach_id) ?? -1) > e.from_step;
+/**
+ * Exitosa: la persona pasó del paso en que estaba al recibir el mensaje. El saludo (desde -1) la deja
+ * «Saludada» por el solo hecho de salir, así que convierte con una respuesta después de él (`replyAt`:
+ * la última respuesta de cada persona, de la lectura de WhatsApp); sin ese dato, como antes.
+ */
+const converted = (e: DayExecution, stepNow: Map<string, number>, replyAt?: Map<string, number>) => {
+  if (e.from_step < 0 && replyAt) {
+    const r = replyAt.get(e.outreach_id);
+    return r !== undefined && Boolean(e.sent_at) && r > Date.parse(e.sent_at!);
+  }
+  return (stepNow.get(e.outreach_id) ?? -1) > e.from_step;
+};
+
+export type MessageEvent = { outreach_id: string; detail: string | null; created_at: string };
+/** La etapa de la cola de cada mensaje de la secuencia (outreach.ts → recordTouch y la lectura de WhatsApp). */
+const STAGE_OF_DETAIL: Record<string, string> = { saludo: "sin-saludo", permiso: "saludo-sin-demo", primero: "saludo-sin-demo", seguimiento: "demo-sin-abrir", "último": "demo-sin-abrir" };
+
+/**
+ * Los mensajes que salieron sin «Confirmar envío» de Follow-up (desde Prospección, en lote o los que
+ * encontró la lectura de WhatsApp) también son la cola ejecutada: uno por persona, día y etapa, salvo
+ * que ese día ya haya un envío confirmado de esa persona. La etapa sale del mensaje (el saludo, el
+ * permiso, el link, los seguimientos); un seguimiento o un mensaje suelto toma la etapa de la foto del
+ * día si la tiene. «Ya le había escrito» no es de ese día: no cuenta.
+ */
+export function messageExecutions(events: MessageEvent[], rows: QueueDayRow[], executions: DayExecution[], stepOf: (stage: string) => number | null): DayExecution[] {
+  const confirmed = new Set(executions.filter((e) => e.status === "sent" && e.sent_at).map((e) => `${e.outreach_id}:${artDay(e.sent_at!)}`));
+  const photo = new Map<string, string[]>();
+  for (const r of rows) photo.set(`${r.outreach_id}:${r.day}`, [...(photo.get(`${r.outreach_id}:${r.day}`) ?? []), r.stage]);
+  const seen = new Set<string>();
+  const out: DayExecution[] = [];
+  for (const m of [...events].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))) {
+    const detail = String(m.detail ?? "").trim();
+    if (!m.created_at || detail === "ya le había escrito") continue;
+    const day = artDay(m.created_at);
+    const key = `${m.outreach_id}:${day}`;
+    if (confirmed.has(key)) continue;
+    const seenStages = (photo.get(key) ?? []).filter((st) => st !== "sin-saludo" && st !== "saludo-sin-demo");
+    const fixed = detail === "saludo" || detail === "permiso" || detail === "primero";
+    const stage = fixed ? STAGE_OF_DETAIL[detail] : seenStages[0] ?? STAGE_OF_DETAIL[detail] ?? (photo.get(key) ?? [])[0];
+    const step = stage ? stepOf(stage) : null;
+    if (!stage || step === null || seen.has(`${key}:${stage}`)) continue;
+    seen.add(`${key}:${stage}`);
+    const at = new Date(m.created_at).toISOString();
+    out.push({ outreach_id: m.outreach_id, stage, from_step: step, status: "sent", sent_at: at, updated_at: at, executed_by: "humano" });
+  }
+  return out;
+}
 
 /** Qué estuvo pendiente cada día (la foto más lo ejecutado ese día), cuánto se ejecutó, quién y cuánto convirtió, por tipo de acción. */
-export function executionDays(rows: QueueDayRow[], executions: DayExecution[], stepNow: Map<string, number>, label: (stage: string) => string, n = 35, now = new Date()): ExecutionDay[] {
+export function executionDays(rows: QueueDayRow[], executions: DayExecution[], stepNow: Map<string, number>, label: (stage: string) => string, n = 35, now = new Date(), replyAt?: Map<string, number>): ExecutionDay[] {
   const days = lastDays(n, now);
   const inRange = new Set(days);
   type Cell = { stage: string; state?: QueueDayRow["state"]; sent?: DayExecution; failed?: boolean };
@@ -85,7 +131,7 @@ export function executionDays(rows: QueueDayRow[], executions: DayExecution[], s
       if (c.sent) {
         const bot = c.sent.executed_by === "bot";
         if (bot) t.bot++; else t.human++;
-        if (converted(c.sent, stepNow)) { st.success++; if (bot) t.successBot++; else t.successHuman++; }
+        if (converted(c.sent, stepNow, replyAt)) { st.success++; if (bot) t.successBot++; else t.successHuman++; }
       } else if (c.failed) t.failed++;
       else if (c.state === "bloqueada") t.blocked++;
       else t.unclaimed++;
@@ -106,7 +152,7 @@ export function lastWeeks(n: number, now = new Date()) {
 }
 
 /** Ejecutadas y conversiones por semana de envío, para cada tipo de acción. */
-export function weeklyByType(executions: DayExecution[], stepNow: Map<string, number>, label: (stage: string) => string, weeks = 8, now = new Date()) {
+export function weeklyByType(executions: DayExecution[], stepNow: Map<string, number>, label: (stage: string) => string, weeks = 8, now = new Date(), replyAt?: Map<string, number>) {
   const sent = executions.filter((e) => e.status === "sent" && e.sent_at);
   const out: Record<string, { week: string; executed: number; conversions: number }[]> = {};
   for (const t of new Set(sent.map((e) => label(e.stage)))) {
@@ -114,7 +160,7 @@ export function weeklyByType(executions: DayExecution[], stepNow: Map<string, nu
     out[t] = lastWeeks(weeks, now).map((w) => ({
       week: w,
       executed: own.filter((e) => weekOf(e.sent_at!) === w).length,
-      conversions: own.filter((e) => weekOf(e.sent_at!) === w && converted(e, stepNow)).length,
+      conversions: own.filter((e) => weekOf(e.sent_at!) === w && converted(e, stepNow, replyAt)).length,
     }));
   }
   return out;

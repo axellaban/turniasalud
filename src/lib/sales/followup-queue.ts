@@ -16,7 +16,7 @@ import {
   type Row,
 } from "./followup";
 import { commercialChart, type ChartPeriod } from "./followup-chart";
-import { capFirstContacts, executionDays, funnelCohorts, queueDayState, weeklyByType, type QueueDayRow } from "./followup-results";
+import { capFirstContacts, executionDays, funnelCohorts, messageExecutions, queueDayState, weeklyByType, type MessageEvent, type QueueDayRow } from "./followup-results";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
 import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
@@ -277,13 +277,22 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
   const b = await board(now);
   const all = [...b.items.values()];
   await recordQueueDay(all, now, { cap: b.cap, newToday: b.newToday }).catch(() => console.error("followup_queue_day_failed"));
-  const [days, bots] = await Promise.all([
+  const [days, bots, messages, replies] = await Promise.all([
     queueDays(now),
     // Quién ejecutó: hasta que el esquema tenga executed_by (o si nunca hubo un bot), todo es humano.
     sql<Array<{ id: string }>>`select id from sales_followup_executions where executed_by = 'bot'`.catch(() => []),
+    // Los mensajes de la secuencia que salieron sin pasar por «Confirmar envío» (Prospección, lote, lectura de WhatsApp).
+    sql<MessageEvent[]>`select outreach_id, detail, created_at::text as created_at from sales_outreach_events
+      where kind = 'mensaje' and created_at >= ${new Date(now.getTime() - (QUEUE_DAYS + 1) * 86_400_000)}`.catch(() => [] as MessageEvent[]),
+    // La última respuesta de cada persona (lectura de WhatsApp): el saludo es exitoso si respondieron después.
+    sql<Array<{ outreach_id: string; at: string }>>`select outreach_id, max(last_received_at)::text as at from sales_whatsapp_chats
+      where last_received_at is not null group by outreach_id`.catch(() => [] as Array<{ outreach_id: string; at: string }>),
   ]);
   const botIds = new Set(bots.map((x) => x.id));
-  const dayExecutions = b.ex.map((e) => ({ ...e, sent_at: iso(e.sent_at), updated_at: String(iso(e.updated_at)), executed_by: botIds.has(e.id) ? ("bot" as const) : ("humano" as const) }));
+  const replyAt = new Map(replies.map((r) => [r.outreach_id, Date.parse(r.at)] as const).filter(([, t]) => Number.isFinite(t)));
+  const confirmed = b.ex.map((e) => ({ ...e, sent_at: iso(e.sent_at), updated_at: String(iso(e.updated_at)), executed_by: botIds.has(e.id) ? ("bot" as const) : ("humano" as const) }));
+  const stepOfStage = (stage: string) => (isStageKey(stage) ? stageInfo(stage).step : null);
+  const dayExecutions = [...confirmed, ...messageExecutions(messages, days ?? [], confirmed, stepOfStage)];
   const label = (stage: string) => (isStageKey(stage) ? actionLabel(stage) : stage);
   const catalog = await commercialCatalog();
   const stageFor = (technical: string) => TURNIA_COMMERCIAL.find(s => (s.technical as readonly string[]).includes(technical))?.key ?? "";
@@ -411,7 +420,7 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
       execution: {
         available: days !== null,
         stages: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, s.title])),
-        days: executionDays(days ?? [], dayExecutions, b.stepNow, label),
+        days: executionDays(days ?? [], dayExecutions, b.stepNow, label, undefined, now, replyAt),
       },
       actionLabels: Object.fromEntries(FOLLOWUP_STAGES.map((s) => [s.key, actionLabel(s.key)])),
       // Las cohortes con las etapas comerciales de Follow-up desde Saludado (las del Embudo del panel).
@@ -426,7 +435,7 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
         const t = stages.map((x) => x.from);
         return { stages: stages.map(({ key, title }) => ({ key, title })), contacto: funnelCohorts(people, t, "contacto"), version: funnelCohorts(people, t, "version") };
       })(),
-      weeklyByType: weeklyByType(dayExecutions, b.stepNow, label),
+      weeklyByType: weeklyByType(dayExecutions, b.stepNow, label, undefined, now, replyAt),
     },
     changes,
   };

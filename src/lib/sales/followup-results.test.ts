@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capFirstContacts, executionDays, funnelCohorts, lastDays, queueDayState, weeklyByType, type DayExecution, type QueueDayRow } from "./followup-results";
+import { capFirstContacts, executionDays, funnelCohorts, lastDays, messageExecutions, queueDayState, weeklyByType, type DayExecution, type QueueDayRow } from "./followup-results";
 
 const now = new Date("2026-11-11T15:00:00Z");
 const label = (stage: string) => (stage === "sin-saludo" ? "Paso 1: el saludo" : "Llevar a: demo visitada");
@@ -24,6 +24,34 @@ describe("executionDays (Turnia)", () => {
   it("counts each type's sends and conversions per week", () => {
     const out = weeklyByType([ex("a", "sin-saludo", "2026-11-10T13:00:00Z")], new Map([["a", 0]]), label, 1, now);
     expect(out["Paso 1: el saludo"]).toEqual([{ week: "2026-11-15", executed: 1, conversions: 1 }]);
+  });
+});
+
+describe("los mensajes que salieron sin «Confirmar envío» (Turnia)", () => {
+  const steps: Record<string, number> = { "sin-saludo": -1, "saludo-sin-demo": 0, "demo-sin-abrir": 1, "abrio-sin-conversar": 2 };
+  const stepOf = (s: string) => steps[s] ?? null;
+  it("cuentan como ejecutados, una vez por persona, día y etapa, salvo un envío ya confirmado ese día", () => {
+    const events = [
+      { outreach_id: "a", detail: "saludo", created_at: "2026-11-10T13:00:00Z" },
+      { outreach_id: "b", detail: "primero", created_at: "2026-11-10T13:00:00Z" },
+      { outreach_id: "c", detail: "seguimiento", created_at: "2026-11-10T13:00:00Z" },
+      { outreach_id: "d", detail: "seguimiento", created_at: "2026-11-10T13:00:00Z" }, // la foto del día la tenía en «abrió, sin conversar»
+      { outreach_id: "e", detail: "saludo", created_at: "2026-11-10T13:00:00Z" }, // ya confirmado desde Follow-up
+      { outreach_id: "a", detail: "saludo", created_at: "2026-11-10T13:05:00Z" }, // repetido
+      { outreach_id: "f", detail: "ya le había escrito", created_at: "2026-11-10T13:00:00Z" },
+      { outreach_id: "g", detail: "Pedido de feedback", created_at: "2026-11-10T13:00:00Z" }, // sin etapa ni foto
+    ];
+    const out = messageExecutions(events, [row("2026-11-10", "d", "abrio-sin-conversar")], [ex("e", "sin-saludo", "2026-11-10T12:00:00Z")], stepOf);
+    expect(out.map((e) => [e.outreach_id, e.stage, e.from_step])).toEqual([
+      ["a", "sin-saludo", -1], ["b", "saludo-sin-demo", 0], ["c", "demo-sin-abrir", 1], ["d", "abrio-sin-conversar", 2],
+    ]);
+  });
+  it("el saludo es exitoso si respondieron después; el resto, si avanzó de paso", () => {
+    const list = [ex("a", "sin-saludo", "2026-11-10T13:00:00Z"), ex("b", "sin-saludo", "2026-11-10T13:00:00Z"), ex("c", "demo-sin-abrir", "2026-11-10T13:00:00Z", { from_step: 1 })];
+    const replies = new Map([["a", Date.parse("2026-11-10T15:00:00Z")], ["b", Date.parse("2026-11-09T15:00:00Z")]]);
+    const [day] = executionDays([], list, new Map([["a", 0], ["b", 0], ["c", 2]]), (s) => s, 2, now, replies);
+    expect(day.types.find((t) => t.type === "sin-saludo")).toMatchObject({ human: 2, successHuman: 1 });
+    expect(day.types.find((t) => t.type === "demo-sin-abrir")).toMatchObject({ human: 1, successHuman: 1 });
   });
 });
 
