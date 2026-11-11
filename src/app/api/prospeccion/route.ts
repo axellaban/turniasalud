@@ -323,7 +323,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ header: OUTREACH_COLUMNS, rows, events, whatsappSenders, whatsappInbox: whatsappInboxData }, { headers: NO_STORE });
   }
   if (vista === "followup") {
-    const [snapshot, whatsapp] = await Promise.all([followupSnapshot(), lastWhatsappSync()]);
+    const q = new URL(request.url).searchParams;
+    const period = { periodo: q.get("periodo"), desde: q.get("desde"), hasta: q.get("hasta") };
+    const [snapshot, whatsapp] = await Promise.all([followupSnapshot(new Date(), period), lastWhatsappSync()]);
     return NextResponse.json({ ...snapshot, whatsapp }, { headers: NO_STORE });
   }
   if (vista === "whatsapp") return NextResponse.json({ whatsapp: await lastWhatsappSync() }, { headers: NO_STORE });
