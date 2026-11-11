@@ -93,7 +93,11 @@ export type OutreachPerson = {
  * Seguimiento 1), el Seguimiento 2 y el 3. Una línea con «---» separa dos mensajes que salen uno
  * después del otro.
  */
-export const TEMPLATE_KEYS = ["whatsapp_abridor", "whatsapp_permiso", "whatsapp_permiso_turno", "whatsapp_entrega", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "whatsapp_feedback", "instagram", "llamada"] as const;
+export const TEMPLATE_KEYS = [
+  "whatsapp_abridor", "whatsapp_permiso", "whatsapp_permiso_turno", "whatsapp_permiso_profesional", "whatsapp_entrega", "whatsapp_entrega_profesional",
+  "whatsapp_hablaste_doctor", "whatsapp_sin_respuesta", "whatsapp_seguimiento", "whatsapp_reenviable", "whatsapp_feedback", "whatsapp_feedback_sistema",
+  "whatsapp_feedback_desconfianza", "instagram", "llamada",
+] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 export type Templates = Record<TemplateKey, string>;
 
@@ -110,9 +114,21 @@ export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }
     title: "WhatsApp · Paso 2, si creen que sos un paciente",
     hint: "Cuando contestan el Paso 1 como a un paciente («¿Es por un turno?», «¿Para cuándo?»). Aclara que no y sigue como el Paso 2. Sin link; tampoco cuenta como uno de los tres. Chapa Labs lo sugiere solo en «Responder».",
   },
+  whatsapp_permiso_profesional: {
+    title: "WhatsApp · Paso 2, si contesta el profesional",
+    hint: "Cuando el Paso 1 lo contesta el odontólogo en persona («Soy la Dra. …», «Soy Camila, ¿qué necesitabas?»). Le habla directo a él, no a la recepción. Sin link; no cuenta como uno de los tres. Chapa Labs lo sugiere solo en «Responder».",
+  },
   whatsapp_entrega: {
     title: "WhatsApp · Paso 3: la entrega y el puente al médico",
     hint: "Cuando dicen «Dale, pasame» o «Sí, a ver». Lleva el link de su demo y le pide que se lo reenvíe a los doctores.",
+  },
+  whatsapp_entrega_profesional: {
+    title: "WhatsApp · Paso 3, si es el profesional",
+    hint: "Cuando el profesional dice «Dale, pasame». Lleva el link de su demo, sin el «reenviáselo a los doctores». Cuenta como el primero de los tres.",
+  },
+  whatsapp_hablaste_doctor: {
+    title: "WhatsApp · Paso 3, si preguntan si ya hablaste con el doctor",
+    hint: "El filtro típico de la recepción («¿Ya hablaste con la Dra. por esto?»): contesta con transparencia y entrega el link. Cuenta como el primero de los tres.",
   },
   whatsapp_sin_respuesta: {
     title: "WhatsApp · Seguimiento 1: sin respuesta al Paso 2",
@@ -129,6 +145,14 @@ export const TEMPLATE_LABEL: Record<TemplateKey, { title: string; hint: string }
   whatsapp_feedback: {
     title: "WhatsApp · Feedback de no interesados",
     hint: "A quien respondió que no le interesa: una sola vez, cierra la charla y le pide en una línea por qué. No cuenta como uno de los tres mensajes.",
+  },
+  whatsapp_feedback_sistema: {
+    title: "WhatsApp · Feedback, si ya tienen un sistema",
+    hint: "Cuando el «no» ya trae el motivo («ya contamos con un sistema»): no le pregunta por qué, le pregunta cuál usan. Una sola vez; no cuenta.",
+  },
+  whatsapp_feedback_desconfianza: {
+    title: "WhatsApp · Si desconfían del link",
+    hint: "Cuando dicen que no abren links o que parece una estafa: no insiste con el link y ofrece mostrarla en una llamada corta. Una sola vez; no cuenta.",
   },
   instagram: { title: "Instagram: mensaje directo", hint: "Sin link: los pedidos de mensaje con links se filtran. Si contesta, le pasás el link." },
   llamada: { title: "Llamada: guion", hint: "No se envía: es para leer mientras llamás. El objetivo es conseguir el WhatsApp de quien decide." },
@@ -149,10 +173,21 @@ export const DEFAULT_TEMPLATES: Templates = {
     "No, tranqui, no es por un turno! Soy Axel. Sé que en recepción viven a mil con el WhatsApp, así que les armé gratis una ayudante virtual cargada con los datos de {destinatario}.\n\n" +
     "Contesta sola las preguntas repetidas de obras sociales, precios y horarios, también fuera de hora, así no llegan el lunes a la mañana con 100 mensajes atrasados.\n\n" +
     "Seguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como paciente a ver si le pifié en algo?",
+  whatsapp_permiso_profesional:
+    "Qué tal! Soy Axel. Te armé gratis una ayudante virtual para el WhatsApp del consultorio, cargada con tus datos.\n\n" +
+    "Contesta sola las preguntas repetidas de obras sociales, precios y horarios, también fuera de hora, y te rellena los huecos de turnos que se cancelan sobre la hora.\n\n" +
+    "Seguro tiene algún error porque la armé rápido con la info que encontré en internet. ¿Te paso el link por acá y la probás 20 segundos como si fueras un paciente?",
   whatsapp_entrega:
     "Acá tenés: {link}\n\n" +
     "Mandale un audio o escribile haciéndole alguna pregunta difícil como si fueras un paciente real!\n\n" +
     "Si ves que responde bien, reenviale el link a los doctores: además de sacarte preguntas repetidas a vos, a ellos les rellena solos los huecos de turnos que se cancelan sobre la hora. Avisame si le encontraste algún error!",
+  whatsapp_entrega_profesional:
+    "Acá tenés: {link}\n\n" +
+    "Mandale un audio o escribile una pregunta difícil como si fueras un paciente real!\n\n" +
+    "Si te gusta cómo responde, en 15 minutos te muestro cómo quedaría con tu agenda. Avisame si le encontrás algún error!",
+  whatsapp_hablaste_doctor:
+    "No, todavía no! Primero armé la prueba gratis con los datos públicos del consultorio, para que la puedan chusmear ustedes en recepción antes de molestar a {destinatario}. Acá tenés el link: {link}\n\n" +
+    "Hacele una pregunta difícil como si fueras un paciente. Si ves que responde bien, ahí sí se la pasás!",
   whatsapp_sin_respuesta:
     "Buenas! Sé que en recepción no paran un segundo, así que te dejo directo acá la prueba que armé para {destinatario} por si querés chusmear en 20 segundos si cargué bien los datos: {link}",
   whatsapp_seguimiento:
@@ -162,6 +197,9 @@ export const DEFAULT_TEMPLATES: Templates = {
     MESSAGE_BREAK +
     "Hola Doc! Nos armaron esta prueba gratis cargada con los datos del consultorio: {link} . Es una asistente de IA para el WhatsApp que responde dudas de pacientes y obras sociales 24/7 sin menús robóticos, agenda turnos y rellena sola los huecos de cancelaciones. Probala haciéndole una pregunta como paciente.",
   whatsapp_feedback: "Gracias por contestarme. No te escribo más. Si me decís en una línea por qué no te sirve, me ayudás un montón.",
+  whatsapp_feedback_sistema: "Genial, gracias por contarme! No te escribo más. Si me decís en una línea qué sistema usan hoy, me ayudás un montón.",
+  whatsapp_feedback_desconfianza:
+    "Te entiendo, hacés bien en cuidarte con los links. No te mando nada más por acá. Si en algún momento te da curiosidad, te la muestro en una llamada de 5 minutos, sin tocar nada.",
   instagram:
     "Hola {saludo}! Soy Axel, de Turnia. Armé una demo de Sofi con tu consultorio: contesta el WhatsApp cuando estás atendiendo o fuera de horario y da los turnos sola. ¿Te paso el link para probarla? Es un minuto.",
   llamada:
@@ -269,7 +307,7 @@ export function whatsappTemplateKey(person: SequenceFacts): TemplateKey | null {
 }
 
 /** Los mensajes que no cuentan como uno de los tres (el Paso 1 y el Paso 2), con el detalle que dejan en la historia. */
-export const NON_TOUCH_DETAIL = { whatsapp_abridor: "saludo", whatsapp_permiso: "permiso", whatsapp_permiso_turno: "permiso" } as const;
+export const NON_TOUCH_DETAIL = { whatsapp_abridor: "saludo", whatsapp_permiso: "permiso", whatsapp_permiso_turno: "permiso", whatsapp_permiso_profesional: "permiso" } as const;
 
 /** Links de WhatsApp: wa.me (celular) y WhatsApp Web (computadora). */
 export function whatsappLinks(phone: string, text: string): { web: string; app: string } {

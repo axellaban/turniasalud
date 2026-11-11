@@ -16,6 +16,10 @@ const SECRET = "w".repeat(40);
 const T = 1_762_000_000; // segundos
 type Msg = { id: string; timestamp: number; fromMe: boolean; body?: string; hasMedia?: boolean; media?: { mimetype: string } };
 const sent: string[] = [];
+/** Chats que se suman a la línea 0000 en un test (los de quienes no tenían nada registrado). */
+const extraChats: string[] = [];
+/** Los números (54 9 …) que tienen WhatsApp para check-exists. */
+const withWhatsapp = new Set<string>(["5492234489868", "5492236000021"]);
 const messages: Record<string, Msg[]> = {
   // Ana: le escribimos y contestó (la última es de ella).
   "prospeccion/5492236000001@c.us": [
@@ -59,11 +63,15 @@ async function fakeWaha(input: RequestInfo | URL, init: RequestInit = {}) {
   if (path === "/api/sessions/axel") return Response.json({ status: "WORKING", me: { id: "5491130235483@c.us" } });
   if (path === "/api/prospeccion/chats") {
     return Response.json(url.searchParams.get("offset") === "0"
-      ? ["5492236000001@c.us", "5492236000003@c.us", "5492236000004@c.us", "5492236000005@c.us", "5492236000006@c.us", "5492236000007@c.us", "5492299999999@c.us", "120363000000@g.us"].map((id) => ({ id }))
+      ? ["5492236000001@c.us", "5492236000003@c.us", "5492236000004@c.us", "5492236000005@c.us", "5492236000006@c.us", "5492236000007@c.us", "5492299999999@c.us", "120363000000@g.us", ...extraChats].map((id) => ({ id }))
       : []);
   }
   if (path === "/api/axel/chats") return Response.json(url.searchParams.get("offset") === "0" ? [{ id: "77665544@lid" }] : []);
   if (path === "/api/axel/lids") return Response.json([{ lid: "77665544@lid", pn: "5492236000002@c.us" }]);
+  if (path === "/api/contacts/check-exists") {
+    const phone = url.searchParams.get("phone") ?? "";
+    return Response.json(withWhatsapp.has(phone) ? { numberExists: true, chatId: `${phone}@c.us` } : { numberExists: false, chatId: null });
+  }
   const m = /^\/api\/([^/]+)\/chats\/(.+)\/messages$/.exec(path);
   if (m) return Response.json(messages[`${m[1]}/${m[2]}`] ?? []);
   return new Response("no", { status: 404 });
@@ -131,7 +139,7 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
     ]);
     // Ana, Beto, Caro, Dani, Eva, Fede y Gabi tienen mensajes nuestros; contestaron Ana, Caro y Eva
     // (lo de Fede y Gabi es automático). Gabi vuelve a como estaba.
-    expect(r.totals).toEqual({ conversaciones: 7, respondieron: 3, esperanRespuesta: 2, nuevas: 3, abiertas: 1, corregidas: 1 });
+    expect(r.totals).toEqual({ conversaciones: 7, respondieron: 3, esperanRespuesta: 2, nuevas: 3, abiertas: 1, corregidas: 1, registradas: 0 });
     expect(await status("fede-f6")).toBe("contactado");
     expect(await status("gabi-g7")).toBe("contactado");
     const gabi = await sql<Array<{ kind: string }>>`
@@ -262,4 +270,96 @@ describe.runIf(base)("lectura diaria de WhatsApp", () => {
       expect(wa.isAutomaticReply(t)).toBe(false);
     }
   });
+  it("registra lo que se mandó por fuera del panel a quien no tenía nada, y ese número sale de la cola de nuevos", async () => {
+    const add = (code: string, name: string, phone: string) => sql`
+      insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches)
+      values (${code}, ${name}, ${name.split(" ")[0]}, ${phone}, 'movil', 'por_contactar', 0)`;
+    await add("hugo-h8", "Hugo Ocho", "+5492236000008");
+    await add("ines-i9", "Inés Nueve", "+5492236000009");
+    // Juan y Kari comparten el número del consultorio: el saludo nombra a Kari.
+    await add("juan-j10", "Juan Diez", "+5492236000010");
+    await add("kari-k11", "Kari Once", "+5492236000010");
+    extraChats.push("5492236000008@c.us", "5492236000009@c.us", "5492236000010@c.us");
+    messages["prospeccion/5492236000008@c.us"] = [{ id: "h1", timestamp: T, fromMe: true, body: "Buenas! Hablo con la recepción del Dr. Ocho?" }];
+    messages["prospeccion/5492236000009@c.us"] = [
+      { id: "i1", timestamp: T, fromMe: true, body: "Buenas! Hablo con la recepción de la Dra. Nueve?" },
+      { id: "i2", timestamp: T + 60, fromMe: false, body: "Sí, ¿quién habla?" },
+      { id: "i3", timestamp: T + 120, fromMe: true, body: "Soy Axel, les armé una prueba gratis. ¿Te paso el link?" },
+      { id: "i4", timestamp: T + 180, fromMe: false, body: "Dale" },
+      { id: "i5", timestamp: T + 240, fromMe: true, body: "Acá está: https://turnia.example/p/ines-i9" },
+      { id: "i6", timestamp: T + 90000, fromMe: true, body: "¿Pudieron verla?" },
+    ];
+    messages["prospeccion/5492236000010@c.us"] = [{ id: "k1", timestamp: T, fromMe: true, body: "Buenas! Hablo con la recepción de la Dra. Once?" }];
+    const before = sent.length;
+    await older();
+    const r = (await sync()).body.whatsapp;
+    expect(r.totals.registradas).toBe(3);
+    expect(sent.length).toBe(before);
+    const rows = await sql<Array<{ code: string; touches: number; greeted: boolean; permission: boolean; status: string }>>`
+      select code, touches, greeted_at is not null as greeted, permission_at is not null as permission, status
+      from sales_outreach where code in ('hugo-h8', 'ines-i9', 'juan-j10', 'kari-k11') order by code`;
+    expect(rows).toEqual([
+      { code: "hugo-h8", touches: 0, greeted: true, permission: false, status: "contactado" },
+      { code: "ines-i9", touches: 2, greeted: true, permission: true, status: expect.any(String) },
+      { code: "juan-j10", touches: 0, greeted: false, permission: false, status: "por_contactar" },
+      { code: "kari-k11", touches: 0, greeted: true, permission: false, status: "contactado" },
+    ]);
+    const ines = await sql<Array<{ detail: string; at: string }>>`
+      select e.detail, e.created_at::text as at from sales_outreach_events e join sales_outreach o on o.id = e.outreach_id
+      where o.code = 'ines-i9' and e.kind = 'mensaje' order by e.created_at`;
+    expect(ines.map((e) => e.detail)).toEqual(["saludo", "permiso", "primero", "seguimiento"]);
+    expect(Date.parse(ines[0].at)).toBe(T * 1000);
+    const [line] = await sql<Array<{ n: number }>>`
+      select count(*)::int as n from sales_outreach_whatsapp_senders w join sales_outreach o on o.id = w.outreach_id where o.code = 'hugo-h8' and w.sender_phone = '5492235000000'`;
+    expect(line.n).toBe(1);
+    // Juan comparte el número con Kari, que ya recibió el saludo: no está para saludar.
+    const all = await (await import("@/lib/sales/followup")).rows();
+    expect(all.find((p) => p.code === "juan-j10")?.contactable).toBe(false);
+    // Una lectura más no vuelve a registrar nada.
+    await older();
+    expect((await sync()).body.whatsapp.totals.registradas).toBe(0);
+  });
+
+  it("los pasos que ya salieron en un chat: saludo, permiso y, desde el link, los tres mensajes", () => {
+    const m = (at: number, text: string) => ({ at, text });
+    expect(wa.stepsFromChat([m(1, "Buenas!")])).toEqual({ greetingAt: 1, permissionAt: null, touches: [] });
+    expect(wa.stepsFromChat([m(1, "Buenas!"), m(2, "¿Te paso el link?"), m(3, "https://x.example/p/ana-a1b"), m(4, "¿La vieron?"), m(5, "Audio"), m(6, "Otro")]))
+      .toEqual({ greetingAt: 1, permissionAt: 2, touches: [3, 4, 5] });
+    // Si el primero ya lleva el link, no hubo saludo ni permiso.
+    expect(wa.stepsFromChat([m(1, "Hola! https://x.example/p/ana-a1b")])).toEqual({ greetingAt: null, permissionAt: null, touches: [1] });
+    expect(wa.mentions("Buenas! Hablo con la recepción de la Dra. Varesé?", { name: "Lucía Varese" })).toBe(true);
+    expect(wa.mentions("Buenas! Hablo con la recepción de la Dra. Varese?", { name: "Fausto Jan" })).toBe(false);
+  });
+  it("le pregunta a WhatsApp si los números por contactar tienen WhatsApp y corrige fijo/celular, sin mandar nada", async () => {
+    const add = (code: string, phone: string, kind: string) => sql`
+      insert into sales_outreach (code, name, greeting, phone, phone_kind, status, touches, priority)
+      values (${code}, ${code}, ${code}, ${phone}, ${kind}, 'por_contactar', 0, 1)`;
+    await add("fijo-mdq", "+542234489868", "fijo"); // en realidad, un celular de Mar del Plata
+    await add("cel-necochea", "+5492262520001", "movil"); // en realidad, un fijo sin WhatsApp
+    await add("cel-ok", "+5492236000021", "movil");
+    const run = async () => {
+      const res = await route.POST(new Request("https://turnia.example/api/prospeccion", {
+        method: "POST", headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+        body: JSON.stringify({ by: "Axel", followup: { op: "whatsapp-check", limit: 40 } }),
+      }));
+      return ((await res.json()) as { check: import("@/lib/sales/whatsapp-check").CheckReport }).check;
+    };
+    const before = sent.length;
+    const check = await run();
+    expect(check.line).toBe("0000");
+    expect(check.toWhatsapp).toEqual([expect.objectContaining({ code: "fijo-mdq", from: "+542234489868", to: "+5492234489868", kind: "movil" })]);
+    expect(check.toLandline).toEqual(expect.arrayContaining([expect.objectContaining({ code: "cel-necochea", to: "+542262520001", kind: "fijo" })]));
+    const rows = await sql<Array<{ code: string; phone: string; phone_kind: string }>>`
+      select code, phone, phone_kind from sales_outreach where code in ('fijo-mdq', 'cel-necochea', 'cel-ok') order by code`;
+    expect(rows).toEqual([
+      { code: "cel-necochea", phone: "+542262520001", phone_kind: "fijo" },
+      { code: "cel-ok", phone: "+5492236000021", phone_kind: "movil" },
+      { code: "fijo-mdq", phone: "+5492234489868", phone_kind: "movil" },
+    ]);
+    expect(sent.length).toBe(before);
+    // Cada uno se verifica una sola vez.
+    const again = await run();
+    expect(again).toMatchObject({ checked: 0, left: 0 });
+  }, 120000);
+
 });

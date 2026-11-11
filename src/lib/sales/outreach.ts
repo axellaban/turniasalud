@@ -170,11 +170,22 @@ export type OutreachView = "hoy" | "seguimientos" | "interesados" | "todos";
 export type OutreachFilter = { view: OutreachView; zone?: string | null; q?: string | null; channel?: string | null; status?: string | null; page?: number };
 export const PAGE_SIZE = 50;
 
-/** Contactable: con WhatsApp (los fijos y los que solo tienen Instagram no entran), sin baja y sin que otra persona del mismo número ya haya recibido el mensaje. */
+/**
+ * Contactable: con WhatsApp (los fijos y los que solo tienen Instagram no entran), sin baja, sin que otra
+ * persona del mismo número ya haya recibido el mensaje y sin un chat nuestro con ese número en ninguna de
+ * las dos líneas (lo leyó la lectura de WhatsApp o se confirmó la línea): un consultorio que ya está en
+ * seguimiento no vuelve a recibir el saludo.
+ */
 const contactable = () => sql`
   ${conWhatsApp()}
   and not exists (select 1 from sales_suppressions s where s.phone = o.phone)
-  and not exists (select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id and (x.touches > 0 or x.status <> 'por_contactar'))`;
+  and not exists (select 1 from sales_outreach x where x.phone = o.phone and x.id <> o.id and (x.touches > 0 or x.status <> 'por_contactar'))
+  and ${noChatYet()}`;
+
+/** Ningún chat nuestro con ese número, en ninguna línea (vale también para quien comparte el número). */
+export const noChatYet = () => sql`(
+  not exists (select 1 from sales_outreach x join sales_whatsapp_chats c on c.outreach_id = x.id where x.phone = o.phone and c.sent > 0)
+  and not exists (select 1 from sales_outreach_whatsapp_senders w where w.phone = o.phone))`;
 
 function filters(f: OutreachFilter) {
   const zone = f.zone ? (f.zone === "otras" ? sql`and o.zone not in ('Mar del Plata', 'Miramar')` : sql`and o.zone = ${f.zone}`) : sql``;
