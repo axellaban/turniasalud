@@ -294,10 +294,11 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
   const stepOfStage = (stage: string) => (isStageKey(stage) ? stageInfo(stage).step : null);
   const dayExecutions = [...confirmed, ...messageExecutions(messages, days ?? [], confirmed, stepOfStage)];
   const label = (stage: string) => (isStageKey(stage) ? actionLabel(stage) : stage);
-  // Lo ejecutado en los últimos 8 días (cubre «Hoy», «Ayer» y «Esta semana» de la cola de Chapa), uno por
+  // Lo ejecutado en los últimos 15 días (cubre «Hoy», «Ayer» y «Esta semana» de la cola de Chapa y el mismo
+  // tramo del período anterior para la variación de cada tarjeta), uno por
   // envío y el más reciente primero: lo que ya salió deja la cola, así que no se puede armar con ella. Mismo
   // conjunto que «ejecutadas» de Resultados (confirmadas y mensajes que salieron sin «Confirmar envío»).
-  const executedFrom = now.getTime() - 8 * 86_400_000;
+  const executedFrom = now.getTime() - 15 * 86_400_000;
   const executedRows = dayExecutions
     .filter((e) => e.status === "sent" && e.sent_at && Date.parse(e.sent_at) >= executedFrom)
     .sort((x, y) => String(y.sent_at).localeCompare(String(x.sent_at)))
