@@ -294,6 +294,34 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
   const stepOfStage = (stage: string) => (isStageKey(stage) ? stageInfo(stage).step : null);
   const dayExecutions = [...confirmed, ...messageExecutions(messages, days ?? [], confirmed, stepOfStage)];
   const label = (stage: string) => (isStageKey(stage) ? actionLabel(stage) : stage);
+  // Lo ejecutado en los últimos 8 días (cubre «Hoy», «Ayer» y «Esta semana» de la cola de Chapa), uno por
+  // envío y el más reciente primero: lo que ya salió deja la cola, así que no se puede armar con ella. Mismo
+  // conjunto que «ejecutadas» de Resultados (confirmadas y mensajes que salieron sin «Confirmar envío»).
+  const executedFrom = now.getTime() - 8 * 86_400_000;
+  const executedRows = dayExecutions
+    .filter((e) => e.status === "sent" && e.sent_at && Date.parse(e.sent_at) >= executedFrom)
+    .sort((x, y) => String(y.sent_at).localeCompare(String(x.sent_at)))
+    .flatMap((e) => {
+      const it = b.items.get(e.outreach_id);
+      if (!it || !isStageKey(e.stage)) return [];
+      const at = String(e.sent_at);
+      const text = label(e.stage);
+      const by = "actor" in e && typeof e.actor === "string" ? e.actor : null;
+      return [{
+        ...it,
+        stage: e.stage,
+        situation: it.stage === e.stage ? it.situation : ("sin_respuesta" as QueueItem["situation"]),
+        action: text,
+        lastAction: { at, text, source: "followup" as const },
+        lastContactAt: at,
+        since: at,
+        blocked: null,
+        claim: null,
+        dueAt: null,
+        snoozedUntil: null,
+        execution: { status: "sent", at, reason: null, by, executedBy: e.executed_by ?? null },
+      }];
+    });
   const catalog = await commercialCatalog();
   const stageFor = (technical: string) => TURNIA_COMMERCIAL.find(s => (s.technical as readonly string[]).includes(technical))?.key ?? "";
   const customFor = (q: QueueItem) => catalog.states.filter(s => s.active && s.source === "product" && s.product_stage === q.stage && s.commercial_stage === stageFor(q.stage)).map(s => s.key);
@@ -358,6 +386,7 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
       cap: b.cap,
     },
     queue: queue.map(decorate),
+    executed: executedRows.map(decorate),
     scheduled: all.filter((q) => q.action && q.dueAt && !q.blocked).sort((x, y) => String(x.dueAt).localeCompare(String(y.dueAt))).map(decorate),
     blocked: all.filter((q) => q.action && q.blocked).sort(byPriority).map(decorate),
     // Igual que en Habita: la bandeja existe incluso si un horario bloquea el próximo envío.
