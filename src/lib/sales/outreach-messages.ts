@@ -232,6 +232,25 @@ export function demoUrl(appUrl: string, code: string): string {
   return `${appUrl.replace(/\/$/, "")}/p/${code}`;
 }
 
+/** Forma de un código de demo (`perez-k3m7x`): minúsculas, números y guiones. */
+export const DEMO_CODE = /^[a-z0-9][a-z0-9-]{2,39}$/;
+
+/**
+ * El código que hay al principio de un link de demo que llegó con algo pegado al final. Pasó en
+ * producción: «…/p/perez-k3m7x):» daba «Página no encontrada», porque el enlace se llevó también
+ * los signos escritos después. Devuelve null si no hay nada que limpiar o no queda un código.
+ */
+export function cleanDemoCode(raw: string): string | null {
+  let text = raw;
+  try {
+    text = decodeURIComponent(raw);
+  } catch {
+    /* Un % suelto: se limpia tal cual llegó. */
+  }
+  const code = (/^[a-z0-9][a-z0-9-]*/i.exec(text.trim())?.[0] ?? "").toLowerCase().replace(/-+$/, "");
+  return code !== raw && DEMO_CODE.test(code) ? code : null;
+}
+
 /** «la Dra. Moreta» o «el Dr. Secreti» si sabemos cómo se presenta; si no, su nombre completo. */
 export function recipientLabel(person: Pick<OutreachPerson, "name" | "title">): string {
   const surname = person.name.split(/\s+/).filter((w) => !/^[A-ZÁÉÍÓÚÑ]\.$/.test(w)).slice(-1)[0] ?? person.name;

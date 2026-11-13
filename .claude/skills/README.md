@@ -23,3 +23,5 @@ Cambios respecto del original, a propósito:
   mantenimiento.
 
 Para actualizar una skill: volver a copiarla del repo de origen, revisar el diff y anotar el commit acá.
+
+Además, `qa-turnia` es propia del proyecto: el QA de producción (ver [`QA_TURNIA.md`](../../QA_TURNIA.md)).
