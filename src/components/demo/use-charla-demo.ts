@@ -5,6 +5,7 @@ import { useConversation, type DisconnectionDetails } from "@elevenlabs/react";
 import { track, trackMilestone } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
 import { TOPE_VOZ_AVISO, useTopeDeVoz } from "./tope-voz";
+import { errorText } from "@/lib/error-text";
 
 // La charla con Sofi en el navegador, por voz o por chat, sin la pantalla: la usan la demo de
 // /probar-demo y /demo (ConversacionDemo) y la demo personal de cada odontólogo (/p/<código>).
@@ -186,7 +187,7 @@ export function useCharlaDemo({
         track("demo_mode_switched", { to: "chat", auto: true });
         setMode("chat");
         setAviso("Sin micrófono, seguimos por chat: escribile acá abajo.");
-      } else setError(e instanceof Error ? e.message : "No se pudo iniciar la conversación.");
+      } else setError(errorText(e, "No se pudo iniciar la conversación."));
       // Lo que escribió no se pierde: queda en el campo para reintentar.
       if (first) setDraft(first);
     } finally {

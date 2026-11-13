@@ -15,6 +15,7 @@ import {
   OUTREACH_STATUSES,
   TEMPLATE_KEYS,
   addBusinessDays,
+  DEMO_CODE,
   demoUrl,
   mergeTemplates,
   nextFollowUp,
@@ -297,7 +298,7 @@ export type PublicOutreach = Pick<Outreach, "code" | "name" | "greeting" | "titl
 };
 
 export async function publicOutreach(code: string): Promise<PublicOutreach | null> {
-  if (!/^[a-z0-9][a-z0-9-]{2,39}$/.test(code)) return null;
+  if (!DEMO_CODE.test(code)) return null;
   const [row] = await sql<PublicOutreach[]>`
     select o.code, o.name, o.greeting, o.title, o.business_name, o.zone, o.address, o.specialty, o.website, o.priority, o.phone_kind, o.status,
       ${conversoSql()} as converso

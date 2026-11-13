@@ -3,6 +3,7 @@ import { parseOutreachImport } from "./outreach-import";
 import {
   DEFAULT_TEMPLATES,
   addBusinessDays,
+  cleanDemoCode,
   displayOutreachPhone,
   mergeTemplates,
   nextFollowUp,
@@ -168,5 +169,24 @@ describe("prospección: mensajes y reglas", () => {
     expect(parseOutreachImport("nombre,telefono,tipo_telefono\nAna,2235627681,Recepción").rows[0].phone_kind).toBe("consultorio");
     expect(preview.problems.map((p) => p.line)).toEqual([4]);
     expect(parseOutreachImport("telefono\n223 4123456").problems[0].reason).toContain("nombre");
+  });
+});
+
+describe("link de la demo con algo pegado al final", () => {
+  it("se queda con el código y deja afuera lo que se pegó", () => {
+    // Pasó en producción: «…/p/<código>):» daba «Página no encontrada» (QA del 13/11).
+    expect(cleanDemoCode("perez-k3m7x):")).toBe("perez-k3m7x");
+    expect(cleanDemoCode("perez-k3m7x%29%3A")).toBe("perez-k3m7x");
+    expect(cleanDemoCode("perez-k3m7x.")).toBe("perez-k3m7x");
+    expect(cleanDemoCode("perez-k3m7x,")).toBe("perez-k3m7x");
+    expect(cleanDemoCode("perez-k3m7x»")).toBe("perez-k3m7x");
+    expect(cleanDemoCode("Perez-K3M7X")).toBe("perez-k3m7x");
+  });
+
+  it("no inventa un código cuando no hay nada que limpiar", () => {
+    expect(cleanDemoCode("perez-k3m7x")).toBeNull();
+    expect(cleanDemoCode("):")).toBeNull();
+    expect(cleanDemoCode("ab")).toBeNull();
+    expect(cleanDemoCode("%E0%A4%A")).toBeNull();
   });
 });

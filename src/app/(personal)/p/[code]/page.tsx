@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { demoStatus } from "@/lib/demo/config";
 import { chatSuggestions, demoExample, dentalServices } from "@/lib/demo/dental-services";
 import { DENTAL_TYPES } from "@/lib/demo/profile";
@@ -7,7 +7,7 @@ import { isConfigured } from "@/lib/env";
 import { TAMANO } from "@/lib/og";
 import { demoPreviewVersion } from "@/lib/sales/demo-preview";
 import { doctorsMessage, publicOutreach, type PublicOutreach } from "@/lib/sales/outreach";
-import { ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
+import { cleanDemoCode, ofBusiness, withArticle } from "@/lib/sales/outreach-messages";
 import { demoContactLine } from "@/lib/sales/voice-outreach";
 import { DemoPersonal } from "./demo-personal";
 import { SeguimientoDemo } from "./seguimiento-demo";
@@ -33,12 +33,26 @@ export async function generateMetadata({ params }: PageProps<"/p/[code]">): Prom
   return { title, description, robots: { index: false, follow: false }, openGraph: { title, description, images }, twitter: { title, description, images } };
 }
 
+/** Lo mismo que pidió, con el código limpio: así no se pierde `?vista=panel`. */
+function sameQuery(query: Record<string, string | string[] | undefined>): string {
+  const out = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) for (const v of [value ?? []].flat()) out.append(key, v);
+  const text = out.toString();
+  return text ? `?${text}` : "";
+}
+
 export default async function DemoPersonalPage({ params, searchParams }: PageProps<"/p/[code]">) {
   const { code } = await params;
+  const query = await searchParams;
   const p = await publicOutreach(code);
-  if (!p) notFound();
+  if (!p) {
+    // El link llegó con algo pegado al final («…/p/perez-k3m7x):»): a su demo, no a «no encontrada».
+    const limpio = cleanDemoCode(code);
+    if (limpio && (await publicOutreach(limpio))) redirect(`/p/${limpio}${sameQuery(query)}`);
+    notFound();
+  }
   // Axel la abre desde el panel para ver lo que recibe el odontólogo: no cuenta como visita.
-  const contar = (await searchParams).vista !== "panel";
+  const contar = query.vista !== "panel";
   const [status, reenvio, linea] = await Promise.all([demoStatus(), doctorsMessage(p), demoContactLine(p.code)]);
   const lista = status.base && isConfigured().elevenlabs;
   // La demo se arma con lo que ya sabemos de su consultorio (al instante, sin leer su web): sus

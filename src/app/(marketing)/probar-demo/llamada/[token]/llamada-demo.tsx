@@ -5,6 +5,7 @@ import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { track } from "@/lib/analytics";
 import { requestMicrophone } from "@/lib/microphone";
 import { TOPE_LLAMADA_AVISO, useTopeDeVoz } from "@/components/demo/tope-voz";
+import { errorText } from "@/lib/error-text";
 
 type Info = { token: string; dynamicVariables: Record<string, string>; userId: string; clinicName: string; agentName: string; error?: string };
 
@@ -68,7 +69,7 @@ function Llamada({ token }: { token: string }) {
     } catch (e) {
       const permiso = e instanceof DOMException && e.name === "NotAllowedError";
       track("demo_conversation_failed", { demo_kind: "llamada_web", mode: "voz", error_kind: permiso ? "mic_denied" : "start_error" });
-      setError(permiso ? "Necesitamos permiso para usar el micrófono." : e instanceof Error ? e.message : "No se pudo iniciar la llamada.");
+      setError(permiso ? "Necesitamos permiso para usar el micrófono." : errorText(e, "No se pudo iniciar la llamada."));
     } finally {
       setLoading(false);
     }

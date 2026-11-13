@@ -5,6 +5,7 @@ import { normalizeManualClinic, normalizeWebsite, type ManualClinic } from "@/li
 import { Icono } from "@/components/site/iconos";
 import { analyticsId, track } from "@/lib/analytics";
 import { useFormTracking } from "@/lib/form-tracking";
+import { errorText } from "@/lib/error-text";
 
 type Via = "navegador" | "chat";
 type Modo = "web" | "nombre";
@@ -64,7 +65,7 @@ export function ProbarDemoForm({
       window.location.assign(result.url);
     } catch (e) {
       track("demo_start_failed", { ...props, error_kind: status ? `api_${status}` : "network" });
-      setError({ campo: null, texto: e instanceof Error ? e.message : "No se pudo abrir la demo." });
+      setError({ campo: null, texto: errorText(e, "No se pudo abrir la demo.") });
       setPending(null);
     }
   }
