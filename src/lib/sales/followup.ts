@@ -51,6 +51,8 @@ export type Row = OutreachPerson & {
   converso: boolean;
   /** La primera charla de su demo en la que escribió o habló. */
   converso_at: string | null;
+  /** Cuándo se creó su acceso al panel (la cuenta), para la fecha del paso «Cuenta creada» del embudo. */
+  account_at?: string | null;
   account: boolean;
   active: boolean;
   /** Las líneas de la prospección (los últimos 4 números) con un chat o confirmadas para su número. */
@@ -90,6 +92,7 @@ export async function rows(id?: string) {
       (select min(v.started_at) from demo_sessions s join conversations v on v.clinic_id = s.clinic_id
         where o.lead_id is not null and s.lead_id = o.lead_id and ${userSpokeSql()}) as converso_at,
       ${account} as account,
+      (select min(a.created_at) from clinic_access a where o.clinic_id is not null and a.clinic_id = o.clinic_id and a.revoked_at is null) as account_at,
       (${account}
         and (select count(distinct v.patient_id) from conversations v where v.clinic_id = o.clinic_id and v.patient_id is not null and v.started_at >= ${weekStart}) >= ${ACTIVE_MIN_PATIENTS}
         and (select count(*) from appointments a where a.clinic_id = o.clinic_id and a.source <> 'panel' and a.created_at >= ${weekStart}) >= ${ACTIVE_MIN_APPOINTMENTS}) as active

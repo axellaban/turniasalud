@@ -412,6 +412,15 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
       period,
       now,
     ),
+    // La fecha en que cada persona llegó a cada paso del «Funnel comercial» (CHART_STEPS), sin filtro de
+    // período: Chapa compara «esta semana» con «la semana pasada a esta altura». null cuando no se guarda
+    // (cuenta activa y cliente pago no tienen fecha): Chapa toma la del paso siguiente que la tenga.
+    funnelDates: b.people.flatMap((r) => {
+      const step = b.stepNow.get(r.id) ?? -1;
+      if (step < 0) return [];
+      const at = [iso(r.greeted_at), iso(r.first_contact_at), iso(r.opened_at), iso(r.converso_at), iso(r.account_at), null, null];
+      return [{ id: r.id, step, lost: CLOSED.includes(r.status) && r.status !== "cliente", at: at.slice(0, step + 1) }];
+    }),
     timing,
     stages: FOLLOWUP_STAGES.map((s) => {
       const own = b.vs.filter((v) => v.stage === s.key);
