@@ -1,9 +1,10 @@
 import "server-only";
+import { isWhatsappChatId } from "./phone";
 import { sql } from "./db";
 import { findPatientByPhone, getClinic } from "./clinic";
 import { checkAvailability, ToolError } from "./agent/service";
 import { recapTranscript, registerOutbound, type ChannelConversation } from "./channel";
-import { channelForChat, chatIsActive, requireActiveChannel } from "./messaging-settings";
+import { chatIsActive, requireActiveWhatsapp } from "./messaging-settings";
 import { zonedParts } from "./time";
 import { wahaSendText } from "./waha";
 import { wahaConnectionForClinic, withWahaConnection } from "./waha-connections";
@@ -106,7 +107,7 @@ async function followUp(offer: OpenOffer, now: Date): Promise<"enviado" | "cerra
     order by created_at`;
   const original = convs.find((c) => c.elevenlabs_conversation_id === offer.conversation_id);
   // Una llamada o la demo web: no hay chat al que volver a escribir.
-  if (!original || channelForChat(original.chat_id) !== "whatsapp") return closed(offer);
+  if (!original || !isWhatsappChatId(original.chat_id)) return closed(offer);
   // Contestó algo después de que le ofrecieron los horarios (sí, no, otro día): ya no es un silencio.
   const offeredAt = new Date(offer.created_at).getTime();
   if (convs.some((c) => c.transcript.some((l) => l.role === "user" && new Date(l.at).getTime() > offeredAt))) return closed(offer);
@@ -147,7 +148,7 @@ async function followUp(offer: OpenOffer, now: Date): Promise<"enviado" | "cerra
   if (!claimed.length) return "esperar";
 
   const send = async () => {
-    await requireActiveChannel("whatsapp");
+    await requireActiveWhatsapp();
     if (!(await chatIsActive(original.chat_id))) throw new Error("El WhatsApp está pausado.");
     await wahaSendText(original.chat_id, text);
     const last = convs[convs.length - 1];

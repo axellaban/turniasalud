@@ -5,7 +5,6 @@ import { WAHA_ENV_VARS, env, isConfigured, missingWahaEnv } from "@/lib/env";
 import { demoStatus } from "@/lib/demo/config";
 import { estadoAudios } from "@/lib/web-audios";
 import { messagingSettings } from "@/lib/messaging-settings";
-import { telegramConfigured } from "@/lib/telegram";
 import { Badge, Card, CheckMark as Check, PageHeader } from "@/components/ui";
 import { AgentSetupButton } from "./agent-setup";
 import { AudiosWeb } from "./audios-web";
@@ -35,7 +34,7 @@ export default async function SystemPage() {
   const configured = isConfigured();
   const missingWaha = new Set(missingWahaEnv());
   const base = env.appUrl().replace(/\/$/, "");
-  const demoReady = demo.base && (demo.canal === "telegram" ? demo.telegram : demo.whatsapp);
+  const demoReady = demo.base && configured.elevenlabs;
 
   return (
     <>
@@ -43,8 +42,8 @@ export default async function SystemPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <Card>
-            <h2 className="mb-3 font-semibold text-brand-950">Canal de la demo y del agente</h2>
-            <Canales settings={messaging} telegramConfigured={telegramConfigured()} whatsappConfigured={configured.waha} />
+            <h2 className="mb-3 font-semibold text-brand-950">WhatsApp de la demo y del agente</h2>
+            <Canales settings={messaging} whatsappConfigured={configured.waha} />
           </Card>
 
           <Card>
@@ -63,7 +62,7 @@ export default async function SystemPage() {
             <h2 className="mb-1 font-semibold text-brand-950">Demo con tu web</h2>
             <p className="mb-3 text-xs text-brand-900/60">
               <Badge tone={demoReady ? "green" : "yellow"}>{demoReady ? "Activa" : "Falta configurar"}</Badge>{" "}
-              El interesado deja su web en <Link href="/probar-demo" className="underline">/probar-demo</Link> y la prueba por el canal habilitado.
+              El interesado deja su web en <Link href="/probar-demo" className="underline">/probar-demo</Link> y la prueba en el navegador o por WhatsApp si está habilitado.
             </p>
             <ul className="space-y-1 text-sm">
               <li><Check ok={demo.base} />Base actualizada <span className="text-xs text-brand-900/65">(se actualiza sola en cada deploy de producción)</span></li>

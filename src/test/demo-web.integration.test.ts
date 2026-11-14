@@ -4,7 +4,7 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 // Demo «Probá con tu web» en el navegador: la web (o, si no tiene, el nombre del
 // consultorio) en /probar-demo, lectura
 // de la web en segundo plano y chat o voz con el agente desde la misma página,
-// sin Telegram ni WhatsApp. ElevenLabs, Claude, el DNS y la web se simulan.
+// sin WhatsApp. ElevenLabs, Claude, el DNS y la web se simulan.
 
 const mocks = vi.hoisted(() => ({
   notifyN8n: vi.fn(async () => {}),
@@ -122,7 +122,7 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
     expect(vacio.status).toBe(400);
     expect(((await vacio.json()) as { error: string }).error).toContain("su nombre");
     expect((await pedir({ website: "no es una web", via: "navegador" })).status).toBe(400);
-    // Con el chat pausado, pedir Telegram o WhatsApp avisa que se pruebe en el navegador.
+    // Con el chat pausado, pedir WhatsApp avisa que se pruebe en el navegador.
     const chat = await pedir({ website: "odontonorte.com.ar", via: "chat" });
     expect(chat.status).toBe(409);
     expect(((await chat.json()) as { error: string }).error).toContain("navegador");
@@ -147,7 +147,7 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
       clinic: { name: "Consultorio Odontológico Norte", agentName: "Sofi", specialty: "Odontología", address: "Aráoz 2879, Buenos Aires", professionals: ["Dra. Lara Fernández"], types: ["Primera consulta"] },
       remaining: 6,
     });
-    // No se mandó nada por Telegram ni WhatsApp.
+    // No se mandó nada por WhatsApp.
     expect(calls.every((c) => c.startsWith("https://odontonorte.com.ar") || c.startsWith("https://api.anthropic.com"))).toBe(true);
     const [lead2] = await sql`select organization, specialty from leads where source = 'demo-web'`;
     expect(lead2).toEqual({ organization: "Consultorio Odontológico Norte", specialty: "Odontología" });
@@ -180,7 +180,7 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
 
   it("cambiar el canal de chat en el panel no corta las demos del navegador", async () => {
     const { selectMessagingChannel } = await import("@/lib/messaging-settings");
-    await selectMessagingChannel("telegram");
+    await selectMessagingChannel("whatsapp");
     expect((await leer()).body.status).toBe("lista");
     await selectMessagingChannel("pausado");
   });
@@ -234,14 +234,4 @@ describe.runIf(baseUrl)("Demo «Probá con tu web» en el navegador", () => {
     expect(leads).toEqual([{ name: "Consultorio Arroyo", email: null, organization: "Consultorio Arroyo" }]);
   });
 
-  it("el email llega al pedido de demo aunque siga por Telegram", async () => {
-    const { attachLeadEmail, claimDemoHandoff, createDemoHandoff } = await import("@/lib/demo/handoff");
-    const handoff = (await createDemoHandoff("https://odontonorte.com.ar/", "190.2.2.2", "tg@consultorio.com"))!;
-    expect(await claimDemoHandoff(handoff, "telegram:55")).toEqual({ website: "https://odontonorte.com.ar/", email: "tg@consultorio.com" });
-    const [lead] = await sql`insert into leads (name, phone, source) values ('Telegram 55', 'telegram:55', 'demo-telegram') returning id`;
-    await sql`insert into demo_sessions (phone, chat_id, website, lead_id) values ('telegram:55', 'telegram:55', 'https://odontonorte.com.ar/', ${lead.id})`;
-    await attachLeadEmail("telegram:55", "tg@consultorio.com");
-    const [row] = await sql`select email from leads where id = ${lead.id}`;
-    expect(row.email).toBe("tg@consultorio.com");
-  });
 });

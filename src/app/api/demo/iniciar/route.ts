@@ -2,10 +2,8 @@ import { after, NextResponse } from "next/server";
 import { cleanAnalyticsId } from "@/lib/analytics-shared";
 import { isConfigured, missingWahaEnv } from "@/lib/env";
 import { messagingSettings } from "@/lib/messaging-settings";
-import { TELEGRAM_BOT_USERNAME, telegramConfigured } from "@/lib/telegram";
 import { demoWhatsappNumber } from "@/lib/demo/config";
 import { demoRequestText } from "@/lib/demo/flow";
-import { createDemoHandoff } from "@/lib/demo/handoff";
 import { analyzeDemo } from "@/lib/demo/session";
 import { startWebDemo } from "@/lib/demo/web";
 import { normalizeManualClinic, normalizeWebsite } from "@/lib/demo/website";
@@ -58,12 +56,6 @@ export async function POST(request: Request) {
 
   const settings = await messagingSettings();
   if (settings.active_channel === "pausado") return NextResponse.json({ error: "La demo por chat está pausada. Probala en el navegador." }, { status: 409 });
-  if (settings.active_channel === "telegram") {
-    if (!telegramConfigured() || !settings.telegram_ready) return NextResponse.json({ error: "Falta conectar el bot de Telegram." }, { status: 409 });
-    const token = await createDemoHandoff(website, ip, email);
-    if (!token) return NextResponse.json({ error: "Ya pediste varias demos. Probá en un rato." }, { status: 429 });
-    return NextResponse.json({ url: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${token}` }, { headers: { "Cache-Control": "no-store" } });
-  }
   const wa = missingWahaEnv().length ? null : (await demoWhatsappNumber()).number;
   if (!wa) return NextResponse.json({ error: "WhatsApp todavía no está disponible." }, { status: 409 });
   return NextResponse.json({ url: `https://wa.me/${wa}?text=${encodeURIComponent(demoRequestText(website))}` }, { headers: { "Cache-Control": "no-store" } });

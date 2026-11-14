@@ -20,7 +20,7 @@ function esCelular(): boolean {
 /**
  * La web del consultorio o, si no tiene, su nombre. En la computadora la demo
  * sigue en el navegador; en el celular, con web, se elige entre el navegador y
- * WhatsApp, si está activo. Telegram no se ofrece. Sin web va siempre al navegador.
+ * WhatsApp, si está activo. Sin web va siempre al navegador.
  */
 export function ProbarDemoForm({
   webReady,

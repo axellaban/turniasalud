@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { getCatalog } from "@/lib/clinic";
 import { DENTAL_TEST_CASES } from "@/lib/agent/modules/odontologia";
-import { qrSvg, telegramBot, testChannelsFor, type ChannelOption } from "@/lib/agent-test";
+import { qrSvg, testWhatsappFor, type ChannelOption } from "@/lib/agent-test";
 import { Card, PageHeader, buttonClass } from "@/components/ui";
 import { PanelIcon, type PanelIconName } from "@/components/panel-icons";
 import { Qr, TestLink } from "./test-link";
@@ -35,8 +35,7 @@ const unavailable = (option: ChannelOption, agent: string) => (
 
 export default async function ProbarPage() {
   const clinic = await getPanelClinic();
-  const [channels, catalog] = await Promise.all([testChannelsFor(clinic), getCatalog(clinic.id)]);
-  const { whatsapp, telegram } = channels;
+  const [whatsapp, catalog] = await Promise.all([testWhatsappFor(clinic), getCatalog(clinic.id)]);
   const agent = clinic.agent_name || "Sofi";
   const waQr = whatsapp.kind === "numero" ? await qrSvg(whatsapp.url) : null;
   const coverage = clinic.accepted_coverages.find((c) => !/particular/i.test(c));
@@ -83,7 +82,7 @@ export default async function ProbarPage() {
                     {waQr && <Qr svg={waQr} />}
                   </div>
                 ) : whatsapp.kind === "enlace" ? (
-                  <TestLink clinicId={clinic.id} channel="whatsapp" label="Abrir WhatsApp" />
+                  <TestLink clinicId={clinic.id} label="Abrir WhatsApp" />
                 ) : (
                   unavailable(whatsapp, agent)
                 )
@@ -101,13 +100,6 @@ export default async function ProbarPage() {
               )}
             </Channel>
 
-            <Channel
-              icon="telegram"
-              title="Telegram"
-              action={telegram.kind === "enlace" ? <TestLink clinicId={clinic.id} channel="telegram" label="Abrir Telegram" /> : unavailable(telegram, agent)}
-            >
-              Con el bot {telegramBot}. Elegís si {agent} te contesta por chat, con audios o si te llama por teléfono.
-            </Channel>
           </ul>
         </Card>
 

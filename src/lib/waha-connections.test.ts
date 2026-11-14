@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { currentWahaConnection, wahaConnections, withWahaConnection } from "./waha-connections";
-import { chatIsActive, requireActiveChannel } from "./messaging-settings";
+import { chatIsActive, requireActiveWhatsapp } from "./messaging-settings";
 import { wahaDownloadMedia, wahaSendText } from "./waha";
 
 vi.mock("./db", () => ({ sql: vi.fn(() => { throw new Error("No debe consultar el selector general."); }) }));
@@ -43,13 +43,13 @@ describe("líneas WAHA propias", () => {
 
   it("permite la línea propia y rechaza revisiones viejas, pausa y otro canal", async () => {
     await withWahaConnection(own, async () => {
-      expect(await requireActiveChannel("whatsapp")).toMatchObject({ active_channel: "whatsapp", revision: 3 });
+      expect(await requireActiveWhatsapp()).toMatchObject({ active_channel: "whatsapp", revision: 3 });
       expect(await chatIsActive("5491155551111@c.us", 3)).toBe(true);
       expect(await chatIsActive("5491155551111@c.us", 2)).toBe(false);
-      await expect(requireActiveChannel("telegram")).rejects.toThrow("selector general");
+      expect(await chatIsActive("telegram:123", 3)).toBe(false);
     });
     await withWahaConnection({ ...own, enabled: false }, async () => {
-      await expect(requireActiveChannel("whatsapp")).rejects.toThrow("pausado");
+      await expect(requireActiveWhatsapp()).rejects.toThrow("pausado");
       expect(await chatIsActive("5491155551111@c.us", 3)).toBe(false);
     });
   });

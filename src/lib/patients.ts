@@ -56,7 +56,7 @@ export function sameCoverage(a: string | null | undefined, b: string | null | un
   return Boolean(a && b && key(a) === key(b));
 }
 
-/** Celulares o ids de Telegram: números por los que se le puede volver a escribir. */
+/** Identidades históricas y celulares: números por los que se le puede volver a escribir. */
 export const isReachablePhone = (phone: string | null | undefined): phone is string => Boolean(phone) && !phone!.startsWith("web-");
 
 export type Verification = "ok" | "falta_fecha" | "falta_nombre" | "no_coincide";

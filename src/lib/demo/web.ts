@@ -12,7 +12,7 @@ import { createDemoHandoff } from "./handoff";
 import { demoDynamicVariables, type DemoSession } from "./session";
 
 // Demo en el navegador (/probar-demo → /probar-demo/sesion/<token>): la misma
-// lectura de la web y la misma clínica temporal que por Telegram o WhatsApp,
+// lectura de la web y la misma clínica temporal que por WhatsApp,
 // pero el interesado chatea o habla con el agente sin salir de la página.
 
 /** Una demo del navegador sigue abierta este lapso desde su último uso. */
@@ -56,7 +56,7 @@ export async function startWebDemo(input: {
   const manual = input.website ? null : input.manual;
   if (!input.website && !manual) return null;
   const label = input.website ? hostOf(input.website) : manual!.nombre;
-  // El mismo freno contra abusos que el paso a Telegram (por origen y total por hora).
+  // Freno contra abusos del formulario por origen y total por hora.
   const handoff = await createDemoHandoff(input.website ?? `sin web: ${label}`, input.ip, input.email);
   if (!handoff) return null;
   const settings = await messagingSettings();

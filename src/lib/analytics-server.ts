@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { POSTHOG_HOST, POSTHOG_PROJECT_KEY, TRACKING_VERSION } from "./analytics-shared";
 
 // Eventos que pasan en el servidor y no en el navegador: los mensajes de la prospección que se
-// registran desde el panel, la demo por WhatsApp o Telegram y la preparación de cada demo. Van al
+// registran desde el panel, la demo por WhatsApp y la preparación de cada demo. Van al
 // mismo proyecto de PostHog que los del navegador, por su API de captura (sin librería). Como los
 // del navegador, solo salen en producción, salvo que se defina NEXT_PUBLIC_POSTHOG_KEY a mano.
 

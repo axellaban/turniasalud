@@ -342,7 +342,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
 
     const health = await (await import("@/app/api/health/route")).GET();
     expect(health.status).toBe(200);
-    expect((await health.json()).demo).toEqual({ canal: "whatsapp", telegram: false, base: true, whatsapp: true, whatsapp_source: "waha", claude: true, llamada_telefonica: false });
+    expect((await health.json()).demo).toEqual({ canal: "whatsapp", base: true, whatsapp: true, whatsapp_source: "waha", claude: true, llamada_telefonica: false });
 
     // Sin WAHA nadie contestaría por WhatsApp, pero la demo sigue en el navegador.
     vi.stubEnv("WAHA_API_KEY", "");

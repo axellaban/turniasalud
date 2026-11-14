@@ -465,10 +465,10 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     });
   });
 
-  it("una línea propia usa su clínica y devuelve la respuesta por su instancia con Telegram general activo", async () => {
+  it("una línea propia usa su clínica y devuelve la respuesta por su instancia con el WhatsApp general pausado", async () => {
     await sql`insert into clinics (id, name, is_demo, retained_at) values (${OWN_CLINIC}, 'Consultorio de prueba', true, now())`;
     vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
-    await sql`update messaging_settings set active_channel = 'telegram' where id`;
+    await sql`update messaging_settings set active_channel = 'pausado' where id`;
     const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
     const context = { params: Promise.resolve({ connection: ownConnection.id }) };
     const event = { ...textMessage("own1", "Quiero probar la demo"), me: { id: `${ownConnection.phone}@c.us` } };
@@ -502,7 +502,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
       insert into clinics (id, name, elevenlabs_voice_id) values (${OWN_CLINIC}, 'Consultorio de prueba', 'voz-propia')
       on conflict (id) do update set elevenlabs_voice_id = excluded.elevenlabs_voice_id`;
     vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
-    await sql`update messaging_settings set active_channel = 'telegram' where id`;
+    await sql`update messaging_settings set active_channel = 'pausado' where id`;
     const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
     const send = (id: string, text: string) => ownInbound(
       wahaRequest(textMessage(id, text, "5491155550040@c.us"), { key: ownConnection.webhookHmac }),

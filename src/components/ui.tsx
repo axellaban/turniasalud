@@ -111,7 +111,7 @@ export function Notice({ tone = "info", children, className = "" }: { tone?: key
 
 export const CHANNEL_LABEL: Record<string, string> = {
   whatsapp: "WhatsApp",
-  telegram: "Telegram",
+  telegram: "Telegram (historial)",
   telefono: "Teléfono",
   web: "Web",
   panel: "Panel",

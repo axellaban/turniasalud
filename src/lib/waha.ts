@@ -1,7 +1,8 @@
 import "server-only";
+import { isWhatsappChatId } from "./phone";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "./env";
-import { requireActiveChannel } from "./messaging-settings";
+import { requireActiveWhatsapp } from "./messaging-settings";
 import { currentWahaConnection } from "./waha-connections";
 
 // WAHA (WhatsApp HTTP API): WhatsApp Web con un chip común, en el VPS del
@@ -103,7 +104,7 @@ export function parseWahaEvent(event: WahaEvent, expectedSession?: string): Pars
   if (from === "status@broadcast" || from.endsWith("@broadcast")) return { kind: "ignore", reason: "estado" };
   if (from.endsWith("@g.us")) return { kind: "ignore", reason: "grupo" };
   if (from.endsWith("@newsletter")) return { kind: "ignore", reason: "canal" };
-  if (!from.endsWith("@c.us") && !from.endsWith("@lid") && !from.endsWith("@s.whatsapp.net")) {
+  if (!isWhatsappChatId(from)) {
     return { kind: "ignore", reason: "chat desconocido" };
   }
 
@@ -145,7 +146,8 @@ async function waha(path: string, init: RequestInit = {}): Promise<Response> {
 }
 
 export async function wahaSendText(chatId: string, text: string): Promise<{ id?: string }> {
-  await requireActiveChannel("whatsapp");
+  if (!isWhatsappChatId(chatId)) throw new Error("El destinatario no es un chat de WhatsApp.");
+  await requireActiveWhatsapp();
   const res = await waha("/api/sendText", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -191,7 +193,8 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
 
 /** Nota de voz. Un archivo Ogg Opus listo se puede enviar sin conversión en WAHA Core. */
 export async function wahaSendVoice(chatId: string, audio: Buffer, { convert = true }: { convert?: boolean } = {}): Promise<void> {
-  await requireActiveChannel("whatsapp");
+  if (!isWhatsappChatId(chatId)) throw new Error("El destinatario no es un chat de WhatsApp.");
+  await requireActiveWhatsapp();
   await waha("/api/sendVoice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

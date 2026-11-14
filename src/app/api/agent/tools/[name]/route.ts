@@ -70,7 +70,7 @@ async function staffOf(clinicId: string, phone: string, channel: string | undefi
     const [chat] = await sql`
       select 1 from channel_conversations
       where clinic_id = ${clinicId} and elevenlabs_conversation_id = ${conversationId} and phone = ${normalized}
-        and chat_id not like 'telegram:%'
+        and chat_id ~ '@(c[.]us|lid|s[.]whatsapp[.]net)$'
       limit 1`;
     if (!chat) return null;
   }

@@ -54,7 +54,7 @@ async function hasVisits(patientId: string): Promise<boolean> {
 
 export type HealthFormOffer = { instrucciones: string; plantilla?: string };
 
-const CHAT_SOURCES: AppointmentSource[] = ["whatsapp", "telegram", "web"];
+const CHAT_SOURCES: AppointmentSource[] = ["whatsapp", "web"];
 
 /**
  * Qué hacer con la ficha de salud después de reservar un turno, o null si no corresponde:

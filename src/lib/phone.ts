@@ -41,6 +41,11 @@ function stripArgentineMobilePrefix(national: string): string {
   return national;
 }
 
+/** Identificadores de chats directos que admite WAHA. */
+export function isWhatsappChatId(chatId: string): boolean {
+  return /@(?:c\.us|lid|s\.whatsapp\.net)$/.test(chatId);
+}
+
 export function displayPhone(id: string | null | undefined): string {
   if (!id) return "—";
   if (/^549\d{10}$/.test(id)) {

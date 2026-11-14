@@ -2,7 +2,7 @@
 import { useActionState, useEffect } from "react";
 import { submitKeepingValues } from "@/components/keep-form";
 import { useRouter } from "next/navigation";
-import { createClinic, launchProfile, refreshClinic, applyImport, deleteClinic, deleteTemporaryDemos } from "../../clinics-actions";
+import { createClinic, prepareTestLink, refreshClinic, applyImport, deleteClinic, deleteTemporaryDemos } from "../../clinics-actions";
 import { buttonClass, dangerButtonClass, inputClass, Field, secondaryButtonClass } from "@/components/ui";
 
 export function DeleteClinicButton({ clinicId, name }: { clinicId: string; name: string }) {
@@ -35,7 +35,7 @@ export function NewClinicForm() {
 }
 
 export function ProfileTest({ clinicId }: { clinicId: string }) {
-  const [state, action, pending] = useActionState(launchProfile, {});
+  const [state, action, pending] = useActionState(prepareTestLink, {});
   return <form action={action} className="space-y-2">
     <input type="hidden" name="clinic_id" value={clinicId} />
     <button disabled={pending} className={buttonClass}>{pending ? "Preparando…" : "Probar este perfil"}</button>
