@@ -9,6 +9,7 @@ import { parseOutreachImport } from "@/lib/sales/outreach-import";
 import { manualWhatsappSenders, setVoiceSender, voiceSenderPhones } from "@/lib/sales/voice-outreach";
 import { lastWhatsappSync, searchWhatsappChats, syncWhatsappReplies, whatsappInbox } from "@/lib/sales/whatsapp-sync";
 import { checkWhatsappNumbers } from "@/lib/sales/whatsapp-check";
+import { backfillConversations } from "@/lib/conversations-backfill";
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABEL,
@@ -62,6 +63,9 @@ export const maxDuration = 300;
 //   POST { followup: { op: "whatsapp-sync" }, by }  lee los chats de las dos líneas de WAHA de la prospección
 //                                y registra las respuestas nuevas (src/lib/sales/whatsapp-sync.ts). Chapa lo
 //                                dispara una vez por día; si se pide antes de 10 minutos, devuelve la última.
+//   POST { followup: { op: "conversations-backfill", desde }, by }  trae de la API de ElevenLabs las conversaciones
+//                                desde esa fecha que no llegaron por el webhook post-call y las guarda en silencio
+//                                (src/lib/conversations-backfill.ts). No repite las que ya están.
 //   POST { followup: { op: "whatsapp-check", limit }, by }  le pregunta a WhatsApp (WAHA, check-exists) si los
 //                                números por contactar tienen WhatsApp, de a hasta 40, y corrige fijo/celular
 //                                (src/lib/sales/whatsapp-check.ts). No manda nada.
@@ -427,6 +431,15 @@ async function followupOp(body: { followup?: unknown; by?: unknown }) {
   const f = body.followup && typeof body.followup === "object" ? (body.followup as Record<string, unknown>) : null;
   if (!f) return NextResponse.json({ error: "Falta la operación." }, { status: 400 });
   const actor = (typeof body.by === "string" ? body.by.trim().slice(0, 80) : "") || "Chapa Labs";
+  if (f.op === "conversations-backfill") {
+    const desde = typeof f.desde === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f.desde) ? f.desde : null;
+    if (!desde) return NextResponse.json({ error: "Falta desde (AAAA-MM-DD)." }, { status: 400 });
+    try {
+      return NextResponse.json({ backfill: await backfillConversations(desde) }, { headers: NO_STORE });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    }
+  }
   if (f.op === "whatsapp-check") {
     const report = await checkWhatsappNumbers(typeof f.limit === "number" ? f.limit : 20);
     if (report.toWhatsapp.length || report.toLandline.length) {

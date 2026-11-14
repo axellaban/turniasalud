@@ -60,7 +60,11 @@ export function detectChannel(data: PostCallPayload, phone: string): Conversatio
 }
 
 
-export async function recordConversation(data: PostCallPayload): Promise<void> {
+/**
+ * `quiet`: solo guarda la conversación (la recuperación desde ElevenLabs de las que no llegaron por el
+ * webhook): no crea ni actualiza pacientes, no toca campañas, no genera tareas ni avisa a n8n.
+ */
+export async function recordConversation(data: PostCallPayload, { quiet = false }: { quiet?: boolean } = {}): Promise<void> {
   const vars = data.conversation_initiation_client_data?.dynamic_variables ?? {};
   const clinic = await resolveClinic({ agentId: data.agent_id });
   const clinicId = isUuid(vars.clinic_id) ? vars.clinic_id : clinic.id;
@@ -79,11 +83,11 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
   let patient: Patient | null = temporaryAccess ? null : await findPatientByPhone(clinicId, phone);
   const name = collected(data, "nombre_paciente");
   const memory = collected(data, "memoria");
-  if (!temporaryAccess && !patient && phone && name) patient = (await findOrCreatePatientForPhone(clinicId, phone, { name })).patient;
+  if (!quiet && !temporaryAccess && !patient && phone && name) patient = (await findOrCreatePatientForPhone(clinicId, phone, { name })).patient;
   const startedAt = data.metadata?.start_time_unix_secs
     ? new Date(data.metadata.start_time_unix_secs * 1000).toISOString()
     : new Date().toISOString();
-  if (patient) {
+  if (patient && !quiet) {
     await sql`
       update patients set
         last_contact_at = now(),
@@ -127,6 +131,7 @@ export async function recordConversation(data: PostCallPayload): Promise<void> {
       transcript = excluded.transcript,
       analysis = excluded.analysis`;
 
+  if (quiet) return;
   if (campaignId && patient) await updateCampaignRecipient(campaignId, patient.id, data);
 
   if (row.channel === "telefono") {
