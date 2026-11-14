@@ -2,7 +2,7 @@
 // números que escriben sin parar, audios larguísimos y llamadas eternas. Valen para todas las
 // clínicas. Puro (sin base ni red): los números y las reglas se prueban solos.
 
-/** Chat (WhatsApp y Telegram). El equipo del consultorio no tiene topes. */
+/** Chat (WhatsApp). El equipo del consultorio no tiene topes. */
 export const CHAT_LIMITS = {
   /** Mensajes de un mismo número en una ventana corta: a partir del siguiente, Sofi se pausa. */
   burst: { messages: 25, minutes: 30 },
@@ -90,7 +90,7 @@ export const BOT_DETAIL: Record<BotSignal, string> = {
 };
 
 /**
- * Duración de un audio Ogg Opus (las notas de voz de WhatsApp y Telegram), en segundos, leyendo
+ * Duración de un audio Ogg Opus (las notas de voz de WhatsApp), en segundos, leyendo
  * la última página: su posición final está en muestras a 48 kHz. null si no es Ogg Opus.
  */
 export function oggOpusSeconds(bytes: Uint8Array): number | null {

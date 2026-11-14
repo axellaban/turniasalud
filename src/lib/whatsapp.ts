@@ -1,4 +1,4 @@
-import { requireActiveChannel } from "./messaging-settings";
+import { requireActiveWhatsapp } from "./messaging-settings";
 import "server-only";
 import { buildDynamicVariables } from "./clinic";
 import { speakAsPatient } from "./patients";
@@ -85,7 +85,7 @@ export async function sendPatientMessage(clinic: Clinic, msg: PatientMessage): P
 
 async function sendPatientMessageOnConnection(clinic: Clinic, msg: PatientMessage): Promise<{ conversation_id: string | null }> {
   if (clinic.is_demo) throw new Error("Modo demo: no se envían avisos ni campañas a pacientes.");
-  await requireActiveChannel("whatsapp");
+  await requireActiveWhatsapp();
   const problem = whatsappReadiness(clinic);
   if (problem) throw new Error(problem);
   if (msg.patientId) await speakAsPatient(clinic.id, msg.phone, msg.patientId);

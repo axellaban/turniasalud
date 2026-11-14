@@ -136,7 +136,7 @@ export type Patient = {
   id: string;
   clinic_id: string;
   full_name: string | null;
-  /** Celular (id de WhatsApp o Telegram). Puede faltar y lo pueden compartir varias fichas (una familia). */
+  /** Celular o identificador histórico de contacto. Puede faltar y lo pueden compartir varias fichas (una familia). */
   phone: string | null;
   dni: string | null;
   birth_date: string | null;

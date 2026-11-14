@@ -31,7 +31,7 @@ const DEMO_STATUS: Record<string, string> = {
   chat: "Probando chat", terminada: "Terminada", error: "No se pudo leer la web",
 };
 
-/** Lo que hizo cada interesado en la demo (WhatsApp, Telegram o navegador): web, estado y conversaciones con el agente. */
+/** Lo que hizo cada interesado en la demo (incluye el historial de canales retirados): web, estado y conversaciones con el agente. */
 async function demoActivity(leadIds: string[]) {
   if (!leadIds.length) return { sessions: [] as DemoActivity[], conversations: [] as DemoConversation[] };
   try {

@@ -113,7 +113,7 @@ export async function announcePause(clinic: Clinic, phone: string, chatId: strin
   await send(chatId, PAUSE_REPLY).catch((e) => console.error("Límites: no se pudo avisar la pausa", e instanceof Error ? e.message : e));
   const patient = await findPatientByPhone(clinic.id, phone).catch(() => null);
   const until = new Date(Date.now() + CHAT_LIMITS.pauseHours * 3600_000);
-  const who = patient?.full_name ?? (phone.startsWith("telegram:") ? "una persona de Telegram" : `+${phone}`);
+  const who = patient?.full_name ?? `+${phone}`;
   const [task] = await sql`
     insert into tasks ${sql({
       clinic_id: clinic.id,

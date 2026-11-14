@@ -6,10 +6,9 @@ import { buttonClass, secondaryButtonClass } from "@/components/ui";
 import { PanelIcon } from "@/components/panel-icons";
 
 /**
- * Prepara el enlace que abre la prueba por chat con la ficha de esta clínica (Telegram o el
- * WhatsApp general) y lo muestra con su QR, para abrirlo en el celular desde la compu.
+ * Prepara el enlace que abre la prueba por el WhatsApp general con la ficha de esta clínica y lo muestra con su QR, para abrirlo en el celular desde la compu.
  */
-export function TestLink({ clinicId, channel, label }: { clinicId: string; channel: "telegram" | "whatsapp"; label: string }) {
+export function TestLink({ clinicId, label }: { clinicId: string; label: string }) {
   const [state, action, pending] = useActionState<ProfileTestState, FormData>(prepareTestLink, {});
   if (state.ok && state.url) {
     return (
@@ -28,7 +27,6 @@ export function TestLink({ clinicId, channel, label }: { clinicId: string; chann
   return (
     <form action={action} className="space-y-2">
       <input type="hidden" name="clinic_id" value={clinicId} />
-      <input type="hidden" name="channel" value={channel} />
       <button disabled={pending} className={secondaryButtonClass}>{pending ? "Preparando…" : "Preparar el enlace"}</button>
       {state.message && !state.ok && <p role="status" className="text-sm text-red-700">{state.message}</p>}
     </form>

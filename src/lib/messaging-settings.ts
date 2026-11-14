@@ -1,44 +1,42 @@
 import "server-only";
 import { sql } from "./db";
+import { isWhatsappChatId } from "./phone";
 import { currentWahaConnection } from "./waha-connections";
 
-export type MessagingChannel = "pausado" | "telegram" | "whatsapp";
+export type MessagingChannel = "pausado" | "whatsapp";
 export type MessagingSettings = {
-  active_channel: MessagingChannel; revision: number; telegram_ready: boolean;
+  active_channel: MessagingChannel; revision: number;
   /** Demos nuevas por persona por día; null = sin límite. */
   demo_daily_limit: number | null;
 };
 
 /** Sin caché: cada entrada y cada envío consulta el selector. Un fallo cierra el canal. */
 export async function messagingSettings(): Promise<MessagingSettings> {
-  const [row] = await sql<MessagingSettings[]>`select active_channel, revision, telegram_ready, demo_daily_limit from messaging_settings where id`;
-  return row ?? { active_channel: "pausado", revision: 0, telegram_ready: false, demo_daily_limit: null };
+  const [row] = await sql<MessagingSettings[]>`select active_channel, revision, demo_daily_limit from messaging_settings where id`;
+  return row ?? { active_channel: "pausado", revision: 0, demo_daily_limit: null };
 }
 
 export class ChannelPausedError extends Error {
   constructor() { super("Este canal está pausado en Configuración."); }
 }
 
-export function channelForChat(chatId: string): "telegram" | "whatsapp" {
-  return chatId.startsWith("telegram:") ? "telegram" : "whatsapp";
-}
-
-export async function requireActiveChannel(channel: "telegram" | "whatsapp"): Promise<MessagingSettings> {
-  const own = channel === "whatsapp" ? currentWahaConnection() : undefined;
+export async function requireActiveWhatsapp(): Promise<MessagingSettings> {
+  const own = currentWahaConnection();
   if (own) {
     if (!own.enabled) throw new ChannelPausedError();
-    return { active_channel: "whatsapp", revision: own.revision, telegram_ready: false, demo_daily_limit: null };
+    return { active_channel: "whatsapp", revision: own.revision, demo_daily_limit: null };
   }
   const settings = await messagingSettings();
-  if (settings.active_channel !== channel) throw new ChannelPausedError();
+  if (settings.active_channel !== "whatsapp") throw new ChannelPausedError();
   return settings;
 }
 
 export async function chatIsActive(chatId: string, revision?: number): Promise<boolean> {
-  const own = channelForChat(chatId) === "whatsapp" ? currentWahaConnection() : undefined;
+  if (!isWhatsappChatId(chatId)) return false;
+  const own = currentWahaConnection();
   if (own) return own.enabled && (revision === undefined || revision === own.revision);
   const settings = await messagingSettings();
-  return settings.active_channel === channelForChat(chatId) && (revision === undefined || revision === settings.revision);
+  return settings.active_channel === "whatsapp" && (revision === undefined || revision === settings.revision);
 }
 
 /** Cambiar de canal termina las demos previas y descarta sus respuestas pendientes. */

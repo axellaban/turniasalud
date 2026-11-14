@@ -6,7 +6,7 @@ import { z } from "zod";
 import { sql } from "./db";
 import { findPatientByPhone } from "./clinic";
 
-// Fotos y PDF que manda el paciente por WhatsApp o Telegram (credencial, orden,
+// Fotos y PDF que manda el paciente por WhatsApp (credencial, orden,
 // receta, estudio): Claude las lee y Sofi recibe lo que dicen, como texto. La
 // imagen queda guardada para que el consultorio la vea en la ficha del paciente.
 
@@ -105,7 +105,7 @@ export type DocumentRead = {
   /** El mensaje para el agente. */
   text: string;
   /** Guarda el archivo en la clínica que atiende la conversación, para verlo en la ficha. */
-  save: (target: { clinicId: string; phone: string; channel: "whatsapp" | "telegram" }) => Promise<void>;
+  save: (target: { clinicId: string; phone: string; channel: "whatsapp" }) => Promise<void>;
 };
 
 /**

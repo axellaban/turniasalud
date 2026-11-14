@@ -150,7 +150,7 @@ export default async function SettingsPage() {
                 ? "Actualizalo después de cada cambio de Turnia en Sofi, para que las llamadas lo tomen. No toca el número ni el desvío de la línea."
                 : "Prepararlo no conecta ni desvía la línea telefónica. Después hay que asignarle el número en el proveedor y comprobar una llamada entrante."}
             </p>
-            <p className="mt-2 text-xs text-brand-900/65">Las llamadas que Turnia inicia por Twilio se graban (con cargo por uso); las del navegador y Telegram, no. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Ver grabaciones en Twilio</a>.</p>
+            <p className="mt-2 text-xs text-brand-900/65">Las llamadas que Turnia inicia por Twilio se graban (con cargo por uso); las del navegador, no. <a href="https://www.twilio.com/console/voice/recordings/recording-logs?x-target-region=us1&__override_layout__=embed" target="_blank" rel="noopener noreferrer" className="underline">Ver grabaciones en Twilio</a>.</p>
           </Card>}
 
           {admin && <Card id="acceso-consultorio" className="scroll-mt-20">

@@ -27,7 +27,6 @@ export default async function ProbarDemoPage({ searchParams }: PageProps<"/proba
   const initialWeb = normalizeWebsite(typeof web === "string" ? web : null)?.replace(/^https?:\/\//, "").replace(/\/$/, "") ?? "";
   const initialManual = initialWeb ? null : normalizeManualClinic({ nombre, direccion: dir, especialidad: esp });
   const status = await demoStatus();
-  // Por chat, la demo se ofrece solo por WhatsApp: con Telegram como canal activo, va directo al navegador.
   const chatReady = status.base && status.canal === "whatsapp" && status.whatsapp;
   const webReady = status.base && isConfigured().elevenlabs;
   return (

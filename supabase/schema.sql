@@ -87,7 +87,7 @@ create table if not exists patients (
   id uuid primary key default gen_random_uuid(),
   clinic_id uuid not null references clinics(id) on delete cascade,
   full_name text,
-  -- Celular (id de WhatsApp o de Telegram). Puede faltar y lo pueden compartir varias
+  -- Celular o identificador histórico de contacto. Puede faltar y lo pueden compartir varias
   -- fichas (una familia): ver «Familias con un mismo celular» más abajo.
   phone text,
   dni text,
@@ -386,7 +386,7 @@ alter table demo_sessions add column if not exists manual_professional text;
 -- Y los tratamientos que declara (Doctoralia): suman sus turnos a la demo (implantes, ortodoncia…).
 alter table demo_sessions add column if not exists manual_services text;
 -- La persona de PostHog que empezó la demo en el navegador: los eventos del servidor (preparación,
--- conversaciones) quedan en su recorrido. Las de WhatsApp o Telegram no la tienen.
+-- conversaciones) quedan en su recorrido. Las que se inician por WhatsApp no la tienen.
 alter table demo_sessions add column if not exists analytics_id text;
 create unique index if not exists demo_sessions_request_idx on demo_sessions (phone, request_message_id);
 create index if not exists demo_sessions_phone_idx on demo_sessions (phone, updated_at desc);
@@ -395,9 +395,8 @@ alter table demo_sessions enable row level security;
 -- Selector operativo global. Ningún despliegue reactiva WhatsApp automáticamente.
 create table if not exists messaging_settings (
   id boolean primary key default true check (id),
-  active_channel text not null default 'pausado' check (active_channel in ('pausado', 'telegram', 'whatsapp')),
+  active_channel text not null default 'pausado' check (active_channel in ('pausado', 'whatsapp')),
   revision integer not null default 0,
-  telegram_ready boolean not null default false,
   updated_at timestamptz not null default now()
 );
 insert into messaging_settings (id) values (true) on conflict do nothing;
@@ -405,7 +404,21 @@ alter table messaging_settings enable row level security;
 alter table channel_conversations add column if not exists channel_revision integer not null default 0;
 alter table demo_sessions add column if not exists channel_revision integer not null default 0;
 
--- Token opaco de la landing: conserva la URL sin sobrepasar los 64 caracteres de /start.
+-- El campo anterior se conserva en instalaciones existentes para que el despliegue
+-- previo siga leyendo la configuración durante el build.
+-- Retirar Telegram sin perder el historial ni encender el WhatsApp general.
+update messaging_settings
+  set active_channel = 'pausado', revision = revision + 1, updated_at = now()
+  where id and active_channel = 'telegram';
+update channel_conversations set closed_at = now()
+  where chat_id like 'telegram:%' and closed_at is null;
+update demo_sessions set status = 'terminada', updated_at = now()
+  where chat_id like 'telegram:%' and status not in ('terminada', 'error');
+alter table messaging_settings drop constraint if exists messaging_settings_active_channel_check;
+alter table messaging_settings add constraint messaging_settings_active_channel_check
+  check (active_channel in ('pausado', 'whatsapp'));
+
+-- Tokens de prueba de fichas y registro para el límite del formulario de demos.
 create table if not exists demo_handoffs (
   token text primary key,
   website text not null,
@@ -431,7 +444,7 @@ alter table clinics add column if not exists payment_methods text;
 alter table clinics add column if not exists agent_context text;
 alter table demo_sessions add column if not exists reused_profile boolean not null default false;
 alter table demo_handoffs add column if not exists clinic_id uuid references clinics(id) on delete cascade;
--- Email que deja el interesado en /probar-demo antes de pasar a Telegram o WhatsApp.
+-- Email opcional de quien inicia una demo en /probar-demo.
 alter table demo_handoffs add column if not exists email text;
 -- Los enlaces de perfil del panel («Probar a Sofi», «Probar este perfil») no vencen nunca y se
 -- pueden reutilizar; los que ya existían también (idempotente). Se borran solo con su clínica.

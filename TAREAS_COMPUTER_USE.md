@@ -4,12 +4,12 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-| Prioridad | Tarea | Por qué | ¿Necesita al usuario? | Estado al 14/11, 09:20 |
-| --- | --- | --- | --- | --- |
-| **P0** | 1. Todo lo de afuera, al dominio nuevo | Sofi no puede consultar la agenda y, desde el 05/11, no se guarda ninguna conversación | No (salvo que algo pida volver a iniciar sesión) | ✅ en lo principal: `APP_URL` cambiado y Sofi vuelve a dar turnos. Falta confirmar el webhook post-call, Google y Telegram |
-| **P1** | 2. Certificado de `www.turniasalud.app` | Quien entra con «www» ve un error de seguridad | Solo si el dominio no está comprado en Vercel (registro DNS) | ❌ pendiente: el certificado sigue sin incluir `www` |
-| **P2** | 6. PostHog: datos limpios y errores visibles | Otro sitio ensucia las métricas; los errores de la demo no se ven | No | ❌ pendiente: no hay filtro ni transformación para `loreado`, y la captura de errores está apagada. La consola en las grabaciones ya estaba activa |
-| **P3** | 5. Accesos para el QA automático | Para que el QA revise el panel y los errores de Vercel | **Sí**: el usuario escribe la contraseña y el token, la IA no los ve | ❌ pendiente: el entorno no tiene el token de Vercel, la clave de ElevenLabs ni `PANEL_PASSWORD` |
+| Prioridad | Tarea | Por qué | ¿Necesita al usuario? |
+| --- | --- | --- | --- |
+| **P0** | 1. Dominio nuevo | Agenda y guardado verificados. Falta migrar las dos URLs de WAHA detectadas. | Revisar el alcance antes de intervenir las instancias. |
+| **P1** | 2. Certificado de `www.turniasalud.app` | Quien entra con «www» ve un error de seguridad | Solo si el dominio no está comprado en Vercel (registro DNS) |
+| **P2** | 6. PostHog: datos limpios y errores visibles | Otro sitio ensucia las métricas; los errores de la demo no se ven | No |
+| **P3** | 5. Accesos para el QA automático | Para que el QA revise el panel y los errores de Vercel | **Sí**: el usuario escribe la contraseña y el token, la IA no los ve |
 
 ## Reglas para todas las tareas
 
@@ -21,30 +21,16 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 ---
 
-## Tarea 1 (P0) · Todo lo de afuera, al dominio nuevo
+## Tarea 1 (P0) · Dominio nuevo
 
-**Contexto.** `turniasalud.vercel.app` redirige (308) a `https://turniasalud.app`. El usuario decidió **mantener esa redirección**. Pero la app todavía tiene la dirección vieja en `APP_URL`, y con ella están registradas las herramientas de Sofi, el webhook post-call de ElevenLabs, el webhook de Telegram y el regreso de Google. Esos servicios no siguen la redirección:
+El 14/11 se actualizó `APP_URL` de producción, se registraron de nuevo las herramientas del agente compartido y se añadió el callback nuevo de Google. Se creó el webhook post-call de ElevenLabs para `https://turniasalud.app/api/elevenlabs/post-call` y se publicó su secreto de firma en Vercel. Una prueba confirmó que Sofi ofrece horarios y otra confirmó que Turnia recibe el resumen y la transcripción cuando termina la charla. El dominio anterior conserva el 308.
 
-- en la demo, al pedir un turno, Sofi contestó «el sistema de agenda no me respondió»;
-- desde el 05/11 no se guarda ninguna conversación con Sofi.
+La revisión de WAHA detectó estas dos URLs configuradas:
 
-**Pasos**, en este orden:
+- Línea general: `https://turniasalud.vercel.app/api/waha/webhook`.
+- Guerra–Mininni: `https://turniasalud.vercel.app/api/waha/webhook/guerra-mininni`.
 
-1. **Vercel** → proyecto `turniasalud` → Settings → Environment Variables → `APP_URL` (Production): poné `https://turniasalud.app`, sin barra final. Si no existe, creala. Guardá. Después: Deployments → el último de Production → Redeploy. Esperá a que diga Ready.
-2. **ElevenLabs** (elevenlabs.io) → Agents Platform → Settings → Webhooks (post-call). Cambiá la URL de `https://turniasalud.vercel.app/api/elevenlabs/post-call` a `https://turniasalud.app/api/elevenlabs/post-call`. No cambies el secreto ni otros ajustes. Guardá.
-3. **Panel de Turnia**: `https://turniasalud.app/panel/sistema` → «Crear / actualizar agente». Esperá el mensaje de éxito. Así se vuelven a registrar las herramientas y el webhook de inicio con la dirección nueva.
-4. **Google Cloud** → APIs & Services → Credentials → el cliente OAuth de Turnia → Authorized redirect URIs: agregá `https://turniasalud.app/api/google/callback`. Dejá la vieja. Guardá.
-5. **Telegram y WAHA**:
-   - Si en el panel (Sistema o Configuración) hay un botón para volver a registrar el webhook de Telegram, tocalo.
-   - En WAHA no toques nada. Solo anotá a qué URL apuntan sus webhooks y si alguna sigue con `turniasalud.vercel.app`.
-
-**Prohibido:** quitar o cambiar la redirección de dominios en Vercel.
-
-**Verificación:**
-
-- En ElevenLabs → Agents Platform → el agente de Turnia → Tools → `consultar_disponibilidad`, la URL tiene que empezar con `https://turniasalud.app/`.
-- Panel → «Probar a Sofi» → empezar en esta pantalla, por chat. Escribí: «Hola, quería un turno para una consulta esta semana». Sofi tiene que ofrecer días y horarios concretos, no decir que la agenda o el sistema no responden. Después cerrá la conversación.
-- En ElevenLabs → la conversación de esa prueba: la llamada a `consultar_disponibilidad` tiene que figurar como exitosa.
+La revisión de estas instancias es de solo lectura. Cualquier migración de WAHA tiene su propia prueba de recepción.
 
 ---
 
@@ -73,8 +59,8 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 1. **Dejar afuera los eventos del otro sitio, de ahora en adelante.** Data pipelines → Transformations → New. Elegí la que descarta o filtra eventos («Filter events», «Drop events» o similar), con la condición: propiedad `$host` igual a `loreado.vercel.app` → descartar. Guardá y activala. Si no hay una transformación así, frená y avisá.
 2. **Dejarlos afuera también del historial.** Settings → Project → «Filter out internal and test users»: agregá el filtro `$host` **distinto de** `loreado.vercel.app`, sin borrar los que ya estén (como `is_internal`).
 3. **Errores del navegador.** Settings → Error tracking → activá «Exception autocapture» (o «Capture exceptions»).
-4. **Consola en las grabaciones.** Settings → Session replay → activá «Capture console logs». No cambies el resto de las opciones de grabación.
-5. **Dominio autorizado.** Settings → Project → Authorized URLs (o «Toolbar URLs»): agregá `https://turniasalud.app`. Hoy figuran `loreado.vercel.app` y `turniasalud.vercel.app`, pero no el dominio actual. No borres las otras.
+4. **Consola en las grabaciones.** En Settings → Session replay, verificá «Capture console logs». Ya estaba activo en el QA del 14/11.
+5. **Dominio autorizado.** En Settings → Project → Authorized URLs, agregá `https://turniasalud.app` y conservá las URLs existentes.
 
 **Prohibido:** borrar eventos, personas, tableros o insights, y tocar el token del proyecto.
 
@@ -120,7 +106,6 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 La próxima sesión de Claude que corra el QA (`.claude/skills/qa-turnia/SKILL.md`) verifica lo hecho. Si está bien, cierra la observación en `QA_TURNIA.md`:
 
-- tarea 1: OBS-001;
 - tarea 2: OBS-003;
 - tarea 6: OBS-004 y OBS-006;
 - tarea 5: «Cómo entrar».

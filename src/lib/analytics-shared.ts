@@ -53,7 +53,7 @@ export function cta(id: string, location: string, destination: string, kind: Cta
 /** La persona de la prospección en PostHog: la misma desde el navegador (su link) y desde el panel. */
 export const prospectDistinctId = (code: string) => `prospecto:${code}`;
 
-/** Una demo por WhatsApp o Telegram, que no pasa por el navegador: sus eventos se agrupan por demo. */
+/** Una demo por WhatsApp, que no pasa por el navegador: sus eventos se agrupan por demo. */
 export const demoDistinctId = (sessionId: string) => `demo:${sessionId}`;
 
 /** El id anónimo que manda el navegador al empezar una demo, para que el servidor siga en la misma persona. */

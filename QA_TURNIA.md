@@ -24,22 +24,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ### Observaciones abiertas
 
-- **OBS-001 (urgente, configuración; en lo principal resuelta el 14/11, ver la verificación).** [tarea 1, P0 en `TAREAS_COMPUTER_USE.md`] `APP_URL` sigue en `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Todo lo que se registró con esa dirección pasa por una redirección:
-  - las herramientas del agente en ElevenLabs (`/api/agent/tools/*`) y el webhook de inicio;
-  - el webhook de Telegram;
-  - el regreso de Google (OAuth) y los avisos de Google Calendar;
-  - las imágenes de vista previa (`og:image`) y los links de los mensajes.
-
-  En la demo (13/11), al pedir un turno, Sofi contestó que «el sistema de agenda no me respondió». La misma consulta funciona en local con una demo armada igual, así que lo más probable es que ElevenLabs no siga la redirección. No se pudo confirmar en los registros: no hay acceso a Vercel ni a ElevenLabs.
-
-  **Arreglo rápido:** en Vercel → Settings → Domains, que `turniasalud.vercel.app` sirva producción sin redirigir.
-
-  **Arreglo de fondo:**
-  1. Pasar `APP_URL` a `https://turniasalud.app`.
-  2. Sumar en Google Cloud la URI `https://turniasalud.app/api/google/callback`.
-  3. Tocar «Crear / actualizar agente» en el panel.
-  4. Volver a registrar el webhook de Telegram.
-  5. Revisar los webhooks de WAHA y ElevenLabs (Panel → Sistema).
+- **OBS-001 (parcialmente resuelta el 14/11, configuración).** Producción ya usa `https://turniasalud.app`, con el 308 del dominio anterior. ElevenLabs ejecutó `consultar_disponibilidad` correctamente. Una segunda prueba apareció en Turnia con resumen y transcripción al cerrar el chat, por el webhook post-call nuevo. Google conserva ambos callbacks. Sigue pendiente la migración de las dos URLs de WAHA registradas en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **OBS-002.** Probar el chat desde `/p/<código>?vista=panel` crea un pedido de demo (lead) y lo sube a la planilla de pedidos. Las pruebas del equipo ensucian esa lista. El QA del 13/11 dejó dos pedidos de prueba, entre las 15:00 y las 15:05 de Argentina, con el nombre del consultorio que se usó para probar.
 - **OBS-003.** [tarea 2, P1 en `TAREAS_COMPUTER_USE.md`] `www.turniasalud.app` no tiene certificado válido: el navegador muestra un error de seguridad. Se arregla agregando el dominio en Vercel o redirigiéndolo al dominio sin `www`.
 - **OBS-004.** [tarea 6, P2 en `TAREAS_COMPUTER_USE.md`] Otro sitio, `loreado.vercel.app`, manda eventos al proyecto de PostHog de Turnia con el mismo token, desde el 15/10. Ensucia las visitas de la web: ahí aparecen `/`, `/simulador` y `/mock`. Hay que filtrar por `$host` o sacar el token de ese sitio.
@@ -83,7 +68,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 - **Tarea 1 (dominio), en lo principal resuelta:**
   - Las vistas previas ya usan `https://turniasalud.app`, así que `APP_URL` cambió.
   - En una demo (`?vista=panel`, datos ficticios), Sofi registró al paciente y ofreció horarios concretos en unos 20 s: las herramientas del agente responden.
-  - Sin confirmar desde la nube, por falta de acceso: que se guarden las conversaciones (webhook post-call; se ve en `/api/metricas`, que pide `METRICS_SECRET`), el regreso de Google y el webhook de Telegram.
+  - En otra comprobación, el webhook nuevo guardó el resumen y la transcripción al terminar el chat. La recuperación del período desde el 05/11 terminó sin errores. Google acepta los dos callbacks y queda pendiente completar un inicio de sesión de prueba. Telegram se retiró del proyecto.
 - **Tarea 2 (`www`):** sigue pendiente. El certificado es solo de `turniasalud.app`.
 - **Tarea 6 (PostHog):** sigue pendiente. No hay transformación ni filtro para `loreado.vercel.app` y la captura de excepciones está apagada. La consola en las grabaciones ya estaba activa. Falta además `turniasalud.app` en las URLs autorizadas.
 - **Tarea 5 (accesos):** sigue pendiente. El entorno de la nube no tiene el token de Vercel, la clave de ElevenLabs ni `PANEL_PASSWORD`.

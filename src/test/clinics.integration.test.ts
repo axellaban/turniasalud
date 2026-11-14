@@ -8,7 +8,7 @@ vi.mock("next/headers", () => ({ cookies: async () => ({ get: (name: string) => 
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); }, notFound: () => { throw new Error("notFound"); }, usePathname: () => "/panel/clinicas", useRouter: () => ({ refresh: () => {} }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (fn: () => unknown) => mocks.after.push(fn) }));
-vi.mock("@/lib/messaging", () => ({ sendChatText: mocks.sent, sendChatVoice: vi.fn() }));
+vi.mock("@/lib/waha", async (original) => ({ ...(await original<typeof import("@/lib/waha")>()), wahaSendText: mocks.sent }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn() }));
 vi.mock("@/lib/agent/setup", () => ({ setupAgent: mocks.setup }));
 vi.mock("@/lib/elevenlabs", async (original) => ({ ...(await original<typeof import("@/lib/elevenlabs")>()), sendChannelMessage: mocks.agent, getConversationToken: vi.fn(async () => "test-token"), getSignedUrl: vi.fn(async () => "wss://test.invalid") }));
@@ -35,7 +35,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
   beforeAll(async () => {
     const url = await scratchDatabase(base!, "turnia_test_clinics");
     await resetTestDatabase(url);
-    for (const [key, value] of Object.entries({ DATABASE_URL: url, SESSION_SECRET: "test-session", AGENT_TOOLS_SECRET: "test-tools", APP_URL: "https://turnia.test", ELEVENLABS_API_KEY: "fake", TELEGRAM_BOT_TOKEN: "fake", ELEVENLABS_CHANNEL_URL: "https://test.invalid/channel", ELEVENLABS_CHANNEL_SECRET: "fake", ELEVENLABS_CHANNEL_SIGNING_SECRET: "fake" })) vi.stubEnv(key, value);
+    for (const [key, value] of Object.entries({ DATABASE_URL: url, SESSION_SECRET: "test-session", AGENT_TOOLS_SECRET: "test-tools", APP_URL: "https://turnia.test", ELEVENLABS_API_KEY: "fake", DEMO_WHATSAPP_NUMBER: "5491155550000", ELEVENLABS_CHANNEL_URL: "https://test.invalid/channel", ELEVENLABS_CHANNEL_SECRET: "fake", ELEVENLABS_CHANNEL_SIGNING_SECRET: "fake" })) vi.stubEnv(key, value);
     ({ sql } = await import("@/lib/db"));
     actions = await import("@/app/panel/actions"); clinics = await import("@/app/panel/clinics-actions"); panel = await import("@/lib/panel-clinic"); imports = await import("@/lib/clinic-imports"); session = await import("@/lib/demo/session");
     await sql`update clinics set elevenlabs_agent_id = 'agent_test', whatsapp_provider = 'waha', whatsapp_phone_number_id = 'keep-number', templates = '{"recordatorio":"keep-template"}' where id = ${MAIN}`;
@@ -44,7 +44,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     mocks.cookies.clear(); mocks.after.length = 0; mocks.sent.mockClear(); mocks.agent.mockClear(); mocks.setup.mockClear();
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
     await sql`delete from demo_sessions`; await sql`delete from demo_handoffs`; await sql`delete from clinic_access`; await sql`delete from clinics where is_demo`;
-    await sql`update messaging_settings set active_channel = 'telegram', revision = 0, telegram_ready = true where id`;
+    await sql`update messaging_settings set active_channel = 'whatsapp', revision = 0 where id`;
     a = (await session.createDemoClinic(PROFILE, "https://clinica.example/")).id;
     b = (await session.createDemoClinic({ ...PROFILE, nombre: "Clínica Beta" }, "https://beta.example/")).id;
     choose(a);
@@ -68,7 +68,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const row = await clinic();
     expect(row).toMatchObject({ name: "Alfa editada", address: "Dirección corregida 123", agent_name: "Ana", accepted_coverages: ["OSDE", "Particular"], payment_methods: "Efectivo y transferencia", context_revision: 1, is_demo: true });
     expect(row.retained_at).toBeTruthy(); expect(await clinic(MAIN)).toEqual(rootBefore); expect((await clinic(b)).name).toBe("Clínica Beta");
-    const vars = await (await import("@/lib/clinic")).buildDynamicVariables(row as never, "telegram:123");
+    const vars = await (await import("@/lib/clinic")).buildDynamicVariables(row as never, "5491155550123");
     for (const text of ["Dirección corregida", "FAQ manual", "Cancelar 24", "Efectivo", "primera consulta"]) expect(vars.clinic_info).toContain(text);
     expect(vars.urgency_instructions).toContain("Ir a la guardia"); expect(vars.urgency_instructions).toContain("Recepción responde mañana");
   });
@@ -126,7 +126,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect((await clinic(MAIN)).id).toBe(MAIN);
   });
   it("archiva el texto original y la ficha al crear una demo desde la web", async () => {
-    const result = await session.handleDemoMessage({ messageId: "initial-web", chatId: "telegram:123", phone: "telegram:123", text: "Quiero probar la demo con https://clinica.example/" });
+    const result = await session.handleDemoMessage({ messageId: "initial-web", chatId: "5491155550123@c.us", phone: "5491155550123", text: "Quiero probar la demo con https://clinica.example/" });
     await session.analyzeDemo(result!.analyze!);
     const [snapshot] = await sql`select * from clinic_imports`;
     expect(snapshot.status).toBe("applied"); expect(snapshot.pages[0].text).toContain("Texto original leído"); expect(snapshot.profile.nombre).toBe("Clínica Alfa");
@@ -155,10 +155,10 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
   });
   it("probar el perfil reutiliza la misma clínica y envía sus correcciones al agente", async () => {
     await sql`update clinics set faq = 'FAQ corregida guardada', agent_context = 'Instrucción guardada' where id = ${a}`;
-    const launch = await clinics.launchProfile({}, form({ clinic_id: a }));
-    const token = new URL(launch.url!).searchParams.get("start")!;
+    const launch = await clinics.prepareTestLink({}, form({ clinic_id: a }));
+    const token = new URL(launch.url!).searchParams.get("text")!.split(": ").at(-1)!;
     expect(token).toMatch(/^p_/);
-    const input = { messageId: "saved-start", chatId: "telegram:123", phone: "telegram:123", text: `Probar perfil de Turnia: ${token}` };
+    const input = { messageId: "saved-start", chatId: "5491155550123@c.us", phone: "5491155550123", text: `Probar perfil de Turnia: ${token}` };
     expect(await session.handleDemoMessage(input)).toEqual({ handled: true, status: "eligiendo" });
     expect((await sql`select clinic_id, reused_profile from demo_sessions`)[0]).toMatchObject({ clinic_id: a, reused_profile: true });
     expect((await sql`select * from clinics where is_demo`)).toHaveLength(2);
@@ -180,24 +180,26 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await session.handleDemoMessage({ ...input, messageId: "ask-4", text: "Gracias" });
     expect(call(-1).conversationId).toBe("profile-conv");
     // El enlace del perfil sigue sirviendo después de usarlo, también desde otro chat.
-    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:999")).toBe(a);
+    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "5491155550999")).toBe(a);
     expect(await session.handleDemoMessage({ ...input, messageId: "saved-again", text: `Probar perfil de Turnia: ${token}` })).toEqual({ handled: true, status: "eligiendo" });
     // No vence: sirve mientras exista la clínica.
     expect((await sql`select expires_at = 'infinity' as forever from demo_handoffs where token = ${token}`)[0].forever).toBe(true);
   });
-  it("el consultorio de verdad también se prueba por Telegram, con su agenda real y sin tocar su ficha", async () => {
+  it("el consultorio de verdad también se prueba por WhatsApp, con su agenda real y sin tocar su ficha", async () => {
     const selected = mocks.cookies.get("turnia_clinic");
     choose(MAIN);
     const before = (await sql`select context_revision, retained_at from clinics where id = ${MAIN}`)[0];
-    const link = await clinics.prepareTestLink({}, form({ clinic_id: MAIN, channel: "telegram" }));
-    expect(link).toMatchObject({ ok: true, url: expect.stringMatching(/^https:\/\/t\.me\/TurnIA_salud_bot\?start=p_/), qr: expect.stringContaining("<svg") });
+    const link = await clinics.prepareTestLink({}, form({ clinic_id: MAIN }));
+    expect(link).toMatchObject({ ok: true, url: expect.stringMatching(/^https:\/\/wa\.me\/5491155550000\?text=/), qr: expect.stringContaining("<svg") });
     // Probar no conserva ni reinicia nada de la ficha del consultorio.
     expect((await sql`select context_revision, retained_at from clinics where id = ${MAIN}`)[0]).toEqual(before);
     // WhatsApp general apagado: lo dice, sin armar un enlace que no anda.
-    expect(await clinics.prepareTestLink({}, form({ clinic_id: MAIN, channel: "whatsapp" }))).toMatchObject({ ok: false, message: expect.stringContaining("no está activo") });
+    await sql`update messaging_settings set active_channel = 'pausado' where id`;
+    expect(await clinics.prepareTestLink({}, form({ clinic_id: MAIN }))).toMatchObject({ ok: false, message: expect.stringContaining("no está activo") });
+    await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
 
-    const token = new URL(link.url!).searchParams.get("start")!;
-    const input = { messageId: "real-start", chatId: "telegram:777", phone: "telegram:777", text: `Probar perfil de Turnia: ${token}` };
+    const token = new URL(link.url!).searchParams.get("text")!.split(": ").at(-1)!;
+    const input = { messageId: "real-start", chatId: "5491155550777@c.us", phone: "5491155550777", text: `Probar perfil de Turnia: ${token}` };
     expect(await session.handleDemoMessage(input)).toEqual({ handled: true, status: "eligiendo" });
     await session.handleDemoMessage({ ...input, messageId: "real-chat", text: "chat" });
     mocks.agent.mockClear();
@@ -233,16 +235,16 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     await sql`insert into demo_handoffs (token, website, requester_hash, clinic_id, created_at, expires_at)
       values (${old}, 'https://clinica.example', 'admin-profile', ${a}, now() - interval '3 days', now() + interval '4 days')`;
     await sql.unsafe(readFileSync("supabase/schema.sql", "utf8"));
-    for (const token of [first, second, old]) expect(await handoffs.claimProfileHandoff(token, "telegram:301")).toBe(a);
+    for (const token of [first, second, old]) expect(await handoffs.claimProfileHandoff(token, "5491155550301")).toBe(a);
     expect((await sql`select count(*)::int as n from demo_handoffs where clinic_id = ${a} and expires_at <> 'infinity'`)[0].n).toBe(0);
   });
   it("los enlaces de perfil aceptan tokens que terminan en guion y verifican vencimiento", async () => {
     const token = `p_${"a".repeat(23)}-`;
     await sql`insert into demo_handoffs (token, website, requester_hash, clinic_id) values (${token}, 'https://clinica.example', 'test', ${a})`;
-    const input = { messageId: "ends-hyphen", chatId: "telegram:123", phone: "telegram:123", text: `Probar perfil: ${token}` };
+    const input = { messageId: "ends-hyphen", chatId: "5491155550123@c.us", phone: "5491155550123", text: `Probar perfil: ${token}` };
     expect(await session.handleDemoMessage(input)).toMatchObject({ status: "eligiendo" });
     await sql`update demo_handoffs set expires_at = now() - interval '1 minute' where token = ${token}`;
-    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "telegram:123")).toBeNull();
+    expect(await (await import("@/lib/demo/handoff")).claimProfileHandoff(token, "5491155550123")).toBeNull();
   });
   it("la agenda y los pacientes del panel corresponden a la clínica elegida", async () => {
     await sql`insert into patients (clinic_id, phone, full_name) values (${a}, 'test-alpha', 'Paciente Alfa visible'), (${b}, 'test-beta', 'Paciente Beta privado')`;
@@ -279,8 +281,8 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const [consultorio] = pages;
     for (const moved of ["Coberturas aceptadas", "Protocolo de urgencias", "Si el paciente no contesta", "Políticas"]) expect(consultorio).not.toContain(`>${moved}<`);
     // Las conexiones generales viven solo en Sistema.
-    expect(html).not.toContain("Conectar bot de Telegram"); expect(html).not.toContain("Regenerar"); expect(html).not.toContain("WhatsApp por WAHA");
-    expect(renderToStaticMarkup(await (await import("@/app/panel/(app)/sistema/page")).default())).toContain("Conectar bot de Telegram");
+    expect(html).not.toContain("Regenerar"); expect(html).not.toContain("WhatsApp por WAHA");
+    expect(renderToStaticMarkup(await (await import("@/app/panel/(app)/sistema/page")).default())).toContain("WhatsApp de la demo y del agente");
     const list = (await import("@/app/panel/(app)/clinicas/page")).default;
     expect(renderToStaticMarkup(await list({ searchParams: Promise.resolve({}) } as never))).toContain("Clínica Beta");
   });
@@ -323,7 +325,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(mocks.setup).not.toHaveBeenCalled();
     for (const path of ["clinicas", "sistema", "demos"]) await expect((async () => (await import(`@/app/panel/(app)/${path}/page`)).default({ searchParams: Promise.resolve({}) }))()).rejects.toThrow(denied);
     expect(await sql`select id from clinics where id = ${b}`).toHaveLength(1);
-    expect((await sql`select active_channel from messaging_settings`)[0].active_channel).toBe("telegram");
+    expect((await sql`select active_channel from messaging_settings`)[0].active_channel).toBe("whatsapp");
     const home = renderToStaticMarkup(await (await import("@/app/panel/(app)/page")).default());
     expect(home).toContain("Hola, Dr. Alfa"); expect(home).not.toContain("Terminá la puesta en marcha");
     const config = renderToStaticMarkup(await (await import("@/app/panel/(app)/configuracion/page")).default());

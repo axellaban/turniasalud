@@ -1,24 +1,12 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-## Urgente: el dominio viejo redirige y la app lo sigue usando (QA del 13/11/2026)
+## Dominio y canales (14/11/2026)
 
-`APP_URL` es `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Las herramientas del agente en ElevenLabs, el webhook de Telegram, el regreso de Google y las imágenes de vista previa apuntan a la dirección vieja. En la demo, al pedir un turno, Sofi contestó que «el sistema de agenda no me respondió». Detalle y arreglo en [`QA_TURNIA.md`](QA_TURNIA.md), OBS-001. Lo tiene que hacer el usuario: en Vercel, que `turniasalud.vercel.app` no redirija, o pasar `APP_URL` al dominio nuevo y volver a registrar los webhooks. También falta el certificado de `www.turniasalud.app` (OBS-003).
-
-**14/11:** el usuario decidió **mantener la redirección**, así que va el arreglo de fondo de OBS-001. Además, desde el 05/11 **no se guarda ninguna conversación con Sofi**: el webhook post-call de ElevenLabs (`/api/elevenlabs/post-call`, se configura en ElevenLabs → Agents Platform → Settings → Webhooks, no en el código) apunta al dominio viejo. En `turniasalud.app` responde bien. Pasos, en este orden:
-1. Vercel: `APP_URL` = `https://turniasalud.app` y redeploy.
-2. ElevenLabs → Settings → Webhooks: el post-call a `https://turniasalud.app/api/elevenlabs/post-call` (el mismo secreto).
-3. Panel → Sistema → «Crear / actualizar agente»: registra de nuevo las herramientas y el webhook de inicio con la dirección nueva.
-4. Telegram, Google y WAHA, como dice OBS-001.
-
-Las conversaciones que no llegaron se recuperan desde la API de ElevenLabs: `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` (`src/lib/conversations-backfill.ts`) las guarda en silencio (sin n8n, pacientes ni tareas) y no repite las que ya están. Chapa Labs lo corre todos los días a las 8:20 con los últimos 3 días (`op=sofi-cron`), así que si el webhook vuelve a fallar, las charlas igual llegan al otro día.
-
-**Tareas para una IA con computer use:** están en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md), cada una lista para copiar como prompt, sin claves. Por prioridad:
-- **P0**, tarea 1: este cambio de dominio. No hay que sacar la redirección.
-- **P1**, tarea 2: el certificado de `www.turniasalud.app`.
-- **P2**, tarea 6: PostHog, para dejar afuera los eventos de otro sitio y ver los errores del navegador.
-- **P3**, tarea 5: los accesos del QA. El usuario escribe los valores.
-
-**Cómo verificar** (lo puede hacer la próxima IA sin acceso a Vercel ni a ElevenLabs): hacer una charla de prueba en una demo (`/p/<código>`, con datos ficticios) y pedir un turno. Sofi tiene que ofrecer horarios, no contestar «el sistema de agenda no me respondió». La charla tiene que aparecer enseguida en `/api/metricas` → `sofi.diario` del día, sin esperar a la recuperación de las 8:20. Si eso pasa, cerrar OBS-001 en `QA_TURNIA.md`.
+- **Agenda y conversaciones en producción.** `APP_URL` usa `https://turniasalud.app`. El dominio anterior conserva el 308. La demo ofreció horarios con `consultar_disponibilidad`; una segunda charla se guardó con resumen y transcripción al cerrarla, por el nuevo webhook post-call de ElevenLabs. Google acepta ambos callbacks.
+- **Telegram retirado de Turnia.** El selector pasa a pausado si apuntaba a Telegram. Se cierran sus sesiones activas y se conserva el historial. La demo funciona en el navegador y el WhatsApp de cada consultorio conserva su configuración. Las pruebas del producto usan WhatsApp o el navegador.
+- **WAHA.** Los webhooks de la línea general y de Guerra–Mininni todavía apuntan al dominio anterior. Estado y alcance en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
+- **Recuperación histórica.** `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` trae las conversaciones de ElevenLabs sin duplicarlas ni disparar tareas y avisos. Chapa Labs lo ejecuta todos los días a las 8:20 para los últimos tres días. La ejecución del 14/11 desde el 05/11 recuperó el registro que faltaba y terminó sin errores.
+- El trabajo de configuración restante está en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
 
@@ -92,7 +80,7 @@ Actualizado: 08/11/2026 (Argentina). El centro comercial (Chapa Labs + Turnia + 
 - [ ] **Embudo semanal** (cada lunes): correr `npm run embudo` con `POSTHOG_PERSONAL_API_KEY` y `DATABASE_URL`, pegar la columna nueva en [`EMBUDO.md`](EMBUDO.md) y completar las cuentas de la semana 1, que quedaron sin dato. Marcar «Cliente» en Prospección solo cuando entra el primer pago.
 - [ ] **PostHog (analítica):** una vez publicado, en el proyecto «Turnia Salud» activar Session replay, filtrar el tráfico interno (`is_internal`) y autorizar el dominio; después, armar los tableros y hacer la validación. Pasos en [`ANALITICA.md`](ANALITICA.md) (6, 7 y 8).
 - [ ] **Rotar las credenciales** que quedaron expuestas durante el diagnóstico de WAHA (ver la sección «Diagnóstico histórico de vinculación WAHA» en `ESTADO_Y_PRIORIDADES.md`).
-- [x] **WAHA vinculado por el usuario**, quien confirmó que funciona. No repetir el diagnóstico ni modificar su conexión. WhatsApp está pausado en el selector de Turnia; Telegram sigue activo.
+- [x] **WAHA vinculado por el usuario**, quien confirmó que funciona. No repetir el diagnóstico ni modificar su conexión. El WhatsApp general se administra en Sistema.
 - [ ] Decidir si los avisos al equipo salen por email (requiere reconectar Gmail en n8n) y a quién van los avisos asistenciales.
 - [ ] Opcional: un video propio para el hero, si no quiere los clips de stock (ver 4).
 
@@ -102,28 +90,27 @@ Actualizado: 08/11/2026 (Argentina). El centro comercial (Chapa Labs + Turnia + 
 - [ ] **Turno completo por llamada en Guerra–Mininni:** el 03/11 se verificó que Sofi atiende las llamadas al número habitual, con el desvío de Movistar al destino interno de Twilio y el agente propio en ElevenLabs. Queda probar una reserva ficticia por llamada, verla en la agenda del consultorio y cancelarla.
 
 - [ ] **Notas de voz en WhatsApp (03/11):** desde otro teléfono, mandarle un **audio** a la línea de Guerra–Mininni y confirmar que Sofi contesta con **nota de voz** que se escucha bien (y, si hay link, también por escrito); escribirle «mandámelo en audio» y confirmar lo mismo; después escribirle texto común y confirmar que vuelve a contestar con texto. Si llega texto en vez de audio, mirar en Vercel el log «No se pudo mandar la nota de voz; se entrega el texto» (voz del agente, Text to Speech o `sendVoice` de WAHA). Cada respuesta en voz consume Text to Speech de ElevenLabs.
-- [x] **Línea propia de Guerra–Mininni (02/11), +54 9 11 7243-3765:** `WORKING` y cuenta correcta verificados. El usuario recibió respuestas reales de texto y audio; conversación en la ficha correcta. Con datos ficticios se comprobaron reserva, cancelación por chat con más de 24 horas, derivación a recepción con menos de 24 horas, lectura de una foto descargada de WAHA y documento guardado en la ficha. Pruebas técnicas de reserva/foto dirigidas al propio número de Sofi, con eventos entrantes firmados; falta observar una foto desde otro teléfono. Datos ficticios retirados. PR #84 publicado, 330 pruebas aprobadas. Mantener la sesión operativa; no repetir la vinculación ni pedir la terminal. La demo general sigue en Telegram y la ficha del consultorio conserva su carácter de prueba.
+- [x] **Línea propia de Guerra–Mininni (02/11), +54 9 11 7243-3765:** `WORKING` y cuenta correcta verificados. El usuario recibió respuestas reales de texto y audio; conversación en la ficha correcta. Con datos ficticios se comprobaron reserva, cancelación por chat con más de 24 horas, derivación a recepción con menos de 24 horas, lectura de una foto descargada de WAHA y documento guardado en la ficha. Pruebas técnicas de reserva/foto dirigidas al propio número de Sofi, con eventos entrantes firmados; falta observar una foto desde otro teléfono. Datos ficticios retirados. PR #84 publicado, 330 pruebas aprobadas. Mantener la sesión operativa; no repetir la vinculación ni pedir la terminal. La ficha del consultorio conserva su carácter de prueba.
 
 - [x] Demo en el navegador probada en producción (24/10): lectura, chat y voz.
 - [x] La demo en el navegador entra en una pantalla, en la computadora y en el celular (24/10; detalle en `ESTADO_Y_PRIORIDADES.md`).
-- [ ] Que el usuario la pruebe con su propia voz y mire el interesado en Panel → Pedidos de demo (el de prueba es `prueba-claude@turnia.test`, se puede borrar). La demo arranca en voz; Telegram ya no se ofrece en `/probar-demo`.
+- [ ] Que el usuario la pruebe con su propia voz y mire el interesado en Panel → Pedidos de demo (el de prueba es `prueba-claude@turnia.test`, se puede borrar). La demo arranca en voz.
 
 Cuando el usuario elija reactivar WhatsApp desde Panel → Sistema (sin cambiar WAHA):
 
 
-- [ ] `https://turniasalud.vercel.app/api/health` → `demo.whatsapp: true`, `whatsapp_source: "waha"`.
+- [ ] `https://turniasalud.app/api/health` → `demo.whatsapp: true`, `whatsapp_source: "waha"`.
 - [ ] **Demo con tu web** (`/probar-demo`), con el WhatsApp del usuario y datos ficticios («Prueba Turnia», DNI 11111111, particular): opciones 1/2/3, chat hasta reservar, `MENU` → audio (¿llega nota de voz?), `MENU` → llamada, `SALIR`. Medir cuánto tarda la lectura de la web con Claude. Checklist completa en `PLAN_LEAD_MAGNET.md` (paso 5 y «A verificar en vivo»).
 - [ ] WhatsApp general de la demo: completar memoria y receta. **La línea propia de Guerra–Mininni ya probó texto y audio reales, y reserva, cancelación y derivación en la prueba técnica del 02/11.**
-- [ ] **Probar a Sofi (03/11):** con el código del Dr. Mininni, abrir Panel → Probar a Sofi y probar los tres canales:
+- [ ] **Probar a Sofi (03/11):** con el código del Dr. Mininni, abrir Panel → Probar a Sofi y probar ambos accesos:
   - **WhatsApp:** escanear el QR desde otro celular.
-  - **Telegram:** «Preparar el enlace», elegir chat y pedir un turno. Tiene que reservar en la agenda real.
   - **En esta pantalla:** hablarle y escribirle.
 
   Cancelar los turnos de prueba al terminar.
 - [ ] **Seguimiento cuando el paciente no contesta (Guerra–Mininni, 03/11):** confirmar en n8n que el disparador de cada 10 minutos a `/api/automations/calendario` está activo; sin él no sale ningún seguimiento. En Configuración → «Si el paciente no contesta», elegir 1 o 2 veces y las horas de espera. Probar desde otro teléfono con datos ficticios: pedir un turno, no contestar los horarios y esperar el mensaje (de 9 a 20). Contestar y ver que Sofi vuelve a mirar la agenda antes de reservar. Cancelar al final.
 - [ ] **«Consulta de implantes» (Guerra–Mininni, 03/11):** después del deploy, actualizar los dos agentes (Sistema → «Crear / actualizar agente» y Configuración → «Crear / actualizar Sofi de esta clínica»). Revisar que haya una prestación de consulta de 30 minutos, sin «Solo la da el consultorio». Después, por WhatsApp y con datos ficticios, pedir «un turno para una consulta de implantes». Sofi tiene que ofrecer horarios y confirmar «Consulta de implantes», y el turno tiene que figurar así en la Agenda. Cancelarlo al final.
 - [ ] **Control y limpieza en la misma visita (Guerra–Mininni):** el 03/11 se actualizaron el agente de WhatsApp y el de llamadas y se habilitó «Mantenimiento periodontal (limpieza)» de 45 minutos. Falta la prueba de punta a punta por WhatsApp con datos ficticios. Verificar una visita con la Dra. Coldeira, con las dos prestaciones consecutivas en agenda, y cancelar al final. Revisar con recepción dos turnos previos anunciados como limpieza que figuran como «Control», antes de ajustar prestación o duración.
-- [ ] **Fotos por WhatsApp:** en Guerra–Mininni ya se probó descarga de WAHA, lectura de una credencial ficticia, respuesta y foto guardada en la ficha (02/11; evento entrante técnico y entrega al propio número). Completar desde otro teléfono y con los tipos orden/receta. Por Telegram ya se puede probar en la demo.
+- [ ] **Fotos por WhatsApp:** en Guerra–Mininni ya se probó descarga de WAHA, lectura de una credencial ficticia, respuesta y foto guardada en la ficha (02/11; evento entrante técnico y entrega al propio número). Completar desde otro teléfono y con los tipos orden/receta.
 - [ ] Una conversación hablada completa con una persona (la llamada web solo se probó hasta el saludo).
 - [ ] Anotar los resultados en `ESTADO_Y_PRIORIDADES.md` y `PLAN_LEAD_MAGNET.md`.
 
@@ -168,7 +155,7 @@ Está en producción y probado con un recorrido de 31 comprobaciones: roles admi
 - [ ] Revisar consentimiento, conservación de datos y textos de privacidad. No activar Zero Retention de ElevenLabs a ciegas: es incompatible con el Custom Channel (ver `PLAN_WHATSAPP.md`).
 - [ ] Activar campañas (workflow n8n `g0H8xbQvRNv5FxQj`, hoy desactivado) solo después de validar canal, destinatarios y baja.
 - [x] **Twilio saliente configurado** (24/10): línea propia verificada, importada en ElevenLabs y `ELEVENLABS_PHONE_NUMBER_ID` guardada en Production; despliegue Ready, salud con `llamada_telefonica: true`. La conexión final usa credenciales de la cuenta existente por elección del usuario; no una subcuenta. Detalle y alcance en `ESTADO_Y_PRIORIDADES.md`.
-- [x] **Conversación telefónica real validada por el usuario** (24/10): Sofi habló y escuchó por Twilio, registro de 21 mensajes y cierre por el destinatario. ElevenLabs: 2:11 y 1.464 créditos totales; Twilio: 2:12 y US$1,0584. Cinco intentos autorizados en total; los errores manuales de variables quedaron corregidos y documentados. No reintentar lotes ni llamar de nuevo sin pedido explícito. Telegram sigue usando enlace web.
+- [x] **Conversación telefónica real validada por el usuario** (24/10): Sofi habló y escuchó por Twilio, registro de 21 mensajes y cierre por el destinatario. ElevenLabs: 2:11 y 1.464 créditos totales; Twilio: 2:12 y US$1,0584. Cinco intentos autorizados en total; los errores manuales de variables quedaron corregidos y documentados. No reintentar lotes ni llamar de nuevo sin pedido explícito.
 - [x] **Identificación de llamada confirmada por el usuario:** en el celular receptor apareció la línea de Turnia.
 - [x] **Grabación nativa en Twilio solicitada** (25/10): `call_recording_enabled: true` en llamadas salientes comerciales y clínicas iniciadas por Turnia. Sin grabación global ni cambios de otras líneas; accesos a Recording Logs en el panel.
 - [ ] **Ver el primer audio grabado real en Twilio** tras una llamada nueva autorizada y con saldo. Los audios viejos no grabados no se reconstruyen. La prueba de código pasó; no se hizo una llamada paga para comprobar el artefacto.

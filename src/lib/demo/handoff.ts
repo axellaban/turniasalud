@@ -19,23 +19,6 @@ export async function createDemoHandoff(website: string, ip: string, email: stri
   });
 }
 
-/** Reclamo atómico: otro usuario no puede reutilizar el enlace de una demo ya iniciada. */
-export async function claimDemoHandoff(token: string, userId: string): Promise<{ website: string; email: string | null } | null> {
-  if (!/^d_[a-zA-Z0-9_-]{24}$/.test(token)) return null;
-  const [row] = await sql<{ website: string; email: string | null }[]>`
-    update demo_handoffs set claimed_by = ${userId}
-    where token = ${token} and expires_at > now() and (claimed_by is null or claimed_by = ${userId})
-    returning website, email`;
-  return row ?? null;
-}
-
-/** El email que dejó en la landing queda en el pedido de demo que se creó al iniciar el chat. */
-export async function attachLeadEmail(phone: string, email: string): Promise<void> {
-  await sql`
-    update leads set email = coalesce(email, ${email}), updated_at = now()
-    where id = (select lead_id from demo_sessions where phone = ${phone} and lead_id is not null order by created_at desc limit 1)`;
-}
-
 /**
  * Solo se emite desde el panel autenticado; no crea otra clínica ni consume una extracción.
  * El enlace no vence nunca, y generar otro no desactiva los anteriores: todos siguen andando
