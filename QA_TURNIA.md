@@ -24,7 +24,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ### Observaciones abiertas
 
-- **OBS-001 (urgente, configuración).** [tarea 1, P0 en `TAREAS_COMPUTER_USE.md`] `APP_URL` sigue en `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Todo lo que se registró con esa dirección pasa por una redirección:
+- **OBS-001 (urgente, configuración; en lo principal resuelta el 14/11, ver la verificación).** [tarea 1, P0 en `TAREAS_COMPUTER_USE.md`] `APP_URL` sigue en `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Todo lo que se registró con esa dirección pasa por una redirección:
   - las herramientas del agente en ElevenLabs (`/api/agent/tools/*`) y el webhook de inicio;
   - el webhook de Telegram;
   - el regreso de Google (OAuth) y los avisos de Google Calendar;
@@ -77,6 +77,17 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 ```
 
 ## Resultados
+
+### Verificación 2026-11-14 am (tareas de computer use)
+
+- **Tarea 1 (dominio), en lo principal resuelta:**
+  - Las vistas previas ya usan `https://turniasalud.app`, así que `APP_URL` cambió.
+  - En una demo (`?vista=panel`, datos ficticios), Sofi registró al paciente y ofreció horarios concretos en unos 20 s: las herramientas del agente responden.
+  - Sin confirmar desde la nube, por falta de acceso: que se guarden las conversaciones (webhook post-call; se ve en `/api/metricas`, que pide `METRICS_SECRET`), el regreso de Google y el webhook de Telegram.
+- **Tarea 2 (`www`):** sigue pendiente. El certificado es solo de `turniasalud.app`.
+- **Tarea 6 (PostHog):** sigue pendiente. No hay transformación ni filtro para `loreado.vercel.app` y la captura de excepciones está apagada. La consola en las grabaciones ya estaba activa. Falta además `turniasalud.app` en las URLs autorizadas.
+- **Tarea 5 (accesos):** sigue pendiente. El entorno de la nube no tiene el token de Vercel, la clave de ElevenLabs ni `PANEL_PASSWORD`.
+- **Pedidos de prueba:** la verificación dejó tres pedidos de demo más, entre las 9:14 y las 9:22. Además, en la ficha de demo de ese consultorio quedó un paciente ficticio, «Juan Prueba».
 
 ### QA 2026-11-13 pm
 
