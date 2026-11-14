@@ -137,7 +137,7 @@ En Chapa, «Generar otro QR» y «Volver a vincular» son acciones operativas de
 | `demo_conversation_ended` | navegador | `mode`, `duration_ms`, `user_messages`, `agent_messages`, `end_reason` (`disconnect` si la cortó la persona, `disconnect_agent` o `disconnect_error` si la cortó ElevenLabs), `end_detail` (motivo técnico del corte, sin datos personales) |
 | `demo_conversation_failed` | navegador | `error_kind`: `mic_denied`, `mic_missing`, `start_error` |
 | `demo_conversation_error` | navegador | Se cortó durante la conversación |
-| `demo_mode_switched` | navegador | `to`; `auto` = true cuando pasó solo al chat porque no hay micrófono |
+| `demo_mode_switched` | navegador | `to`; `auto` = true cuando pasó solo al chat porque no hay micrófono; `where` = `debajo_esfera` cuando tocó «Prefiero escribirle» debajo de la esfera de la demo personal (desde el 14/11) |
 | `demo_closing_viewed` | navegador | Terminó una charla en la que Sofi contestó y apareció el cierre con «Escribirle a Axel». `mode`, `end_reason` (`user`, `agent`, `error`) |
 | `demo_suggestion_used` | navegador | `suggestion` (índice de la idea), `connected` |
 | `demo_active_time` | navegador | Igual que en la demo personal, con `demo_kind` = `web` |

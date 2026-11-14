@@ -212,8 +212,9 @@ export function useCharlaDemo({
   }
 
   /** Cambia entre voz y chat (no mientras hay una conversación abierta). */
-  function cambiarModo(m: DemoMode) {
-    if (m !== mode) track("demo_mode_switched", { to: m });
+  /** `donde`: desde qué botón se cambió (por ejemplo «Prefiero escribirle», debajo de la esfera). */
+  function cambiarModo(m: DemoMode, donde?: string) {
+    if (m !== mode) track("demo_mode_switched", { to: m, ...(donde ? { where: donde } : {}) });
     setMode(m);
   }
 

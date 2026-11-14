@@ -24,16 +24,15 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ### Observaciones abiertas
 
-- **OBS-001 (parcialmente resuelta el 14/11, configuración).** Producción ya usa `https://turniasalud.app`, con el 308 del dominio anterior. ElevenLabs ejecutó `consultar_disponibilidad` correctamente. Una segunda prueba apareció en Turnia con resumen y transcripción al cerrar el chat, por el webhook post-call nuevo. Google conserva ambos callbacks. Sigue pendiente la migración de las dos URLs de WAHA registradas en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
+- **OBS-001 (parcialmente resuelta el 14/11, configuración).** Producción ya usa `https://turniasalud.app`, con el 308 del dominio anterior. ElevenLabs ejecutó `consultar_disponibilidad` correctamente. Una segunda prueba apareció en Turnia con resumen y transcripción al cerrar el chat, por el webhook post-call nuevo. Google acepta los dos callbacks y se verificó la vuelta al panel al cancelar el consentimiento. Sigue pendiente la migración de las dos URLs de WAHA registradas en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **OBS-002.** Probar el chat desde `/p/<código>?vista=panel` crea un pedido de demo (lead) y lo sube a la planilla de pedidos. Las pruebas del equipo ensucian esa lista. El QA del 13/11 dejó dos pedidos de prueba, entre las 15:00 y las 15:05 de Argentina, con el nombre del consultorio que se usó para probar.
-- **OBS-003.** [tarea 2, P1 en `TAREAS_COMPUTER_USE.md`] `www.turniasalud.app` no tiene certificado válido: el navegador muestra un error de seguridad. Se arregla agregando el dominio en Vercel o redirigiéndolo al dominio sin `www`.
 - **OBS-004.** [tarea 6, P2 en `TAREAS_COMPUTER_USE.md`] Otro sitio, `loreado.vercel.app`, manda eventos al proyecto de PostHog de Turnia con el mismo token, desde el 15/10. Ensucia las visitas de la web: ahí aparecen `/`, `/simulador` y `/mock`. Hay que filtrar por `$host` o sacar el token de ese sitio.
 - **OBS-005.** La Política de privacidad pública (`/privacidad`) nombra como responsable a «Centro Médico Plaza (demo)», con una dirección y un teléfono de ejemplo, porque toma los datos de la clínica principal.
 - **OBS-006.** [tarea 6, P2 en `TAREAS_COMPUTER_USE.md`] PostHog no captura los errores del navegador: no está activada la captura de excepciones y las grabaciones no guardan la consola. Un error en la demo de un prospecto hoy no se ve.
 
 ### Propuestas UX pendientes
 
-- **UX-001.** En celular, varios prospectos rechazan el permiso del micrófono al tocar la esfera (`repetido`). El paso automático al chat funciona y la mayoría sigue escribiendo. Evaluar empezar por el chat en celular o avisar antes de pedir el permiso.
+- **UX-001.** En celular, varios prospectos rechazan el permiso del micrófono al tocar la esfera (`repetido`). El paso automático al chat funciona y la mayoría sigue escribiendo. Evaluar empezar por el chat en celular o avisar antes de pedir el permiso. **14/11:** debajo de la esfera, antes del primer toque, se avisa que se va a pedir el micrófono y hay un botón «Prefiero escribirle» que abre el chat (`demo_mode_switched` con `where = debajo_esfera`). Motivo: 14 de 22 que abrieron la demo con la esfera no hicieron nada. Medir en una semana cuántos empiezan.
 - **UX-002.** Rebote rápido en `/p/<código>`: salen en menos de 10 s sin tocar nada (`repetido`, celular y escritorio).
 - **UX-003.** `/probar-demo`: entran, ven el formulario y se van sin escribir (`repetido`, escritorio).
 - **UX-004.** En el chat de la demo no hay indicador mientras Sofi responde. En la prueba del 13/11, la respuesta tardó unos 13 s; durante el primer segundo no se ve ni el mensaje enviado, y después solo «En línea».
@@ -68,9 +67,9 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 - **Tarea 1 (dominio), en lo principal resuelta:**
   - Las vistas previas ya usan `https://turniasalud.app`, así que `APP_URL` cambió.
   - En una demo (`?vista=panel`, datos ficticios), Sofi registró al paciente y ofreció horarios concretos en unos 20 s: las herramientas del agente responden.
-  - En otra comprobación, el webhook nuevo guardó el resumen y la transcripción al terminar el chat. La recuperación del período desde el 05/11 terminó sin errores. Google acepta los dos callbacks y queda pendiente completar un inicio de sesión de prueba. Telegram se retiró del proyecto.
-- **Tarea 2 (`www`):** sigue pendiente. El certificado es solo de `turniasalud.app`.
-- **Tarea 6 (PostHog):** sigue pendiente. No hay transformación ni filtro para `loreado.vercel.app` y la captura de excepciones está apagada. La consola en las grabaciones ya estaba activa. Falta además `turniasalud.app` en las URLs autorizadas.
+  - En otra comprobación, el webhook nuevo guardó el resumen y la transcripción al terminar el chat. La recuperación del período desde el 05/11 terminó sin errores. Google aceptó el callback nuevo y volvió al panel al cancelar. Queda pendiente una autorización completa de Calendar. Telegram se retiró del proyecto.
+- **Tarea 2 (`www`):** resuelta y comprobada por HTTPS. El destino final devuelve 200.
+- **Tarea 6 (PostHog):** se instaló y probó el filtro de Loreado, se autorizó el dominio nuevo y se activó la captura de excepciones. El siguiente QA verifica la recepción.
 - **Tarea 5 (accesos):** sigue pendiente. El entorno de la nube no tiene el token de Vercel, la clave de ElevenLabs ni `PANEL_PASSWORD`.
 - **Pedidos de prueba:** la verificación dejó tres pedidos de demo más, entre las 9:14 y las 9:22. Además, en la ficha de demo de ese consultorio quedó un paciente ficticio, «Juan Prueba».
 
