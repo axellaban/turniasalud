@@ -33,7 +33,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ### Propuestas UX pendientes
 
-- **UX-001.** En celular, varios prospectos rechazan el permiso del micrófono al tocar la esfera (`repetido`). El paso automático al chat funciona y la mayoría sigue escribiendo. Evaluar empezar por el chat en celular o avisar antes de pedir el permiso.
+- **UX-001.** En celular, varios prospectos rechazan el permiso del micrófono al tocar la esfera (`repetido`). El paso automático al chat funciona y la mayoría sigue escribiendo. Evaluar empezar por el chat en celular o avisar antes de pedir el permiso. **14/11:** debajo de la esfera, antes del primer toque, se avisa que se va a pedir el micrófono y hay un botón «Prefiero escribirle» que abre el chat (`demo_mode_switched` con `where = debajo_esfera`). Motivo: 14 de 22 que abrieron la demo con la esfera no hicieron nada. Medir en una semana cuántos empiezan.
 - **UX-002.** Rebote rápido en `/p/<código>`: salen en menos de 10 s sin tocar nada (`repetido`, celular y escritorio).
 - **UX-003.** `/probar-demo`: entran, ven el formulario y se van sin escribir (`repetido`, escritorio).
 - **UX-004.** En el chat de la demo no hay indicador mientras Sofi responde. En la prueba del 13/11, la respuesta tardó unos 13 s; durante el primer segundo no se ve ni el mensaje enviado, y después solo «En línea».
