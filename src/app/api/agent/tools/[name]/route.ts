@@ -22,6 +22,7 @@ import {
 } from "@/lib/agent/service";
 import { blockAgenda, createPatientForStaff, listOpenTasks, resolveTaskForStaff, searchPatients, viewAgenda } from "@/lib/agent/staff-tools";
 import { isUuid } from "@/lib/clinic";
+import { queueAppointmentNotice, sendNoticesLater, type NoticeKind } from "@/lib/clinic-notices";
 import { sql } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
 import { staffForPhone } from "@/lib/staff";
@@ -52,6 +53,8 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
 };
 
 const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
+/** Lo que Sofi cambia en la agenda a pedido de un paciente se le avisa al consultorio por WhatsApp. */
+const NOTICE_OF: Record<string, NoticeKind> = { reservar_turno: "nuevo", reprogramar_turno: "movido", cancelar_turno: "cancelado" };
 const TEMPORARY_TOOLS = new Set(["ver_turnos_paciente", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 
 /**
@@ -147,6 +150,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
     log("ok");
     // Los turnos nuevos o cambiados se escriben en Google Calendar sin demorar la respuesta.
     if (CHANGES_AGENDA.has(name)) syncCalendarLater(ctx.data.clinic_id);
+    // Aviso al consultorio (si cargó celulares). Lo que hace el propio equipo por WhatsApp, no.
+    const kind = NOTICE_OF[name];
+    if (kind && !staff) {
+      try {
+        const r = result as { turno_id?: string; segundo_turno_id?: string };
+        const own = toolInput as { turno_id?: string; motivo?: string };
+        const queued = await queueAppointmentNotice(ctx.data.clinic_id, kind, {
+          ids: kind === "cancelado" ? [own.turno_id ?? ""] : [r.turno_id ?? "", r.segundo_turno_id ?? ""],
+          beforeId: kind === "movido" ? own.turno_id : null,
+          reason: kind === "cancelado" ? own.motivo : null,
+        });
+        if (queued) sendNoticesLater(ctx.data.clinic_id);
+      } catch (e) {
+        // El turno ya quedó hecho: un aviso que no se pudo armar no cambia la respuesta.
+        console.error("Aviso al consultorio: no se pudo dejar en la cola", e instanceof Error ? e.message : e);
+      }
+    }
     if (staff) log("equipo", { equipo: staff.name });
     return NextResponse.json(result);
   } catch (e) {

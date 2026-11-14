@@ -15,6 +15,7 @@ import { ConfigHeader } from "./header";
 import { Section, wide } from "./section";
 import { AccessCreator } from "./access-manager";
 import { ClinicAgentSetup, StaffAgentSetup } from "./clinic-agent";
+import { NoticeCard } from "./notice-card";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Consultorio · Panel" };
@@ -116,6 +117,8 @@ export default async function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          <NoticeCard clinic={clinic} />
+
           {admin && <Card id="whatsapp-equipo" className="scroll-mt-20">
             <h2 className="font-semibold text-brand-950">Acceso total por WhatsApp</h2>
             <p className="mt-1 text-sm text-brand-900/60">

@@ -1589,3 +1589,44 @@ alter table sales_followup_queue_days enable row level security;
 alter table sales_followup_executions add column if not exists executed_by text not null default 'humano';
 alter table sales_followup_executions drop constraint if exists sales_followup_executions_executed_by_check;
 alter table sales_followup_executions add constraint sales_followup_executions_executed_by_check check (executed_by in ('humano', 'bot'));
+
+-- ---------------------------------------------------------------------------
+-- Avisos al consultorio por WhatsApp (14/11): cuando Sofi da, mueve o cancela un turno, les llega
+-- el detalle (prestación, motivo, paciente) a los celulares que el consultorio carga en
+-- Configuración. Cola con reintentos: ver src/lib/clinic-notices.ts.
+-- ---------------------------------------------------------------------------
+create table if not exists clinic_notice_phones (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  -- Normalizado como los pacientes (5491155550000).
+  phone text not null,
+  name text not null,
+  events text[] not null default array['nuevo', 'movido', 'cancelado']::text[],
+  created_at timestamptz not null default now(),
+  unique (clinic_id, phone)
+);
+alter table clinic_notice_phones drop constraint if exists clinic_notice_phones_events_check;
+alter table clinic_notice_phones add constraint clinic_notice_phones_events_check
+  check (events <@ array['nuevo', 'movido', 'cancelado']::text[]);
+alter table clinic_notice_phones enable row level security;
+
+create table if not exists clinic_notices (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  phone text not null,
+  kind text not null,
+  appointment_id uuid references appointments(id) on delete set null,
+  body text not null,
+  status text not null default 'pendiente',
+  attempts integer not null default 0,
+  error text,
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+alter table clinic_notices drop constraint if exists clinic_notices_kind_check;
+alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba'));
+alter table clinic_notices drop constraint if exists clinic_notices_status_check;
+alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviado', 'error', 'vencido'));
+create index if not exists clinic_notices_pending_idx on clinic_notices (created_at) where status in ('pendiente', 'error');
+create index if not exists clinic_notices_clinic_idx on clinic_notices (clinic_id, created_at desc);
+alter table clinic_notices enable row level security;
