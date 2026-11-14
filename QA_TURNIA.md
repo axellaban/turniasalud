@@ -13,7 +13,7 @@ Registro del QA de producción de turniasalud.app, igual que el de habita. (`doc
 ## Cómo entrar
 
 - **PostHog:** proyecto 518346 (US). La clave personal está en la variable `POSTHOG_PERSONAL_API_KEY` del entorno de la nube. Las consultas van por la API `query` (HogQL).
-- **Panel:** necesita `PANEL_PASSWORD` (o el código de un consultorio de prueba) en el entorno. Hoy no está, así que el panel queda sin revisar.
+- **Panel:** necesita `PANEL_PASSWORD` (o el código de un consultorio de prueba) en el entorno. Hoy no está, así que el panel queda sin revisar. Para cargarlo, y el token de Vercel: tarea 5 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **Vercel:** sin acceso desde la nube (la API responde 403). El despliegue se mira en el estado «Vercel» del commit en GitHub y en `/api/health`.
 
 ## Para quien lee este archivo
@@ -24,7 +24,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ### Observaciones abiertas
 
-- **OBS-001 (urgente, configuración).** `APP_URL` sigue en `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Todo lo que se registró con esa dirección pasa por una redirección:
+- **OBS-001 (urgente, configuración).** [tarea 1, P0 en `TAREAS_COMPUTER_USE.md`] `APP_URL` sigue en `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Todo lo que se registró con esa dirección pasa por una redirección:
   - las herramientas del agente en ElevenLabs (`/api/agent/tools/*`) y el webhook de inicio;
   - el webhook de Telegram;
   - el regreso de Google (OAuth) y los avisos de Google Calendar;
@@ -41,10 +41,10 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
   4. Volver a registrar el webhook de Telegram.
   5. Revisar los webhooks de WAHA y ElevenLabs (Panel → Sistema).
 - **OBS-002.** Probar el chat desde `/p/<código>?vista=panel` crea un pedido de demo (lead) y lo sube a la planilla de pedidos. Las pruebas del equipo ensucian esa lista. El QA del 13/11 dejó dos pedidos de prueba, entre las 15:00 y las 15:05 de Argentina, con el nombre del consultorio que se usó para probar.
-- **OBS-003.** `www.turniasalud.app` no tiene certificado válido: el navegador muestra un error de seguridad. Se arregla agregando el dominio en Vercel o redirigiéndolo al dominio sin `www`.
-- **OBS-004.** Otro sitio, `loreado.vercel.app`, manda eventos al proyecto de PostHog de Turnia con el mismo token, desde el 15/10. Ensucia las visitas de la web: ahí aparecen `/`, `/simulador` y `/mock`. Hay que filtrar por `$host` o sacar el token de ese sitio.
+- **OBS-003.** [tarea 2, P1 en `TAREAS_COMPUTER_USE.md`] `www.turniasalud.app` no tiene certificado válido: el navegador muestra un error de seguridad. Se arregla agregando el dominio en Vercel o redirigiéndolo al dominio sin `www`.
+- **OBS-004.** [tarea 6, P2 en `TAREAS_COMPUTER_USE.md`] Otro sitio, `loreado.vercel.app`, manda eventos al proyecto de PostHog de Turnia con el mismo token, desde el 15/10. Ensucia las visitas de la web: ahí aparecen `/`, `/simulador` y `/mock`. Hay que filtrar por `$host` o sacar el token de ese sitio.
 - **OBS-005.** La Política de privacidad pública (`/privacidad`) nombra como responsable a «Centro Médico Plaza (demo)», con una dirección y un teléfono de ejemplo, porque toma los datos de la clínica principal.
-- **OBS-006.** PostHog no captura los errores del navegador: no está activada la captura de excepciones y las grabaciones no guardan la consola. Un error en la demo de un prospecto hoy no se ve.
+- **OBS-006.** [tarea 6, P2 en `TAREAS_COMPUTER_USE.md`] PostHog no captura los errores del navegador: no está activada la captura de excepciones y las grabaciones no guardan la consola. Un error en la demo de un prospecto hoy no se ve.
 
 ### Propuestas UX pendientes
 

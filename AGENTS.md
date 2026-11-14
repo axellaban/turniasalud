@@ -39,3 +39,4 @@ Antes de trabajar en este repo leé, en este orden:
 11. [`CONTEXTO_PROYECTO.md`](CONTEXTO_PROYECTO.md): qué es Turnia Salud, decisiones, arquitectura y pendientes priorizados.
 12. [`CENTRO_COMERCIAL.md`](CENTRO_COMERCIAL.md): **la operación comercial desde Chapa Labs** (la cola de Follow-up traída de habita., su API, sus tablas), el estado de la prospección (listas, anunciantes) y qué sigue. El documento general de los tres repos está en chapa-labs, `docs/CENTRO_COMERCIAL.md`.
 13. [`QA_TURNIA.md`](QA_TURNIA.md): **el QA de producción** (igual que el de habita.): observaciones abiertas, propuestas de usabilidad y el registro de cada corrida. El procedimiento está en `.claude/skills/qa-turnia/SKILL.md`.
+14. [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md): **configuración que hace una IA con computer use** en Vercel, ElevenLabs, Google Cloud, PostHog y claude.ai, por prioridad y lista para copiar como prompt.
