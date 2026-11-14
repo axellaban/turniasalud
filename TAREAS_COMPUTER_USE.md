@@ -4,12 +4,12 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-| Prioridad | Tarea | Por qué | ¿Necesita al usuario? |
+| Prioridad | Tarea | Estado del 14/11 | Acción restante |
 | --- | --- | --- | --- |
-| **P0** | 1. Dominio nuevo | Agenda y guardado verificados. Falta migrar las dos URLs de WAHA detectadas. | Revisar el alcance antes de intervenir las instancias. |
-| **P1** | 2. Certificado de `www.turniasalud.app` | Quien entra con «www» ve un error de seguridad | Solo si el dominio no está comprado en Vercel (registro DNS) |
-| **P2** | 6. PostHog: datos limpios y errores visibles | Otro sitio ensucia las métricas; los errores de la demo no se ven | No |
-| **P3** | 5. Accesos para el QA automático | Para que el QA revise el panel y los errores de Vercel | **Sí**: el usuario escribe la contraseña y el token, la IA no los ve |
+| **P0** | 1. Dominio nuevo | Agenda, guardado, recuperación histórica y callback de Google verificados. | Migrar las dos URLs de WAHA y validar una recepción. Completar el permiso de Calendar con la cuenta que se va a conectar. |
+| **P1** | 2. Certificado de `www.turniasalud.app` | Resuelta. Certificado válido y redirección 308 comprobada. | — |
+| **P2** | 6. PostHog: datos limpios y errores visibles | Dominio autorizado, captura de excepciones activa y filtro de Loreado instalado y probado. | El siguiente QA comprueba la llegada de excepciones. |
+| **P3** | 5. Accesos para el QA automático | Pendiente. | Confirmar el entorno que usa el QA y cargar los valores ahí. |
 
 ## Reglas para todas las tareas
 
@@ -23,7 +23,7 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 ## Tarea 1 (P0) · Dominio nuevo
 
-El 14/11 se actualizó `APP_URL` de producción, se registraron de nuevo las herramientas del agente compartido y se añadió el callback nuevo de Google. Se creó el webhook post-call de ElevenLabs para `https://turniasalud.app/api/elevenlabs/post-call` y se publicó su secreto de firma en Vercel. Una prueba confirmó que Sofi ofrece horarios y otra confirmó que Turnia recibe el resumen y la transcripción cuando termina la charla. El dominio anterior conserva el 308.
+El 14/11 se actualizó `APP_URL` de producción, se registraron de nuevo las herramientas del agente compartido y se añadió el callback nuevo de Google. Se creó el webhook post-call de ElevenLabs para `https://turniasalud.app/api/elevenlabs/post-call` y se publicó su secreto de firma en Vercel. Una prueba confirmó que Sofi ofrece horarios y otra confirmó que Turnia recibe el resumen y la transcripción cuando termina la charla. El dominio anterior conserva el 308. Telegram se retiró en el PR #188 y se eliminó su variable de producción. Google aceptó el callback nuevo, mostró el consentimiento de Calendar y devolvió al panel al cancelar la prueba.
 
 La revisión de WAHA detectó estas dos URLs configuradas:
 
@@ -36,7 +36,7 @@ La revisión de estas instancias es de solo lectura. Cualquier migración de WAH
 
 ## Tarea 2 (P1) · Certificado de `www.turniasalud.app`
 
-**Contexto.** `https://www.turniasalud.app` da un error de certificado: el dominio con «www» no está configurado en Vercel.
+**Resuelta el 14/11.** Vercel sirve un certificado que cubre `www.turniasalud.app` y devuelve 308 hacia `https://turniasalud.app/`, que responde 200. El procedimiento queda como referencia.
 
 **Pasos:**
 
@@ -52,12 +52,12 @@ La revisión de estas instancias es de solo lectura. Cualquier migración de WAH
 
 ## Tarea 6 (P2) · PostHog: datos limpios y errores visibles
 
-**Contexto.** El proyecto de PostHog «Turnia Salud» recibe eventos de otro sitio, `loreado.vercel.app`, que usa el mismo token. Esos eventos aparecen como visitas a la web de Turnia. Además, PostHog no captura los errores del navegador ni la consola en las grabaciones: si la demo de un prospecto falla, no se ve.
+**Configurada el 14/11 en PostHog, proyecto 518346.** La transformación `Drop Events` descarta solo eventos con `$host = loreado.vercel.app`; una ejecución de prueba descartó un evento de ese sitio. Filtros de usuarios internos conserva `is_internal ≠ true` y suma `$host ≠ loreado.vercel.app`. «Enable exception autocapture» quedó activo, «Capture console logs» ya estaba activo y se autorizó `https://turniasalud.app`. El procedimiento queda como referencia.
 
 **Pasos** (PostHog, proyecto «Turnia Salud», el de US Cloud):
 
 1. **Dejar afuera los eventos del otro sitio, de ahora en adelante.** Data pipelines → Transformations → New. Elegí la que descarta o filtra eventos («Filter events», «Drop events» o similar), con la condición: propiedad `$host` igual a `loreado.vercel.app` → descartar. Guardá y activala. Si no hay una transformación así, frená y avisá.
-2. **Dejarlos afuera también del historial.** Settings → Project → «Filter out internal and test users»: agregá el filtro `$host` **distinto de** `loreado.vercel.app`, sin borrar los que ya estén (como `is_internal`).
+2. **Excluirlos de los análisis históricos con el filtro activo.** Settings → Project → Customization → «Filter out internal and test users»: agregá el filtro `$host` **distinto de** `loreado.vercel.app`, sin borrar los que ya estén (como `is_internal`).
 3. **Errores del navegador.** Settings → Error tracking → activá «Exception autocapture» (o «Capture exceptions»).
 4. **Consola en las grabaciones.** En Settings → Session replay, verificá «Capture console logs». Ya estaba activo en el QA del 14/11.
 5. **Dominio autorizado.** En Settings → Project → Authorized URLs, agregá `https://turniasalud.app` y conservá las URLs existentes.
@@ -106,6 +106,5 @@ La revisión de estas instancias es de solo lectura. Cualquier migración de WAH
 
 La próxima sesión de Claude que corra el QA (`.claude/skills/qa-turnia/SKILL.md`) verifica lo hecho. Si está bien, cierra la observación en `QA_TURNIA.md`:
 
-- tarea 2: OBS-003;
 - tarea 6: OBS-004 y OBS-006;
 - tarea 5: «Cómo entrar».
