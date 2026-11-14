@@ -1,4 +1,4 @@
-import { NOTICE_KINDS, NOTICE_LABEL, listNoticePhones, noticeLine, recentNotices, type NoticeRow } from "@/lib/clinic-notices";
+import { NOTICE_KINDS, NOTICE_LABEL, listNoticePhones, noticeLine, recentNotices, type NoticePhone, type NoticeRow } from "@/lib/clinic-notices";
 import { displayPhone } from "@/lib/phone";
 import { formatDateTime } from "@/lib/time";
 import type { Clinic } from "@/lib/types";
@@ -13,13 +13,19 @@ const STATUS: Record<NoticeRow["status"], { label: string; tone: "green" | "yell
   error: { label: "Reintentando", tone: "red" },
   vencido: { label: "No salió", tone: "gray" },
 };
-const KIND: Record<NoticeRow["kind"], string> = { nuevo: "Turno nuevo", movido: "Turno movido", cancelado: "Turno cancelado", prueba: "Prueba" };
+const KIND: Record<NoticeRow["kind"], string> = { nuevo: "Turno nuevo", movido: "Turno movido", cancelado: "Turno cancelado", prueba: "Prueba", smile: "Revisar en Smile Connect" };
+
+export type NoticeCardData = { phones: NoticePhone[]; recent: NoticeRow[]; line: ReturnType<typeof noticeLine> };
+
+/** Lo que muestra la tarjeta (se carga en la página, junto con lo demás). */
+export async function loadNoticeCard(clinic: Clinic): Promise<NoticeCardData> {
+  const [phones, recent] = await Promise.all([listNoticePhones(clinic.id), recentNotices(clinic.id, 6)]);
+  return { phones, recent, line: noticeLine(clinic) };
+}
 
 /** Configuración → a qué celulares les llega el aviso de cada turno que da, mueve o cancela Sofi. */
-export async function NoticeCard({ clinic }: { clinic: Clinic }) {
+export function NoticeCard({ clinic, data: { phones, recent, line } }: { clinic: Clinic; data: NoticeCardData }) {
   const agent = clinic.agent_name || "Sofi";
-  const [phones, recent] = await Promise.all([listNoticePhones(clinic.id), recentNotices(clinic.id, 6)]);
-  const line = noticeLine(clinic);
   return (
     <Card id="avisos-whatsapp" className="scroll-mt-20">
       <h2 className="font-semibold text-brand-950">Avisos por WhatsApp</h2>

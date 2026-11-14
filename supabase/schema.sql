@@ -1624,9 +1624,129 @@ create table if not exists clinic_notices (
   sent_at timestamptz
 );
 alter table clinic_notices drop constraint if exists clinic_notices_kind_check;
-alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba'));
+alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba', 'smile'));
 alter table clinic_notices drop constraint if exists clinic_notices_status_check;
 alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviado', 'error', 'vencido'));
 create index if not exists clinic_notices_pending_idx on clinic_notices (created_at) where status in ('pendiente', 'error');
 create index if not exists clinic_notices_clinic_idx on clinic_notices (clinic_id, created_at desc);
 alter table clinic_notices enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Smile Connect por API (14/11, sin activar): la clave de la API pública de Smile Connect por
+-- clínica (cifrada), lo que sincroniza y lo que escribe. Modos: apagada (no hace nada), lectura
+-- (trae la agenda y Sofi mira la disponibilidad en vivo), sombra (además anota qué escribiría, sin
+-- escribir), crear (escribe solo los turnos nuevos) y completa (crea, mueve y cancela). La escritura
+-- real necesita además SMILE_CONNECT_WRITES=on en el servidor. Ver src/lib/smile-connect-link.ts.
+-- ---------------------------------------------------------------------------
+alter table smile_connect_connections add column if not exists api_key_encrypted text;
+alter table smile_connect_connections add column if not exists api_key_hint text;
+alter table smile_connect_connections add column if not exists api_clinic_id integer;
+alter table smile_connect_connections add column if not exists api_clinic_name text;
+alter table smile_connect_connections add column if not exists api_mode text not null default 'apagada';
+alter table smile_connect_connections drop constraint if exists smile_connect_connections_api_mode_check;
+alter table smile_connect_connections add constraint smile_connect_connections_api_mode_check
+  check (api_mode in ('apagada', 'lectura', 'sombra', 'crear', 'completa'));
+alter table smile_connect_connections add column if not exists api_error text;
+alter table smile_connect_connections add column if not exists api_error_at timestamptz;
+alter table smile_connect_connections add column if not exists api_checked_at timestamptz;
+alter table smile_connect_connections add column if not exists api_near_pull_at timestamptz;
+alter table smile_connect_connections add column if not exists api_near_count integer;
+alter table smile_connect_connections add column if not exists api_wide_pull_at timestamptz;
+alter table smile_connect_connections add column if not exists api_backup_at timestamptz;
+alter table smile_connect_connections add column if not exists api_reads_day date;
+alter table smile_connect_connections add column if not exists api_reads integer not null default 0;
+alter table smile_connect_connections add column if not exists api_supports_notes boolean not null default false;
+alter table smile_connect_connections add column if not exists api_writes_paused text;
+
+alter table professionals add column if not exists smile_professional_id integer;
+alter table professionals add column if not exists smile_box_id integer;
+
+-- Estado de cada turno en Smile Connect (lo que hay que escribir allá) y, al moverlo, el turno nuevo.
+alter table appointments add column if not exists smile_sync text;
+alter table appointments drop constraint if exists appointments_smile_sync_check;
+alter table appointments add constraint appointments_smile_sync_check
+  check (smile_sync is null or smile_sync in ('pendiente', 'ok', 'error', 'revisar'));
+alter table appointments add column if not exists smile_error text;
+alter table appointments add column if not exists smile_attempts integer not null default 0;
+alter table appointments add column if not exists replaced_by uuid references appointments(id) on delete set null;
+create index if not exists appointments_smile_pending_idx on appointments (clinic_id) where smile_sync in ('pendiente', 'error');
+
+-- Lo libre de cada día según Smile Connect (incluye bloqueos y feriados), unos minutos.
+create table if not exists smile_connect_availability (
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  day date not null,
+  slots jsonb not null,
+  fetched_at timestamptz not null default now(),
+  primary key (clinic_id, day)
+);
+alter table smile_connect_availability enable row level security;
+
+-- Registro de cada cambio que Turnia hace (o haría, en modo sombra) en Smile Connect, con cómo
+-- estaba antes: si algo sale mal, se puede deshacer a mano.
+create table if not exists smile_connect_changes (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  appointment_id uuid references appointments(id) on delete set null,
+  action text not null,
+  status text not null,
+  request jsonb,
+  before jsonb,
+  result jsonb,
+  error text,
+  created_at timestamptz not null default now()
+);
+alter table smile_connect_changes drop constraint if exists smile_connect_changes_action_check;
+alter table smile_connect_changes add constraint smile_connect_changes_action_check
+  check (action in ('crear_paciente', 'crear', 'mover', 'cancelar'));
+alter table smile_connect_changes drop constraint if exists smile_connect_changes_status_check;
+alter table smile_connect_changes add constraint smile_connect_changes_status_check
+  check (status in ('hecho', 'sombra', 'error', 'revisar'));
+create index if not exists smile_connect_changes_clinic_idx on smile_connect_changes (clinic_id, created_at desc);
+alter table smile_connect_changes enable row level security;
+
+-- Copia diaria de lo que da la API (pacientes y turnos), por si Smile Connect pierde algo. Se
+-- guardan las últimas 14.
+create table if not exists smile_connect_backups (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  taken_at timestamptz not null default now(),
+  patients jsonb not null,
+  appointments jsonb not null,
+  window_from timestamptz not null,
+  window_to timestamptz not null
+);
+create index if not exists smile_connect_backups_clinic_idx on smile_connect_backups (clinic_id, taken_at desc);
+alter table smile_connect_backups enable row level security;
+
+-- Todo alta o cambio de un turno que hace Turnia (Sofi, el panel) queda pendiente de escribir en
+-- Smile Connect, si la clínica lo escribe. Lo que trae o escribe la propia sincronización no
+-- (marca la transacción con turnia.smile_quiet), así no hay ida y vuelta.
+create or replace function turnia_smile_mark() returns trigger language plpgsql as $$
+begin
+  if coalesce(current_setting('turnia.smile_quiet', true), '') = 'on' then
+    return new;
+  end if;
+  if not exists (
+    select 1 from smile_connect_connections c
+    where c.clinic_id = new.clinic_id and c.api_key_encrypted is not null and c.api_mode in ('sombra', 'crear', 'completa')
+  ) then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.external_id is null and new.source <> 'smile_connect' and new.status in ('confirmado', 'pendiente') and new.ends_at > now() then
+      new.smile_sync := 'pendiente';
+      new.smile_attempts := 0;
+      new.smile_error := null;
+    end if;
+  elsif (new.status is distinct from old.status or new.starts_at is distinct from old.starts_at
+         or new.ends_at is distinct from old.ends_at or new.professional_id is distinct from old.professional_id)
+        and (new.external_id like 'sc:%' or new.smile_sync is not null) then
+    new.smile_sync := 'pendiente';
+    new.smile_attempts := 0;
+    new.smile_error := null;
+  end if;
+  return new;
+end $$;
+drop trigger if exists appointments_smile_mark on appointments;
+create trigger appointments_smile_mark before insert or update on appointments
+  for each row execute function turnia_smile_mark();

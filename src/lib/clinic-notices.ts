@@ -26,7 +26,7 @@ export type NoticeRow = {
   id: string;
   clinic_id: string;
   phone: string;
-  kind: NoticeKind | "prueba";
+  kind: NoticeKind | "prueba" | "smile";
   body: string;
   status: "pendiente" | "enviado" | "error" | "vencido";
   attempts: number;
