@@ -4,6 +4,14 @@
 
 `APP_URL` es `https://turniasalud.vercel.app`, pero ese dominio ahora redirige (308) a `https://turniasalud.app`, también los POST. Las herramientas del agente en ElevenLabs, el webhook de Telegram, el regreso de Google y las imágenes de vista previa apuntan a la dirección vieja. En la demo, al pedir un turno, Sofi contestó que «el sistema de agenda no me respondió». Detalle y arreglo en [`QA_TURNIA.md`](QA_TURNIA.md), OBS-001. Lo tiene que hacer el usuario: en Vercel, que `turniasalud.vercel.app` no redirija, o pasar `APP_URL` al dominio nuevo y volver a registrar los webhooks. También falta el certificado de `www.turniasalud.app` (OBS-003).
 
+**14/11:** el usuario decidió **mantener la redirección**, así que va el arreglo de fondo de OBS-001. Además, desde el 05/11 **no se guarda ninguna conversación con Sofi**: el webhook post-call de ElevenLabs (`/api/elevenlabs/post-call`, se configura en ElevenLabs → Agents Platform → Settings → Webhooks, no en el código) apunta al dominio viejo. En `turniasalud.app` responde bien. Pasos, en este orden:
+1. Vercel: `APP_URL` = `https://turniasalud.app` y redeploy.
+2. ElevenLabs → Settings → Webhooks: el post-call a `https://turniasalud.app/api/elevenlabs/post-call` (el mismo secreto).
+3. Panel → Sistema → «Crear / actualizar agente»: registra de nuevo las herramientas y el webhook de inicio con la dirección nueva.
+4. Telegram, Google y WAHA, como dice OBS-001.
+
+Las conversaciones que no llegaron se recuperan desde la API de ElevenLabs: `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` (`src/lib/conversations-backfill.ts`) las guarda en silencio (sin n8n, pacientes ni tareas) y no repite las que ya están. Chapa Labs lo corre todos los días a las 8:20 con los últimos 3 días (`op=sofi-cron`), así que si el webhook vuelve a fallar, las charlas igual llegan al otro día.
+
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
 
 `GET /api/prospeccion?vista=followup` suma, en `results`, lo mismo que habita.: `execution` (la cola día por día y por tipo de acción: pendientes, ejecutadas por persona o bot, exitosas, bloqueadas, sin tomar, no salieron y reprogramadas), `weeklyByType` y `actionLabels`. Lógica en `src/lib/sales/followup-results.ts`; tabla `sales_followup_queue_days` y columna `sales_followup_executions.executed_by` en `supabase/schema.sql` (se aplican solas en el próximo build de producción).
