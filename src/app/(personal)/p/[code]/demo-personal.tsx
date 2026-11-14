@@ -206,7 +206,7 @@ function Pantalla({ code, contar, lista, datos, ficha, reenvio, linea, ejemplos 
               estado={estado}
               leerVolumen={leerVolumen}
               className={`transition-[width,height] duration-700 ${
-                compacta ? "h-[min(56cqw,38cqh,330px)] w-[min(56cqw,38cqh,330px)]" : "h-[min(84cqw,62cqh,480px)] w-[min(84cqw,62cqh,480px)]"
+                compacta ? "h-[min(56cqw,38cqh,330px)] w-[min(56cqw,38cqh,330px)]" : "h-[min(84cqw,54cqh,480px)] w-[min(84cqw,54cqh,480px)]"
               }`}
             >
               {/* Adentro de la esfera, lo que te pide. Se va con un fundido apenas empieza la llamada. */}
@@ -246,6 +246,20 @@ function Pantalla({ code, contar, lista, datos, ficha, reenvio, linea, ejemplos 
               </>
             ) : cerrada ? (
               cierre
+            ) : !connecting && !enCharla ? (
+              // Antes del primer toque: avisar que se va a pedir el micrófono y dar a la vista la otra forma de
+              // probarla. Desde el 09/11 la abre sobre todo la recepción, en el trabajo, donde hablar en voz
+              // alta no siempre se puede: 14 de 22 que la abrieron con la esfera no hicieron nada (14/11).
+              <div className="animar-aparecer mt-[min(5cqh,2rem)]" data-testid="demo-eleccion">
+                <p className="text-[13px] text-tinta">Al tocarla, el navegador te pide el micrófono.</p>
+                <button
+                  type="button"
+                  onClick={() => cambiarModo("chat", "debajo_esfera")}
+                  className="mt-3 inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-[15px] font-medium text-brand-900 shadow-sm ring-1 ring-brand-950/10 hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+                >
+                  <Icono nombre="chat" className="h-4 w-4" /> Prefiero escribirle
+                </button>
+              </div>
             ) : null}
             {avisos}
           </div>
