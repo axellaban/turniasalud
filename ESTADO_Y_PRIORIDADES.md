@@ -2,6 +2,18 @@
 
 Actualización: 07/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Smile Connect por API y avisos al consultorio por WhatsApp — 14/11/2026 (PR borrador, sin activar)
+
+- **Pedido del usuario:** integrar Turnia con la API de Smile Connect de Guerra–Mininni (turnos y pacientes) con muchísimo cuidado, porque es la data operativa y hay que asumir que no tienen backup. Mininni pidió que el motivo del turno llegue a Smile Connect: la API todavía no lo acepta y se lo pidió a Smile Connect. Mientras tanto, avisos por WhatsApp con el motivo, configurables desde el panel. **Todo queda guardado en GitHub sin activar** hasta que la API tenga las notas.
+- **Cómo quedó:**
+  - modos de apagada a completa;
+  - verificación previa de cada cambio, con registro de cómo estaba antes;
+  - copia diaria y freno automático;
+  - disponibilidad en vivo para Sofi (incluye bloqueos y feriados);
+  - avisos por WhatsApp con el detalle de cada turno.
+
+  Detalle y pasos para activarlo en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+
 ## La demo personal pasa a ser una sola pantalla con la esfera — 07/11/2026
 
 - **Pedido del usuario:** que las dos versiones de `/p/<código>` (la de antes de probarla, con «Probar la demo», y la de después, con «¿dejamos a Sofi atendiendo…?») y la pantalla de la demo sean una sola, lo más simple posible y como su boceto: el logo, «Voz | Chat» arriba a la derecha, una esfera grande con «Hablame como si fueras un paciente» adentro y, abajo, solo la ficha de su consultorio; ni menú ni pie. Todos los links ya mandados caen en esta pantalla. La esfera, como la de la voz de ChatGPT (nubes que fluyen adentro) pero mejor: sin colores oscuros, «más Turnia, más salud», sin latidos.

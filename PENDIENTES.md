@@ -1,5 +1,11 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Smile Connect por API y avisos por WhatsApp (14/11/2026, en PR borrador, sin activar)
+
+- **Hecho y probado, sin mergear a pedido del usuario.** Guerra–Mininni quiere conectarse recién cuando la API de Smile Connect acepte el motivo del turno (lo pidió Mininni a Smile Connect). Todo en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md), con los pasos para activarlo.
+- **Cuando Smile Connect sume las notas:** mergear el PR, cargar la clave (sin vencimiento) y seguir los pasos de activación: solo lectura, después escritura de prueba y recién después escritura real (`SMILE_CONNECT_WRITES=on`), con el consultorio mirando.
+- **Avisos por WhatsApp al consultorio:** van en el mismo PR. Falta saber a qué celulares mandarlos (se cargan en Configuración).
+
 ## Dominio y canales (14/11/2026)
 
 - **Agenda y conversaciones en producción.** `APP_URL` usa `https://turniasalud.app`. El dominio anterior conserva el 308. La demo ofreció horarios con `consultar_disponibilidad`; una segunda charla se guardó con resumen y transcripción al cerrarla, por el nuevo webhook post-call de ElevenLabs. Google acepta ambos callbacks.
