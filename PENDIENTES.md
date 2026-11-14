@@ -12,6 +12,22 @@
 
 Las conversaciones que no llegaron se recuperan desde la API de ElevenLabs: `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` (`src/lib/conversations-backfill.ts`) las guarda en silencio (sin n8n, pacientes ni tareas) y no repite las que ya están. Chapa Labs lo corre todos los días a las 8:20 con los últimos 3 días (`op=sofi-cron`), así que si el webhook vuelve a fallar, las charlas igual llegan al otro día.
 
+**Prompt para una IA con computer use** (no lleva claves; no hay que sacar la redirección):
+
+```
+Objetivo: que todo lo que llama a Turnia desde afuera use https://turniasalud.app. turniasalud.vercel.app redirige (308) a ese dominio y la redirección se mantiene: no la toques.
+
+1. Vercel → proyecto "turniasalud" → Settings → Environment Variables → APP_URL (Production): poné https://turniasalud.app (sin barra final). Si no existe, creala. Guardá y hacé Redeploy del último deploy de Production. Esperá Ready.
+2. ElevenLabs (elevenlabs.io) → Agents Platform → Settings → Webhooks (post-call / "Post-call webhook"): cambiá la URL de https://turniasalud.vercel.app/api/elevenlabs/post-call a https://turniasalud.app/api/elevenlabs/post-call. No cambies el secreto ni otros ajustes. Guardá.
+3. Panel de Turnia: https://turniasalud.app/panel/sistema → «Crear / actualizar agente». Esperá el mensaje de éxito.
+4. Google Cloud → APIs & Services → Credentials → el cliente OAuth de Turnia → Authorized redirect URIs: agregá https://turniasalud.app/api/google/callback (dejá la vieja). Guardá.
+5. Telegram y WAHA: si en el panel de Turnia (Sistema / Configuración) hay un botón para volver a registrar el webhook de Telegram, tocalo. No toques las sesiones de WAHA; solo informá a qué URL apuntan sus webhooks.
+Prohibido: quitar o cambiar la redirección de dominios, tocar otras variables, cambiar secretos, mandar mensajes o cerrar sesiones de WhatsApp.
+Al terminar, contestá qué quedó hecho en cada paso y qué no se pudo.
+```
+
+**Cómo verificar** (lo puede hacer la próxima IA sin acceso a Vercel ni a ElevenLabs): hacer una charla de prueba en una demo (`/p/<código>`, con datos ficticios) y pedir un turno. Sofi tiene que ofrecer horarios, no contestar «el sistema de agenda no me respondió». La charla tiene que aparecer enseguida en `/api/metricas` → `sofi.diario` del día, sin esperar a la recuperación de las 8:20. Si eso pasa, cerrar OBS-001 en `QA_TURNIA.md`.
+
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
 
 `GET /api/prospeccion?vista=followup` suma, en `results`, lo mismo que habita.: `execution` (la cola día por día y por tipo de acción: pendientes, ejecutadas por persona o bot, exitosas, bloqueadas, sin tomar, no salieron y reprogramadas), `weeklyByType` y `actionLabels`. Lógica en `src/lib/sales/followup-results.ts`; tabla `sales_followup_queue_days` y columna `sales_followup_executions.executed_by` en `supabase/schema.sql` (se aplican solas en el próximo build de producción).
