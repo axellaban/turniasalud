@@ -4,12 +4,12 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-| Prioridad | Tarea | Por qué | ¿Necesita al usuario? |
-| --- | --- | --- | --- |
-| **P0** | 1. Todo lo de afuera, al dominio nuevo | Sofi no puede consultar la agenda y, desde el 05/11, no se guarda ninguna conversación | No (salvo que algo pida volver a iniciar sesión) |
-| **P1** | 2. Certificado de `www.turniasalud.app` | Quien entra con «www» ve un error de seguridad | Solo si el dominio no está comprado en Vercel (registro DNS) |
-| **P2** | 6. PostHog: datos limpios y errores visibles | Otro sitio ensucia las métricas; los errores de la demo no se ven | No |
-| **P3** | 5. Accesos para el QA automático | Para que el QA revise el panel y los errores de Vercel | **Sí**: el usuario escribe la contraseña y el token, la IA no los ve |
+| Prioridad | Tarea | Por qué | ¿Necesita al usuario? | Estado al 14/11, 09:20 |
+| --- | --- | --- | --- | --- |
+| **P0** | 1. Todo lo de afuera, al dominio nuevo | Sofi no puede consultar la agenda y, desde el 05/11, no se guarda ninguna conversación | No (salvo que algo pida volver a iniciar sesión) | ✅ en lo principal: `APP_URL` cambiado y Sofi vuelve a dar turnos. Falta confirmar el webhook post-call, Google y Telegram |
+| **P1** | 2. Certificado de `www.turniasalud.app` | Quien entra con «www» ve un error de seguridad | Solo si el dominio no está comprado en Vercel (registro DNS) | ❌ pendiente: el certificado sigue sin incluir `www` |
+| **P2** | 6. PostHog: datos limpios y errores visibles | Otro sitio ensucia las métricas; los errores de la demo no se ven | No | ❌ pendiente: no hay filtro ni transformación para `loreado`, y la captura de errores está apagada. La consola en las grabaciones ya estaba activa |
+| **P3** | 5. Accesos para el QA automático | Para que el QA revise el panel y los errores de Vercel | **Sí**: el usuario escribe la contraseña y el token, la IA no los ve | ❌ pendiente: el entorno no tiene el token de Vercel, la clave de ElevenLabs ni `PANEL_PASSWORD` |
 
 ## Reglas para todas las tareas
 
@@ -74,6 +74,7 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 2. **Dejarlos afuera también del historial.** Settings → Project → «Filter out internal and test users»: agregá el filtro `$host` **distinto de** `loreado.vercel.app`, sin borrar los que ya estén (como `is_internal`).
 3. **Errores del navegador.** Settings → Error tracking → activá «Exception autocapture» (o «Capture exceptions»).
 4. **Consola en las grabaciones.** Settings → Session replay → activá «Capture console logs». No cambies el resto de las opciones de grabación.
+5. **Dominio autorizado.** Settings → Project → Authorized URLs (o «Toolbar URLs»): agregá `https://turniasalud.app`. Hoy figuran `loreado.vercel.app` y `turniasalud.vercel.app`, pero no el dominio actual. No borres las otras.
 
 **Prohibido:** borrar eventos, personas, tableros o insights, y tocar el token del proyecto.
 
