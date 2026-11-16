@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { busyFromFree, fitsFree, freeRanges, smilePhone, splitName } from "./smile-connect-api";
+import { busyFromFree, fitsFree, freeRanges, smileEmail, smileIdNumber, smilePhone, splitName } from "./smile-connect-api";
 
 // Conversiones puras de la API de Smile Connect: celdas libres → tramos, lo ocupado, nombres y teléfonos.
 
@@ -34,5 +34,16 @@ describe("datos para crear un paciente en Smile Connect", () => {
     expect(smilePhone("541155550000")).toEqual({ phone_country_code: "54", phone_number: "1155550000" });
     expect(smilePhone("12025550100")).toBeNull();
     expect(smilePhone(null)).toBeNull();
+  });
+});
+
+describe("datos del paciente que acepta Smile Connect", () => {
+  it("deja afuera el mail o el documento que la API rechazaría", () => {
+    expect(smileEmail("ana.perez@mail.com")).toBe("ana.perez@mail.com");
+    expect(smileEmail(" ana@mail.com.ar ")).toBe("ana@mail.com.ar");
+    for (const bad of ["ana@mail", "ana..perez@mail.com", ".ana@mail.com", "ana perez@mail.com", "ana@mail.c", "", null]) expect(smileEmail(bad)).toBeUndefined();
+    expect(smileIdNumber("30111222")).toBe("30111222");
+    expect(smileIdNumber("x".repeat(51))).toBeUndefined();
+    expect(smileIdNumber(null)).toBeUndefined();
   });
 });

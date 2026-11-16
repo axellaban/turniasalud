@@ -1,6 +1,6 @@
 # Smile Connect por API y avisos al consultorio
 
-**Estado (14/11/2026): hecho y probado, sin activar.** Queda en un PR borrador, sin mergear. El consultorio (Guerra–Mininni) quiere conectarse recién cuando la API de Smile Connect acepte el motivo del turno. No contiene claves, IDs ni datos de pacientes.
+**Estado (16/11/2026): en producción, apagada por defecto.** Se mergeó el 16/11, después de la charla con el Dr. Mininni: Smile Connect no va a sumar las notas pronto, y lo que falta (prestación y motivo) lo cubren el **resumen diario de Sofi a las 10** y «¿este turno lo diste vos?» por WhatsApp (ver `ESTADO_Y_PRIORIDADES.md`, 16/11). El cliente se comparó el 16/11 con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0): rutas, parámetros, cuerpos (`additionalProperties: false`), paginación, límites y formato de error coinciden; las notas siguen sin existir. Desde ese día el alta de paciente deja afuera un mail o un documento que la API rechazaría. No contiene claves, IDs ni datos de pacientes.
 
 ## Qué ofrece la API de Smile Connect
 
@@ -108,9 +108,9 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 
 También avisan cuando algo quedó «para revisar en Smile Connect».
 
-## Para activarlo (cuando Smile Connect sume las notas)
+## Para activarlo
 
-1. Mergear el PR. El esquema se aplica solo en el build.
+1. ~~Mergear el PR~~ (hecho el 16/11; el esquema se aplica solo en el build).
 2. Que el consultorio cree en Smile Connect una clave **sin vencimiento**:
    - **para leer:** `clinic:read`, `professionals:read`, `boxes:read`, `availability:read`, `appointments:read` y `patients:read`;
    - **para escribir:** además, `patients:create`, `appointments:create`, `appointments:reschedule` y `appointments:cancel`.

@@ -6,7 +6,8 @@ import { clinicInfoText, getClinic } from "@/lib/clinic";
 import { listClinicAccess } from "@/lib/clinic-access";
 import { listStaffPhones } from "@/lib/staff";
 import { displayPhone } from "@/lib/phone";
-import { addStaffPhone, removeStaffPhone } from "../../protocol-actions";
+import { addStaffPhone, removeStaffPhone, sendSummaryNowAction, toggleStaffSummary } from "../../protocol-actions";
+import { SUMMARY_HOUR } from "@/lib/daily-summary";
 import { ActionForm } from "./action-form";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
@@ -127,10 +128,18 @@ export default async function SettingsPage() {
             </p>
             {staff.length > 0 && <ul className="mt-3 divide-y divide-brand-900/5 text-sm">
               {staff.map((member) => <li key={member.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span className="min-w-0"><span className="font-medium text-brand-950">{member.name}</span> <span className="text-brand-900/65">· {displayPhone(member.phone)}</span></span>
-                <form action={removeStaffPhone}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={member.id} /><button className={smallButtonClass} aria-label={`Quitar el acceso de ${member.name}`}>Quitar</button></form>
+                <span className="min-w-0"><span className="font-medium text-brand-950">{member.name}</span> <span className="text-brand-900/65">· {displayPhone(member.phone)}</span>
+                  <span className="block text-xs text-brand-900/60">{member.daily_summary ? `Recibe el resumen de las ${SUMMARY_HOUR}` : "No recibe el resumen"}</span></span>
+                <span className="flex flex-wrap gap-2">
+                  <form action={toggleStaffSummary}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={member.id} /><input type="hidden" name="on" value={member.daily_summary ? "0" : "1"} /><button className={smallButtonClass} aria-label={`${member.daily_summary ? "Dejar de mandarle" : "Mandarle"} el resumen a ${member.name}`}>{member.daily_summary ? "Sin resumen" : "Con resumen"}</button></form>
+                  <form action={removeStaffPhone}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={member.id} /><button className={smallButtonClass} aria-label={`Quitar el acceso de ${member.name}`}>Quitar</button></form>
+                </span>
               </li>)}
             </ul>}
+            {staff.length > 0 && <div className="mt-3 rounded-lg bg-brand-50/60 p-3 text-sm text-brand-900/70">
+              <p><span className="font-medium text-brand-950">Resumen diario.</span> De lunes a viernes a las {SUMMARY_HOUR}, {agent} les manda por WhatsApp los turnos que dio, movió y canceló desde el resumen anterior, con paciente, DNI, celular, prestación, cobertura y lo que pidió, para pasarlos a la agenda del consultorio. Si ven un turno sin datos, le preguntan a {agent} por WhatsApp quién lo dio.</p>
+              <ActionForm action={sendSummaryNowAction} submit="Mandar el resumen ahora" pendingLabel="Mandando…" secondary className="mt-2"><input type="hidden" name="clinic_id" value={clinic.id} /></ActionForm>
+            </div>}
             <ActionForm action={addStaffPhone} submit="Dar acceso" resetOnSuccess secondary className="mt-4 grid gap-3">
               <input type="hidden" name="clinic_id" value={clinic.id} />
               <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dr. Mininni" className={inputClass} /></Field>

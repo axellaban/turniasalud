@@ -1046,12 +1046,20 @@ export async function confirmAppointment(ctx: ToolContext, input: { turno_id: st
 // ---------------------------------------------------------------------------
 // cancelar_turno (+ ofrece el hueco a la lista de espera)
 // ---------------------------------------------------------------------------
-async function cancelLoaded(clinic: Clinic, patient: Patient, appt: Appointment, motivo: string | undefined, by: "paciente" | "clinica") {
+async function cancelLoaded(
+  clinic: Clinic,
+  patient: Patient,
+  appt: Appointment,
+  motivo: string | undefined,
+  by: "paciente" | "clinica",
+  /** Por dónde se cancela (el canal de Sofi o «panel»): el resumen diario cuenta solo lo que hizo Sofi. */
+  via: string,
+) {
   assertNotOver(appt);
   const notes = [appt.notes, motivo && `Cancelado: ${motivo}`].filter(Boolean).join(" | ");
   // Solo si sigue activo: si otro canal lo canceló o movió recién, no se pisa.
   const [done] = await sql`
-    update appointments set status = 'cancelado', cancelled_at = now(), notes = ${notes || null}
+    update appointments set status = 'cancelado', cancelled_at = now(), notes = ${notes || null}, cancelled_via = ${via}
     where id = ${appt.id} and status = any(${ACTIVE}::text[]) returning id`;
   if (!done) throw new ToolError("Ese turno ya no está activo: se canceló o se reprogramó recién.");
   await notifyN8n("turno.cancelado", { clinic_id: clinic.id, appointment: appt, patient, motivo, cancelado_por: by });
@@ -1073,7 +1081,7 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
     );
   }
   const follower = await followerOf(appt);
-  const { when, offered } = await cancelLoaded(clinic, patient, appt, input.motivo, ctx.staff ? "clinica" : "paciente");
+  const { when, offered } = await cancelLoaded(clinic, patient, appt, input.motivo, ctx.staff ? "clinica" : "paciente", sourceFromChannel(ctx.channel, ctx.patientPhone));
   const [next] = follower ? await sql<Array<{ name: string }>>`select name from appointment_types where id = ${follower.appointment_type_id}` : [];
   return {
     ok: true,
@@ -1089,7 +1097,7 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
 export async function cancelClinicAppointment(clinicId: string, appointmentId: string, motivo?: string) {
   const clinic = await getClinic(clinicId);
   const { patient, appt } = await getClinicAppointment(clinicId, appointmentId);
-  const { when, offered } = await cancelLoaded(clinic, patient, appt, motivo, "clinica");
+  const { when, offered } = await cancelLoaded(clinic, patient, appt, motivo, "clinica", "panel");
   return {
     ok: true,
     mensaje: `Turno del ${when} cancelado.${offered ? ` Se le ofreció el horario a ${offered === 1 ? "1 persona" : `${offered} personas`} de la lista de espera.` : ""}`,
@@ -1152,6 +1160,8 @@ async function rescheduleLoaded(
   follower?: Appointment,
   /** Lo mueve el consultorio desde el panel. */
   byPanel = false,
+  /** Por dónde se mueve (lo cuenta el resumen diario); por defecto, el panel o el canal del paciente. */
+  via: string = byPanel ? "panel" : source,
 ) {
   assertNotOver(appt);
   const professionalId = input.profesional_id || appt.professional_id;
@@ -1207,7 +1217,7 @@ async function rescheduleLoaded(
       await lockProfessionals(tx, [appt.professional_id, pro.id, ...(second ? [second.id] : [])]);
       const ids = follower ? [appt.id, follower.id] : [appt.id];
       const freed = await tx<Appointment[]>`
-        update appointments set status = 'reprogramado', cancelled_at = now()
+        update appointments set status = 'reprogramado', cancelled_at = now(), cancelled_via = ${via}
         where id = any(${ids}::uuid[]) and status = any(${ACTIVE}::text[]) returning *`;
       if (freed.length < ids.length) throw new ToolError("Ese turno ya no está activo: se canceló o se reprogramó recién.");
       // Smile Connect puede cambiar una práctica o su duración mientras se busca el nuevo horario.
@@ -1234,7 +1244,7 @@ async function rescheduleLoaded(
       });
       const moved = await insertAppointment(tx, row(appt, { pro, second, type, endsAt }, startsAt));
       const movedNext = follower && next ? await insertAppointment(tx, row(follower, next, next.startsAt)) : null;
-      // Cuál reemplaza a cuál: así el turno de Smile Connect se mueve en vez de cancelarse y crearse otro.
+      // Cuál reemplaza a cuál: el resumen diario dice «antes → ahora» (y la escritura en Smile Connect mueve el mismo turno).
       await tx`update appointments set replaced_by = ${moved.id} where id = ${appt.id}`;
       if (follower && movedNext) await tx`update appointments set replaced_by = ${movedNext.id} where id = ${follower.id}`;
       return [moved, movedNext] as const;
@@ -1321,7 +1331,7 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
   const { patient, appt, follower } = await loadReschedule(ctx, clinic, input.turno_id);
   // El equipo mueve como el consultorio: el turno conserva por dónde lo pidió el paciente.
   const r = ctx.staff
-    ? await rescheduleLoaded(clinic, patient, appt, input, appt.source, false, follower, true)
+    ? await rescheduleLoaded(clinic, patient, appt, input, appt.source, false, follower, true, sourceFromChannel(ctx.channel, ctx.patientPhone))
     : await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, follower);
   return { ok: true, ...r };
 }

@@ -213,6 +213,19 @@ export function smilePhone(phone: string | null | undefined): { phone_country_co
   return null;
 }
 
+/** El mail, solo si Smile Connect lo acepta (su patrón es más estricto): uno inválido haría fallar el alta. */
+const SMILE_EMAIL = /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/;
+export function smileEmail(email: string | null | undefined): string | undefined {
+  const clean = (email ?? "").trim();
+  return clean.length <= 254 && SMILE_EMAIL.test(clean) ? clean : undefined;
+}
+
+/** El documento, hasta 50 caracteres (el límite de Smile Connect). */
+export function smileIdNumber(dni: string | null | undefined): string | undefined {
+  const clean = (dni ?? "").trim();
+  return clean && clean.length <= 50 ? clean : undefined;
+}
+
 /** Celdas libres (de cualquier largo) → tramos libres por profesional, unidos y ordenados. */
 export function freeRanges(slots: ScSlot[]): Map<number, Array<[number, number]>> {
   const byPro = new Map<number, Array<[number, number]>>();

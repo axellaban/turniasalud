@@ -1,8 +1,19 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 07/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 16/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
-## Smile Connect por API y avisos al consultorio por WhatsApp — 14/11/2026 (PR borrador, sin activar)
+## Resumen diario de Sofi y «¿este turno lo diste vos?» — 16/11/2026
+
+- **Pedido (Dr. Mininni, por WhatsApp):** con la API de Smile Connect (PR #191, sin mergear), Turnia escribe el turno pero la API no acepta notas ni prestación, así que en Smile Connect aparece «sin datos», y no ve que Smile Connect lo vaya a resolver rápido. La prestación hoy la ponen en la nota. Propuso: un resumen de Sofi a las 10 y, si ven un turno sin datos, preguntarle a Sofi si lo dio ella y que dé el detalle. Turnos con dos profesionales: solo en algunas cirugías, Sofi no los da.
+- **Resumen diario** (`src/lib/daily-summary.ts`): de lunes a viernes entre las 10 y las 14 (hora de la clínica; si no salió, el del día siguiente junta los dos), Sofi le manda por la línea de WhatsApp del consultorio, a cada celular del equipo con acceso total, lo que **dio, movió y canceló** desde el resumen anterior. Por turno: día y hora, profesional, paciente (y si es nuevo), DNI, celular y una **«Nota»** para pegar en Smile Connect: prestación · cobertura (plan y afiliado) · lo que pidió · «Dio Sofi por WhatsApp/llamada». Movidos con «antes: …»; cancelados con el motivo. Sin novedades, lo dice en una línea. Hasta 40 por sección.
+  - **Qué cuenta:** turnos con origen de Sofi (`whatsapp`, `telefono`, `web`, `campana`), lo que Sofi movió o canceló y lo que el equipo hizo por WhatsApp con acceso total. Lo hecho desde el panel o traído de Smile Connect, no. Para eso se guarda por dónde se canceló o movió (`appointments.cancelled_via`) y, al mover, el turno viejo apunta al nuevo (`replaced_by`, la misma columna del PR #191).
+  - **Cuándo:** lo intenta la automatización de cada 10 minutos (`/api/automations/calendario`, n8n) y la tarea diaria de Chapa Labs (`resumen-cron`, 13:05 UTC de lunes a viernes, vía `/api/prospeccion` op `resumen-sofi`). Sale una vez por día (`clinic_daily_summaries`); si no salió a nadie, se reintenta.
+  - **Si contesta**, Sofi sabe qué le mandó (queda como mensaje saliente) y lo atiende como equipo.
+  - **Panel:** Configuración → Consultorio → «Acceso total por WhatsApp»: «Con resumen / Sin resumen» por celular y «Mandar el resumen ahora».
+- **Preguntarle a Sofi:** `ver_agenda` ahora dice quién dio cada turno («dio»). Herramientas nuevas del equipo: `detalle_turno` (quién y cuándo, paciente, DNI, celular, prestación, cobertura, lo que pidió, la charla si quedó guardada, y la nota para copiar) y `turnos_de_sofi` (lo de un período). Necesitan «Crear / actualizar agente».
+- **Pruebas:** `src/test/daily-summary.integration.test.ts` (registro de por dónde se cancela y mueve, quién dio cada turno, detalle, período, el resumen una vez por día hábil desde las 10, sábado no, panel y «Mandar ahora»). 577 en total.
+
+## Smile Connect por API y avisos al consultorio por WhatsApp — 14/11/2026 (mergeado el 16/11, apagado por defecto)
 
 - **Pedido del usuario:** integrar Turnia con la API de Smile Connect de Guerra–Mininni (turnos y pacientes) con muchísimo cuidado, porque es la data operativa y hay que asumir que no tienen backup. Mininni pidió que el motivo del turno llegue a Smile Connect: la API todavía no lo acepta y se lo pidió a Smile Connect. Mientras tanto, avisos por WhatsApp con el motivo, configurables desde el panel. **Todo queda guardado en GitHub sin activar** hasta que la API tenga las notas.
 - **Cómo quedó:**

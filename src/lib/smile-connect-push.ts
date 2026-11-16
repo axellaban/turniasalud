@@ -9,6 +9,8 @@ import {
   scCancelAppointment,
   scCreateAppointment,
   scCreatePatient,
+  smileEmail,
+  smileIdNumber,
   scRescheduleAppointment,
   SmileApiError,
   smileErrorText,
@@ -109,8 +111,9 @@ async function smilePatientId(tx: TransactionSql, client: SmileClient, row: Row,
   const phone = smilePhone(p?.phone);
   const body = {
     ...splitName(p?.full_name),
-    ...(p?.dni && { id_number: p.dni }),
-    ...(p?.email && { email: p.email }),
+    // Lo que Smile Connect no acepta se deja afuera: si no, rechaza el alta y el turno no se escribe.
+    ...(smileIdNumber(p?.dni) && { id_number: smileIdNumber(p?.dni) }),
+    ...(smileEmail(p?.email) && { email: smileEmail(p?.email) }),
     ...(phone ?? {}),
     ...(row.smile_professional_id && { professional_ids: [row.smile_professional_id] }),
   };

@@ -1750,3 +1750,32 @@ end $$;
 drop trigger if exists appointments_smile_mark on appointments;
 create trigger appointments_smile_mark before insert or update on appointments
   for each row execute function turnia_smile_mark();
+
+-- ---------------------------------------------------------------------------
+-- Resumen diario de Sofi para el equipo (16/11/2026). El consultorio carga en su sistema (Smile
+-- Connect en Guerra–Mininni) los turnos que da Sofi, y su sistema no recibe notas ni prestación por
+-- API: a las 10, Sofi le manda por WhatsApp a los celulares del equipo lo que dio, movió y canceló
+-- desde el último resumen, con los datos para copiar. Ver src/lib/daily-summary.ts.
+-- ---------------------------------------------------------------------------
+-- Al reprogramar, el turno viejo apunta al nuevo (para decir «antes → ahora»). La misma columna que
+-- usa la escritura en Smile Connect por API (PR #191).
+alter table appointments add column if not exists replaced_by uuid references appointments(id) on delete set null;
+create index if not exists appointments_replaced_by_idx on appointments (replaced_by) where replaced_by is not null;
+-- Por dónde se canceló (whatsapp, telefono, web, panel…): el resumen cuenta solo lo que hizo Sofi.
+alter table appointments add column if not exists cancelled_via text;
+-- Quién del equipo lo recibe (todos, salvo que se apague en Configuración).
+alter table clinic_staff_phones add column if not exists daily_summary boolean not null default true;
+create table if not exists clinic_daily_summaries (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  -- Día (hora de la clínica) del resumen automático; null si se mandó a mano desde el panel.
+  day date,
+  window_from timestamptz not null,
+  window_to timestamptz not null,
+  sent_at timestamptz not null default now(),
+  recipients integer not null default 0,
+  counts jsonb not null default '{}'::jsonb
+);
+create unique index if not exists clinic_daily_summaries_day_idx on clinic_daily_summaries (clinic_id, day) where day is not null;
+create index if not exists clinic_daily_summaries_clinic_idx on clinic_daily_summaries (clinic_id, sent_at desc);
+alter table clinic_daily_summaries enable row level security;
