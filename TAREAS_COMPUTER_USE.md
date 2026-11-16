@@ -8,13 +8,13 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 **Prompt para empezar** (copiar tal cual en la otra computadora):
 
-> Leé `TAREAS_COMPUTER_USE.md` del repositorio `axellaban/turniasalud` (rama `main`), primero «Reglas para todas las tareas». Hacé la **tarea 7, etapa A**, paso por paso. No pases a la etapa B sin que yo te diga «sí». Las claves las pego yo; vos no las leas ni las escribas. Al terminar, contestá lo que pide «Verificación».
+> Leé `TAREAS_COMPUTER_USE.md` del repositorio `axellaban/turniasalud` (rama `main`). Revisá la **tarea 7, etapa B**, que ya está activada. Compará los cambios de prueba con la agenda de Smile Connect y el resumen de Sofi. Antes de la etapa C, coordiná la prueba de creación con el consultorio.
 
-Para las etapas siguientes, el mismo prompt cambiando la etapa (B, C, D), con días de por medio.
+Para las etapas C y D, seguí las verificaciones de esta tarea.
 
 | Prioridad | Tarea | Estado (16/11) | Acción restante |
 | --- | --- | --- | --- |
-| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Código en producción, apagado. El consultorio ya creó la clave, sin vencimiento. Agentes actualizados y celular de Mininni cargado. | Etapa A hoy; etapas B, C y D con días de por medio. |
+| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Clave cargada, lectura verificada y «Escritura de prueba» activa. Resumen manual enviado a los dos celulares configurados. | Revisar los cambios de prueba y conciliar las reservas previas que Sofi dio por WhatsApp. Después, C y D con el consultorio. |
 | **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
 | **P3** | 1. Dominio nuevo: webhooks de WAHA (opcional) | Funciona: los dos webhooks apuntan al dominio anterior y llegan por su redirección 308, que se mantiene. | Solo si algún día se saca la redirección. |
 | — | 2. Certificado de `www.turniasalud.app` | Resuelta. | — |
@@ -32,7 +32,9 @@ Para las etapas siguientes, el mismo prompt cambiando la etapa (B, C, D), con d�
 
 ## Tarea 7 (P0) · Smile Connect por API y resumen diario (Guerra–Mininni)
 
-**Contexto.** Desde el 16/11 Turnia puede leer y escribir la agenda de Smile Connect de Guerra–Mininni por su API. Queda **apagada** hasta que se cargue la clave. La API no acepta notas ni prestación. Eso lo cubre el **resumen diario de Sofi**: de lunes a viernes a las 10, le llega por WhatsApp al Dr. Mininni. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+**Contexto.** La API de Smile Connect de Guerra–Mininni está conectada en **«Escritura de prueba»** desde el 16/11. La API todavía omite las notas y la prestación. Esos datos van en el resumen de Sofi, programado de lunes a viernes a las 10. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+
+**Verificación del 16/11.** Tres profesionales vinculados. El Dr. Guerra, ausente de la lista de Smile Connect, se desactivó para nuevas reservas en Turnia. El userscript de Tampermonkey de Guerra–Mininni quedó desactivado por pedido de Axel. La sincronización manual leyó 146 turnos. El 17 y 18 de noviembre coincidieron los 39 turnos vigentes de Smile Connect por profesional y horario. Otras seis reservas de Turnia se originaron por WhatsApp y quedan para revisión. Sofi descartó un horario ocupado y las tres alternativas ofrecidas estaban libres en Smile Connect. Turnia confirmó el envío manual del resumen a dos celulares después de publicar el [PR #200](https://github.com/axellaban/turniasalud/pull/200).
 
 La escritura cambia la agenda real del consultorio, y hay que asumir que no tiene backup. Por eso se avanza por etapas, con días de por medio. **No pases a la etapa siguiente sin el «sí» del usuario.**
 
@@ -79,7 +81,7 @@ Solo con el «sí» del usuario. Cambiá el modo y avisale que, desde ahí, tamb
 - editar o borrar turnos o pacientes en Smile Connect, salvo la cancelación del turno ficticio de la etapa C;
 - crear turnos de prueba con datos de pacientes reales;
 - mandar WhatsApp a pacientes;
-- tocar el userscript de Tampermonkey de recepción. Ese lo desinstala el consultorio cuando el usuario lo diga, recién después de la etapa A.
+- volver a activar el userscript de Guerra–Mininni mientras esté funcionando la conexión por API.
 
 **Verificación (contestá en cada etapa):**
 - en qué modo quedó;

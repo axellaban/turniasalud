@@ -1,9 +1,9 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-## Smile Connect por API y avisos por WhatsApp (14/11/2026, en PR borrador, sin activar)
+## Smile Connect por API y avisos por WhatsApp (16/11/2026)
 
-- **Hecho y probado, sin mergear a pedido del usuario.** Guerra–Mininni quiere conectarse recién cuando la API de Smile Connect acepte el motivo del turno (lo pidió Mininni a Smile Connect). Todo en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md), con los pasos para activarlo.
-- **Cuando Smile Connect sume las notas:** mergear el PR, cargar la clave (sin vencimiento) y seguir los pasos de activación: solo lectura, después escritura de prueba y recién después escritura real (`SMILE_CONNECT_WRITES=on`), con el consultorio mirando.
+- **Lectura verificada y «Escritura de prueba» en producción.** El consultorio cargó la clave y el userscript de Tampermonkey quedó desactivado. Los 39 turnos vigentes de Smile Connect para el 17 y 18 estaban en Turnia. Seis turnos adicionales de Sofi por WhatsApp quedan para conciliar antes de activar la escritura real.
+- **Siguiente paso.** Revisar el registro de operaciones de prueba con el consultorio y probar primero la creación de un turno. Ver [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) y la tarea 7 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **Avisos por WhatsApp al consultorio:** van en el mismo PR. Falta saber a qué celulares mandarlos (se cargan en Configuración).
 
 ## Dominio y canales (14/11/2026)
@@ -16,11 +16,11 @@
 
 ## Resumen diario de Sofi para Guerra–Mininni (16/11/2026)
 
-Pedido del Dr. Mininni: con la API de Smile Connect (PR #191, borrador), el turno que escribe Turnia llega sin notas ni prestación, y Smile Connect no promete sumarlas pronto. En vez de un aviso por turno, prefiere **un resumen de Sofi a las 10** y **preguntarle a Sofi** cuando ve un turno sin datos. Hecho; falta:
+El Dr. Mininni pidió **un resumen de Sofi a las 10** y poder **preguntarle a Sofi** por los datos del turno. Así recibe el motivo y la prestación que la API de Smile Connect todavía omite.
 
-- [x] El celular del Dr. Mininni está cargado en «Acceso total por WhatsApp» y anda (confirmado por el usuario el 16/11). El primer resumen automático sale el martes 17/11 a las 10.
+- [x] El celular del Dr. Mininni está cargado en «Acceso total por WhatsApp». El envío de prueba salió a los dos celulares configurados el 16/11, con el [PR #200](https://github.com/axellaban/turniasalud/pull/200) en producción.
+- [ ] Verificar el primer resumen automático del martes 17/11 a partir de las 10.
 - [x] Agentes actualizados por el usuario el 16/11: Sofi ya tiene `detalle_turno` y `turnos_de_sofi`.
-- [ ] **Activar Smile Connect por API** (mergeado el 16/11, apagado; el consultorio ya creó la clave sin vencimiento): lo hace una IA con computer use, por etapas, con la **tarea 7** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - [ ] Unificar listas: los avisos por turno (`clinic_notice_phones`) y el resumen (`clinic_staff_phones.daily_summary`) son dos listas; conviene ofrecer el resumen como una opción más de «Avisos por WhatsApp» y decir en el resumen si el turno ya quedó escrito en Smile Connect. Las dos usan la misma columna `replaced_by`.
 
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)

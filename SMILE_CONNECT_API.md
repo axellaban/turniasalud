@@ -1,6 +1,6 @@
 # Smile Connect por API y avisos al consultorio
 
-**Estado (16/11/2026): en producción, apagada por defecto.** Se mergeó el 16/11, después de la charla con el Dr. Mininni: Smile Connect no va a sumar las notas pronto, y lo que falta (prestación y motivo) lo cubren el **resumen diario de Sofi a las 10** y «¿este turno lo diste vos?» por WhatsApp (ver `ESTADO_Y_PRIORIDADES.md`, 16/11). El cliente se comparó el 16/11 con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0): rutas, parámetros, cuerpos (`additionalProperties: false`), paginación, límites y formato de error coinciden; las notas siguen sin existir. Desde ese día el alta de paciente deja afuera un mail o un documento que la API rechazaría. No contiene claves, IDs ni datos de pacientes.
+**Estado (16/11/2026). Guerra–Mininni está en «Escritura de prueba».** Se cargó la clave, se verificó la lectura y se desactivó el userscript de Tampermonkey. Faltan revisar las operaciones de prueba y coordinar la habilitación de la escritura real con el consultorio. El resumen de Sofi a las 10 y «¿este turno lo diste vos?» por WhatsApp cubren la prestación y el motivo, que la API aún omite. El primer envío manual del resumen salió a los dos celulares configurados. El cliente se comparó el 16/11 con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0). Coinciden las rutas, parámetros, cuerpos, paginación, límites y formato de error. El alta de paciente deja afuera un mail o un documento que la API rechazaría.
 
 ## Qué ofrece la API de Smile Connect
 
