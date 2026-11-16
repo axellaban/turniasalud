@@ -4,13 +4,21 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-| Prioridad | Tarea | Estado (14/11; la 7, 16/11) | Acción restante |
+**Estado al 16/11/2026:** todo el código está en producción. Lo único que falta para terminar el trabajo funcional es la **tarea 7**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
+
+**Prompt para empezar** (copiar tal cual en la otra computadora):
+
+> Leé `TAREAS_COMPUTER_USE.md` del repositorio `axellaban/turniasalud` (rama `main`), primero «Reglas para todas las tareas». Hacé la **tarea 7, etapa A**, paso por paso. No pases a la etapa B sin que yo te diga «sí». Las claves las pego yo; vos no las leas ni las escribas. Al terminar, contestá lo que pide «Verificación».
+
+Para las etapas siguientes, el mismo prompt cambiando la etapa (B, C, D), con días de por medio.
+
+| Prioridad | Tarea | Estado (16/11) | Acción restante |
 | --- | --- | --- | --- |
-| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Código en producción desde el 16/11, apagado. El consultorio ya creó la clave, sin vencimiento. | Etapa A hoy; etapas B, C y D con días de por medio. |
-| **P0** | 1. Dominio nuevo | Agenda, guardado, recuperación histórica y callback de Google verificados. | Migrar las dos URLs de WAHA y validar una recepción. Completar el permiso de Calendar con la cuenta que se va a conectar. |
-| **P1** | 2. Certificado de `www.turniasalud.app` | Resuelta. Certificado válido y redirección 308 comprobada. | — |
-| **P2** | 6. PostHog: datos limpios y errores visibles | Dominio autorizado, captura de excepciones activa y filtro de Loreado instalado y probado. | El siguiente QA comprueba la llegada de excepciones. |
-| **P3** | 5. Accesos para el QA automático | Pendiente. | Confirmar el entorno que usa el QA y cargar los valores ahí. |
+| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Código en producción, apagado. El consultorio ya creó la clave, sin vencimiento. Agentes actualizados y celular de Mininni cargado. | Etapa A hoy; etapas B, C y D con días de por medio. |
+| **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
+| **P3** | 1. Dominio nuevo: webhooks de WAHA (opcional) | Funciona: los dos webhooks apuntan al dominio anterior y llegan por su redirección 308, que se mantiene. | Solo si algún día se saca la redirección. |
+| — | 2. Certificado de `www.turniasalud.app` | Resuelta. | — |
+| — | 6. PostHog: datos limpios y errores visibles | Configurada el 14/11. | Ninguna: el QA comprueba que lleguen las excepciones. |
 
 ## Reglas para todas las tareas
 
@@ -85,7 +93,7 @@ Solo con el «sí» del usuario. Cambiá el modo y avisale que, desde ahí, tamb
 
 ---
 
-## Tarea 1 (P0) · Dominio nuevo
+## Tarea 1 (P3, opcional) · Dominio nuevo
 
 El 14/11 se actualizó `APP_URL` de producción, se registraron de nuevo las herramientas del agente compartido y se añadió el callback nuevo de Google. Se creó el webhook post-call de ElevenLabs para `https://turniasalud.app/api/elevenlabs/post-call` y se publicó su secreto de firma en Vercel. Una prueba confirmó que Sofi ofrece horarios y otra confirmó que Turnia recibe el resumen y la transcripción cuando termina la charla. El dominio anterior conserva el 308. Telegram se retiró en el PR #188 y se eliminó su variable de producción. Google aceptó el callback nuevo, mostró el consentimiento de Calendar y devolvió al panel al cancelar la prueba.
 
@@ -94,11 +102,18 @@ La revisión de WAHA detectó estas dos URLs configuradas:
 - Línea general: `https://turniasalud.vercel.app/api/waha/webhook`.
 - Guerra–Mininni: `https://turniasalud.vercel.app/api/waha/webhook/guerra-mininni`.
 
-La revisión de estas instancias es de solo lectura. Cualquier migración de WAHA tiene su propia prueba de recepción.
+**Hoy funciona:** WAHA llama a esas direcciones, el dominio anterior redirige (308) a `turniasalud.app` y el mensaje llega igual. El usuario decidió mantener esa redirección, así que **no hace falta cambiar nada**. Solo hay que hacerlo si algún día se saca la redirección; si no, Sofi deja de recibir los mensajes de WhatsApp.
+
+**Si se hace** (con el «sí» del usuario, de a una línea, primero la general y nunca mientras se activa la tarea 7):
+
+1. En el dashboard de esa instancia de WAHA, en la sesión de la línea, cambiá solo el dominio del webhook: `turniasalud.vercel.app` pasa a `turniasalud.app`. El resto de la URL, los eventos y la clave HMAC quedan igual. Captura antes y después.
+2. Si WAHA pide reiniciar la sesión, preguntale al usuario antes. **No cierres la sesión (logout) ni la desvincules.** Si después pide el QR, frená.
+3. **Prueba de recepción:** el usuario le escribe a esa línea desde su celular. Sofi tiene que contestar en menos de un minuto.
+4. Si no contesta, volvé a poner la URL anterior y avisá.
 
 ---
 
-## Tarea 2 (P1) · Certificado de `www.turniasalud.app`
+## Tarea 2 (resuelta) · Certificado de `www.turniasalud.app`
 
 **Resuelta el 14/11.** Vercel sirve un certificado que cubre `www.turniasalud.app` y devuelve 308 hacia `https://turniasalud.app/`, que responde 200. El procedimiento queda como referencia.
 
@@ -114,7 +129,7 @@ La revisión de estas instancias es de solo lectura. Cualquier migración de WAH
 
 ---
 
-## Tarea 6 (P2) · PostHog: datos limpios y errores visibles
+## Tarea 6 (hecha) · PostHog: datos limpios y errores visibles
 
 **Configurada el 14/11 en PostHog, proyecto 518346.** La transformación `Drop Events` descarta solo eventos con `$host = loreado.vercel.app`; una ejecución de prueba descartó un evento de ese sitio. Filtros de usuarios internos conserva `is_internal ≠ true` y suma `$host ≠ loreado.vercel.app`. «Enable exception autocapture» quedó activo, «Capture console logs» ya estaba activo y se autorizó `https://turniasalud.app`. El procedimiento queda como referencia.
 
@@ -136,7 +151,7 @@ La revisión de estas instancias es de solo lectura. Cualquier migración de WAH
 
 ---
 
-## Tarea 5 (P3) · Accesos para el QA automático
+## Tarea 5 (P1) · Accesos para el QA automático
 
 **Contexto.** El QA de Turnia corre en una sesión de Claude Code en la nube. Hoy no puede entrar al panel, porque falta la contraseña en su entorno, ni leer los errores de Vercel, porque falta un token. **Los valores los escribe el usuario. La IA solo navega hasta la pantalla y le avisa.**
 
