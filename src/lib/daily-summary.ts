@@ -20,6 +20,8 @@ import { wahaConnectionForClinic, withClinicWaha } from "./waha-connections";
 
 /** Hora (de la clínica) del resumen automático, de lunes a viernes. */
 export const SUMMARY_HOUR = 10;
+/** Si a las 14 todavía no salió (disparadores caídos), ese día ya no sale: el próximo junta los dos. */
+const SUMMARY_LAST_HOUR = 14;
 /** Turnos por sección en el WhatsApp; el resto, preguntándole a Sofi. */
 const MAX_ITEMS = 40;
 const SOFI = AGENT_SOURCES;
@@ -301,7 +303,7 @@ export async function sendDueSummaries(now = new Date()): Promise<SendResult[]> 
   for (const { id } of clinics) {
     const clinic = await getClinic(id);
     const local = zonedParts(now, clinic.timezone);
-    if (local.weekday === 0 || local.weekday === 6 || local.hour < SUMMARY_HOUR) continue;
+    if (local.weekday === 0 || local.weekday === 6 || local.hour < SUMMARY_HOUR || local.hour >= SUMMARY_LAST_HOUR) continue;
     const day = localDateKey(now, clinic.timezone);
     const from = await windowStart(clinic, now);
     // Se reserva el día antes de mandar: dos disparadores juntos no lo mandan dos veces.

@@ -208,6 +208,8 @@ describe.runIf(url)("resumen diario de Sofi para el equipo", () => {
 
     // El mismo día no se repite; el día hábil siguiente arranca donde terminó este (sin turnos nuevos).
     expect(await sendDueSummaries(new Date(when.getTime() + 2 * 3600_000))).toEqual([]);
+    // Después de las 14 ya no sale (si los disparadores estuvieron caídos, lo junta el del día siguiente).
+    expect(await sendDueSummaries(new Date(when.getTime() + 24 * 3600_000 + 4 * 3600_000))).toEqual([]);
     const next = new Date(when.getTime() + (zonedParts(when, tz).weekday === 5 ? 3 : 1) * 86400_000);
     expect(await sendDueSummaries(next)).toEqual([expect.objectContaining({ enviados: 1, turnos: { nuevos: 0, movidos: 0, cancelados: 0 } })]);
     expect(mocks.sent[1].text).toContain("no di, moví ni cancelé turnos");
