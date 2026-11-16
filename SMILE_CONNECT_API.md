@@ -111,7 +111,9 @@ También avisan cuando algo quedó «para revisar en Smile Connect».
 ## Para activarlo
 
 1. ~~Mergear el PR~~ (hecho el 16/11; el esquema se aplica solo en el build).
-2. Que el consultorio cree en Smile Connect una clave **sin vencimiento**:
+Los pasos 3 a 8 están, listos para una IA con computer use, en la **tarea 7** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
+
+2. ~~Que el consultorio cree en Smile Connect una clave **sin vencimiento**~~ (hecho el 16/11):
    - **para leer:** `clinic:read`, `professionals:read`, `boxes:read`, `availability:read`, `appointments:read` y `patients:read`;
    - **para escribir:** además, `patients:create`, `appointments:create`, `appointments:reschedule` y `appointments:cancel`.
 3. Panel → Calendario → «Smile Connect por API» → pegar la clave. Revisar el nombre de la clínica y los profesionales vinculados.

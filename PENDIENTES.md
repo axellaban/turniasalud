@@ -20,7 +20,7 @@ Pedido del Dr. Mininni: con la API de Smile Connect (PR #191, borrador), el turn
 
 - [ ] Que el celular del Dr. Mininni esté en Configuración → Consultorio → «Acceso total por WhatsApp» (ver más abajo). Ahí mismo, «Mandar el resumen ahora» para probarlo: le llega por la línea del consultorio.
 - [ ] Sistema → «Crear / actualizar agente» y, en Guerra–Mininni, «Crear / actualizar Sofi de esta clínica», para que Sofi tenga `detalle_turno` y `turnos_de_sofi`. Sin eso, `ver_agenda` ya dice quién dio cada turno.
-- [ ] **Activar Smile Connect por API** (mergeado el 16/11, apagado): pasos en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) → «Para activarlo», desde el 2 (clave sin vencimiento creada por el consultorio, «Solo lectura» unos días, después «Escritura de prueba»).
+- [ ] **Activar Smile Connect por API** (mergeado el 16/11, apagado; el consultorio ya creó la clave sin vencimiento): lo hace una IA con computer use, por etapas, con la **tarea 7** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - [ ] Unificar listas: los avisos por turno (`clinic_notice_phones`) y el resumen (`clinic_staff_phones.daily_summary`) son dos listas; conviene ofrecer el resumen como una opción más de «Avisos por WhatsApp» y decir en el resumen si el turno ya quedó escrito en Smile Connect. Las dos usan la misma columna `replaced_by`.
 
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
