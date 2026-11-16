@@ -309,6 +309,12 @@ export async function resyncProfessional(professionalId: string): Promise<void> 
 export function syncCalendarLater(clinicId: string): void {
   try {
     after(() => syncPendingCalendar(clinicId).catch((e) => console.error("Calendario: sincronización", e instanceof Error ? e.message : e)));
+    // Y, si el consultorio escribe en Smile Connect, lo que cambió (no hace nada si no).
+    after(() =>
+      import("../smile-connect-push")
+        .then((m) => m.pushPendingSmile(clinicId))
+        .catch((e) => console.error("Smile Connect: escritura", e instanceof Error ? e.message : e)),
+    );
   } catch {
     // Sin contexto de pedido: lo toma /api/automations/calendario.
   }

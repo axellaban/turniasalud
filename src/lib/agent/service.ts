@@ -10,6 +10,7 @@ import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
+import { smileBusy } from "../smile-connect-link";
 import { appointmentAccessKey, expireAppointmentAccess, GUERRA_MININNI } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
@@ -48,6 +49,21 @@ export class ToolError extends Error {
 }
 
 const ACTIVE = ["confirmado", "pendiente"];
+
+/**
+ * Lo ocupado fuera de Turnia: el Google Calendar de cada profesional y la agenda de Smile Connect.
+ * Si Smile Connect falla, no frena la agenda: quedan los turnos que Turnia ya trajo de ahí.
+ */
+async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; timeZone: string }): Promise<BusyInterval[]> {
+  const [google, smile] = await Promise.all([
+    googleBusy(clinicId, ids, from, to, opts),
+    smileBusy(clinicId, ids, from, to, opts).catch((e) => {
+      console.error("Smile Connect: no se pudo leer lo ocupado", e instanceof Error ? e.message : e);
+      return [] as BusyInterval[];
+    }),
+  ]);
+  return [...google.map((b) => ({ ...b, source: "google" as const })), ...smile];
+}
 
 /**
  * Lo que ocupa a estos profesionales: sus turnos activos, también los que atienden
@@ -379,8 +395,8 @@ export async function checkAvailability(
   const [busy, blocks, calendar, patientAppointments] = await Promise.all([
     busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
-    // Lo ocupado en el Google Calendar de cada profesional (si la clínica lo conectó).
-    googleBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+    // Lo ocupado en el Google Calendar de cada profesional y en Smile Connect (si la clínica los conectó).
+    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
     move ? upcomingOf(move.patient.id) : [],
   ]);
   const preserve = clinic.keep_duration_on_reschedule && !!move;
@@ -588,7 +604,7 @@ export async function freeSlotsOnDay(
   const [busy, blocks, calendar] = await Promise.all([
     busyOf(both, rangeStart, rangeEnd, isUuid(input.ignorar_turno_id) ? input.ignorar_turno_id : undefined),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
-    googleBusy(clinic.id, both, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+    externalBusy(clinic.id, both, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
   ]);
   const asPro = (b: BusyInterval) => ({ ...b, professional_id: pro.id });
   const blocked = expandBlocks(blocks, both).map(asPro);
@@ -696,12 +712,14 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
     }
     // Al reservar se consulta Google en el momento, para ese horario exacto: lo que se
     // anotó recién en el calendario del profesional también cuenta.
-    const calendar = await googleBusy(clinic.id, second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, { fresh: true, timeZone: clinic.timezone });
+    const calendar = await externalBusy(clinic.id, second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, { fresh: true, timeZone: clinic.timezone });
     const overlapping = calendar.filter((b) => new Date(b.starts_at) < endsAt && new Date(b.ends_at) > startsAt);
     // Al paciente no se le cuenta qué tiene el profesional en su calendario; al consultorio, sí.
     if (overlapping.length) {
-      const who = overlapping.some((b) => b.professional_id === pro.id) ? pro : second!;
-      throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`, true, `Ese horario está ocupado en el Google Calendar de ${who.full_name}.`);
+      const hit = overlapping.find((b) => b.professional_id === pro.id) ?? overlapping[0];
+      const who = hit.professional_id === pro.id ? pro : second!;
+      const where = hit.source === "smile" ? `la agenda de Smile Connect de ${who.full_name} (turno, bloqueo o fuera de horario)` : `el Google Calendar de ${who.full_name}`;
+      throw new ToolError(`Ese horario ya está ocupado.${AGAIN}`, true, `Ese horario está ocupado en ${where}.`);
     }
   }
   return { type, pro, second, endsAt };

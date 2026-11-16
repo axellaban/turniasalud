@@ -124,7 +124,7 @@ const normWords = (name: string) =>
     .split(/[^a-zñ]+/)
     .filter((w) => w.length >= 2);
 
-function matchProfessional<T extends { id: string; full_name: string }>(scName: string, candidates: T[]): T | null {
+export function matchProfessional<T extends { id: string; full_name: string }>(scName: string, candidates: T[]): T | null {
   const cleanSc = stripHonorific(scName);
   const direct = candidates.find((c) => namesMatch(cleanSc, stripHonorific(c.full_name)));
   if (direct) return direct;
@@ -826,12 +826,21 @@ async function syncBlocks(
 export async function syncSmileConnect(
   clinicId: string,
   rawInput: unknown,
-  opts: { mode?: "import" | "live"; actor?: string; recordImport?: boolean; now?: Date } = {},
+  opts: {
+    mode?: "import" | "live";
+    actor?: string;
+    recordImport?: boolean;
+    now?: Date;
+    /** La API pública no da los bloqueos: sin esto, la ventana borraría los que trajo el userscript. */
+    skipBlocks?: boolean;
+  } = {},
 ): Promise<{ summary: SmileConnectSyncSummary; parsed: SmileConnectParsed }> {
   const parsed = parseSmileConnectPayload(rawInput, { now: opts.now });
 
   const summary = await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
+    // Lo que viene de Smile Connect no se vuelve a escribir en Smile Connect (ver turnia_smile_mark).
+    await tx`select set_config('turnia.smile_quiet', 'on', true)`;
 
     const [defaultSpecRow] = await tx<Array<{ specialty: string }>>`
       select specialty from (
@@ -845,6 +854,16 @@ export async function syncSmileConnect(
     const defaultSpecialty = defaultSpecRow?.specialty || "Odontología general";
 
     const pros = await resolveProfessionals(tx, clinicId, parsed.professionals, defaultSpecialty);
+    // Qué profesional y consultorio de Smile Connect es cada profesional de Turnia (para escribir allá).
+    for (const p of parsed.professionals) {
+      const turnia = pros.map.get(p.externalId);
+      const scId = Number(p.externalId);
+      if (!turnia || !Number.isInteger(scId) || scId <= 0) continue;
+      const box = p.boxId != null && /^\d+$/.test(p.boxId) ? Number(p.boxId) : null;
+      await tx`
+        update professionals set smile_professional_id = ${scId}, smile_box_id = coalesce(${box}, smile_box_id)
+        where id = ${turnia.id} and clinic_id = ${clinicId}`;
+    }
     const pickType = await resolveAppointmentTypePicker(tx, clinicId);
     const patients = await syncPatients(tx, clinicId, parsed.patients, {
       recordImport: opts.recordImport ?? (opts.mode === "import" && parsed.patients.length > 0),
@@ -860,7 +879,9 @@ export async function syncSmileConnect(
       parsed.windowFrom,
       parsed.windowTo,
     );
-    const blocks = await syncBlocks(tx, clinicId, parsed.blocks, pros.map, parsed.windowFrom, parsed.windowTo);
+    const blocks = opts.skipBlocks
+      ? { created: 0, updated: 0, deleted: 0 }
+      : await syncBlocks(tx, clinicId, parsed.blocks, pros.map, parsed.windowFrom, parsed.windowTo);
 
     const result: SmileConnectSyncSummary = {
       patientsCreated: patients.created,

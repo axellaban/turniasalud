@@ -16,6 +16,7 @@ import { ConfigHeader } from "./header";
 import { Section, wide } from "./section";
 import { AccessCreator } from "./access-manager";
 import { ClinicAgentSetup, StaffAgentSetup } from "./clinic-agent";
+import { NoticeCard, loadNoticeCard } from "./notice-card";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Consultorio · Panel" };
@@ -55,11 +56,12 @@ export default async function SettingsPage() {
   const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
   const admin = user.role === "admin";
   const agent = clinic.agent_name || "Sofi";
-  const [accesses, changes, main, staff] = await Promise.all([
+  const [accesses, changes, main, staff, notices] = await Promise.all([
     admin ? listClinicAccess(clinic.id) : [],
     recentClinicChanges(clinic.id),
     admin ? getClinic() : null,
     admin ? listStaffPhones(clinic.id) : [],
+    loadNoticeCard(clinic),
   ]);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
   const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
@@ -117,6 +119,8 @@ export default async function SettingsPage() {
         </div>
 
         <div className="space-y-6">
+          <NoticeCard clinic={clinic} data={notices} />
+
           {admin && <Card id="whatsapp-equipo" className="scroll-mt-20">
             <h2 className="font-semibold text-brand-950">Acceso total por WhatsApp</h2>
             <p className="mt-1 text-sm text-brand-900/60">

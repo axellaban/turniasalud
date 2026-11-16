@@ -12,7 +12,13 @@ export type ScheduleBlock = {
   urgent_only?: boolean;
 };
 
-export type BusyInterval = { professional_id: string; starts_at: string; ends_at: string };
+export type BusyInterval = {
+  professional_id: string;
+  starts_at: string;
+  ends_at: string;
+  /** De dónde sale lo ocupado, si no es un turno de Turnia (para explicarle al consultorio). */
+  source?: "google" | "smile";
+};
 
 export type Slot = {
   professional_id: string;
