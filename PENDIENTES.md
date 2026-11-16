@@ -8,6 +8,14 @@
 - **Recuperación histórica.** `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` trae las conversaciones de ElevenLabs sin duplicarlas ni disparar tareas y avisos. Chapa Labs lo ejecuta todos los días a las 8:20 para los últimos tres días. La ejecución del 14/11 desde el 05/11 recuperó el registro que faltaba y terminó sin errores.
 - El trabajo de configuración restante está en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 
+## Resumen diario de Sofi para Guerra–Mininni (16/11/2026)
+
+Pedido del Dr. Mininni: con la API de Smile Connect (PR #191, borrador), el turno que escribe Turnia llega sin notas ni prestación, y Smile Connect no promete sumarlas pronto. En vez de un aviso por turno, prefiere **un resumen de Sofi a las 10** y **preguntarle a Sofi** cuando ve un turno sin datos. Hecho; falta:
+
+- [ ] Que el celular del Dr. Mininni esté en Configuración → Consultorio → «Acceso total por WhatsApp» (ver más abajo). Ahí mismo, «Mandar el resumen ahora» para probarlo: le llega por la línea del consultorio.
+- [ ] Sistema → «Crear / actualizar agente» y, en Guerra–Mininni, «Crear / actualizar Sofi de esta clínica», para que Sofi tenga `detalle_turno` y `turnos_de_sofi`. Sin eso, `ver_agenda` ya dice quién dio cada turno.
+- [ ] Al mergear el PR #191: los avisos por turno (`clinic_notice_phones`) y el resumen (`clinic_staff_phones.daily_summary`) son dos listas; conviene ofrecer el resumen como una opción más de «Avisos por WhatsApp» y decir en el resumen si el turno ya quedó escrito en Smile Connect. Las dos usan la misma columna `replaced_by`.
+
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
 
 `GET /api/prospeccion?vista=followup` suma, en `results`, lo mismo que habita.: `execution` (la cola día por día y por tipo de acción: pendientes, ejecutadas por persona o bot, exitosas, bloqueadas, sin tomar, no salieron y reprogramadas), `weeklyByType` y `actionLabels`. Lógica en `src/lib/sales/followup-results.ts`; tabla `sales_followup_queue_days` y columna `sales_followup_executions.executed_by` en `supabase/schema.sql` (se aplican solas en el próximo build de producción).

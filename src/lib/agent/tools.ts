@@ -281,6 +281,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     schema: z.object({ desde: z.string().optional(), hasta: z.string().optional(), profesional_id: z.string().optional() }),
   },
   {
+    name: "detalle_turno",
+    description: `${STAFF} Todo lo de un turno: quién lo dio y cuándo (vos por WhatsApp o llamada, el consultorio o Smile Connect), el paciente con DNI y celular, la prestación, la cobertura, lo que pidió y una nota lista para copiar en la agenda del consultorio. Para «¿este turno lo diste vos?».`,
+    params: { turno_id: { type: "string", description: "turno_id de ver_agenda o de turnos_de_sofi.", required: true } },
+    schema: z.object({ turno_id: z.string().min(1) }),
+  },
+  {
+    name: "turnos_de_sofi",
+    description: `${STAFF} Los turnos que diste, moviste y cancelaste desde un día (como el resumen diario de las 10), con una nota para copiar cada uno en la agenda del consultorio.`,
+    params: { desde: { type: "string", description: `Desde qué día. ${isoDate} Por defecto, ayer.` } },
+    schema: z.object({ desde: z.string().optional() }),
+  },
+  {
     name: "buscar_pacientes",
     description: `${STAFF} Busca pacientes por nombre, DNI o celular y devuelve su paciente_id, cobertura y próximos turnos.`,
     params: { texto: { type: "string", description: "Nombre, apellido, DNI o celular.", required: true } },

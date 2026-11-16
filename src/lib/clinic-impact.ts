@@ -10,7 +10,7 @@ import { expandBlocks, isOpenAt } from "./slots";
 export const ACTIVITY_GUARANTEE = 50;
 
 /** Por dónde da turnos Sofi (los del panel, Smile Connect y las importaciones no cuentan). */
-const AGENT_SOURCES = ["whatsapp", "telegram", "telefono", "web", "campana"];
+export const AGENT_SOURCES = ["whatsapp", "telegram", "telefono", "web", "campana"];
 
 export type Guarantee = {
   /** Cuándo se marcó «Cliente» en Prospección (se cobró el setup). */
