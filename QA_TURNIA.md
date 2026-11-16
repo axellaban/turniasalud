@@ -62,6 +62,25 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ## Resultados
 
+### QA 2026-11-16 pm
+
+- **Inicio y fin:** 19:14 a 19:40, hora de Argentina (a pedido, después de mergear Smile Connect por API, el resumen diario de Sofi y Next 16.4.6).
+- **Commit y despliegue:** `101a0f9` (#195). Vercel en verde según GitHub; `/api/health` responde `ok` en base, ElevenLabs y herramientas.
+- **Estado:** `parcial`. Faltó:
+  - PostHog (no hay `POSTHOG_PERSONAL_API_KEY` en el entorno);
+  - el panel en producción (sin `PANEL_PASSWORD`): se revisó en local, con la misma versión y datos ficticios;
+  - los errores de Vercel (sin acceso).
+- **Tipo de corrida y pantallas:** liviana (tarde). Demo personal en escritorio e iPhone 13, con red lenta y con el navegador de WhatsApp (Galaxy S8); home en escritorio e iPhone 13; `/pricing`, `/probar-demo`, `/privacidad` y `/p/<inexistente>` en escritorio.
+- **Flujos revisados:**
+  - La demo personal: la esfera se ve sin scrollear, «Prefiero escribirle» abre el chat con el campo, Enviar y las sugerencias, y el link con signos al final redirige a la demo. La vista previa (`og:*`) responde con imagen 200 `image/jpeg`.
+  - El dominio de las herramientas: un POST sin clave da 401 (no 308). El dominio anterior conserva su 308.
+  - Panel (local): Configuración → «Acceso total por WhatsApp» (resumen diario, «Con/Sin resumen», «Mandar el resumen ahora» con su aviso cuando el consultorio no tiene línea propia) y Calendario → «Smile Connect por API», en escritorio y celular, sin errores ni scroll horizontal.
+  - Smile Connect: el cliente se comparó con el OpenAPI vigente de la API. El formato de error real (sin clave) coincide con el que espera Turnia.
+- **Bugs corregidos (PR):** ninguno en el recorrido. En la unión del #191 se blindó el alta de pacientes en Smile Connect (mail o documento que la API rechazaría), en #195.
+- **Observaciones y propuestas nuevas:** ninguna. Sin conversación con Sofi (corrida liviana).
+- **PostHog revisado hasta:** sin revisar en esta corrida (queda 2026-11-13T18:17Z).
+- **Esperado, no es bug:** en escritorio, la home, `/pricing` y `/probar-demo` no llegan a «red quieta» por el video de fondo; con la carga completa abren en 3 a 4 s. El 404 de `/p/<inexistente>`.
+
 ### Verificación 2026-11-14 am (tareas de computer use)
 
 - **Tarea 1 (dominio), en lo principal resuelta:**
