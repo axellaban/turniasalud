@@ -233,4 +233,40 @@ describe.runIf(url)("resumen diario de Sofi para el equipo", () => {
     await sql`update clinic_staff_phones set daily_summary = false where clinic_id = ${clinicId}`;
     expect(await actions.sendSummaryNowAction({}, form({ clinic_id: clinicId }))).toMatchObject({ ok: false, message: expect.stringContaining("Nadie del equipo") });
   });
+
+  it("una demo conservada solo recibe el resumen por su línea propia activa", async () => {
+    const { sendDueSummaries, sendSummaryNow } = await import("@/lib/daily-summary");
+    const [{ id }] = await sql<{ id: string }[]>`
+      insert into clinics (name, specialty, is_demo, timezone, whatsapp_provider)
+      values ('Consultorio conservado', 'Odontología', true, ${tz}, 'waha') returning id`;
+    await sql`insert into clinic_staff_phones (clinic_id, phone, name, daily_summary) values (${id}, ${doctor}, 'Dr. Prueba', true)`;
+    const line = {
+      id: "consultorio-conservado", clinicId: id, phone: "5491100008900",
+      url: "https://waha.turnia.test/", apiKey: "test-key-example", webhookHmac: "test-hmac-example",
+      enabled: true, revision: 1,
+    };
+    const when = nextWeekdayAt(10, 30);
+    mocks.sent.length = 0;
+    try {
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([line]));
+      expect(await sendSummaryNow(id, when)).toMatchObject({ enviados: 0 });
+      expect(await sendDueSummaries(when)).toEqual([]);
+
+      await sql`update clinics set retained_at = now() where id = ${id}`;
+      vi.stubEnv("WAHA_CONNECTIONS", "");
+      expect(await sendSummaryNow(id, when)).toMatchObject({ enviados: 0 });
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([{ ...line, enabled: false }]));
+      expect(await sendSummaryNow(id, when)).toMatchObject({ enviados: 0 });
+      expect(await sendDueSummaries(when)).toEqual([]);
+      expect(mocks.sent).toHaveLength(0);
+
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([line]));
+      expect(await sendSummaryNow(id, when)).toMatchObject({ enviados: 1 });
+      expect(await sendDueSummaries(when)).toEqual([expect.objectContaining({ clinic: "Consultorio conservado", enviados: 1 })]);
+      expect(await sendDueSummaries(when)).toEqual([]);
+      expect(mocks.sent.map(({ chatId }) => chatId)).toEqual([`${doctor}@c.us`, `${doctor}@c.us`]);
+    } finally {
+      vi.stubEnv("WAHA_CONNECTIONS", "");
+    }
+  });
 });

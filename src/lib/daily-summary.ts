@@ -248,12 +248,17 @@ async function windowStart(clinic: Clinic, now: Date): Promise<Date> {
 
 export type SendResult = { clinic: string; enviados: number; turnos: { nuevos: number; movidos: number; cancelados: number }; problema?: string };
 
+/** Un consultorio con una demo conservada puede operar con su propia línea de WhatsApp. */
+function canSendSummary(clinic: Clinic): boolean {
+  return !clinic.is_demo || Boolean(clinic.retained_at && wahaConnectionForClinic(clinic.id)?.enabled);
+}
+
 /** Le manda el resumen a los celulares del equipo que lo reciben, por la línea de WhatsApp del consultorio. */
 async function deliver(clinic: Clinic, summary: DailySummary): Promise<{ sent: number; problem?: string }> {
   const staff = await sql<Array<{ phone: string; name: string }>>`
     select phone, name from clinic_staff_phones where clinic_id = ${clinic.id} and daily_summary order by created_at`;
   if (!staff.length) return { sent: 0, problem: "Nadie del equipo recibe el resumen (Configuración → Consultorio → Acceso total por WhatsApp)." };
-  if (clinic.is_demo) return { sent: 0, problem: "Es una demo: no se manda." };
+  if (!canSendSummary(clinic)) return { sent: 0, problem: "El resumen requiere una clínica principal o una demo conservada con su línea propia de WhatsApp activa." };
   if (!wahaConnectionForClinic(clinic.id) && clinic.whatsapp_provider !== "waha") {
     return { sent: 0, problem: "El resumen sale por WAHA (la línea propia del consultorio), y este consultorio no la tiene." };
   }
@@ -298,10 +303,11 @@ const countsOf = (s: DailySummary) => ({ nuevos: s.nuevos.length, movidos: s.mov
 export async function sendDueSummaries(now = new Date()): Promise<SendResult[]> {
   const clinics = await sql<Array<{ id: string }>>`
     select distinct c.id from clinics c join clinic_staff_phones s on s.clinic_id = c.id and s.daily_summary
-    where not c.is_demo`;
+    where not c.is_demo or c.retained_at is not null`;
   const results: SendResult[] = [];
   for (const { id } of clinics) {
     const clinic = await getClinic(id);
+    if (!canSendSummary(clinic)) continue;
     const local = zonedParts(now, clinic.timezone);
     if (local.weekday === 0 || local.weekday === 6 || local.hour < SUMMARY_HOUR || local.hour >= SUMMARY_LAST_HOUR) continue;
     const day = localDateKey(now, clinic.timezone);
