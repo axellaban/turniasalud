@@ -4,8 +4,9 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-| Prioridad | Tarea | Estado del 14/11 | Acción restante |
+| Prioridad | Tarea | Estado (14/11; la 7, 16/11) | Acción restante |
 | --- | --- | --- | --- |
+| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Código en producción desde el 16/11, apagado. El consultorio ya creó la clave, sin vencimiento. | Etapa A hoy; etapas B, C y D con días de por medio. |
 | **P0** | 1. Dominio nuevo | Agenda, guardado, recuperación histórica y callback de Google verificados. | Migrar las dos URLs de WAHA y validar una recepción. Completar el permiso de Calendar con la cuenta que se va a conectar. |
 | **P1** | 2. Certificado de `www.turniasalud.app` | Resuelta. Certificado válido y redirección 308 comprobada. | — |
 | **P2** | 6. PostHog: datos limpios y errores visibles | Dominio autorizado, captura de excepciones activa y filtro de Loreado instalado y probado. | El siguiente QA comprueba la llegada de excepciones. |
@@ -18,6 +19,69 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 - Cambiá solo lo que dice la tarea. No borres proyectos, dominios, variables ni webhooks. No cambies secretos. No mandes mensajes de WhatsApp. No cierres sesiones de WAHA.
 - Si algo no coincide con lo que describe la tarea (otro nombre, otro menú, un valor distinto), frená y preguntá.
 - Al terminar cada tarea, contestá: qué quedó hecho en cada paso, qué no se pudo y por qué, y el resultado de la verificación.
+
+---
+
+## Tarea 7 (P0) · Smile Connect por API y resumen diario (Guerra–Mininni)
+
+**Contexto.** Desde el 16/11 Turnia puede leer y escribir la agenda de Smile Connect de Guerra–Mininni por su API. Queda **apagada** hasta que se cargue la clave. La API no acepta notas ni prestación. Eso lo cubre el **resumen diario de Sofi**: de lunes a viernes a las 10, le llega por WhatsApp al Dr. Mininni. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+
+La escritura cambia la agenda real del consultorio, y hay que asumir que no tiene backup. Por eso se avanza por etapas, con días de por medio. **No pases a la etapa siguiente sin el «sí» del usuario.**
+
+**Dónde:** panel de Turnia (`https://turniasalud.app/panel`) con la clínica **Guerra–Mininni** elegida arriba. Smile Connect (`https://app.smileconnect.pro`), si el usuario tiene la sesión iniciada, solo para mirar. Vercel, proyecto `turniasalud`, solo en la etapa C.
+
+### Etapa A · Hoy: conectar en «Solo lectura» y comprobar el resumen
+
+1. **Agente.** En Guerra–Mininni → Configuración → Consultorio → tarjeta «Acceso total por WhatsApp» → «Actualizar a Sofi». Después, en la tarjeta «Sofi de este consultorio · llamadas» → «Preparar o actualizar el agente». Y en Sistema → «Crear / actualizar agente». Si el usuario ya lo hizo el 16/11, alcanza con confirmarlo. Así Sofi tiene `detalle_turno` y `turnos_de_sofi`.
+2. **Resumen diario.** Configuración → Consultorio → «Acceso total por WhatsApp». El celular del Dr. Mininni tiene que decir «Recibe el resumen de las 10». Si el usuario está de acuerdo, tocá «Mandar el resumen ahora» y confirmá con él que le llegó a Mininni. Sale por la línea del consultorio.
+3. **Clave.** Configuración → Calendario → «Smile Connect por API» → campo «Clave de la API». **La pega el usuario, vos no la ves ni la copiás.** Guardar. Turnia la prueba antes de guardarla.
+   - Tiene que mostrar el nombre de la clínica de Smile Connect y la lista «Profesionales» vinculados con los de Turnia.
+   - Si un profesional queda sin vincular, o vinculado con otro, frená y avisá.
+   - Si dice que a la clave le falta un permiso, avisale al usuario cuál. Los permisos que hacen falta están en `SMILE_CONNECT_API.md` → «Para activarlo».
+4. **Modo.** Elegí **«Solo lectura»** → «Guardar el modo». Nada más.
+5. **Primera sincronización.** Corre sola en los 10 minutos siguientes, o tocá «Sincronizar ahora» en la tarjeta. Después revisá:
+   - que la tarjeta no muestre «Último problema»;
+   - que en el panel, Agenda de Turnia, mañana y pasado tengan los mismos turnos que Smile Connect, mirando los dos lado a lado. Anotá solo cuántos coinciden y cuántos no, sin nombres.
+6. **Sofi no ofrece lo ocupado.** En «Probar a Sofi» (Guerra–Mininni), pedí por chat «un turno para un control mañana a la tarde», con datos ficticios. **No reserves.** Los horarios que ofrece tienen que estar libres en Smile Connect.
+
+### Etapa B · Desde el día siguiente, 2 o 3 días: «Escritura de prueba»
+
+Solo con el «sí» del usuario.
+
+1. Calendario → «Smile Connect por API» → modo **«Escritura de prueba»** → «Guardar el modo». Turnia anota qué escribiría, pero no escribe nada.
+2. Cada día, revisá el registro de cambios de la tarjeta. Los que dicen «Prueba (no se escribió)» tienen que corresponder a turnos que Sofi dio, movió o canceló, con el paciente, la hora y el profesional correctos. Los que dicen «Revisar» se le cuentan al usuario.
+3. Compará con el resumen de las 10 de ese día: lo que dice el resumen y lo que figura en el registro tienen que coincidir.
+
+### Etapa C · Con el consultorio mirando: «Crear turnos»
+
+Solo con el «sí» del usuario y del consultorio.
+
+1. **Vercel** → `turniasalud` → Settings → Environment Variables → Production. Agregá `SMILE_CONNECT_WRITES` con el valor `on`. No es secreto. Después, redeploy de producción. Sin esta variable, Turnia no escribe aunque el modo lo diga.
+2. En el panel, modo **«Crear turnos»**. Marcá la casilla «lo revisé con el consultorio…» y guardá.
+3. **Prueba:** en «Probar a Sofi», con datos ficticios y en un horario que elija el consultorio, reservá un turno. En unos minutos tiene que aparecer en Smile Connect, con un solo profesional y en ese horario. Después cancelalo en Smile Connect, a mano, lo cancela recepción. **Este modo no cancela.**
+4. Avisale al usuario que recepción ya puede dejar de copiar a mano los turnos de Sofi: llegan solos, y el detalle sale en el resumen de las 10.
+
+### Etapa D · Después de unos días sin problemas: «Crear, mover y cancelar»
+
+Solo con el «sí» del usuario. Cambiá el modo y avisale que, desde ahí, también se mueven y cancelan solos.
+
+**Para apagar al instante:** modo «Apagada». Lo pendiente de escribir se descarta.
+
+**Prohibido:**
+- editar o borrar turnos o pacientes en Smile Connect, salvo la cancelación del turno ficticio de la etapa C;
+- crear turnos de prueba con datos de pacientes reales;
+- mandar WhatsApp a pacientes;
+- tocar el userscript de Tampermonkey de recepción. Ese lo desinstala el consultorio cuando el usuario lo diga, recién después de la etapa A.
+
+**Verificación (contestá en cada etapa):**
+- en qué modo quedó;
+- los profesionales vinculados, solo cuántos;
+- si la agenda coincide;
+- si Sofi ofreció solo horarios libres;
+- en la etapa C, si el turno ficticio apareció en Smile Connect;
+- qué quedó «para revisar», si hay algo.
+
+**Si algo falla:** volvé a «Solo lectura», o a «Apagada» si escribió algo mal, y avisá con una captura de la tarjeta, sin la clave.
 
 ---
 
@@ -107,4 +171,5 @@ La revisión de estas instancias es de solo lectura. Cualquier migración de WAH
 La próxima sesión de Claude que corra el QA (`.claude/skills/qa-turnia/SKILL.md`) verifica lo hecho. Si está bien, cierra la observación en `QA_TURNIA.md`:
 
 - tarea 6: OBS-004 y OBS-006;
-- tarea 5: «Cómo entrar».
+- tarea 5: «Cómo entrar»;
+- tarea 7: el estado en `SMILE_CONNECT_API.md` y en `PENDIENTES.md`.
