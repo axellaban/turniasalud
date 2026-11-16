@@ -10,6 +10,7 @@ import { manualWhatsappSenders, setVoiceSender, voiceSenderPhones } from "@/lib/
 import { lastWhatsappSync, searchWhatsappChats, syncWhatsappReplies, whatsappInbox } from "@/lib/sales/whatsapp-sync";
 import { checkWhatsappNumbers } from "@/lib/sales/whatsapp-check";
 import { backfillConversations } from "@/lib/conversations-backfill";
+import { sendDueSummaries } from "@/lib/daily-summary";
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABEL,
@@ -436,6 +437,15 @@ async function followupOp(body: { followup?: unknown; by?: unknown }) {
     if (!desde) return NextResponse.json({ error: "Falta desde (AAAA-MM-DD)." }, { status: 400 });
     try {
       return NextResponse.json({ backfill: await backfillConversations(desde) }, { headers: NO_STORE });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    }
+  }
+  if (f.op === "resumen-sofi") {
+    // La tarea diaria de Chapa Labs (10:05): manda el resumen de Sofi al equipo de cada consultorio si
+    // todavía no salió (también lo intenta el disparador de cada 10 minutos de n8n).
+    try {
+      return NextResponse.json({ resumenes: await sendDueSummaries() }, { headers: NO_STORE });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
     }

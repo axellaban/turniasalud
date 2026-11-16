@@ -196,6 +196,10 @@ export type Appointment = {
   confirmed_at: string | null;
   survey_sent_at: string | null;
   cancelled_at: string | null;
+  /** Por dónde se canceló o se movió (el canal de Sofi o «panel»). */
+  cancelled_via?: string | null;
+  /** Al reprogramar: el turno nuevo que reemplaza a este. */
+  replaced_by?: string | null;
   external_id?: string | null;
   external_status?: string | null;
   created_at: string;

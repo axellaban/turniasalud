@@ -20,7 +20,7 @@ import {
   ToolError,
   type ToolContext,
 } from "@/lib/agent/service";
-import { blockAgenda, createPatientForStaff, listOpenTasks, resolveTaskForStaff, searchPatients, viewAgenda } from "@/lib/agent/staff-tools";
+import { agentActivityForStaff, appointmentDetailForStaff, blockAgenda, createPatientForStaff, listOpenTasks, resolveTaskForStaff, searchPatients, viewAgenda } from "@/lib/agent/staff-tools";
 import { isUuid } from "@/lib/clinic";
 import { sql } from "@/lib/db";
 import { normalizePhone } from "@/lib/phone";
@@ -44,6 +44,8 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   silenciar_numero: muteSender,
   // Equipo del consultorio (acceso total por WhatsApp).
   ver_agenda: viewAgenda,
+  detalle_turno: appointmentDetailForStaff,
+  turnos_de_sofi: agentActivityForStaff,
   buscar_pacientes: searchPatients,
   crear_paciente: createPatientForStaff,
   bloquear_agenda: blockAgenda,

@@ -5,6 +5,7 @@ import { normalizePhone } from "../phone";
 import { findOrCreatePatientForPhone } from "../patients";
 import { createScheduleBlock } from "../schedule-blocks";
 import { resolveTask } from "../tasks";
+import { appointmentDetail, givenBy, summarySince } from "../daily-summary";
 import { addDaysKey, humanSlot, localDateKey, parseDateKey, zonedTimeToUtc } from "../time";
 import { ToolError, type ToolContext } from "./service";
 
@@ -38,8 +39,8 @@ export async function viewAgenda(ctx: ToolContext, input: { desde?: string; hast
   if (toKey < fromKey) toKey = fromKey;
   if (toKey > addDaysKey(fromKey, 13)) toKey = addDaysKey(fromKey, 13);
   const pro = input.profesional_id && isUuid(input.profesional_id) ? input.profesional_id : null;
-  const rows = await sql<Array<{ id: string; starts_at: string; ends_at: string; status: string; patient: string | null; patient_id: string; phone: string | null; type_name: string; professional: string; notes: string | null }>>`
-    select a.id, a.starts_at, a.ends_at, a.status, p.full_name as patient, p.id as patient_id, p.phone,
+  const rows = await sql<Array<{ id: string; starts_at: string; ends_at: string; status: string; patient: string | null; patient_id: string; phone: string | null; type_name: string; professional: string; notes: string | null; source: string }>>`
+    select a.id, a.starts_at, a.ends_at, a.status, a.source, p.full_name as patient, p.id as patient_id, p.phone,
       coalesce(a.title, t.name) as type_name, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, a.notes
     from appointments a
     join patients p on p.id = a.patient_id
@@ -63,10 +64,11 @@ export async function viewAgenda(ctx: ToolContext, input: { desde?: string; hast
       prestacion: r.type_name,
       profesional: r.professional,
       estado: STATUS_LABEL[r.status] ?? r.status,
+      dio: givenBy(r.source, clinic.agent_name),
       ...(r.notes && { notas: r.notes }),
     })),
     mensaje: rows.length
-      ? "Contale la agenda en orden, en pocas líneas (hora, paciente y prestación). Para mover o cancelar uno, usá su turno_id."
+      ? "Contale la agenda en orden, en pocas líneas (hora, paciente y prestación). Si pregunta quién dio un turno, está en «dio»; para todos sus datos, usá detalle_turno. Para mover o cancelar uno, usá su turno_id."
       : "No hay turnos en esas fechas.",
   };
 }
@@ -198,4 +200,44 @@ export async function resolveTaskForStaff(ctx: ToolContext, input: { tarea_id: s
   const result = await resolveTask(ctx.clinicId, input.tarea_id, input.respuesta?.trim() || null);
   if (!result.ok) throw new ToolError(result.message);
   return { ok: true, mensaje: result.message };
+}
+
+/** detalle_turno: todo lo de un turno, para cargarlo en el sistema del consultorio (quién lo dio, datos y nota). */
+export async function appointmentDetailForStaff(ctx: ToolContext, input: { turno_id: string }) {
+  requireStaff(ctx);
+  if (!isUuid(input.turno_id)) throw new ToolError("No encontré ese turno. Buscalo con ver_agenda (el día y la hora).");
+  const clinic = await getClinic(ctx.clinicId);
+  const detail = await appointmentDetail(clinic, input.turno_id);
+  if (!detail) throw new ToolError("No encontré ese turno. Buscalo con ver_agenda (el día y la hora).");
+  return {
+    ok: true,
+    turno: detail,
+    mensaje:
+      "Contale quién lo dio y cuándo, el paciente (nombre, DNI, celular), la prestación, la cobertura y lo que pidió. Pasale la «nota» tal cual, en un renglón aparte, para que la copie en su agenda.",
+  };
+}
+
+/** turnos_de_sofi: lo que diste, moviste y cancelaste desde un día (como el resumen de las 10). */
+export async function agentActivityForStaff(ctx: ToolContext, input: { desde?: string }) {
+  requireStaff(ctx);
+  const clinic = await getClinic(ctx.clinicId);
+  const today = localDateKey(new Date(), clinic.timezone);
+  let fromKey = parseDateKey(input.desde) ?? addDaysKey(today, -1);
+  if (fromKey > today) fromKey = today;
+  if (fromKey < addDaysKey(today, -31)) fromKey = addDaysKey(today, -31);
+  const summary = await summarySince(clinic.id, dayStart(fromKey, clinic.timezone));
+  const brief = (items: typeof summary.nuevos) => items.slice(0, 40).map(({ turno_id, cuando, profesional, paciente, prestacion, nota, antes, motivo, dio }) => ({
+    turno_id, cuando, profesional, paciente, prestacion, nota, dio, ...(antes && { antes }), ...(motivo && { motivo }),
+  }));
+  return {
+    ok: true,
+    desde: fromKey,
+    nuevos: brief(summary.nuevos),
+    movidos: brief(summary.movidos),
+    cancelados: brief(summary.cancelados),
+    mensaje:
+      summary.nuevos.length + summary.movidos.length + summary.cancelados.length
+        ? "Contale primero cuántos fueron y después cada uno (día y hora, profesional, paciente y prestación). Para todos los datos de uno, usá detalle_turno."
+        : "Desde ese día no diste, moviste ni cancelaste turnos.",
+  };
 }

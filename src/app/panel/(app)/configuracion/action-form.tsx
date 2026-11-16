@@ -9,9 +9,11 @@ import type { FormState } from "../../actions";
  * Formulario con respuesta visible: «Guardado» o el motivo por el que no se guardó, sin perder lo
  * escrito. Con `resetOnSuccess`, se vacía al guardar (para agregar otro).
  */
-export function ActionForm({ action, submit, resetOnSuccess = false, secondary = false, className = "", children }: {
+export function ActionForm({ action, submit, pendingLabel = "Guardando…", resetOnSuccess = false, secondary = false, className = "", children }: {
   action: (previous: FormState, form: FormData) => Promise<FormState>;
   submit: string;
+  /** Lo que dice el botón mientras trabaja. */
+  pendingLabel?: string;
   resetOnSuccess?: boolean;
   secondary?: boolean;
   className?: string;
@@ -26,7 +28,7 @@ export function ActionForm({ action, submit, resetOnSuccess = false, secondary =
     <form ref={form} onSubmit={submitKeepingValues(run)} className={className}>
       {children}
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <button disabled={pending} className={secondary ? secondaryButtonClass : buttonClass}>{pending ? "Guardando…" : submit}</button>
+        <button disabled={pending} className={secondary ? secondaryButtonClass : buttonClass}>{pending ? pendingLabel : submit}</button>
         {state.message && (
           <p role={state.ok ? "status" : "alert"} className={`text-sm ${state.ok ? "text-brand-700" : "text-red-700"}`}>
             {state.message}

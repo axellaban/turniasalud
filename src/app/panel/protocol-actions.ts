@@ -6,6 +6,7 @@ import { isUuid } from "@/lib/clinic";
 import { applyDentalTemplate } from "@/lib/dental-template";
 import { getPanelClinic, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizePhone } from "@/lib/phone";
+import { sendSummaryNow } from "@/lib/daily-summary";
 import { COVERAGE_MODES, type CoverageMode } from "@/lib/types";
 import type { FormState } from "./actions";
 
@@ -259,6 +260,29 @@ export async function addStaffPhone(_previous: FormState, form: FormData): Promi
   await touchClinic(clinic.id, "Acceso total por WhatsApp");
   revalidatePath("/panel/configuracion", "layout");
   return { ok: true, message: row.created ? `Listo: ${name} ya tiene acceso total por WhatsApp.` : `Actualizado: ese celular es de ${name}.` };
+}
+
+/** Prende o apaga el resumen diario de Sofi (a las 10, por WhatsApp) para un celular del equipo. */
+export async function toggleStaffSummary(form: FormData): Promise<void> {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (id) await sql`update clinic_staff_phones set daily_summary = ${form.get("on") === "1"} where id = ${id} and clinic_id = ${clinic.id}`;
+  revalidatePath("/panel/configuracion", "layout");
+}
+
+/** «Mandar el resumen ahora»: el de las 10, a pedido (para probarlo o si hace falta antes). */
+export async function sendSummaryNowAction(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireAdmin();
+  const clinic = await panelClinicOr(form);
+  if (isFormState(clinic)) return clinic;
+  const r = await sendSummaryNow(clinic.id);
+  if (!r.enviados) return { ok: false, message: r.problema ?? "No salió el resumen." };
+  const { nuevos, movidos, cancelados } = r.turnos;
+  return {
+    ok: true,
+    message: `Listo: salió a ${r.enviados === 1 ? "1 celular" : `${r.enviados} celulares`} (${nuevos} nuevos, ${movidos} movidos, ${cancelados} cancelados).${r.problema ? ` Ojo: ${r.problema}` : ""}`,
+  };
 }
 
 export async function removeStaffPhone(form: FormData): Promise<void> {
