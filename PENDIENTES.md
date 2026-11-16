@@ -18,8 +18,8 @@
 
 Pedido del Dr. Mininni: con la API de Smile Connect (PR #191, borrador), el turno que escribe Turnia llega sin notas ni prestación, y Smile Connect no promete sumarlas pronto. En vez de un aviso por turno, prefiere **un resumen de Sofi a las 10** y **preguntarle a Sofi** cuando ve un turno sin datos. Hecho; falta:
 
-- [ ] Que el celular del Dr. Mininni esté en Configuración → Consultorio → «Acceso total por WhatsApp» (ver más abajo). Ahí mismo, «Mandar el resumen ahora» para probarlo: le llega por la línea del consultorio.
-- [ ] Sistema → «Crear / actualizar agente» y, en Guerra–Mininni, «Crear / actualizar Sofi de esta clínica», para que Sofi tenga `detalle_turno` y `turnos_de_sofi`. Sin eso, `ver_agenda` ya dice quién dio cada turno.
+- [x] El celular del Dr. Mininni está cargado en «Acceso total por WhatsApp» y anda (confirmado por el usuario el 16/11). El primer resumen automático sale el martes 17/11 a las 10.
+- [x] Agentes actualizados por el usuario el 16/11: Sofi ya tiene `detalle_turno` y `turnos_de_sofi`.
 - [ ] **Activar Smile Connect por API** (mergeado el 16/11, apagado; el consultorio ya creó la clave sin vencimiento): lo hace una IA con computer use, por etapas, con la **tarea 7** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - [ ] Unificar listas: los avisos por turno (`clinic_notice_phones`) y el resumen (`clinic_staff_phones.daily_summary`) son dos listas; conviene ofrecer el resumen como una opción más de «Avisos por WhatsApp» y decir en el resumen si el turno ya quedó escrito en Smile Connect. Las dos usan la misma columna `replaced_by`.
 

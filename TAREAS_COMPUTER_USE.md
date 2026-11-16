@@ -32,7 +32,7 @@ La escritura cambia la agenda real del consultorio, y hay que asumir que no tien
 
 ### Etapa A · Hoy: conectar en «Solo lectura» y comprobar el resumen
 
-1. **Agente.** En Guerra–Mininni → Configuración → Consultorio → tarjeta «Acceso total por WhatsApp» → «Actualizar a Sofi». Después, en la tarjeta «Sofi de este consultorio · llamadas» → «Preparar o actualizar el agente». Y en Sistema → «Crear / actualizar agente». Si el usuario ya lo hizo el 16/11, alcanza con confirmarlo. Así Sofi tiene `detalle_turno` y `turnos_de_sofi`.
+1. **Agente (hecho por el usuario el 16/11; no hace falta repetirlo).** En Guerra–Mininni → Configuración → Consultorio → tarjeta «Acceso total por WhatsApp» → «Actualizar a Sofi». Después, en la tarjeta «Sofi de este consultorio · llamadas» → «Preparar o actualizar el agente». Y en Sistema → «Crear / actualizar agente». Si el usuario ya lo hizo el 16/11, alcanza con confirmarlo. Así Sofi tiene `detalle_turno` y `turnos_de_sofi`.
 2. **Resumen diario.** Configuración → Consultorio → «Acceso total por WhatsApp». El celular del Dr. Mininni tiene que decir «Recibe el resumen de las 10». Si el usuario está de acuerdo, tocá «Mandar el resumen ahora» y confirmá con él que le llegó a Mininni. Sale por la línea del consultorio.
 3. **Clave.** Configuración → Calendario → «Smile Connect por API» → campo «Clave de la API». **La pega el usuario, vos no la ves ni la copiás.** Guardar. Turnia la prueba antes de guardarla.
    - Tiene que mostrar el nombre de la clínica de Smile Connect y la lista «Profesionales» vinculados con los de Turnia.
