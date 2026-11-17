@@ -25,6 +25,7 @@ export function ManualAppointmentForm({
   types,
   initialProId,
   initialTime,
+  initialPatient,
 }: {
   clinicId: string;
   defaultDate: string;
@@ -34,6 +35,8 @@ export function ManualAppointmentForm({
   /** Al tocar un hueco de la grilla: con quién y a qué hora. */
   initialProId?: string;
   initialTime?: string;
+  /** Desde la ficha («Dar turno»): el paciente ya elegido, con su celular, nombre y cobertura. */
+  initialPatient?: { id: string; phone: string | null; name: string | null; coverage: string | null };
 }) {
   const [state, action, pending] = useActionState(createManualAppointment, undefined);
   const form = useRef<HTMLFormElement>(null);
@@ -53,8 +56,8 @@ export function ManualAppointmentForm({
   const [custom, setCustom] = useState(false);
   const [reload, setReload] = useState(0);
   // Fichas de ese celular (una familia puede tener varias) y para quién es el turno: una de ellas o «nueva».
-  const [known, setKnown] = useState<KnownPatient[]>([]);
-  const [patientId, setPatientId] = useState("");
+  const [known, setKnown] = useState<KnownPatient[]>(initialPatient ? [{ id: initialPatient.id, name: initialPatient.name, coverage: initialPatient.coverage, upcoming: [] }] : []);
+  const [patientId, setPatientId] = useState(initialPatient?.id ?? "");
   // «Darlo igual» vale para el horario que se rechazó: si se elige otro, desaparece.
   const slotKey = `${proId}|${secondId}|${date}|${time}`;
   const [forceKey, setForceKey] = useState<string | null>(null);
@@ -167,6 +170,7 @@ export function ManualAppointmentForm({
             inputMode="tel"
             autoComplete="off"
             placeholder="11 5555-0001"
+            defaultValue={initialPatient?.phone ?? undefined}
             onBlur={(e) => e.target.value.trim() && recognize(e.target.value)}
             onChange={() => {
               if (known.length) setKnown([]);
@@ -196,10 +200,10 @@ export function ManualAppointmentForm({
           </fieldset>
         )}
         <Field label="Nombre y apellido">
-          <input ref={nameRef} name="full_name" required autoComplete="off" className={inputClass} />
+          <input ref={nameRef} name="full_name" required autoComplete="off" defaultValue={initialPatient?.name ?? undefined} className={inputClass} />
         </Field>
         <Field label="Cobertura" hint="Opcional. Si no la sabés, dejala vacía.">
-          <input ref={coverageRef} name="coverage" placeholder="OSDE, Swiss Medical, Particular…" className={inputClass} />
+          <input ref={coverageRef} name="coverage" placeholder="OSDE, Swiss Medical, Particular…" defaultValue={initialPatient?.coverage ?? undefined} className={inputClass} />
         </Field>
         <Field label="Notas" hint="Opcional. Solo las ve el consultorio.">
           <input name="notes" className={inputClass} />
