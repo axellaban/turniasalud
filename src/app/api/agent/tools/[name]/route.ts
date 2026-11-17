@@ -29,6 +29,7 @@ import { normalizePhone } from "@/lib/phone";
 import { staffForPhone } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown>> = {
@@ -167,6 +168,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
         error: e.message,
         mensaje: "Recepción ya tiene el pedido. Explicale al paciente qué quedó pendiente.",
       });
+    }
+    if (name === "reservar_turno" && (result as { ok?: boolean }).ok === false) {
+      log("pendiente");
+      return NextResponse.json(result);
     }
     log("ok");
     // Los turnos nuevos o cambiados se escriben en Google Calendar sin demorar la respuesta.

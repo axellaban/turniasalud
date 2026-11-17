@@ -152,7 +152,7 @@ export async function buildSummary(clinic: Clinic, from: Date, to: Date): Promis
     select ${rowColumns()} from appointments a ${rowJoins()}
     where a.clinic_id = ${clinic.id} and (
       (a.created_at >= ${from} and a.created_at < ${to} and a.status not in ('cancelado', 'reprogramado')
-        and not (a.status = 'pendiente' and a.smile_sync is not distinct from 'revisar')
+        and not (a.status = 'pendiente' and (a.smile_deferred or a.smile_sync is not distinct from 'revisar'))
         and (a.source = any(${SOFI}::text[])
           -- El equipo que mueve por WhatsApp conserva el origen del turno: cuenta por quién lo movió.
           or exists (select 1 from appointments prev where prev.replaced_by = a.id and prev.cancelled_via = any(${SOFI}::text[]))))

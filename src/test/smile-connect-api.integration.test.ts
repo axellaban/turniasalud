@@ -48,6 +48,8 @@ const fake = {
   notes: false,
   beforeCreate: undefined as (() => void) | undefined,
   createStatus: 201,
+  dropCreateReply: false,
+  whatsapps: [] as Array<{ chatId: string; text: string }>,
 };
 const PROS = [
   { professional_id: 334, name: "Mariano", surname: "Prueba", box_id: 189 },
@@ -73,6 +75,10 @@ function availability(date: string, duration: number, pro?: number) {
 
 async function fakeFetch(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
   const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  if (u.href === "https://waha.test/api/sendText") {
+    fake.whatsapps.push(JSON.parse(String(init.body)));
+    return Response.json({ id: "mensaje-prueba" });
+  }
   if (!u.href.startsWith(API)) return new Response(JSON.stringify({ error: "fuera del test" }), { status: 404 });
   const method = init.method ?? "GET";
   const path = u.pathname.replace("/api/v1", "");
@@ -120,6 +126,10 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     const a: Appt = { appointment_id: fake.nextAppt++, patient_id: body.patient_id, start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id], attendance: null, cancelled: false };
     fake.appointments.set(a.appointment_id, a);
     fake.idem.set(`${method}${path}${idem}`, { appointment_id: a.appointment_id });
+    if (fake.dropCreateReply) {
+      fake.dropCreateReply = false;
+      return err(503, "respuesta_perdida");
+    }
     return ok({ data: { appointment_id: a.appointment_id }, replayed: false }, 201);
   }
   if ((m = /^\/appointments\/(\d+)$/.exec(path))) {
@@ -508,5 +518,92 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
     await link.removeSmileApiKey(clinicId);
     expect(await link.getSmileApiConnection(clinicId)).toMatchObject({ api_key_encrypted: null, api_mode: "apagada" });
     expect((await sql`select count(*)::int as n from appointments where smile_sync in ('pendiente', 'error')`)[0].n).toBe(0);
+  });
+
+  describe("confirmación diferida de Guerra–Mininni", () => {
+    const gm = "67c3954a-8df8-46c2-a604-f818832bee36";
+    let gmPro: string, gmConsult: string;
+    const book = (offset: number) => tool("reservar_turno", {
+      clinic_id: gm, profesional_id: gmPro, tipo_turno_id: gmConsult, inicio: at(offset, "10:00"),
+    });
+    const send = async () => (await import("@/lib/clinic-notices")).sendPendingNotices(gm);
+
+    beforeAll(async () => {
+      vi.stubEnv("SMILE_CONNECT_WRITES", "on");
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([{
+        id: "guerra-mininni", clinicId: gm, phone: "5491100006666", url: "https://waha.test/",
+        apiKey: "clave-ficticia-abc", webhookHmac: "firma-ficticia-abc", enabled: true, revision: 1,
+      }]));
+      await sql`insert into clinics (id, name, specialty, address) values (${gm}, 'Guerra Mininni de prueba', 'Odontología', 'Dirección ficticia')`;
+      [{ id: gmPro }] = await sql`insert into professionals (clinic_id, full_name, specialty)
+        values (${gm}, 'Dr. Mariano Prueba', 'Odontología') returning id`;
+      [{ id: gmConsult }] = await sql`insert into appointment_types (clinic_id, name, specialty, duration_min)
+        values (${gm}, 'Control', 'Odontología', 30) returning id`;
+      await sql`insert into schedules (professional_id, weekday, start_time, end_time)
+        select ${gmPro}::uuid, d, '09:00', '18:00' from generate_series(0, 6) d`;
+      await link.saveSmileApiKey(gm, KEY);
+      await link.setSmileMode(gm, "crear");
+      await tool("registrar_paciente", { clinic_id: gm, nombre_completo: "Juana Ficticia", dni: "30111222", cobertura: "Particular" });
+    });
+
+    it("solo ofrece horarios verificados en la consulta actual", async () => {
+      const args = { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro, desde: day(20), hasta: day(20) };
+      expect(await tool("consultar_disponibilidad", args)).toMatchObject({ ok: true, turnos: expect.any(Array) });
+      fake.status = 503;
+      try {
+        expect(await tool("consultar_disponibilidad", args)).toMatchObject({ ok: false, pendiente_recepcion: true });
+      } finally {
+        fake.status = 200;
+      }
+    });
+
+    it("recupera un alta cuya respuesta se perdió y envía una sola confirmación", async () => {
+      fake.calls.length = 0;
+      const [a, b] = await Promise.all([book(20), book(20)]);
+      expect(a).toMatchObject({ ok: false, pendiente_confirmacion: true });
+      expect(b).toMatchObject({ turno_id: a.turno_id, pendiente_confirmacion: true });
+      expect(writes()).toEqual([]);
+      fake.dropCreateReply = true;
+      expect(await push.pushPendingSmile(gm, a.turno_id)).toMatchObject({ error: 1 });
+      expect(await smileSync(a.turno_id!)).toMatchObject({ status: "pendiente", smile_sync: "error" });
+      expect(fake.whatsapps).toHaveLength(0);
+      const outcomes = await Promise.all([push.pushPendingSmile(gm, a.turno_id), push.pushPendingSmile(gm, a.turno_id)]);
+      expect(outcomes.reduce((n, o) => n + Number(o.ok), 0)).toBe(1);
+      expect(await smileSync(a.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:/) });
+      expect(writes().filter((w) => w.path === "/appointments")).toHaveLength(1);
+      await Promise.all([send(), send()]);
+      expect(fake.whatsapps).toEqual([expect.objectContaining({
+        chatId: `${patientPhone}@c.us`, text: expect.stringContaining("Turno confirmado"),
+      })]);
+    });
+
+    it("si recepción se adelanta, libera el pedido local y avisa que puede buscar otro horario", async () => {
+      const pending = await book(21);
+      const other = scAppt(80500, 5002, 21, "10:00", "10:30");
+      fake.appointments.set(other.appointment_id, other);
+      fake.calls.length = 0;
+      await push.pushPendingSmile(gm, pending.turno_id);
+      expect(await smileSync(pending.turno_id!)).toMatchObject({ status: "cancelado", external_id: null });
+      expect(other.cancelled).toBe(false);
+      expect(writes()).toEqual([]);
+      await send();
+      expect(fake.whatsapps.at(-1)?.text).toContain("ya no está disponible");
+    });
+
+    it("si vence el tercer intento, deja una sola tarea de recepción y el turno sin confirmar", async () => {
+      const pending = await book(22);
+      fake.status = 503;
+      try {
+        for (let i = 0; i < 4; i++) await push.pushPendingSmile(gm, pending.turno_id);
+      } finally {
+        fake.status = 200;
+      }
+      expect(await smileSync(pending.turno_id!)).toMatchObject({ status: "pendiente", smile_sync: "revisar" });
+      const [tasks] = await sql`select count(*)::int as n from tasks where clinic_id = ${gm}
+        and details like ${`%${pending.turno_id}%`}`;
+      expect(tasks.n).toBe(1);
+      await send();
+      expect(fake.whatsapps.at(-1)?.text).toContain("sigue pendiente");
+    });
   });
 });

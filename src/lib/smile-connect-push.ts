@@ -1,5 +1,9 @@
 import "server-only";
+import { after } from "next/server";
+import { syncPendingCalendar } from "./calendar/sync";
+import { queueAppointmentNotice, sendPendingNotices } from "./clinic-notices";
 import { json, sql, type TransactionSql } from "./db";
+import { notifyN8n } from "./n8n";
 import { displayPhone } from "./phone";
 import {
   fitsFree,
@@ -21,7 +25,8 @@ import {
   type SmileClient,
 } from "./smile-connect-api";
 import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
-import { localDateKey } from "./time";
+import { humanSlot, localDateKey } from "./time";
+import type { Appointment, Patient } from "./types";
 
 // Escritura en Smile Connect de lo que hace Turnia (Sofi o el panel) con los turnos. Es la data
 // operativa del consultorio, así que cada cambio:
@@ -34,6 +39,7 @@ import { localDateKey } from "./time";
 // En modo «sombra», o sin SMILE_CONNECT_WRITES=on en el servidor, solo se registra lo que se haría.
 
 const MAX_ATTEMPTS = 5;
+const DEFERRED_ATTEMPTS = 3;
 /** Más que esto en una hora no es normal en un consultorio: se frena la escritura y se avisa. */
 const MAX_WRITES_PER_HOUR = 15;
 const ACTIVE = ["confirmado", "pendiente"];
@@ -54,15 +60,19 @@ type Row = {
   external_status: string | null;
   replaced_by: string | null;
   smile_attempts: number;
+  smile_deferred: boolean;
+  smile_reply_phone: string | null;
   type_name: string;
   smile_professional_id: number | null;
   smile_box_id: number | null;
   professional: string;
   timezone: string;
   agent_name: string;
+  address: string | null;
+  instructions: string | null;
 };
 
-type Outcome = { status: "ok" | "revisar" | "error" | "sombra" | "nada"; message?: string };
+type Outcome = { status: "ok" | "revisar" | "error" | "sombra" | "nada"; message?: string; confirmed?: Row };
 
 const scIdOf = (external: string | null) => {
   const m = /^sc:(\d+)$/.exec(external ?? "");
@@ -71,6 +81,8 @@ const scIdOf = (external: string | null) => {
 const sameInstant = (a: string, b: string) => Date.parse(a) === Date.parse(b);
 
 class Review extends Error {}
+class SlotUnavailable extends Review {}
+class VerificationPending extends Error {}
 
 async function logChange(
   tx: TransactionSql,
@@ -166,7 +178,7 @@ async function assertFreeInSmile(client: SmileClient, row: Row, own?: ScAppointm
   }
   const free = freeRanges(slots).get(row.smile_professional_id!) ?? [];
   if (!fitsFree(free, Date.parse(row.starts_at), Date.parse(row.ends_at))) {
-    throw new Review("En Smile Connect ese horario ya está ocupado o bloqueado: el turno quedó solo en Turnia. Revisalo con el paciente.");
+    throw new SlotUnavailable("En Smile Connect ese horario ya está ocupado o bloqueado: el turno quedó solo en Turnia. Revisalo con el paciente.");
   }
 }
 
@@ -218,6 +230,12 @@ async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: 
     throw new Review(`El turno tiene dos profesionales y Smile Connect acepta uno por la API. Cargalo a mano: ${describe(row)}.`);
   }
 
+  if (row.smile_deferred && row.status === "pendiente") {
+    if (!real) throw new Review("La escritura en Smile Connect está deshabilitada.");
+    await processDeferredBooking(tx, client, conn, row, scId);
+    return { status: "ok" };
+  }
+
   // ¿Es el turno nuevo de uno que se movió? Entonces se mueve el de Smile Connect.
   const [previous] = scId ? [] : await tx<Row[]>`
     select a.*, '' as type_name from appointments a
@@ -266,26 +284,80 @@ async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: 
   return { status: "ok" };
 }
 
-async function verifyNewAppointment(tx: TransactionSql, client: SmileClient, row: Row, id: number, patientId: number) {
+function matchesNewAppointment(appointment: ScAppointment, row: Row, patientId: number) {
+  return appointment.patient_id === patientId && appointment.professional_ids.length === 1
+    && appointment.professional_ids[0] === row.smile_professional_id && appointment.box_id === row.smile_box_id
+    && sameInstant(appointment.start_date, row.starts_at) && sameInstant(appointment.end_date, row.ends_at);
+}
+
+async function liveAppointmentsNear(client: SmileClient, row: Row) {
   const start = Date.parse(row.starts_at);
   const end = Date.parse(row.ends_at);
-  const appointments = (await scAppointments(client, new Date(start - 86400_000), new Date(end), 25))
+  return (await scAppointments(client, new Date(start - 86400_000), new Date(end), 25))
     .filter((a) => !a.cancelled && a.attendance !== "Canceled with Notice");
+}
+
+async function processDeferredBooking(tx: TransactionSql, client: SmileClient, conn: SmileApiConnection, row: Row, knownId: number | null) {
+  if (Date.parse(row.starts_at) <= Date.now()) throw new Review("El horario pedido ya pasó.");
+  const patientId = await smilePatientId(tx, client, row, true);
+  if (!patientId) throw new Review("No pude identificar al paciente en Smile Connect.");
+  let id = knownId;
+  let createdByTurnia = false;
+  if (id) {
+    const [record] = await tx`
+      select 1 from smile_connect_changes where appointment_id = ${row.id} and action = 'crear' and status = 'hecho'
+        and result->>'appointment_id' = ${String(id)} limit 1`;
+    createdByTurnia = Boolean(record);
+  }
+  if (!id) {
+    try {
+      await assertFreeInSmile(client, row);
+    } catch (e) {
+      if (!(e instanceof SlotUnavailable)) throw e;
+      // Un POST anterior pudo haberse aplicado aunque Turnia haya perdido la respuesta.
+      const matches = (await liveAppointmentsNear(client, row)).filter((a) => matchesNewAppointment(a, row, patientId));
+      if (matches.length > 1) throw new Review("Hay más de un turno del paciente en el horario pedido. Recepción debe comprobarlo.");
+      if (!matches.length) throw e;
+      id = matches[0].appointment_id;
+    }
+    if (!id) {
+      const request = {
+        patient_id: patientId, professional_id: row.smile_professional_id!, box_id: row.smile_box_id!,
+        start_date: new Date(row.starts_at).toISOString(), end_date: new Date(row.ends_at).toISOString(), ...notesFor(row, conn),
+      };
+      const result = await scCreateAppointment(client, request, `turnia-turno-${row.id}`);
+      if (!Number.isSafeInteger(result?.appointment_id) || result.appointment_id <= 0) {
+        throw new Review("Smile Connect no devolvió un número de turno válido.");
+      }
+      id = result.appointment_id;
+      createdByTurnia = true;
+      await logChange(tx, row, "crear", "hecho", { request, result });
+      await tx`update appointments set external_id = ${`sc:${id}`} where id = ${row.id}`;
+    }
+  }
+  await verifyNewAppointment(tx, client, row, id, patientId, createdByTurnia);
+  if (!knownId && !createdByTurnia) await tx`update appointments set external_id = ${`sc:${id}`} where id = ${row.id}`;
+}
+
+async function verifyNewAppointment(tx: TransactionSql, client: SmileClient, row: Row, id: number, patientId: number, canUndo = true) {
+  const start = Date.parse(row.starts_at);
+  const end = Date.parse(row.ends_at);
+  const appointments = await liveAppointmentsNear(client, row);
   const own = appointments.find((a) => a.appointment_id === id);
-  if (!own || own.patient_id !== patientId || own.professional_ids.length !== 1
-      || own.professional_ids[0] !== row.smile_professional_id || own.box_id !== row.smile_box_id
-      || !sameInstant(own.start_date, row.starts_at) || !sameInstant(own.end_date, row.ends_at)) {
+  if (!own && row.smile_deferred) throw new VerificationPending("Todavía no se pudo leer el alta en Smile Connect.");
+  if (!own || !matchesNewAppointment(own, row, patientId)) {
     throw new Review("Hay un alta en Smile Connect que recepción tiene que comprobar antes de confirmar.");
   }
   const overlap = appointments.some((a) => a.appointment_id !== id && a.professional_ids.includes(own.professional_ids[0])
     && Date.parse(a.start_date) < end && Date.parse(a.end_date) > start);
   if (!overlap) return;
+  if (!canUndo) throw new Review("El turno recuperado se superpone con otro. Recepción tiene que revisar la agenda.");
   // Si recepción tomó el horario mientras se creaba, se revierte solo el alta que acabamos de verificar.
   const undone = await scCancelAppointment(client, id);
   if (undone?.appointment_id !== id) throw new Review("Hay un turno superpuesto que recepción tiene que revisar en Smile Connect.");
   await logChange(tx, row, "cancelar", "hecho", { request: { appointment_id: id }, before: own, result: undone });
   await tx`update appointments set status = 'cancelado', cancelled_at = now() where id = ${row.id}`;
-  throw new Review("Otro turno ocupó ese horario en Smile Connect. Se revirtió el alta de Turnia.");
+  throw new SlotUnavailable("Otro turno ocupó ese horario en Smile Connect. Se revirtió el alta de Turnia.");
 }
 
 /** Aviso al consultorio (si cargó celulares) cuando algo quedó para hacer a mano. */
@@ -307,7 +379,8 @@ async function pendingRow(tx: TransactionSql, id: string, skipLocked = false) {
   const [row] = await tx<Row[]>`
     select a.id, a.clinic_id, a.patient_id, a.professional_id, a.second_professional_id, a.starts_at, a.ends_at, a.status, a.source,
            a.notes, a.title, a.external_id, a.external_status, a.replaced_by, a.smile_attempts,
-           t.name as type_name, p.smile_professional_id, p.smile_box_id, p.full_name as professional, c.timezone, c.agent_name
+           a.smile_deferred, a.smile_reply_phone, coalesce(a.title, t.name) as type_name, t.instructions,
+           p.smile_professional_id, p.smile_box_id, p.full_name as professional, c.timezone, c.agent_name, c.address
     from appointments a
       join appointment_types t on t.id = a.appointment_type_id
       join professionals p on p.id = a.professional_id
@@ -362,57 +435,132 @@ export async function confirmNewSmileAppointment(tx: TransactionSql, clinicId: s
  * Escribe en Smile Connect lo pendiente de una clínica (de a un turno, con su verificación).
  * Corre después de los cambios y con la automatización de cada 10 minutos.
  */
-export async function pushPendingSmile(clinicId: string): Promise<Record<string, number | string>> {
+async function finishDeferredBooking(tx: TransactionSql, row: Row, resolution: "confirmed" | "occupied" | "review", reason?: string) {
+  const when = humanSlot(new Date(row.starts_at), row.timezone);
+  const confirmed = resolution === "confirmed";
+  if (confirmed) {
+    await tx`update appointments set status = 'confirmado', smile_sync = 'ok', smile_error = null where id = ${row.id}`;
+    await tx`
+      update waitlist set status = 'resuelta' where patient_id = ${row.patient_id}
+        and appointment_type_id = (select appointment_type_id from appointments where id = ${row.id})
+        and status in ('activa', 'ofrecida')`;
+  } else if (resolution === "occupied") {
+    await tx`
+      update appointments set status = 'cancelado', cancelled_at = coalesce(cancelled_at, now()), smile_sync = null, smile_error = null
+      where id = ${row.id}`;
+  } else {
+    await tx`
+      insert into tasks (clinic_id, patient_id, type, title, details)
+      values (${row.clinic_id}, ${row.patient_id}, 'derivacion_humana', 'Revisar turno en Smile Connect',
+        ${`Pedido ${row.id} para ${when} con ${row.professional}. ${reason ?? ""}`})`;
+  }
+  if (!row.smile_reply_phone) return;
+  const body = confirmed
+    ? [`Turno confirmado para ${when} con ${row.professional}. ${row.type_name}.`, row.address, row.instructions].filter(Boolean).join("\n\n")
+    : resolution === "occupied"
+      ? `El horario del ${when} con ${row.professional} ya no está disponible. Si querés, respondé este mensaje y te busco otro horario.`
+      : `Tu pedido para ${when} con ${row.professional} sigue pendiente. Lo dejamos a recepción para que pueda revisarlo.`;
+  await tx`
+    insert into clinic_notices (clinic_id, phone, kind, appointment_id, body)
+    values (${row.clinic_id}, ${row.smile_reply_phone}, ${confirmed ? "smile_confirmado" : "smile_paciente"}, ${row.id}, ${body})`;
+}
+
+async function deferredConfirmationEffects(row: Row) {
+  const [appointment] = await sql<Appointment[]>`select * from appointments where id = ${row.id} and status = 'confirmado'`;
+  if (!appointment) return;
+  const [patient] = await sql<Patient[]>`select * from patients where id = ${row.patient_id}`;
+  if (patient) await notifyN8n("turno.reservado", {
+    clinic_id: row.clinic_id, appointment, patient, professional: row.professional, type: row.type_name,
+  });
+  if (row.smile_reply_phone) await queueAppointmentNotice(row.clinic_id, "nuevo", { ids: [row.id] });
+}
+
+export async function pushPendingSmile(clinicId: string, appointmentId?: string): Promise<Record<string, number | string>> {
   const conn = await getSmileApiConnection(clinicId);
   if (!conn?.api_key_encrypted || !WRITE_MODES.includes(conn.api_mode)) return { omitido: "La escritura está apagada." };
-  if (conn.api_writes_paused) return { frenado: conn.api_writes_paused };
   const pending = await sql<Array<{ id: string }>>`
     select id from appointments
     where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error') and smile_attempts < ${MAX_ATTEMPTS}
-    order by created_at limit 20`;
-  const result = { ok: 0, sombra: 0, revisar: 0, error: 0 };
+      ${appointmentId ? sql`and id = ${appointmentId} and smile_deferred` : sql``}
+      ${conn.api_writes_paused ? sql`and smile_deferred and status = 'pendiente'` : sql``}
+    order by (smile_deferred and status = 'pendiente') desc, created_at limit 20`;
+  const result: { ok: number; sombra: number; revisar: number; error: number; frenado?: string } = { ok: 0, sombra: 0, revisar: 0, error: 0 };
+  let pauseReason = conn.api_writes_paused;
   for (const { id } of pending) {
-    const [{ n }] = await sql<Array<{ n: number }>>`
-      select count(*)::int as n from smile_connect_changes
-      where clinic_id = ${clinicId} and status = 'hecho' and created_at > now() - interval '1 hour'`;
-    if (n >= MAX_WRITES_PER_HOUR) {
-      const reason = `Se frenó la escritura en Smile Connect: hubo ${n} cambios en la última hora. Revisá el registro y reanudala.`;
-      await sql`update smile_connect_connections set api_writes_paused = ${reason} where clinic_id = ${clinicId}`;
-      return { ...result, frenado: reason };
-    }
     const outcome = await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
       const current = await getSmileApiConnection(clinicId, tx);
-      if (current?.api_mode !== conn.api_mode || current.api_key_encrypted !== conn.api_key_encrypted || current.api_writes_paused) return null;
+      if (current?.api_mode !== conn.api_mode || current.api_key_encrypted !== conn.api_key_encrypted) return null;
+      pauseReason = current.api_writes_paused;
+      if (!pauseReason) {
+        const [{ n }] = await tx<Array<{ n: number }>>`
+          select count(*)::int as n from smile_connect_changes
+          where clinic_id = ${clinicId} and status = 'hecho' and created_at > now() - interval '1 hour'`;
+        if (n >= MAX_WRITES_PER_HOUR) {
+          pauseReason = `Se frenó la escritura en Smile Connect: hubo ${n} cambios en la última hora. Revisá el registro y reanudala.`;
+          await tx`update smile_connect_connections set api_writes_paused = ${pauseReason} where clinic_id = ${clinicId}`;
+        }
+      }
       await tx`select set_config('turnia.smile_quiet', 'on', true)`;
       const row = await pendingRow(tx, id, true);
       if (!row) return null;
+      const deferred = row.smile_deferred && row.status === "pendiente";
+      if (pauseReason && !deferred) return null;
       try {
+        if (pauseReason) throw new Review(pauseReason);
         const out = await processRow(tx, current, clientFor(current, undefined, tx), row);
+        if (deferred) {
+          if (out.status !== "ok") throw new Review("El horario pedido ya pasó o Smile Connect no lo confirmó.");
+          await finishDeferredBooking(tx, row, "confirmed");
+          return { ...out, confirmed: row };
+        }
         await tx`
           update appointments set smile_sync = ${out.status === "nada" ? null : "ok"}, smile_error = null
           where id = ${row.id}`;
         return out;
       } catch (e) {
-        const review = e instanceof Review || (e instanceof SmileApiError && !e.transient);
+        const review = e instanceof Review || (e instanceof SmileApiError && !e.transient)
+          || (deferred && row.smile_attempts + 1 >= DEFERRED_ATTEMPTS);
         const message = (e instanceof Review ? e.message : smileErrorText(e)).slice(0, 300);
         await tx`
           update appointments set smile_sync = ${review ? "revisar" : "error"}, smile_error = ${message}, smile_attempts = smile_attempts + 1
           where id = ${row.id}`;
         if (review) {
           await logChange(tx, row, row.status === "cancelado" ? "cancelar" : row.external_id ? "mover" : "crear", "revisar", { error: message });
-          await noticeReview(tx, row, message);
+          if (deferred) {
+            await finishDeferredBooking(tx, row, e instanceof SlotUnavailable ? "occupied" : "review", message);
+            if (row.source !== "panel" && !(e instanceof SlotUnavailable)) await noticeReview(tx, row, message);
+          } else await noticeReview(tx, row, message);
         }
         return { status: review ? "revisar" : "error", message } as Outcome;
       }
     });
     if (!outcome) continue;
+    if (outcome.confirmed) await deferredConfirmationEffects(outcome.confirmed).catch((e) =>
+      console.error("Avisar sobre el turno confirmado en Smile Connect", e));
     if (outcome.status === "ok") result.ok++;
     if (outcome.status === "sombra") result.sombra++;
     if (outcome.status === "revisar") result.revisar++;
     if (outcome.status === "error") result.error++;
   }
+  if (pauseReason) result.frenado = pauseReason;
   return result;
+}
+
+/** El pedido ya está en Postgres. Si la ejecución se corta, lo recoge el próximo cron. */
+export function processSmileBookingLater(clinicId: string, appointmentId: string): void {
+  try {
+    after(async () => {
+      let outcome = await pushPendingSmile(clinicId, appointmentId);
+      if (outcome.error) {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        outcome = await pushPendingSmile(clinicId, appointmentId);
+      }
+      await Promise.allSettled([sendPendingNotices(clinicId), ...(outcome.ok ? [syncPendingCalendar(clinicId)] : [])]);
+    });
+  } catch {
+    // Fuera de una petición, se procesa con la automatización de calendario.
+  }
 }
 
 /** Reanuda la escritura frenada (desde el panel, después de revisar el registro). */

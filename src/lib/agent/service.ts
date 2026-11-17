@@ -11,7 +11,7 @@ import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
 import { getSmileApiConnection, isLiveSmileMode, smileBusy, writesEnabledOnServer } from "../smile-connect-link";
-import { confirmNewSmileAppointment } from "../smile-connect-push";
+import { confirmNewSmileAppointment, processSmileBookingLater } from "../smile-connect-push";
 import { appointmentAccessKey, expireAppointmentAccess, GUERRA_MININNI } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
 
@@ -67,11 +67,17 @@ async function usesLiveSmile(clinicId: string, tx?: TransactionSql): Promise<boo
  * Lo ocupado fuera de Turnia: el Google Calendar de cada profesional y la agenda de Smile Connect.
  * Si Smile Connect falla, no frena la agenda: quedan los turnos que Turnia ya trajo de ahí.
  */
-async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; timeZone: string }): Promise<BusyInterval[]> {
+async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; verified?: { from: string; to: string }; deferSmile?: boolean; timeZone: string }): Promise<BusyInterval[]> {
   const [google, smile] = await Promise.all([
     googleBusy(clinicId, ids, from, to, opts),
-    smileBusy(clinicId, ids, from, to, opts).catch((e) => {
+    (opts.deferSmile ? Promise.resolve([] as BusyInterval[]) : smileBusy(clinicId, ids, from, to, opts)).catch((e) => {
       console.error("Smile Connect: no se pudo leer lo ocupado", e instanceof Error ? e.message : e);
+      if (opts.verified) {
+        throw new SmileHandoff(
+          "No pude consultar los horarios actualizados. Recepción va a revisar el pedido.",
+          `Verificar disponibilidad del ${opts.verified.from} al ${opts.verified.to} (${e instanceof Error ? e.message : e}).`,
+        );
+      }
       if (opts.fresh) {
         throw new SmileHandoff(
           "No pude verificar ese horario con la agenda del consultorio. El pedido queda pendiente. Todavía no hay un turno confirmado.",
@@ -411,11 +417,12 @@ export async function checkAvailability(
   const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
   const checkedPros = otherPro ? [...proIds, otherPro] : proIds;
   const movingIds = move ? [move.appt.id, ...(move.follower ? [move.follower.id] : [])] : [];
+  const verifySmile = clinic.id === GUERRA_MININNI && await usesLiveSmile(clinic.id);
   const [busy, blocks, calendar, patientAppointments] = await Promise.all([
     busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
     // Lo ocupado en el Google Calendar de cada profesional y en Smile Connect (si la clínica los conectó).
-    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone }),
+    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone, ...(verifySmile && { verified: { from: fromKey, to: toKey } }) }),
     move ? upcomingOf(move.patient.id) : [],
   ]);
   const preserve = clinic.keep_duration_on_reschedule && !!move;
@@ -538,7 +545,7 @@ async function assertPrerequisites(catalog: Catalog, patient: Patient | null, vi
     const [had] = patient
       ? await sql<Array<{ yes: boolean }>>`
           select (exists (select 1 from appointments where patient_id = ${patient.id} and appointment_type_id = ${required.id}
-              and status in ('confirmado', 'pendiente', 'atendido'))
+              and status in ('confirmado', 'pendiente', 'atendido') and not (smile_deferred and status = 'pendiente'))
             or exists (select 1 from patient_visits where patient_id = ${patient.id} and appointment_type_id = ${required.id})) as yes`
       : [{ yes: false }];
     if (had?.yes) continue;
@@ -672,6 +679,8 @@ type BookOptions = {
   durationMin?: number;
   /** Lo da o lo mueve el consultorio: puede usar las horas reservadas para urgencias. */
   byPanel?: boolean;
+  /** El alta pendiente se verifica contra Smile Connect antes de escribirla, fuera del pedido. */
+  deferSmile?: boolean;
 };
 
 const AGAIN = " Consultá la disponibilidad de nuevo y ofrecé otra opción.";
@@ -731,7 +740,7 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
     }
     // Al reservar se consulta Google en el momento, para ese horario exacto: lo que se
     // anotó recién en el calendario del profesional también cuenta.
-    const calendar = await externalBusy(clinic.id, second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, { fresh: true, timeZone: clinic.timezone });
+    const calendar = await externalBusy(clinic.id, second ? [pro.id, second.id] : [pro.id], startsAt, endsAt, { fresh: true, deferSmile: opts.deferSmile, timeZone: clinic.timezone });
     const overlapping = calendar.filter((b) => new Date(b.starts_at) < endsAt && new Date(b.ends_at) > startsAt);
     // Al paciente no se le cuenta qué tiene el profesional en su calendario; al consultorio, sí.
     if (overlapping.length) {
@@ -766,13 +775,13 @@ function coverageFor(
 const planFor = (patient: Patient, coverage: string | null | undefined) =>
   coverage && patient.coverage && coverageKey(coverage) === coverageKey(patient.coverage) ? patient.coverage_plan : null;
 
-type PatientAppointment = Pick<Appointment, "id" | "starts_at" | "ends_at" | "professional_id" | "appointment_type_id" | "status" | "external_id" | "smile_sync">
+type PatientAppointment = Pick<Appointment, "id" | "starts_at" | "ends_at" | "professional_id" | "appointment_type_id" | "status" | "external_id" | "smile_sync" | "smile_deferred" | "smile_reply_phone">
   & { professional: string; type_name: string };
 
 /** Los turnos activos que todavía no terminaron de un paciente. */
 async function upcomingOf(patientId: string): Promise<PatientAppointment[]> {
   return sql<PatientAppointment[]>`
-    select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, a.status, a.external_id, a.smile_sync,
+    select a.id, a.starts_at, a.ends_at, a.professional_id, a.appointment_type_id, a.status, a.external_id, a.smile_sync, a.smile_deferred, a.smile_reply_phone,
            pr.full_name || coalesce(' y ' || p2.full_name, '') as professional, coalesce(a.title, t.name) as type_name
     from appointments a
     join professionals pr on pr.id = a.professional_id
@@ -789,7 +798,7 @@ const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
 type NewAppointment = Pick<
   Appointment,
   "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
-> & Partial<Pick<Appointment, "second_professional_id" | "title">>;
+> & Partial<Pick<Appointment, "second_professional_id" | "title" | "smile_deferred" | "smile_reply_phone">>;
 
 /**
  * Serializa las reservas de cada profesional dentro de la transacción: si dos
@@ -838,11 +847,31 @@ export function appointmentTitle(raw: string | undefined, typeName: string): str
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
+function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id" | "smile_reply_phone" | "smile_sync">) {
+  const review = appointment.smile_sync === "revisar";
+  if (!review) processSmileBookingLater(clinicId, appointment.id);
+  return {
+    ok: false,
+    pendiente_confirmacion: !review,
+    pendiente_recepcion: review,
+    turno_id: appointment.id,
+    mensaje: review
+      ? "El pedido sigue pendiente y ya está en recepción. No crees otra tarea ni confirmes el turno."
+      : appointment.smile_reply_phone
+        ? "Pedido recibido. Decile al paciente que le avisaremos por WhatsApp cuando quede confirmado. El turno sigue pendiente. No crees una tarea ni repitas la reserva."
+        : "Pedido recibido. El turno sigue pendiente de verificación en la agenda. No lo confirmes todavía ni repitas la reserva.",
+  };
+}
+
 export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {}) {
   const clinic = await getClinic(ctx.clinicId);
   const liveSmile = await usesLiveSmile(clinic.id);
+  const deferSmile = liveSmile && clinic.id === GUERRA_MININNI;
   // El panel y el equipo del consultorio por WhatsApp reservan como el consultorio.
   const byPanel = ctx.channel === "panel" || Boolean(ctx.staff);
+  const source = sourceFromChannel(ctx.channel, ctx.patientPhone);
+  const phone = normalizePhone(ctx.patientPhone);
+  const replyPhone = !byPanel && (source === "whatsapp" || source === "telefono") && /^\d{10,15}$/.test(phone) ? phone : null;
   const patient = await ensurePatient(ctx, input.nombre_completo);
   if (!patient.full_name) throw new ToolError("Antes de reservar necesito el nombre y apellido del paciente (registrar_paciente).");
 
@@ -854,12 +883,13 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   // Si ya tiene la primera práctica y pide la segunda, se suma la segunda a continuación.
   const same = bookedAt(input.tipo_turno_id, startsAt);
   const sameNext = same && input.segundo_tipo_turno_id ? bookedAt(input.segundo_tipo_turno_id, new Date(same.ends_at)) : undefined;
+  if (same?.smile_deferred && same.status === "pendiente") return pendingSmileResult(clinic.id, same);
   for (const existing of [same, sameNext]) {
     if (existing && (smileBookingPending(existing) || (liveSmile && !existing.external_id?.startsWith("sc:")))) {
       throw new SmileHandoff("Ese turno figura para revisión de recepción. Todavía no puedo confirmar la reserva.", `Comprobar en Smile Connect el turno de Turnia ${existing.id}.`);
     }
   }
-  if (liveSmile && ((!same && input.segundo_tipo_turno_id) || opts.secondProfessionalId)) {
+  if (liveSmile && (((deferSmile || !same) && input.segundo_tipo_turno_id) || opts.secondProfessionalId)) {
     throw new SmileHandoff("El equipo del consultorio coordina esta visita combinada. Todavía no quedó reservada.", "Coordinar la visita combinada solicitada.");
   }
   if (same && (!input.segundo_tipo_turno_id || sameNext)) {
@@ -874,7 +904,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
 
   type Part = Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date };
   const parts: Part[] = [];
-  if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, { ...opts, byPanel })), startsAt });
+  if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, { ...opts, byPanel, deferSmile })), startsAt });
   if (input.segundo_tipo_turno_id) {
     const { appointmentTypes } = await getCatalog(clinic.id);
     const first = appointmentTypes.find((t) => t.id === input.tipo_turno_id);
@@ -931,6 +961,13 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
         }
       }
       await lockProfessionals(tx, second ? [pro.id, second.id] : [pro.id]);
+      if (deferSmile) {
+        const [existing] = await tx<Appointment[]>`
+          select * from appointments where clinic_id = ${clinic.id} and patient_id = ${patient.id}
+            and professional_id = ${pro.id} and appointment_type_id = ${input.tipo_turno_id}
+            and starts_at = ${startsAt.toISOString()} and status = any(${ACTIVE}::text[]) and smile_deferred`;
+        if (existing) return { rows: [existing], problem: null };
+      }
       const rows: Appointment[] = [];
       for (const [i, p] of parts.entries()) {
         rows.push(
@@ -943,14 +980,15 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
             starts_at: p.startsAt.toISOString(),
             ends_at: p.endsAt.toISOString(),
             status: liveSmile ? "pendiente" : "confirmado",
-            source: sourceFromChannel(ctx.channel, ctx.patientPhone),
+            source,
             coverage,
             notes: i === 0 ? (input.notas ?? null) : null,
             ...(i === 0 && title && { title }),
+            ...(deferSmile && { smile_deferred: true, smile_reply_phone: replyPhone }),
           }),
         );
       }
-      if (!liveSmile) return { rows, problem: null };
+      if (!liveSmile || deferSmile) return { rows, problem: null };
       const problem = await confirmNewSmileAppointment(tx, clinic.id, rows[0].id);
       if (problem) return { rows, problem };
       const confirmed = await tx<Appointment[]>`select * from appointments where id = ${rows[0].id}`;
@@ -959,6 +997,11 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   } catch (e) {
     if (isOverlapError(e)) throw new ToolError("Ese horario se acaba de ocupar. Consultá la disponibilidad de nuevo.");
     throw e;
+  }
+  if (deferSmile) {
+    const [appointment] = created;
+    if (appointment.status === "pendiente") return pendingSmileResult(clinic.id, appointment);
+    return { ok: true, turno_id: appointment.id, mensaje: "Ese turno ya estaba confirmado.", direccion: clinic.address };
   }
   if (smileProblem !== null) {
     throw new SmileHandoff(
@@ -1044,12 +1087,13 @@ export async function listPatientAppointments(ctx: ToolContext) {
   };
 }
 
-function smileBookingPending(appt: Pick<Appointment, "status" | "smile_sync">): boolean {
-  return appt.status === "pendiente" && appt.smile_sync === "revisar";
+function smileBookingPending(appt: Pick<Appointment, "status" | "smile_sync" | "smile_deferred">): boolean {
+  return appt.status === "pendiente" && (appt.smile_sync === "revisar" || !!appt.smile_deferred);
 }
 
 function requireConfirmedSmileBooking(appt: Appointment) {
   if (smileBookingPending(appt)) {
+    if (appt.smile_deferred) throw new ToolError("El pedido sigue pendiente de verificación en la agenda.");
     throw new SmileHandoff("Ese pedido sigue pendiente de confirmación por el consultorio.", `Revisar el turno de Turnia ${appt.id} antes de gestionarlo.`);
   }
 }

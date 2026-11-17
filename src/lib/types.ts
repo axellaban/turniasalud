@@ -203,6 +203,8 @@ export type Appointment = {
   external_id?: string | null;
   external_status?: string | null;
   smile_sync?: string | null;
+  smile_deferred?: boolean;
+  smile_reply_phone?: string | null;
   created_at: string;
 };
 
