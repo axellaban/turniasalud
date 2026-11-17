@@ -216,6 +216,7 @@ async function syncOne(conn: CalendarConnection | null, id: string): Promise<"ok
         join patients pa on pa.id = a.patient_id
         join clinics c on c.id = a.clinic_id
       where a.id = ${id} and a.calendar_sync in ('pendiente', 'error')
+        and not (a.status = 'pendiente' and a.smile_sync is not distinct from 'revisar')
       for update of a skip locked`;
     if (!row) return "omitido";
     if (!conn) {
@@ -252,6 +253,7 @@ export async function syncPendingCalendar(clinicId?: string): Promise<{ ok: numb
   const pending = await sql<{ id: string; clinic_id: string }[]>`
     select id, clinic_id from appointments
     where calendar_sync in ('pendiente', 'error') and calendar_attempts < ${MAX_ATTEMPTS}
+      and not (status = 'pendiente' and smile_sync is not distinct from 'revisar')
       ${clinicId ? sql`and clinic_id = ${clinicId}` : sql``}
     order by starts_at limit 50`;
   const result = { ok: 0, error: 0 };

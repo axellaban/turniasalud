@@ -47,7 +47,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
       </div>
       <p className="mt-1 max-w-3xl text-sm text-brand-900/60">
         Con la clave de la API de Smile Connect, Turnia trae la agenda sin Tampermonkey y Sofi ofrece solo lo que está libre ahí, con bloqueos y
-        feriados. Si se elige, también escribe allá los turnos que da, mueve o cancela. Cada cambio se verifica antes y queda registrado con cómo estaba.
+        feriados. En modo «Crear turnos», Sofi confirma cada alta simple después de comprobarla en Smile Connect.
       </p>
 
       {hasKey && !conn?.api_supports_notes && <Notice tone="warning" className="mt-3">
@@ -128,10 +128,10 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
           {review.map((r) => <li key={r.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
             <span className="min-w-0"><span className="font-medium text-brand-950">{r.patient ?? "Paciente"}</span> · {formatDateTime(r.starts_at, tz)}
               <span className="block text-brand-900/70">{r.smile_error}</span></span>
-            <form action={dismissSmileReviewAction}>
+            {r.status === "pendiente" ? <span className="text-xs text-brand-900/70">Verificá el pedido en Smile Connect antes de confirmar.</span> : <form action={dismissSmileReviewAction}>
               <input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={r.id} />
               <button className={smallButtonClass}>Ya lo resolví</button>
-            </form>
+            </form>}
           </li>)}
         </ul>
       </div>}

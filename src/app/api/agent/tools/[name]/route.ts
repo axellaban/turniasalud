@@ -16,6 +16,7 @@ import {
   registerPatient,
   rescheduleAppointment,
   saveHealthForm,
+  SmileHandoff,
   sourceFromChannel,
   ToolError,
   type ToolContext,
@@ -148,7 +149,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
         context.appointmentPatientId = access.patient_id;
       }
     }
-    const result = await handler(context, toolInput);
+    let result: unknown;
+    try {
+      result = await handler(context, toolInput);
+    } catch (e) {
+      if (!(e instanceof SmileHandoff)) throw e;
+      const task = await createTask(context, {
+        tipo: "derivacion_humana",
+        titulo: "Revisar turno en Smile Connect",
+        detalle: e.detail,
+      });
+      log("pendiente");
+      return NextResponse.json({
+        ok: false,
+        pendiente_recepcion: true,
+        tarea_id: task.tarea_id,
+        error: e.message,
+        mensaje: "Recepción ya tiene el pedido. Explicale al paciente qué quedó pendiente.",
+      });
+    }
     log("ok");
     // Los turnos nuevos o cambiados se escriben en Google Calendar sin demorar la respuesta.
     if (CHANGES_AGENDA.has(name)) syncCalendarLater(ctx.data.clinic_id);

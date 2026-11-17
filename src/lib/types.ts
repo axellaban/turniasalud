@@ -202,6 +202,7 @@ export type Appointment = {
   replaced_by?: string | null;
   external_id?: string | null;
   external_status?: string | null;
+  smile_sync?: string | null;
   created_at: string;
 };
 

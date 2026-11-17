@@ -68,12 +68,12 @@ Solo con el «sí» del usuario y del consultorio.
 
 1. **Vercel** → `turniasalud` → Settings → Environment Variables → Production. Agregá `SMILE_CONNECT_WRITES` con el valor `on`. No es secreto. Después, redeploy de producción. Sin esta variable, Turnia no escribe aunque el modo lo diga.
 2. En el panel, modo **«Crear turnos»**. Marcá la casilla «lo revisé con el consultorio…» y guardá.
-3. **Prueba:** en «Probar a Sofi», con datos ficticios y en un horario que elija el consultorio, reservá un turno. En unos minutos tiene que aparecer en Smile Connect, con un solo profesional y en ese horario. Después cancelalo en Smile Connect, a mano, lo cancela recepción. **Este modo no cancela.**
+3. **Prueba:** en «Probar a Sofi», con datos ficticios y en un horario que elija el consultorio, reservá un turno simple. Sofi debe confirmar solo cuando el mismo turno ya aparezca en Smile Connect, con un profesional y en ese horario. Si queda pendiente, revisá la tarea de recepción y el registro de la tarjeta. Si el alta fue exitosa, recepción cancela el turno ficticio desde Smile Connect.
 4. Avisale al usuario que recepción ya puede dejar de copiar a mano los turnos de Sofi: llegan solos, y el detalle sale en el resumen de las 10.
 
 ### Etapa D · Después de unos días sin problemas: «Crear, mover y cancelar»
 
-Solo con el «sí» del usuario. Cambiá el modo y avisale que, desde ahí, también se mueven y cancelan solos.
+Este modo sincroniza los movimientos y cancelaciones que recepción hace desde el panel. Sofi deriva esos pedidos a recepción. Antes de probar este modo, validá un movimiento y una cancelación de prueba con el consultorio.
 
 **Para apagar al instante:** modo «Apagada». Lo pendiente de escribir se descarta.
 
