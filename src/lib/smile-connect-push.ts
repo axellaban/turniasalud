@@ -24,7 +24,7 @@ import {
   type ScAppointment,
   type SmileClient,
 } from "./smile-connect-api";
-import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
+import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
 import { humanSlot, localDateKey } from "./time";
 import type { Appointment, Patient, SmileManagement } from "./types";
 
@@ -40,6 +40,8 @@ import type { Appointment, Patient, SmileManagement } from "./types";
 
 const MAX_ATTEMPTS = 5;
 const DEFERRED_ATTEMPTS = 3;
+const SMILE_RATE_LIMIT_WAIT_SECONDS = 60;
+const MAX_INLINE_RETRY_MS = 65_000;
 /** Más que esto en una hora no es normal en un consultorio: se frena la escritura y se avisa. */
 const MAX_WRITES_PER_HOUR = 15;
 const ACTIVE = ["confirmado", "pendiente"];
@@ -77,6 +79,7 @@ type Row = {
 
 type ManagedEffect = { before: Appointment; after: Appointment; request: SmileManagement };
 type Outcome = { status: "ok" | "revisar" | "error" | "sombra" | "nada"; message?: string; confirmed?: Row; managed?: ManagedEffect };
+type RateLimited = { status: "espera"; retryAt: string };
 
 const scIdOf = (external: string | null) => {
   const m = /^sc:(\d+)$/.exec(external ?? "");
@@ -586,6 +589,7 @@ async function managedConfirmationEffects({ before, after, request }: ManagedEff
 export async function pushPendingSmile(clinicId: string, appointmentId?: string): Promise<Record<string, number | string>> {
   const conn = await getSmileApiConnection(clinicId);
   if (!conn?.api_key_encrypted || !WRITE_MODES.includes(conn.api_mode)) return { omitido: "La escritura está apagada." };
+  if (conn.api_retry_at && Date.parse(conn.api_retry_at) > Date.now()) return { reintentar_en: conn.api_retry_at };
   const pending = await sql<Array<{ id: string }>>`
     select id from appointments
     where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error') and smile_attempts < ${MAX_ATTEMPTS}
@@ -595,10 +599,13 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
   const result: { ok: number; sombra: number; revisar: number; error: number; frenado?: string } = { ok: 0, sombra: 0, revisar: 0, error: 0 };
   let pauseReason = conn.api_writes_paused;
   for (const { id } of pending) {
-    const outcome = await sql.begin(async (tx) => {
+    const outcome = await sql.begin(async (tx): Promise<Outcome | RateLimited | null> => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
       const current = await getSmileApiConnection(clinicId, tx);
       if (current?.api_mode !== conn.api_mode || current.api_key_encrypted !== conn.api_key_encrypted) return null;
+      if (current.api_retry_at && Date.parse(current.api_retry_at) > Date.now()) {
+        return { status: "espera", retryAt: current.api_retry_at };
+      }
       pauseReason = current.api_writes_paused;
       if (!pauseReason) {
         const [{ n }] = await tx<Array<{ n: number }>>`
@@ -633,6 +640,21 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
           where id = ${row.id}`;
         return out;
       } catch (e) {
+        // El proveedor pudo aplicar el cambio antes de limitar la lectura de verificación.
+        // La espera es de la clínica y no consume un intento de la operación.
+        if ((e instanceof SmileApiError && e.status === 429) || e instanceof SmileBudgetError) {
+          const retryAt = new Date();
+          if (e instanceof SmileBudgetError) {
+            retryAt.setUTCHours(24, 0, 0, 0);
+          } else {
+            const seconds = Math.max(1, e.retryAfter ?? SMILE_RATE_LIMIT_WAIT_SECONDS);
+            retryAt.setTime(retryAt.getTime() + seconds * 1_000);
+          }
+          const until = retryAt.toISOString();
+          await tx`update smile_connect_connections set api_retry_at = ${until} where clinic_id = ${clinicId}`;
+          await tx`update appointments set smile_sync = 'pendiente', smile_error = ${smileErrorText(e)} where id = ${row.id}`;
+          return { status: "espera", retryAt: until };
+        }
         const review = e instanceof Review || (e instanceof SmileApiError && !e.transient)
           || ((deferred || management) && row.smile_attempts + 1 >= DEFERRED_ATTEMPTS);
         const message = (e instanceof Review ? e.message : smileErrorText(e)).slice(0, 300);
@@ -666,6 +688,7 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
       }
     });
     if (!outcome) continue;
+    if (outcome.status === "espera") return { ...result, reintentar_en: outcome.retryAt };
     if (outcome.confirmed) await deferredConfirmationEffects(outcome.confirmed).catch((e) =>
       console.error("Avisar sobre el turno confirmado en Smile Connect", e));
     if (outcome.managed) await managedConfirmationEffects(outcome.managed).catch((e) =>
@@ -684,8 +707,11 @@ export function processSmileBookingLater(clinicId: string, appointmentId: string
   try {
     after(async () => {
       let outcome = await pushPendingSmile(clinicId, appointmentId);
-      if (outcome.error) {
-        await new Promise((resolve) => setTimeout(resolve, 3_000));
+      const retryIn = typeof outcome.reintentar_en === "string"
+        ? Date.parse(outcome.reintentar_en) - Date.now()
+        : outcome.error ? 3_000 : null;
+      if (retryIn !== null && retryIn <= MAX_INLINE_RETRY_MS) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, retryIn)));
         outcome = await pushPendingSmile(clinicId, appointmentId);
       }
       await Promise.allSettled([sendPendingNotices(clinicId), ...(outcome.ok ? [syncPendingCalendar(clinicId)] : [])]);
