@@ -567,6 +567,43 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       }
     });
 
+    it("verifica la hora exacta antes del límite de opciones y ofrece alternativas si Smile la ocupa", async () => {
+      const offset = 37;
+      const args = { clinic_id: gm, profesional_id: gmPro, desde: day(offset), hasta: day(offset) };
+      const exact = { ...args, hora_exacta: "15:00" };
+      const expectedSlot = { inicio: at(offset, "15:00"), profesional_id: gmPro };
+      const general = await tool("consultar_disponibilidad", { ...args, tipo_turno_id: gmConsult });
+      expect(general.turnos).toHaveLength(2);
+      expect(general.turnos).not.toContainEqual(expect.objectContaining(expectedSlot));
+      expect(await tool("consultar_disponibilidad", { ...exact, tipo_turno_id: gmConsult })).toMatchObject({
+        ok: true, hora_solicitada: { hora: "15:00", disponible: true }, turnos: [expect.objectContaining(expectedSlot)],
+      });
+
+      await link.setSmileMode(gm, "completa");
+      const booking = await book(offset);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      const move = { ...exact, turno_id: booking.turno_id };
+      expect(await tool("consultar_disponibilidad", move)).toMatchObject({
+        ok: true, hora_solicitada: { hora: "15:00", disponible: true }, turnos: [expect.objectContaining(expectedSlot)],
+      });
+
+      fake.appointments.set(80537, scAppt(80537, 5002, offset, "15:00", "15:30"));
+      try {
+        const unavailable = await tool("consultar_disponibilidad", move);
+        expect(unavailable).toMatchObject({ ok: true, hora_solicitada: { hora: "15:00", disponible: false } });
+        expect(unavailable.turnos).toHaveLength(2);
+        expect(unavailable.turnos).not.toContainEqual(expect.objectContaining(expectedSlot));
+        expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado" });
+      } finally {
+        fake.appointments.delete(80537);
+        await tool("cancelar_turno", { clinic_id: gm, turno_id: booking.turno_id });
+        await push.pushPendingSmile(gm, booking.turno_id);
+        await send();
+        fake.whatsapps.length = 0;
+        await link.setSmileMode(gm, "crear");
+      }
+    });
+
     it("recupera un alta cuya respuesta se perdió y envía una sola confirmación", async () => {
       fake.calls.length = 0;
       const [a, b] = await Promise.all([book(20), book(20)]);
