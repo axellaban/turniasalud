@@ -250,7 +250,7 @@ export async function addStaffPhone(_previous: FormState, form: FormData): Promi
   if (isFormState(clinic)) return clinic;
   const name = text(form, "name")?.slice(0, 80);
   const phone = normalizePhone(text(form, "phone"));
-  if (!name) return { ok: false, message: "Escribí de quién es (por ejemplo, Dr. Mininni)." };
+  if (!name) return { ok: false, message: "Escribí de quién es (por ejemplo, Recepción)." };
   if (!/^\d{10,15}$/.test(phone)) return { ok: false, message: "Revisá el celular: con código de área, por ejemplo 11 5555-0100." };
   const [row] = await sql`
     insert into clinic_staff_phones (clinic_id, phone, name) values (${clinic.id}, ${phone}, ${name})
@@ -262,9 +262,12 @@ export async function addStaffPhone(_previous: FormState, form: FormData): Promi
   return { ok: true, message: row.created ? `Listo: ${name} ya tiene acceso total por WhatsApp.` : `Actualizado: ese celular es de ${name}.` };
 }
 
-/** Prende o apaga el resumen diario de Sofi (a las 10, por WhatsApp) para un celular del equipo. */
+/**
+ * Prende o apaga el resumen diario de Sofi (a las 10, por WhatsApp) para un celular del equipo que ya
+ * tiene acceso total. Lo puede hacer el consultorio: no da acceso nuevo, solo elige quién lo recibe.
+ */
 export async function toggleStaffSummary(form: FormData): Promise<void> {
-  await requireAdmin();
+  await requirePanelSession();
   const clinic = await getPanelClinic(form);
   const id = uuid(form, "id");
   if (id) await sql`update clinic_staff_phones set daily_summary = ${form.get("on") === "1"} where id = ${id} and clinic_id = ${clinic.id}`;

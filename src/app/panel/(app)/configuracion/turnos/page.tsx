@@ -5,7 +5,7 @@ import { getCatalog, isDentalClinic } from "@/lib/clinic";
 import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES } from "@/lib/agent/modules/odontologia";
 import { Badge, Field, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
-import { ConfigHeader } from "../header";
+import { ConfigHeader, loadConfigConflicts } from "../header";
 import { ProfileSaveForm } from "../profile-save";
 import { Section, wide } from "../section";
 
@@ -24,7 +24,7 @@ export default async function BookingRulesPage() {
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion/turnos" />
+      <ConfigHeader clinic={clinic} current="/panel/configuracion/turnos" conflicts={await loadConfigConflicts(clinic)} />
       <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveBookingRules} scope="turnos" agentName={agent}>
         <input type="hidden" name="rules_form" value="1" />
         <Section id="mover" title="Mover y cancelar turnos" description={`Si no se cumple una regla, ${agent} no toca el turno: crea una tarea para recepción y le dice al paciente que lo conserva.`}>
@@ -87,8 +87,8 @@ export default async function BookingRulesPage() {
               <textarea name="after_hours_instructions" rows={2} defaultValue={clinic.after_hours_instructions ?? ""} className={inputClass} />
             </Field>
           </div>
-          <Field label="Teléfono de recepción" hint={`En una llamada, ${agent} transfiere acá a quien pide hablar con una persona.`}>
-            <input name="handoff_phone" defaultValue={clinic.handoff_phone ?? ""} inputMode="tel" placeholder="+54 223 555-0100" className={inputClass} />
+          <Field label="Teléfono para pasar llamadas" hint={`Solo para llamadas: ${agent} le pasa acá a quien pide hablar con una persona. Tiene que ser otra línea, no la que atiende ${agent}. Vacío: deja el pedido en Tareas. El teléfono que se le da al paciente es el de «Consultorio».`}>
+            <input name="handoff_phone" defaultValue={clinic.handoff_phone ?? ""} inputMode="tel" placeholder="Otra línea de recepción" className={inputClass} />
           </Field>
         </Section>
 

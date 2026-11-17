@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "./db";
+import { faqMentionsPayment } from "./config-conflicts";
 import type { Clinic } from "./types";
 
 export type CompletenessItem = { label: string; done: boolean; href: string };
@@ -20,7 +21,8 @@ export async function profileCompleteness(clinic: Clinic): Promise<{ percent: nu
     { label: "Teléfono", done: filled(clinic.phone), href: `${config}#datos` },
     { label: "Dirección", done: filled(clinic.address), href: `${config}#datos` },
     { label: "Horario de atención", done: filled(clinic.hours_text), href: `${config}#datos` },
-    { label: "Formas de pago", done: filled(clinic.payment_methods), href: `${config}#datos` },
+    // Si las preguntas frecuentes ya dicen cómo se paga, no se pide cargarlo dos veces.
+    { label: "Formas de pago", done: filled(clinic.payment_methods) || faqMentionsPayment(clinic.faq), href: `${config}#datos` },
     { label: "Preguntas frecuentes", done: filled(clinic.faq), href: `${config}#respuestas` },
     { label: "Horarios de cada profesional", done: catalog.pros > 0 && catalog.pros_without_hours === 0, href: `${config}/equipo` },
     { label: "Precios de las prestaciones", done: catalog.types > 0 && catalog.types_without_price === 0, href: `${config}/prestaciones` },
