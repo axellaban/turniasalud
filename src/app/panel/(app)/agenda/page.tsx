@@ -29,6 +29,7 @@ type Row = {
   confirmed_at: string | null;
   reminder_sent_at: string | null;
   calendar_sync: string | null;
+  smile_management: { operation: "mover" | "cancelar" } | null;
   professional_id: string;
   second_professional_id: string | null;
   appointment_type_id: string;
@@ -71,7 +72,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [rows, blocks, google] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name
+             a.calendar_sync, a.smile_management, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
@@ -434,6 +435,7 @@ function AppointmentDetail({ row: a, healthForm, pro, tz, closeHref, clinicId, t
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         <StatusBadge value={a.status} />
+        {a.smile_management && <span className="font-medium text-amber-700">{a.smile_management.operation === "mover" ? "Reprogramación pendiente" : "Cancelación pendiente"} en Smile Connect</span>}
         {a.confirmed_at ? <span className="font-medium text-brand-700">Confirmó asistencia</span> : a.reminder_sent_at ? <span className="text-brand-900/65">Recordatorio enviado</span> : null}
         {a.calendar_sync === "ok" && <span className="text-brand-900/65">En Google Calendar</span>}
         {(a.calendar_sync === "pendiente" || a.calendar_sync === "error") && <span className="text-amber-700">Pendiente en Google Calendar</span>}

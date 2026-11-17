@@ -13,7 +13,7 @@ import { googleBusy } from "../calendar/sync";
 import { getSmileApiConnection, isLiveSmileMode, smileBusy, writesEnabledOnServer } from "../smile-connect-link";
 import { confirmNewSmileAppointment, processSmileBookingLater } from "../smile-connect-push";
 import { appointmentAccessKey, expireAppointmentAccess, GUERRA_MININNI } from "./appointment-access";
-import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, Task, TaskPriority, TaskType } from "../types";
+import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, SmileManagement, Task, TaskPriority, TaskType } from "../types";
 
 import { healthFormSheet, healthFormTemplate, type HealthFormInput } from "../health-form";
 import { HEALTH_FORM_VALID_DAYS, healthFormOffer, latestHealthForm, markHealthFormInvited, saveHealthFormAnswers } from "../health-forms";
@@ -117,6 +117,17 @@ export function sourceFromChannel(channel: string | undefined, phone: string): A
   if (/(twilio|sip|phone|telephon|exotel)/.test(c)) return "telefono";
   if (phone.startsWith("web-")) return "web";
   return c ? "web" : "whatsapp";
+}
+
+function smileReplyPhone(ctx: ToolContext, source: AppointmentSource) {
+  const phone = normalizePhone(ctx.patientPhone);
+  return !ctx.staff && (source === "whatsapp" || source === "telefono") && /^\d{10,15}$/.test(phone) ? phone : null;
+}
+
+async function usesSmileManagement(clinicId: string, tx?: TransactionSql) {
+  if (clinicId !== GUERRA_MININNI || !writesEnabledOnServer()) return false;
+  const connection = await getSmileApiConnection(clinicId, tx);
+  return Boolean(connection?.api_key_encrypted && connection.api_mode === "completa");
 }
 
 /** La ficha con la que se está hablando: la elegida en el panel o la de este número. */
@@ -871,8 +882,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   // El panel y el equipo del consultorio por WhatsApp reservan como el consultorio.
   const byPanel = ctx.channel === "panel" || Boolean(ctx.staff);
   const source = sourceFromChannel(ctx.channel, ctx.patientPhone);
-  const phone = normalizePhone(ctx.patientPhone);
-  const replyPhone = !byPanel && (source === "whatsapp" || source === "telefono") && /^\d{10,15}$/.test(phone) ? phone : null;
+  const replyPhone = smileReplyPhone(ctx, source);
   const patient = await ensurePatient(ctx, input.nombre_completo);
   if (!patient.full_name) throw new ToolError("Antes de reservar necesito el nombre y apellido del paciente (registrar_paciente).");
 
@@ -1154,6 +1164,45 @@ export async function confirmAppointment(ctx: ToolContext, input: { turno_id: st
 // ---------------------------------------------------------------------------
 // cancelar_turno (+ ofrece el hueco a la lista de espera)
 // ---------------------------------------------------------------------------
+async function requestSmileManagement(appt: Appointment, request: SmileManagement) {
+  assertNotOver(appt);
+  if (!/^sc:\d+$/.test(appt.external_id ?? "") || appt.second_professional_id) {
+    throw new SmileHandoff("Recepción tiene que verificar ese turno antes de aplicar el cambio.", `Revisar el turno ${appt.id} para ${request.operation}.`);
+  }
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${appt.clinic_id}`}, 0))`;
+    if (!(await usesSmileManagement(appt.clinic_id, tx))) {
+      throw new SmileHandoff("La configuración de la agenda cambió. Recepción tiene que revisar el pedido.", `Revisar el turno ${appt.id} para ${request.operation}.`);
+    }
+    const [current] = await tx<Appointment[]>`select * from appointments where id = ${appt.id} for update`;
+    if (!current || !ACTIVE.includes(current.status) || current.starts_at !== appt.starts_at || current.ends_at !== appt.ends_at
+      || current.professional_id !== appt.professional_id || current.second_professional_id !== appt.second_professional_id
+      || current.external_id !== appt.external_id || current.patient_id !== appt.patient_id
+      || current.appointment_type_id !== appt.appointment_type_id || current.notes !== appt.notes || current.title !== appt.title) {
+      throw new ToolError("Ese turno cambió recién. Volvé a consultar sus datos.");
+    }
+    if (current.smile_management) {
+      if (current.smile_management.operation !== request.operation || (request.operation === "mover"
+        && current.smile_management.operation === "mover"
+        && (current.smile_management.startsAt !== request.startsAt || current.smile_management.professionalId !== request.professionalId))) {
+        throw new ToolError("Este turno ya tiene otro pedido pendiente. Esperá el resultado antes de intentar otro cambio.");
+      }
+      return;
+    }
+    await tx`
+      update appointments set smile_management = ${json(request)}, smile_sync = 'pendiente', smile_attempts = 0, smile_error = null
+      where id = ${appt.id}`;
+  });
+  processSmileBookingLater(appt.clinic_id, appt.id);
+  return {
+    ok: false, pendiente_confirmacion: true, turno_id: appt.id, segundo_turno_id: undefined,
+    aviso: undefined, avisados_lista_espera: 0,
+    mensaje: request.replyPhone
+      ? "Pedido recibido. Decile al paciente que le avisaremos por WhatsApp cuando el cambio esté verificado. Sigue pendiente. No repitas el pedido."
+      : "Pedido recibido. El cambio sigue pendiente de verificación en la agenda. No lo confirmes todavía ni repitas el pedido.",
+  };
+}
+
 async function cancelLoaded(
   clinic: Clinic,
   patient: Patient,
@@ -1188,6 +1237,10 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
       `Faltan menos de ${notice} ${notice === 1 ? "hora" : "horas"} para el turno: según las reglas del consultorio, la cancelación la gestiona recepción. Creá una tarea de derivacion_humana con el pedido y aclarale al paciente que el turno sigue reservado hasta que recepción le confirme.`,
     );
   }
+  const via = sourceFromChannel(ctx.channel, ctx.patientPhone);
+  if (await usesSmileManagement(clinic.id)) {
+    return requestSmileManagement(appt, { operation: "cancelar", via, reason: input.motivo ?? null, replyPhone: smileReplyPhone(ctx, via) });
+  }
   if (await usesLiveSmile(clinic.id)) {
     throw new SmileHandoff("La cancelación la confirma recepción. El turno sigue reservado.", `Cancelar el turno ${appt.id} en Smile Connect. ${input.motivo ?? ""}`);
   }
@@ -1208,6 +1261,9 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
 export async function cancelClinicAppointment(clinicId: string, appointmentId: string, motivo?: string) {
   const clinic = await getClinic(clinicId);
   const { patient, appt } = await getClinicAppointment(clinicId, appointmentId);
+  if (await usesSmileManagement(clinicId)) {
+    return requestSmileManagement(appt, { operation: "cancelar", via: "panel", reason: motivo ?? null, replyPhone: null });
+  }
   const { when, offered } = await cancelLoaded(clinic, patient, appt, motivo, "clinica", "panel");
   return {
     ok: true,
@@ -1273,6 +1329,7 @@ async function rescheduleLoaded(
   byPanel = false,
   /** Por dónde se mueve (lo cuenta el resumen diario); por defecto, el panel o el canal del paciente. */
   via: string = byPanel ? "panel" : source,
+  management?: { via: AppointmentSource; replyPhone: string | null },
 ) {
   assertNotOver(appt);
   const professionalId = input.profesional_id || appt.professional_id;
@@ -1284,12 +1341,16 @@ async function rescheduleLoaded(
   const preserve = clinic.keep_duration_on_reschedule;
   const customDuration = keptDuration(appt, preserve);
   const moving = follower ? [appt.id, follower.id] : appt.id;
+  if (management && (follower || appt.second_professional_id)) {
+    throw new SmileHandoff("Recepción coordina el cambio de esta visita combinada.", `Reprogramar la visita del turno ${appt.id}.`);
+  }
   const { type, pro, second, endsAt } = await assertBookable(clinic, professionalId, appt.appointment_type_id, startsAt, {
     ignoreAppointmentId: moving,
     force,
     secondProfessionalId: appt.second_professional_id,
     durationMin: customDuration,
     byPanel,
+    deferSmile: Boolean(management),
   });
   let next: (Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date }) | null = null;
   if (follower) {
@@ -1317,6 +1378,14 @@ async function rescheduleLoaded(
   );
   if (clash) {
     throw new ToolError(`El paciente ya tiene otro turno a esa hora: ${clash.type_name} con ${clash.professional} el ${humanSlot(new Date(clash.starts_at), clinic.timezone)}.`);
+  }
+  if (management) {
+    if (pro.id === appt.professional_id && startsAt.getTime() === Date.parse(appt.starts_at)) {
+      throw new ToolError("El turno ya está en ese horario.");
+    }
+    return requestSmileManagement(appt, {
+      operation: "mover", ...management, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), professionalId: pro.id, coverage,
+    });
   }
 
   // En una transacción: liberamos el turno viejo (puede superponerse con el
@@ -1368,6 +1437,7 @@ async function rescheduleLoaded(
   if (follower && newNext) await notifyN8n("turno.reprogramado", { clinic_id: clinic.id, before: follower, after: newNext, patient });
   for (const freed of follower ? [appt, follower] : [appt]) await offerFreedSlot(clinic, freed).catch(() => 0);
   return {
+    ok: true,
     turno_id: newAppt.id,
     ...(newNext && { segundo_turno_id: newNext.id }),
     mensaje: `Listo: el turno pasó al ${humanSlot(startsAt, clinic.timezone)} con ${pro.full_name}${second ? ` y ${second.full_name}` : ""}${
@@ -1440,6 +1510,13 @@ async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
 export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id: string; nuevo_inicio: string; profesional_id?: string }) {
   const clinic = await getClinic(ctx.clinicId);
   const { patient, appt, follower } = await loadReschedule(ctx, clinic, input.turno_id);
+  const via = sourceFromChannel(ctx.channel, ctx.patientPhone);
+  if (await usesSmileManagement(clinic.id)) {
+    if (follower) throw new SmileHandoff("Recepción coordina el cambio de esta visita combinada.", `Reprogramar la visita del turno ${appt.id}.`);
+    return rescheduleLoaded(clinic, patient, appt, input, ctx.staff ? appt.source : via, false, undefined, Boolean(ctx.staff), via, {
+      via, replyPhone: smileReplyPhone(ctx, via),
+    });
+  }
   if (await usesLiveSmile(clinic.id)) {
     throw new SmileHandoff("El cambio lo confirma recepción. El turno original sigue reservado.", `Reprogramar el turno ${appt.id}. Horario pedido: ${input.nuevo_inicio}.`);
   }
@@ -1447,7 +1524,7 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
   const r = ctx.staff
     ? await rescheduleLoaded(clinic, patient, appt, input, appt.source, false, follower, true, sourceFromChannel(ctx.channel, ctx.patientPhone))
     : await rescheduleLoaded(clinic, patient, appt, input, sourceFromChannel(ctx.channel, ctx.patientPhone), false, follower);
-  return { ok: true, ...r };
+  return { ...r, ok: true };
 }
 
 /** Panel: la clínica mueve un turno. El turno nuevo conserva por dónde lo pidió el paciente. */
@@ -1459,8 +1536,9 @@ export async function rescheduleClinicAppointment(
 ) {
   const clinic = await getClinic(clinicId);
   const { patient, appt } = await getClinicAppointment(clinicId, appointmentId);
-  const r = await rescheduleLoaded(clinic, patient, appt, input, appt.source, opts.force, undefined, true);
-  return { ok: true, ...r };
+  const managed = await usesSmileManagement(clinicId);
+  return rescheduleLoaded(clinic, patient, appt, input, appt.source, opts.force, undefined, true, "panel",
+    managed ? { via: "panel", replyPhone: null } : undefined);
 }
 
 // ---------------------------------------------------------------------------

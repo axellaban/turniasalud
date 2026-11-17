@@ -554,6 +554,7 @@ type ExistingApptRow = {
   external_id: string | null;
   external_status: string | null;
   smile_deferred: boolean;
+  smile_management: unknown;
 };
 
 async function syncAppointments(
@@ -585,7 +586,7 @@ async function syncAppointments(
     allExtIds.length || (minStart && maxEnd)
       ? await tx<ExistingApptRow[]>`
           select id, patient_id, professional_id, second_professional_id, appointment_type_id,
-                 starts_at, ends_at, status, source, notes, reminder_sent_at, cancelled_at, external_id, external_status, smile_deferred
+                 starts_at, ends_at, status, source, notes, reminder_sent_at, cancelled_at, external_id, external_status, smile_deferred, smile_management
           from appointments
           where clinic_id = ${clinicId} and (
             ${allExtIds.length ? tx`external_id = any(${allExtIds}::text[])` : tx`false`}
@@ -624,7 +625,7 @@ async function syncAppointments(
     const existing = byExternalId.get(a.externalId);
     if (existing) {
       // La confirmación del pedido y el aviso salen juntos cuando lo verifica la cola.
-      if (existing.smile_deferred && existing.status === "pendiente") continue;
+      if (existing.smile_management || (existing.smile_deferred && existing.status === "pendiente")) continue;
       const sameTimes =
         new Date(existing.starts_at).getTime() === new Date(a.startsAt).getTime() &&
         new Date(existing.ends_at).getTime() === new Date(a.endsAt).getTime();
@@ -731,6 +732,7 @@ async function syncAppointments(
       .filter(
         (r) =>
           r.source === "smile_connect" &&
+          !r.smile_management &&
           r.external_id?.startsWith("sc:") &&
           !seenExt.has(r.external_id) &&
           (r.status === "confirmado" || r.status === "pendiente") &&

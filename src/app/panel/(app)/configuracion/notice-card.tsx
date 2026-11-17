@@ -17,6 +17,7 @@ const STATUS: Record<NoticeRow["status"], { label: string; tone: "green" | "yell
 const KIND: Record<NoticeRow["kind"], string> = {
   nuevo: "Turno nuevo", movido: "Turno movido", cancelado: "Turno cancelado", prueba: "Prueba",
   smile: "Revisar en Smile Connect", smile_paciente: "Seguimiento al paciente", smile_confirmado: "Confirmación al paciente",
+  smile_cancelado: "Cancelación al paciente",
 };
 
 export type NoticeCardData = { phones: NoticePhone[]; recent: NoticeRow[]; line: ReturnType<typeof noticeLine> };
