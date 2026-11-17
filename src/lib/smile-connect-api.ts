@@ -80,12 +80,15 @@ export function smileClient(apiKey: string, opts: { onReserve?: (n: number) => P
       }
       const data = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
       if (!res.ok) {
-        const retry = Number(res.headers.get("retry-after"));
+        const retryAfter = res.headers.get("retry-after");
+        const retry = retryAfter && /^\d+$/.test(retryAfter)
+          ? Number(retryAfter)
+          : Math.ceil((Date.parse(retryAfter ?? "") - Date.now()) / 1_000);
         throw new SmileApiError(
           data?.error?.message ?? `Smile Connect respondió ${res.status}`,
           res.status,
           data?.error?.code ?? null,
-          Number.isFinite(retry) && retry > 0 ? retry : null,
+          Number.isSafeInteger(retry) && retry >= 0 && retry <= 365 * 86_400 ? retry : null,
         );
       }
       return data as T;

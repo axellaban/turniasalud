@@ -49,14 +49,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
     try {
       // Ya se dispara cada 10 minutos: el seguimiento de turnos ofrecidos va en la misma corrida,
       // sin pedir otro disparador en n8n. Si falla uno, el otro corre igual.
+      const smileRun = job === "calendario" ? runSmileConnect() : Promise.resolve(null);
       const [calendar, followups, changes, notices, smile, summaries, talks] = await Promise.allSettled([
         job === "calendario" ? syncPendingCalendar() : Promise.resolve(null),
         sendOfferFollowups(),
         job === "calendario" ? checkCalendarChanges() : Promise.resolve(null),
-        // Reintenta los avisos al consultorio por WhatsApp que no salieron.
-        job === "calendario" ? sendPendingNotices() : Promise.resolve(null),
-        // Smile Connect por API (solo las clínicas con la conexión prendida).
-        job === "calendario" ? runSmileConnect() : Promise.resolve(null),
+        // Incluye las confirmaciones de Smile Connect que se creen en esta corrida.
+        job === "calendario" ? smileRun.then(() => sendPendingNotices(), () => sendPendingNotices()) : Promise.resolve(null),
+        smileRun,
         job === "calendario" ? sendDueSummaries() : Promise.resolve(null),
         // Las charlas que quedaron sin resumen (si el webhook post-call de ElevenLabs no llegó).
         job === "calendario" ? completePendingSummaries() : Promise.resolve(null),

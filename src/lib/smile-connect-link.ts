@@ -39,7 +39,7 @@ export const SMILE_MODE_LABEL: Record<SmileMode, { label: string; detail: string
   lectura: { label: "Solo lectura", detail: "Trae la agenda de Smile Connect y Sofi ofrece solo lo que está libre ahí (con bloqueos y feriados). No escribe nada." },
   sombra: { label: "Escritura de prueba", detail: "Como «Solo lectura», y además anota qué escribiría en Smile Connect, sin escribirlo. Para revisar antes de activar." },
   crear: { label: "Crear turnos", detail: "Sofi confirma los turnos simples después de verificarlos en Smile Connect. Recepción coordina los cambios y las cancelaciones." },
-  completa: { label: "Crear, mover y cancelar", detail: "Además sincroniza los cambios y cancelaciones que el equipo registra desde el panel. Sofi sigue derivando esos pedidos a recepción." },
+  completa: { label: "Crear, mover y cancelar", detail: "Sofi y el equipo pueden mover o cancelar los turnos habilitados. Los cambios se confirman después de verificarlos en Smile Connect." },
 };
 export const WRITE_MODES: readonly SmileMode[] = ["sombra", "crear", "completa"];
 
@@ -68,6 +68,7 @@ export type SmileApiConnection = {
   api_reads: number;
   api_supports_notes: boolean;
   api_writes_paused: string | null;
+  api_retry_at: string | null;
 };
 
 export class SmileBudgetError extends Error {}
@@ -79,7 +80,7 @@ export async function getSmileApiConnection(clinicId: string, tx?: TransactionSq
   const [row] = await (tx ?? sql)<SmileApiConnection[]>`
     select clinic_id, api_key_encrypted, api_key_hint, api_clinic_id, api_clinic_name, api_mode, api_error, api_error_at,
            api_checked_at, api_near_pull_at, api_near_count, api_wide_pull_at, api_backup_at, api_reads_day::text as api_reads_day,
-           api_reads, api_supports_notes, api_writes_paused
+           api_reads, api_supports_notes, api_writes_paused, api_retry_at
     from smile_connect_connections where clinic_id = ${clinicId}`;
   return row ?? null;
 }
@@ -175,7 +176,8 @@ export async function saveSmileApiKey(clinicId: string, rawKey: string): Promise
     update smile_connect_connections set
       api_key_encrypted = ${encryptSecret(key)}, api_key_hint = ${key.slice(-4)},
       api_clinic_id = ${clinic.clinic_id}, api_clinic_name = ${clinic.clinic_name},
-      api_checked_at = now(), api_error = null, api_error_at = null, api_supports_notes = ${supportsNotes}, updated_at = now()
+      api_checked_at = now(), api_error = null, api_error_at = null, api_retry_at = null,
+      api_supports_notes = ${supportsNotes}, updated_at = now()
     where clinic_id = ${clinicId}`;
   const professionals = await mapProfessionals(clinicId, client);
   return { clinicName: clinic.clinic_name, smileClinicId: clinic.clinic_id, supportsNotes, professionals };
@@ -205,7 +207,7 @@ export async function removeSmileApiKey(clinicId: string): Promise<void> {
     await tx`select set_config('turnia.smile_quiet', 'on', true)`;
     await tx`
       update smile_connect_connections set api_key_encrypted = null, api_key_hint = null, api_mode = 'apagada',
-        api_error = null, api_error_at = null, api_writes_paused = null, updated_at = now()
+        api_error = null, api_error_at = null, api_retry_at = null, api_writes_paused = null, updated_at = now()
       where clinic_id = ${clinicId}`;
     await tx`update appointments set smile_sync = null, smile_error = null where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error')`;
   });
@@ -490,18 +492,23 @@ export async function runSmileConnect(now = new Date()): Promise<Record<string, 
   for (const c of conns) {
     const hour = zonedParts(now, c.timezone).hour;
     const result: Record<string, unknown> = {};
+    if (WRITE_MODES.includes(c.api_mode)) {
+      try {
+        const pending = await pushPendingSmile(c.clinic_id);
+        result.escritura = pending;
+        if (pending.reintentar_en) {
+          out[c.clinic_id] = result;
+          continue;
+        }
+      } catch (e) {
+        result.error_escritura = await recordSmileError(c.clinic_id, e);
+      }
+    }
     try {
       if (minutesSince(c.api_near_pull_at) >= (hour >= 7 && hour < 22 ? 30 : 120)) result.cerca = await pullSmileConnect(c.clinic_id, "cerca", now);
       if (minutesSince(c.api_wide_pull_at) >= 8 * 60) result.lejos = await pullSmileConnect(c.clinic_id, "lejos", now);
     } catch (e) {
       result.error = await recordSmileError(c.clinic_id, e);
-    }
-    if (WRITE_MODES.includes(c.api_mode)) {
-      try {
-        result.escritura = await pushPendingSmile(c.clinic_id);
-      } catch (e) {
-        result.error_escritura = await recordSmileError(c.clinic_id, e);
-      }
     }
     if (hour >= 3 && hour < 6 && minutesSince(c.api_backup_at) >= 20 * 60) {
       try {

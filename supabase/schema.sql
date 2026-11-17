@@ -1658,6 +1658,7 @@ alter table smile_connect_connections add column if not exists api_reads_day dat
 alter table smile_connect_connections add column if not exists api_reads integer not null default 0;
 alter table smile_connect_connections add column if not exists api_supports_notes boolean not null default false;
 alter table smile_connect_connections add column if not exists api_writes_paused text;
+alter table smile_connect_connections add column if not exists api_retry_at timestamptz;
 
 alter table professionals add column if not exists smile_professional_id integer;
 alter table professionals add column if not exists smile_box_id integer;

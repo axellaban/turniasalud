@@ -50,6 +50,8 @@ const fake = {
   createStatus: 201,
   dropCreateReply: false,
   dropMoveReply: false,
+  rateLimitAfterMove: null as string | null,
+  appointmentListRetryAfter: null as string | null,
   dropCancelReply: false,
   whatsapps: [] as Array<{ chatId: string; text: string }>,
 };
@@ -117,6 +119,11 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   }
   if ((m = /^\/patients\/(\d+)$/.exec(path))) return fake.patients.has(Number(m[1])) ? ok({ data: fake.patients.get(Number(m[1])) }) : err(404, "not_found");
   if (path === "/appointments" && method === "GET") {
+    const retry = fake.appointmentListRetryAfter;
+    if (retry !== null) {
+      fake.appointmentListRetryAfter = null;
+      return Response.json({ error: { code: "rate_limited" } }, { status: 429, headers: { "retry-after": retry } });
+    }
     const s = Date.parse(u.searchParams.get("start")!);
     const e = Date.parse(u.searchParams.get("end")!);
     return page([...fake.appointments.values()].filter((a) => Date.parse(a.start_date) >= s && Date.parse(a.start_date) < e).sort((a, b) => a.appointment_id - b.appointment_id));
@@ -139,6 +146,8 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     if (!a) return err(404, "not_found");
     if (method === "GET") return ok({ data: a });
     Object.assign(a, { start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id] });
+    fake.appointmentListRetryAfter = fake.rateLimitAfterMove;
+    fake.rateLimitAfterMove = null;
     if (fake.dropMoveReply) {
       fake.dropMoveReply = false;
       return err(503, "respuesta_perdida");
@@ -691,6 +700,59 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(writes().filter((w) => w.path.endsWith("/cancel"))).toHaveLength(1);
       await send();
       expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Reprogramación confirmada"), expect.stringContaining("Cancelación confirmada")]);
+    });
+
+    it("retoma una reprogramación tras el límite de Smile y avisa una sola vez en la corrida de calendario", async () => {
+      await link.setSmileMode(gm, "completa");
+      const booking = await book(38);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+      fake.whatsapps.length = 0;
+      fake.calls.length = 0;
+      const before = await smileSync(booking.turno_id!);
+      const remoteId = Number(before.external_id.slice(3));
+      const move = { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(38, "15:00"), profesional_id: gmPro };
+      expect(await tool("reprogramar_turno", move)).toMatchObject({ pendiente_confirmacion: true });
+
+      fake.rateLimitAfterMove = "47";
+      const started = Date.now();
+      const limited = await push.pushPendingSmile(gm, booking.turno_id);
+      expect(limited).toMatchObject({ reintentar_en: expect.any(String), revisar: 0, error: 0 });
+      expect(Date.parse(String(limited.reintentar_en))).toBeGreaterThanOrEqual(started + 47_000);
+      expect(fake.appointments.get(remoteId)?.start_date).toBe(move.nuevo_inicio);
+      const [pending] = await sql`select status, smile_sync, smile_attempts, smile_management from appointments where id = ${booking.turno_id!}`;
+      expect(pending).toMatchObject({
+        status: "confirmado", smile_sync: "pendiente", smile_attempts: 0,
+        smile_management: { operation: "mover", startsAt: move.nuevo_inicio },
+      });
+      const callsBeforeRetry = fake.calls.length;
+      await Promise.all([
+        push.pushPendingSmile(gm, booking.turno_id),
+        push.pushPendingSmile(gm),
+        link.runSmileConnect(),
+      ]);
+      expect(fake.calls).toHaveLength(callsBeforeRetry);
+      expect(fake.whatsapps).toHaveLength(0);
+
+      await sql`update smile_connect_connections set api_retry_at = now() - interval '1 second',
+        api_near_pull_at = now(), api_wide_pull_at = now(), api_backup_at = now() where clinic_id = ${gm}`;
+      const { POST } = await import("@/app/api/automations/[job]/route");
+      const runCalendar = () => POST(new Request("https://turnia.test/api/automations/calendario", {
+        method: "POST",
+        headers: { "x-turnia-secret": secret },
+      }), { params: Promise.resolve({ job: "calendario" }) });
+      expect((await runCalendar()).status).toBe(200);
+      expect((await runCalendar()).status).toBe(200);
+      const [moved] = await sql`select id, starts_at, status from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
+      expect(moved).toMatchObject({ starts_at: move.nuevo_inicio, status: "confirmado" });
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "reprogramado", external_id: null });
+      expect(writes().map((w) => [w.method, w.path])).toEqual([["PATCH", `/appointments/${remoteId}`]]);
+      expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Reprogramación confirmada")]);
+
+      await tool("cancelar_turno", { clinic_id: gm, turno_id: moved.id });
+      await push.pushPendingSmile(gm, moved.id);
+      await send();
+      fake.whatsapps.length = 0;
     });
 
     it("conserva el turno original si recepción ocupa el destino y mantiene las restricciones de reprogramación", async () => {
