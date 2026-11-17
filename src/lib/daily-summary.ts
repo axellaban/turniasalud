@@ -3,6 +3,7 @@ import { json, sql } from "./db";
 import { getClinic } from "./clinic";
 import { AGENT_SOURCES } from "./clinic-impact";
 import { registerOutbound } from "./channel";
+import { GUERRA_MININNI } from "./agent/appointment-access";
 import { requireActiveWhatsapp } from "./messaging-settings";
 import { displayPhone } from "./phone";
 import { humanSlot, localDateKey, zonedParts } from "./time";
@@ -20,6 +21,13 @@ import { wahaConnectionForClinic, withClinicWaha } from "./waha-connections";
 
 /** Hora (de la clínica) del resumen automático, de lunes a viernes. */
 export const SUMMARY_HOUR = 10;
+function summaryLastWeekday(clinicId: string): number {
+  return clinicId === GUERRA_MININNI ? 4 : 5;
+}
+
+export function summaryDaysLabel(clinicId: string): string {
+  return summaryLastWeekday(clinicId) === 4 ? "lunes a jueves" : "lunes a viernes";
+}
 /** Si a las 14 todavía no salió (disparadores caídos), ese día ya no sale: el próximo junta los dos. */
 const SUMMARY_LAST_HOUR = 14;
 /** Turnos por sección en el WhatsApp; el resto, preguntándole a Sofi. */
@@ -242,9 +250,11 @@ async function windowStart(clinic: Clinic, now: Date): Promise<Date> {
     select window_to from clinic_daily_summaries where clinic_id = ${clinic.id} and recipients > 0 order by window_to desc limit 1`;
   const week = new Date(now.getTime() - 7 * 86400_000);
   if (last) return new Date(Math.max(new Date(last.window_to).getTime(), week.getTime()));
-  // El primero: desde el día hábil anterior a esta hora (el lunes, desde el viernes).
+  // El primero: desde el día anterior en que se manda el resumen.
   const weekday = zonedParts(now, clinic.timezone).weekday;
-  return new Date(now.getTime() - (weekday === 1 ? 3 : 1) * 86400_000);
+  let days = 1;
+  while ((weekday - days + 7) % 7 === 0 || (weekday - days + 7) % 7 > summaryLastWeekday(clinic.id)) days++;
+  return new Date(now.getTime() - days * 86400_000);
 }
 
 export type SendResult = { clinic: string; enviados: number; turnos: { nuevos: number; movidos: number; cancelados: number }; problema?: string };
@@ -310,7 +320,7 @@ export async function sendDueSummaries(now = new Date()): Promise<SendResult[]> 
     const clinic = await getClinic(id);
     if (!canSendSummary(clinic)) continue;
     const local = zonedParts(now, clinic.timezone);
-    if (local.weekday === 0 || local.weekday === 6 || local.hour < SUMMARY_HOUR || local.hour >= SUMMARY_LAST_HOUR) continue;
+    if (local.weekday < 1 || local.weekday > summaryLastWeekday(clinic.id) || local.hour < SUMMARY_HOUR || local.hour >= SUMMARY_LAST_HOUR) continue;
     const day = localDateKey(now, clinic.timezone);
     const from = await windowStart(clinic, now);
     // Se reserva el día antes de mandar: dos disparadores juntos no lo mandan dos veces.

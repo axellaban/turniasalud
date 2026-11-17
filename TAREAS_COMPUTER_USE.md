@@ -32,7 +32,7 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 
 ## Tarea 7 (P0) · Smile Connect por API y resumen diario (Guerra–Mininni)
 
-**Contexto.** La API de Smile Connect de Guerra–Mininni está conectada en **«Escritura de prueba»** desde el 16/11. La API todavía omite las notas y la prestación. Esos datos van en el resumen de Sofi, programado de lunes a viernes a las 10. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+**Contexto.** La API de Smile Connect de Guerra–Mininni está conectada en **«Escritura de prueba»** desde el 16/11. La API todavía omite las notas y la prestación. Esos datos van en el resumen de Sofi, programado de lunes a jueves a las 10, hora del consultorio. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
 
 **Verificación del 16/11.** Tres profesionales vinculados. El Dr. Guerra, ausente de la lista de Smile Connect, se desactivó para nuevas reservas en Turnia. El userscript de Tampermonkey de Guerra–Mininni quedó desactivado por pedido de Axel. La sincronización manual leyó 146 turnos. El 17 y 18 de noviembre coincidieron los 39 turnos vigentes de Smile Connect por profesional y horario. Otras seis reservas de Turnia se originaron por WhatsApp y quedan para revisión. Sofi descartó un horario ocupado y las tres alternativas ofrecidas estaban libres en Smile Connect. Turnia confirmó el envío manual del resumen a dos celulares después de publicar el [PR #200](https://github.com/axellaban/turniasalud/pull/200).
 

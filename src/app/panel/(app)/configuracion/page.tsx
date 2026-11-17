@@ -7,7 +7,7 @@ import { listClinicAccess } from "@/lib/clinic-access";
 import { listStaffPhones } from "@/lib/staff";
 import { displayPhone } from "@/lib/phone";
 import { addStaffPhone, removeStaffPhone, sendSummaryNowAction, toggleStaffSummary } from "../../protocol-actions";
-import { SUMMARY_HOUR } from "@/lib/daily-summary";
+import { SUMMARY_HOUR, summaryDaysLabel } from "@/lib/daily-summary";
 import { ActionForm } from "./action-form";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
@@ -137,7 +137,7 @@ export default async function SettingsPage() {
               </li>)}
             </ul>}
             {staff.length > 0 && <div className="mt-3 rounded-lg bg-brand-50/60 p-3 text-sm text-brand-900/70">
-              <p><span className="font-medium text-brand-950">Resumen diario.</span> De lunes a viernes a las {SUMMARY_HOUR}, {agent} les manda por WhatsApp los turnos que dio, movió y canceló desde el resumen anterior, con paciente, DNI, celular, prestación, cobertura y lo que pidió, para pasarlos a la agenda del consultorio. Si ven un turno sin datos, le preguntan a {agent} por WhatsApp quién lo dio.</p>
+              <p><span className="font-medium text-brand-950">Resumen diario.</span> De {summaryDaysLabel(clinic.id)} a las {SUMMARY_HOUR}, {agent} les manda por WhatsApp los turnos que dio, movió y canceló desde el resumen anterior, con paciente, DNI, celular, prestación, cobertura y lo que pidió, para pasarlos a la agenda del consultorio. Si ven un turno sin datos, le preguntan a {agent} por WhatsApp quién lo dio.</p>
               <ActionForm action={sendSummaryNowAction} submit="Mandar el resumen ahora" pendingLabel="Mandando…" secondary className="mt-2"><input type="hidden" name="clinic_id" value={clinic.id} /></ActionForm>
             </div>}
             <ActionForm action={addStaffPhone} submit="Dar acceso" resetOnSuccess secondary className="mt-4 grid gap-3">
