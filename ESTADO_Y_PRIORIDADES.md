@@ -1,6 +1,15 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 16/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 17/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Conversaciones de WhatsApp: resumen aunque no llegue el webhook — 17/11/2026
+
+- **Pregunta del Dr. Mininni:** si en Panel → Conversaciones aparecen las charlas al día. Sí: cada mensaje de WhatsApp entra por WAHA → Turnia → Sofi (ElevenLabs), y la charla figura en la lista apenas empieza, con su transcripción. El resumen lo escribe ElevenLabs al cerrar la charla y lo manda por el webhook post-call.
+- **Hueco encontrado:** varias charlas seguían «Sin resumen todavía» horas después. Si el webhook no llega, la recuperación diaria tampoco las completaba: salteaba las que ya existían, y las de WhatsApp existen siempre porque se guardan en vivo.
+- **Hecho:**
+  - `completePendingSummaries` (`src/lib/conversations-backfill.ts`): las charlas sin resumen de los últimos 3 días, con más de 20 minutos, se le piden a ElevenLabs de a pocas. Solo se completan resumen, título, motivo, resultado, encuesta y análisis; el paciente, el canal y la dirección no se tocan. Corre con la automatización de cada 10 minutos y cada vez que alguien abre Conversaciones (se ve al recargar).
+  - La recuperación diaria (`conversations-backfill`) también completa las que estaban sin resumen.
+  - **La lista**, mientras no hay resumen, muestra lo último que escribió el paciente («… · el resumen llega al terminar la charla»). Si el número no tiene ficha, muestra el número en lugar de «Paciente sin identificar».
 
 ## Resumen diario de Sofi y «¿este turno lo diste vos?» — 16/11/2026
 

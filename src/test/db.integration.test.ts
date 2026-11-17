@@ -22,6 +22,7 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => (mocks.session ? { value: mocks.session } : undefined), set: () => {}, delete: () => {} }),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), after: () => {} }));
 vi.mock("next/navigation", () => ({
   redirect: (to: string) => {
     throw new Error(`redirect:${to}`);

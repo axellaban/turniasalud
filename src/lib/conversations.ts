@@ -61,6 +61,35 @@ export function detectChannel(data: PostCallPayload, phone: string): Conversatio
 
 
 /**
+ * Lo que ElevenLabs agrega al cerrar la charla (resumen, motivo, resultado, encuesta y análisis). Al
+ * completar una charla que Turnia ya guardaba en vivo (WhatsApp), se actualiza solo esto: quién era,
+ * el canal y la dirección quedan como los guardó la conversación.
+ */
+export async function completeConversationSummary(data: PostCallPayload): Promise<boolean> {
+  const analysis = {
+    data_collection: data.analysis?.data_collection_results ?? {},
+    evaluation: data.analysis?.evaluation_criteria_results ?? {},
+    sentimiento: collected(data, "sentimiento"),
+  };
+  const transcript = (data.transcript ?? []).map((t) => ({ role: t.role, message: t.message, time_in_call_secs: t.time_in_call_secs }));
+  const done = await sql`
+    update conversations set
+      status = ${data.status ?? null},
+      duration_secs = coalesce(${data.metadata?.call_duration_secs ?? null}, duration_secs),
+      title = ${data.analysis?.call_summary_title ?? null},
+      summary = ${data.analysis?.transcript_summary ?? null},
+      intent = ${collected(data, "motivo")},
+      outcome = ${collected(data, "resultado")},
+      call_successful = ${data.analysis?.call_successful ?? null},
+      satisfaction = ${satisfactionScore(data)},
+      analysis = ${json(analysis)},
+      transcript = case when ${transcript.length} > 0 then ${json(transcript)} else transcript end
+    where elevenlabs_conversation_id = ${data.conversation_id} and summary is null and title is null
+    returning id`;
+  return done.length > 0;
+}
+
+/**
  * `quiet`: solo guarda la conversación (la recuperación desde ElevenLabs de las que no llegaron por el
  * webhook): no crea ni actualiza pacientes, no toca campañas, no genera tareas ni avisa a n8n.
  */

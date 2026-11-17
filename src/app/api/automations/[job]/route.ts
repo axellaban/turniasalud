@@ -6,6 +6,7 @@ import { sendPendingNotices } from "@/lib/clinic-notices";
 import { runSmileConnect } from "@/lib/smile-connect-link";
 import { sendOfferFollowups } from "@/lib/followups";
 import { sendDueSummaries } from "@/lib/daily-summary";
+import { completePendingSummaries } from "@/lib/conversations-backfill";
 import type { CampaignType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
     try {
       // Ya se dispara cada 10 minutos: el seguimiento de turnos ofrecidos va en la misma corrida,
       // sin pedir otro disparador en n8n. Si falla uno, el otro corre igual.
-      const [calendar, followups, changes, notices, smile, summaries] = await Promise.allSettled([
+      const [calendar, followups, changes, notices, smile, summaries, talks] = await Promise.allSettled([
         job === "calendario" ? syncPendingCalendar() : Promise.resolve(null),
         sendOfferFollowups(),
         job === "calendario" ? checkCalendarChanges() : Promise.resolve(null),
@@ -57,7 +58,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         // Smile Connect por API (solo las clínicas con la conexión prendida).
         job === "calendario" ? runSmileConnect() : Promise.resolve(null),
         job === "calendario" ? sendDueSummaries() : Promise.resolve(null),
+        // Las charlas que quedaron sin resumen (si el webhook post-call de ElevenLabs no llegó).
+        job === "calendario" ? completePendingSummaries() : Promise.resolve(null),
       ]);
+      if (talks.status === "rejected") console.error("Completar resúmenes de conversaciones falló", talks.reason);
       if (summaries.status === "rejected") console.error("Resumen diario de Sofi falló", summaries.reason);
       if (followups.status === "rejected") console.error("Seguimiento de turnos ofrecidos falló", followups.reason);
       if (changes.status === "rejected") console.error("Revisión de cambios en Google Calendar falló", changes.reason);
@@ -73,6 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         ...(notices.status === "fulfilled" && notices.value && { avisos_al_consultorio: notices.value }),
         ...(smile.status === "fulfilled" && smile.value && Object.keys(smile.value).length > 0 && { smile_connect: smile.value }),
         ...(summaries.status === "fulfilled" && summaries.value?.length && { resumenes: summaries.value }),
+        ...(talks.status === "fulfilled" && talks.value?.revisadas && { conversaciones_sin_resumen: talks.value }),
       });
     } catch (e) {
       return NextResponse.json({ ok: false, job, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
