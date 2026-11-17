@@ -9,7 +9,7 @@ import { EditDetails } from "../edit-details";
 import { ActionForm } from "../action-form";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Clinic, Professional, ProfessionalType } from "@/lib/types";
-import { ConfigHeader } from "../header";
+import { ConfigHeader, loadConfigConflicts } from "../header";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Prestaciones · Panel" };
@@ -82,7 +82,7 @@ export default async function ServicesPage() {
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion/prestaciones" />
+      <ConfigHeader clinic={clinic} current="/panel/configuracion/prestaciones" conflicts={await loadConfigConflicts(clinic)} />
       <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (para las campañas de recall) se carga en <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link>.</p>
       {dental && (
         <Card className="mb-6">

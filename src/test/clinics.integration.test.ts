@@ -276,7 +276,7 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     const render = async (path: string) => renderToStaticMarkup(await (await import(`@/app/panel/(app)/${path}/page`)).default());
     const pages = await Promise.all(["configuracion", "configuracion/equipo", "configuracion/prestaciones", "configuracion/coberturas", "configuracion/turnos", "configuracion/bloqueos", "configuracion/web"].map(render));
     const html = pages.join("");
-    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Qué hacer ante una urgencia", "Instrucciones adicionales", "Formas de pago", "Coberturas que acepta el consultorio", "Editar profesional", "Editar prestación", "Completar la ficha con la web", "Bloquear agenda", "Acceso del consultorio", "Acceso total por WhatsApp"]) expect(html).toContain(label);
+    for (const label of ["Clínica Alfa", "Preguntas frecuentes", "Qué hacer ante una urgencia", "Instrucciones adicionales", "Formas de pago", "Coberturas que acepta el consultorio", "Editar profesional", "Editar prestación", "Completar la ficha con la web", "Bloquear agenda", "Acceso del consultorio", "Equipo por WhatsApp", "Acceso total"]) expect(html).toContain(label);
     // Cada dato se carga en un solo lugar: la ficha del consultorio ya no repite coberturas, urgencias ni seguimiento.
     const [consultorio] = pages;
     for (const moved of ["Coberturas aceptadas", "Protocolo de urgencias", "Si el paciente no contesta", "Políticas"]) expect(consultorio).not.toContain(`>${moved}<`);

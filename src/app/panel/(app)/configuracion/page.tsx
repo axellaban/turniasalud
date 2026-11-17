@@ -4,18 +4,13 @@ import { retainClinic, revokeAccess } from "../../clinics-actions";
 import { getPanelClinic, getPanelUser, recentClinicChanges } from "@/lib/panel-clinic";
 import { clinicInfoText, getClinic } from "@/lib/clinic";
 import { listClinicAccess } from "@/lib/clinic-access";
-import { listStaffPhones } from "@/lib/staff";
-import { displayPhone } from "@/lib/phone";
-import { addStaffPhone, removeStaffPhone, sendSummaryNowAction, toggleStaffSummary } from "../../protocol-actions";
-import { SUMMARY_HOUR, summaryDaysLabel } from "@/lib/daily-summary";
-import { ActionForm } from "./action-form";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
 import { Badge, Card, Field, Notice, inputClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
-import { ConfigHeader } from "./header";
+import { ConfigHeader, loadConfigConflicts } from "./header";
 import { Section, wide } from "./section";
 import { AccessCreator } from "./access-manager";
-import { ClinicAgentSetup, StaffAgentSetup } from "./clinic-agent";
+import { ClinicAgentSetup } from "./clinic-agent";
 import { NoticeCard, loadNoticeCard } from "./notice-card";
 import type { Metadata } from "next";
 
@@ -56,19 +51,19 @@ export default async function SettingsPage() {
   const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
   const admin = user.role === "admin";
   const agent = clinic.agent_name || "Sofi";
-  const [accesses, changes, main, staff, notices] = await Promise.all([
+  const [accesses, changes, main, notices, conflicts] = await Promise.all([
     admin ? listClinicAccess(clinic.id) : [],
     recentClinicChanges(clinic.id),
     admin ? getClinic() : null,
-    admin ? listStaffPhones(clinic.id) : [],
     loadNoticeCard(clinic),
+    loadConfigConflicts(clinic),
   ]);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
   const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion" />
+      <ConfigHeader clinic={clinic} current="/panel/configuracion" conflicts={conflicts} />
       {!admin && <Notice tone="info" className="mb-6">
         <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio. Empezá por estos datos y seguí con las pestañas de arriba, en orden.
         Cada cambio lo usa {agent} desde el próximo mensaje.
@@ -76,7 +71,7 @@ export default async function SettingsPage() {
       {/* En pantallas angostas la columna de la derecha queda debajo de todo el formulario. */}
       {admin && <nav aria-label="Solo Turnia" className="mb-4 flex flex-wrap items-center gap-2 text-sm xl:hidden">
         <span className="text-brand-900/60">Solo Turnia:</span>
-        <a href="#whatsapp-equipo" className={smallButtonClass}>Acceso total por WhatsApp{staff.length ? ` (${staff.length})` : ""}</a>
+        <a href="#whatsapp-equipo" className={smallButtonClass}>Equipo por WhatsApp{notices.staff.length ? ` (${notices.staff.length} con acceso)` : ""}</a>
         <a href="#acceso-consultorio" className={smallButtonClass}>Acceso del consultorio</a>
         {clinic.id !== main?.id && <a href="#agente-llamadas" className={smallButtonClass}>{agent} · llamadas</a>}
       </nav>}
@@ -94,7 +89,7 @@ export default async function SettingsPage() {
                   <input name="hours_text" defaultValue={clinic.hours_text ?? ""} placeholder="Lunes a viernes de 9 a 18" className={inputClass} />
                 </Field>
               </div>
-              <div className={wide}><Field label="Formas de pago"><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} placeholder="Efectivo, transferencia y tarjetas" className={inputClass} /></Field></div>
+              <div className={wide}><Field label="Formas de pago" hint="Si ya están en Preguntas frecuentes, no hace falta repetirlas."><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} placeholder="Efectivo, transferencia y tarjetas" className={inputClass} /></Field></div>
               <Field
                 label="Web"
                 hint={clinic.website ? undefined : "Con la web guardada, se puede leer para completar la ficha."}
@@ -119,39 +114,7 @@ export default async function SettingsPage() {
         </div>
 
         <div className="space-y-6">
-          <NoticeCard clinic={clinic} data={notices} />
-
-          {admin && <Card id="whatsapp-equipo" className="scroll-mt-20">
-            <h2 className="font-semibold text-brand-950">Acceso total por WhatsApp</h2>
-            <p className="mt-1 text-sm text-brand-900/60">
-              Celulares del equipo que, al escribirle a {agent} por WhatsApp, pueden ver la agenda y los pacientes, dar, mover y cancelar cualquier turno, bloquear la agenda y responder los pedidos al equipo. Por llamada, no: el número de quien llama se puede falsear.
-            </p>
-            {staff.length > 0 && <ul className="mt-3 divide-y divide-brand-900/5 text-sm">
-              {staff.map((member) => <li key={member.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span className="min-w-0"><span className="font-medium text-brand-950">{member.name}</span> <span className="text-brand-900/65">· {displayPhone(member.phone)}</span>
-                  <span className="block text-xs text-brand-900/60">{member.daily_summary ? `Recibe el resumen de las ${SUMMARY_HOUR}` : "No recibe el resumen"}</span></span>
-                <span className="flex flex-wrap gap-2">
-                  <form action={toggleStaffSummary}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={member.id} /><input type="hidden" name="on" value={member.daily_summary ? "0" : "1"} /><button className={smallButtonClass} aria-label={`${member.daily_summary ? "Dejar de mandarle" : "Mandarle"} el resumen a ${member.name}`}>{member.daily_summary ? "Sin resumen" : "Con resumen"}</button></form>
-                  <form action={removeStaffPhone}><input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={member.id} /><button className={smallButtonClass} aria-label={`Quitar el acceso de ${member.name}`}>Quitar</button></form>
-                </span>
-              </li>)}
-            </ul>}
-            {staff.length > 0 && <div className="mt-3 rounded-lg bg-brand-50/60 p-3 text-sm text-brand-900/70">
-              <p><span className="font-medium text-brand-950">Resumen diario.</span> De {summaryDaysLabel(clinic.id)} a las {SUMMARY_HOUR}, {agent} les manda por WhatsApp los turnos que dio, movió y canceló desde el resumen anterior, con paciente, DNI, celular, prestación, cobertura y lo que pidió, para pasarlos a la agenda del consultorio. Si ven un turno sin datos, le preguntan a {agent} por WhatsApp quién lo dio.</p>
-              <ActionForm action={sendSummaryNowAction} submit="Mandar el resumen ahora" pendingLabel="Mandando…" secondary className="mt-2"><input type="hidden" name="clinic_id" value={clinic.id} /></ActionForm>
-            </div>}
-            <ActionForm action={addStaffPhone} submit="Dar acceso" resetOnSuccess secondary className="mt-4 grid gap-3">
-              <input type="hidden" name="clinic_id" value={clinic.id} />
-              <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dra. López" className={inputClass} /></Field>
-              <Field label="Celular" hint="Con código de área. Es el de WhatsApp."><input name="phone" required inputMode="tel" placeholder="11 5555-0100" className={inputClass} /></Field>
-            </ActionForm>
-            <div className="mt-4 border-t border-brand-900/5 pt-4">
-              <p className="mb-2 text-xs text-brand-900/65">
-                Si {agent} no reconoce al equipo (contesta como a un paciente), actualizala acá una vez. Después, cada celular nuevo vale desde su próximo mensaje.
-              </p>
-              <StaffAgentSetup key={clinic.id} clinicId={clinic.id} agentName={agent} disabled={!process.env.ELEVENLABS_API_KEY} />
-            </div>
-          </Card>}
+          <NoticeCard clinic={clinic} admin={admin} data={notices} />
 
           {admin && clinic.id !== main?.id && <Card id="agente-llamadas" className="scroll-mt-20">
             <h2 className="font-semibold text-brand-950">{agent} de este consultorio · llamadas</h2>
