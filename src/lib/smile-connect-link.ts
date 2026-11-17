@@ -1,7 +1,7 @@
 import "server-only";
 import { decryptSecret, encryptSecret } from "./calendar/crypto";
 import { getClinic } from "./clinic";
-import { json, sql } from "./db";
+import { json, sql, type TransactionSql } from "./db";
 import type { BusyInterval } from "./slots";
 import { ensureSmileConnectToken, matchProfessional, syncSmileConnect, type SmileConnectSyncSummary } from "./smile-connect";
 import {
@@ -37,8 +37,8 @@ export const SMILE_MODE_LABEL: Record<SmileMode, { label: string; detail: string
   apagada: { label: "Apagada", detail: "No lee ni escribe nada. La clave queda guardada." },
   lectura: { label: "Solo lectura", detail: "Trae la agenda de Smile Connect y Sofi ofrece solo lo que está libre ahí (con bloqueos y feriados). No escribe nada." },
   sombra: { label: "Escritura de prueba", detail: "Como «Solo lectura», y además anota qué escribiría en Smile Connect, sin escribirlo. Para revisar antes de activar." },
-  crear: { label: "Crear turnos", detail: "Escribe en Smile Connect los turnos nuevos que da Sofi. Lo que mueve o cancela queda para hacer a mano (te avisa)." },
-  completa: { label: "Crear, mover y cancelar", detail: "Escribe en Smile Connect todo lo que hace Sofi con los turnos." },
+  crear: { label: "Crear turnos", detail: "Sofi confirma los turnos simples después de verificarlos en Smile Connect. Recepción coordina los cambios y las cancelaciones." },
+  completa: { label: "Crear, mover y cancelar", detail: "Además sincroniza los cambios y cancelaciones que el equipo registra desde el panel. Sofi sigue derivando esos pedidos a recepción." },
 };
 export const WRITE_MODES: readonly SmileMode[] = ["sombra", "crear", "completa"];
 
@@ -74,8 +74,8 @@ export class SmileBudgetError extends Error {}
 /** La escritura real necesita además SMILE_CONNECT_WRITES=on en el servidor. Si no, es de prueba. */
 export const writesEnabledOnServer = () => process.env.SMILE_CONNECT_WRITES === "on";
 
-export async function getSmileApiConnection(clinicId: string): Promise<SmileApiConnection | null> {
-  const [row] = await sql<SmileApiConnection[]>`
+export async function getSmileApiConnection(clinicId: string, tx?: TransactionSql): Promise<SmileApiConnection | null> {
+  const [row] = await (tx ?? sql)<SmileApiConnection[]>`
     select clinic_id, api_key_encrypted, api_key_hint, api_clinic_id, api_clinic_name, api_mode, api_error, api_error_at,
            api_checked_at, api_near_pull_at, api_near_count, api_wide_pull_at, api_backup_at, api_reads_day::text as api_reads_day,
            api_reads, api_supports_notes, api_writes_paused
@@ -84,8 +84,8 @@ export async function getSmileApiConnection(clinicId: string): Promise<SmileApiC
 }
 
 /** Cuenta los registros que va a leer y frena antes de pasarse del cupo del día (hora UTC). */
-async function reserveReads(clinicId: string, n: number): Promise<void> {
-  const [row] = await sql<Array<{ api_reads: number }>>`
+async function reserveReads(clinicId: string, n: number, tx?: TransactionSql): Promise<void> {
+  const [row] = await (tx ?? sql)<Array<{ api_reads: number }>>`
     update smile_connect_connections set
       api_reads = case when api_reads_day = (now() at time zone 'utc')::date then api_reads + ${n} else ${n} end,
       api_reads_day = (now() at time zone 'utc')::date
@@ -96,9 +96,9 @@ async function reserveReads(clinicId: string, n: number): Promise<void> {
   }
 }
 
-export function clientFor(conn: Pick<SmileApiConnection, "clinic_id" | "api_key_encrypted">): SmileClient {
+export function clientFor(conn: Pick<SmileApiConnection, "clinic_id" | "api_key_encrypted">, timeoutMs?: number, tx?: TransactionSql): SmileClient {
   if (!conn.api_key_encrypted) throw new Error("Este consultorio no tiene la clave de la API de Smile Connect.");
-  return smileClient(decryptSecret(conn.api_key_encrypted), { onReserve: (n) => reserveReads(conn.clinic_id, n) });
+  return smileClient(decryptSecret(conn.api_key_encrypted), { onReserve: (n) => reserveReads(conn.clinic_id, n, tx), timeoutMs });
 }
 
 export async function recordSmileError(clinicId: string, e: unknown): Promise<string> {
@@ -181,14 +181,26 @@ export async function saveSmileApiKey(clinicId: string, rawKey: string): Promise
 }
 
 export async function setSmileMode(clinicId: string, mode: SmileMode): Promise<void> {
-  const conn = await getSmileApiConnection(clinicId);
-  if (mode !== "apagada" && !conn?.api_key_encrypted) throw new Error("Primero cargá la clave de la API de Smile Connect.");
-  await sql`update smile_connect_connections set api_mode = ${mode}, updated_at = now() where clinic_id = ${clinicId}`;
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
+    const conn = await getSmileApiConnection(clinicId, tx);
+    if (mode !== "apagada" && !conn?.api_key_encrypted) throw new Error("Primero cargá la clave de la API de Smile Connect.");
+    if (isLiveSmileMode(mode) && conn && !isLiveSmileMode(conn.api_mode)) {
+      // Al activar el alta real, lo que quedó en la cola de prueba se revisa a mano.
+      await tx`update appointments set smile_sync = 'revisar',
+        smile_error = 'Este cambio quedó antes de activar la escritura real. Revisalo en Smile Connect.'
+        where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error')`;
+    }
+    await tx`update smile_connect_connections set api_mode = ${mode}, updated_at = now() where clinic_id = ${clinicId}`;
+  });
 }
+
+export const isLiveSmileMode = (mode: SmileMode) => mode === "crear" || mode === "completa";
 
 /** Quita la clave y apaga todo. Lo pendiente de escribir en Smile Connect se descarta. */
 export async function removeSmileApiKey(clinicId: string): Promise<void> {
   await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
     await tx`select set_config('turnia.smile_quiet', 'on', true)`;
     await tx`
       update smile_connect_connections set api_key_encrypted = null, api_key_hint = null, api_mode = 'apagada',
@@ -325,7 +337,8 @@ async function daySlots(conn: SmileApiConnection, client: SmileClient, day: stri
   } catch (e) {
     await recordSmileError(conn.clinic_id, e).catch(() => {});
     console.error("Smile Connect: no se pudo leer la disponibilidad", day, e instanceof Error ? e.message : e);
-    // Si Smile Connect no responde, se usa lo último leído si es reciente; si no, la agenda de Turnia.
+    // La caché puede orientar una búsqueda, pero no confirma que el horario siga libre.
+    if (fresh) throw e;
     return age < AVAILABILITY_STALE_MS ? cached!.slots : null;
   }
 }
@@ -348,8 +361,11 @@ export async function smileBusy(
   const pros = await sql<Array<{ id: string; smile_professional_id: number }>>`
     select id, smile_professional_id from professionals
     where id = any(${professionalIds}::uuid[]) and clinic_id = ${clinicId} and smile_professional_id is not null`;
+  if (opts.fresh && pros.length !== new Set(professionalIds).size) {
+    throw new Error("Falta vincular un profesional con Smile Connect.");
+  }
   if (!pros.length) return [];
-  const client = clientFor(conn);
+  const client = clientFor(conn, opts.fresh ? 3_000 : undefined);
   const today = localDateKey(new Date(), opts.timeZone);
   const first = localDateKey(from, opts.timeZone);
   const days: string[] = [];

@@ -46,6 +46,8 @@ const fake = {
   nextPatient: 7000,
   status: 200,
   notes: false,
+  beforeCreate: undefined as (() => void) | undefined,
+  createStatus: 201,
 };
 const PROS = [
   { professional_id: 334, name: "Mariano", surname: "Prueba", box_id: 189 },
@@ -112,6 +114,8 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     return page([...fake.appointments.values()].filter((a) => Date.parse(a.start_date) >= s && Date.parse(a.start_date) < e).sort((a, b) => a.appointment_id - b.appointment_id));
   }
   if (path === "/appointments" && method === "POST") {
+    fake.beforeCreate?.();
+    if (fake.createStatus !== 201) return err(fake.createStatus, "alta_simulada");
     if (!fake.patients.has(body.patient_id)) return err(400, "invalid_request");
     const a: Appt = { appointment_id: fake.nextAppt++, patient_id: body.patient_id, start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id], attendance: null, cancelled: false };
     fake.appointments.set(a.appointment_id, a);
@@ -271,6 +275,23 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
     await tool("cancelar_turno", { turno_id: booked.turno_id });
   });
 
+  it("una caída al confirmar deriva el pedido aunque haya disponibilidad anterior en caché", async () => {
+    const input = { tipo_turno_id: consult, profesional_id: pro, inicio: at(12, "11:00") };
+    const offer = await tool("consultar_disponibilidad", { tipo_turno_id: consult, desde: day(12), hasta: day(12) });
+    expect(offer.ok).toBe(true);
+    fake.appointments.set(81999, scAppt(81999, 5002, 12, "11:00", "11:30"));
+    fake.status = 503;
+    try {
+      const result = await tool("reservar_turno", input);
+      expect(result).toMatchObject({ ok: false, pendiente_recepcion: true, tarea_id: expect.any(String) });
+      expect(await sql`select id from appointments where clinic_id = ${clinicId} and starts_at = ${input.inicio}`).toEqual([]);
+      expect(await sql`select type from tasks where id = ${result.tarea_id as string}`).toEqual([{ type: "derivacion_humana" }]);
+    } finally {
+      fake.status = 200;
+      fake.appointments.delete(81999);
+    }
+  });
+
   it("escritura de prueba: anota qué escribiría (con el paciente encontrado por DNI), sin escribir", async () => {
     await link.setSmileMode(clinicId, "sombra");
     fake.calls.length = 0;
@@ -296,12 +317,28 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
   describe("con la escritura real habilitada", () => {
     beforeAll(() => vi.stubEnv("SMILE_CONNECT_WRITES", "on"));
 
-    it("crea el turno (y el paciente nuevo) una sola vez, aunque se reintente", async () => {
+    it("activar la escritura no envía turnos que quedaron en la cola de pruebas", async () => {
+      await link.setSmileMode(clinicId, "sombra");
+      const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(13, "11:00") });
+      expect(booked.ok).toBe(true);
+      expect(await smileSync(booked.turno_id!)).toMatchObject({ smile_sync: "pendiente" });
       fake.calls.length = 0;
-      const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(5, "10:00"), notas: "Le duele una muela" });
-      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
+      await link.setSmileMode(clinicId, "crear");
+      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 0 });
+      expect(writes()).toEqual([]);
+      expect(await smileSync(booked.turno_id!)).toMatchObject({ smile_sync: "revisar", external_id: null });
+    });
+
+    it("confirma después de verificar el alta y crea el turno y el paciente una sola vez", async () => {
+      await link.setSmileMode(clinicId, "crear");
+      fake.calls.length = 0;
+      const input = { tipo_turno_id: consult, profesional_id: pro, inicio: at(5, "10:00"), notas: "Le duele una muela" };
+      const booked = await tool("reservar_turno", input);
+      expect(booked.ok).toBe(true);
+      expect(await tool("reservar_turno", input)).toMatchObject({ ok: true, turno_id: booked.turno_id });
+      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 0 });
       const row = await smileSync(booked.turno_id!);
-      expect(row).toMatchObject({ smile_sync: "ok", external_id: expect.stringMatching(/^sc:\d+$/) });
+      expect(row).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:\d+$/) });
       const created = fake.appointments.get(Number(row.external_id.slice(3)))!;
       expect(created).toMatchObject({ patient_id: 5001, professional_ids: [334], box_id: 189, start_date: at(5, "10:00"), end_date: at(5, "10:30") });
       expect(writes()).toEqual([expect.objectContaining({ method: "POST", path: "/appointments", idem: `turnia-turno-${booked.turno_id}` })]);
@@ -311,7 +348,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       // Paciente que no está en Smile Connect: se crea primero.
       await tool("registrar_paciente", { nombre_completo: "Lucía Nueva Inventada", dni: "30999000", cobertura: "Particular", fecha_nacimiento: "1985-01-02" }, newPhone);
       const other = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(5, "11:00") }, newPhone);
-      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
+      expect(other.ok).toBe(true);
       const lucia = [...fake.patients.values()].find((p) => p.id_number === "30999000");
       expect(lucia).toMatchObject({ name: "Lucía Nueva", surname: "Inventada", phone_country_code: "54", phone_number: "1100006002" });
       const otherRow = await smileSync(other.turno_id!);
@@ -324,10 +361,12 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect((await sql`select count(*)::int as n from appointments where external_id = ${row.external_id}`)[0].n).toBe(1);
     });
 
-    it("mover con Sofi mueve el mismo turno de Smile Connect (no crea otro)", async () => {
+    it("el modo completo mueve desde el panel el mismo turno de Smile Connect", async () => {
+      await link.setSmileMode(clinicId, "completa");
+      const { rescheduleClinicAppointment } = await import("@/lib/agent/service");
       const [orig] = await sql`select id, external_id from appointments where clinic_id = ${clinicId} and starts_at = ${at(5, "10:00")} and status = 'confirmado'`;
       fake.calls.length = 0;
-      const moved = await tool("reprogramar_turno", { turno_id: orig.id, nuevo_inicio: at(5, "16:00") });
+      const moved = await rescheduleClinicAppointment(clinicId, orig.id, { nuevo_inicio: at(5, "16:00") });
       expect(moved.ok).toBe(true);
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
       const scId = Number(orig.external_id.slice(3));
@@ -342,16 +381,18 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect((await sql`select count(*)::int as n from appointments where external_id = ${orig.external_id} and status = 'confirmado'`)[0].n).toBe(1);
     });
 
-    it("cancelar con Sofi cancela en Smile Connect, también un turno que vino de allá", async () => {
+    it("el modo completo cancela desde el panel un turno que vino de Smile Connect", async () => {
+      const { cancelClinicAppointment } = await import("@/lib/agent/service");
       const [mine] = await sql`select id from appointments where clinic_id = ${clinicId} and external_id = 'sc:80001'`;
       fake.calls.length = 0;
-      expect((await tool("cancelar_turno", { turno_id: mine.id, motivo: "No puede ir" })).ok).toBe(true);
+      expect((await cancelClinicAppointment(clinicId, mine.id, "No puede ir")).ok).toBe(true);
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
       expect(fake.appointments.get(80001)!.cancelled).toBe(true);
       expect(writes()).toEqual([expect.objectContaining({ method: "POST", path: "/appointments/80001/cancel" })]);
     });
 
     it("si en Smile Connect el turno cambió mientras tanto, no lo toca y lo deja para revisar", async () => {
+      const { cancelClinicAppointment } = await import("@/lib/agent/service");
       await sql`insert into clinic_notice_phones (clinic_id, phone, name) values (${clinicId}, '5491100006100', 'Recepción')`;
       const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(6, "10:00") });
       await push.pushPendingSmile(clinicId);
@@ -359,7 +400,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       // Recepción lo movió en Smile Connect antes de que Turnia se entere.
       Object.assign(fake.appointments.get(Number(external_id.slice(3)))!, { start_date: at(6, "12:00"), end_date: at(6, "12:30") });
       fake.calls.length = 0;
-      await tool("cancelar_turno", { turno_id: booked.turno_id });
+      await cancelClinicAppointment(clinicId, booked.turno_id!);
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ revisar: 1 });
       expect(writes()).toEqual([]);
       expect(fake.appointments.get(Number(external_id.slice(3)))!.cancelled).toBe(false);
@@ -371,29 +412,63 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect((await push.smileReviewList(clinicId)).map((r) => r.id)).not.toContain(booked.turno_id);
     });
 
-    it("si el horario se ocupó en Smile Connect antes de escribir, no lo superpone", async () => {
-      const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(6, "14:00") });
-      fake.appointments.set(80020, scAppt(80020, 5002, 6, "14:00", "14:30"));
+    it("si recepción toma el horario durante el alta, conserva el suyo y revierte solo el de Turnia", async () => {
       fake.calls.length = 0;
-      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ revisar: 1 });
-      expect(writes()).toEqual([]);
-      expect((await smileSync(booked.turno_id!)).smile_error).toContain("ocupado o bloqueado");
+      fake.beforeCreate = () => { fake.appointments.set(80020, scAppt(80020, 5002, 6, "14:00", "14:30")); };
+      try {
+        const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(6, "14:00") });
+        expect(booked).toMatchObject({ ok: false, pendiente_recepcion: true });
+        const [row] = await sql`select status, smile_sync, smile_error, external_id from appointments where clinic_id = ${clinicId} and starts_at = ${at(6, "14:00")}`;
+        expect(row).toMatchObject({ status: "cancelado", smile_sync: "revisar", smile_error: expect.stringContaining("Se revirtió") });
+        expect(fake.appointments.get(80020)?.cancelled).toBe(false);
+        expect(fake.appointments.get(Number(row.external_id.slice(3)))?.cancelled).toBe(true);
+        expect(writes().map((w) => w.path)).toEqual(["/appointments", `/appointments/${row.external_id.slice(3)}/cancel`]);
+      } finally {
+        fake.beforeCreate = undefined;
+      }
     });
 
-    it("con «Crear turnos», mover y cancelar quedan para hacer a mano", async () => {
+    it("si el alta devuelve un resultado incierto, queda pendiente y reintentar el pedido no escribe otra vez", async () => {
+      fake.calls.length = 0;
+      fake.createStatus = 503;
+      const input = { tipo_turno_id: consult, profesional_id: pro, inicio: at(6, "15:00") };
+      try {
+        expect(await tool("reservar_turno", input)).toMatchObject({ ok: false, pendiente_recepcion: true });
+      } finally {
+        fake.createStatus = 201;
+      }
+      const [row] = await sql`select id, status, smile_sync, external_id from appointments where clinic_id = ${clinicId} and starts_at = ${input.inicio}`;
+      expect(row).toMatchObject({ status: "pendiente", smile_sync: "revisar", external_id: null });
+      expect(await tool("reservar_turno", input)).toMatchObject({ ok: false, pendiente_recepcion: true });
+      expect(await tool("confirmar_turno", { turno_id: row.id })).toMatchObject({ ok: false, pendiente_recepcion: true });
+      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 0, error: 0 });
+      expect(writes().map((w) => w.path)).toEqual(["/appointments"]);
+    });
+
+    it("con «Crear turnos», Sofi manda a recepción los cambios y el original sigue reservado", async () => {
       await link.setSmileMode(clinicId, "crear");
       const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(7, "10:00") });
-      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
       fake.calls.length = 0;
-      await tool("cancelar_turno", { turno_id: booked.turno_id });
-      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ revisar: 1 });
+      expect(await tool("reprogramar_turno", { turno_id: booked.turno_id, nuevo_inicio: at(7, "16:30") })).toMatchObject({ ok: false, pendiente_recepcion: true });
+      expect(await tool("cancelar_turno", { turno_id: booked.turno_id })).toMatchObject({ ok: false, pendiente_recepcion: true });
       expect(writes()).toEqual([]);
-      expect((await smileSync(booked.turno_id!)).smile_error).toContain("Cancelalo a mano en Smile Connect");
+      expect(await smileSync(booked.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok" });
+
+      const [second] = await sql`insert into appointment_types (clinic_id, name, specialty, duration_min)
+        values (${clinicId}, 'Limpieza', 'Odontología', 30) returning id`;
+      const combined = await tool("reservar_turno", {
+        tipo_turno_id: consult, segundo_tipo_turno_id: second.id, profesional_id: pro, inicio: at(7, "13:00"),
+      });
+      expect(combined).toMatchObject({ ok: false, pendiente_recepcion: true });
+      expect(writes()).toEqual([]);
     });
 
     it("si Smile Connect falla, reintenta; con demasiados cambios en una hora, se frena sola", async () => {
       await link.setSmileMode(clinicId, "completa");
+      vi.stubEnv("SMILE_CONNECT_WRITES", "");
+      // Una fila de la cola anterior sigue siendo reintentable con la clave idempotente.
       const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(7, "11:00") });
+      vi.stubEnv("SMILE_CONNECT_WRITES", "on");
       fake.status = 503;
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ error: 1 });
       expect(await smileSync(booked.turno_id!)).toMatchObject({ smile_sync: "error" });
@@ -403,14 +478,14 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       await sql`
         insert into smile_connect_changes (clinic_id, action, status)
         select ${clinicId}, 'crear', 'hecho' from generate_series(1, 15)`;
-      const next = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(7, "12:00") });
       fake.calls.length = 0;
+      const next = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(7, "12:00") });
+      expect(next).toMatchObject({ ok: false, pendiente_recepcion: true });
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ frenado: expect.stringContaining("Se frenó la escritura") });
       expect(writes()).toEqual([]);
-      expect((await smileSync(next.turno_id!)).smile_sync).toBe("pendiente");
       await push.resumeSmileWrites(clinicId);
       await sql`delete from smile_connect_changes where appointment_id is null`;
-      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
+      expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 0 });
     });
 
     it("cuando la API acepte notas, manda el motivo del turno", async () => {

@@ -5,6 +5,7 @@ import {
   fitsFree,
   freeRanges,
   scAppointment,
+  scAppointments,
   scAvailability,
   scCancelAppointment,
   scCreateAppointment,
@@ -19,7 +20,7 @@ import {
   type ScAppointment,
   type SmileClient,
 } from "./smile-connect-api";
-import { clientFor, findSmilePatient, getSmileApiConnection, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
+import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
 import { localDateKey } from "./time";
 
 // Escritura en Smile Connect de lo que hace Turnia (Sofi o el panel) con los turnos. Es la data
@@ -176,7 +177,7 @@ function describe(row: Pick<Row, "starts_at" | "professional" | "timezone">): st
   return `${day} ${hour} con ${row.professional}`;
 }
 
-async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: SmileClient, row: Row): Promise<Outcome> {
+async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: SmileClient, row: Row, verifyCreation = false): Promise<Outcome> {
   const real = writesEnabledOnServer() && conn.api_mode !== "sombra";
   const scId = scIdOf(row.external_id);
   const times = (r: Row) => ({
@@ -223,7 +224,6 @@ async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: 
     where a.replaced_by = ${row.id} and a.clinic_id = ${row.clinic_id} and a.external_id ~ '^sc:[0-9]+$'`;
   const moving = scId ?? scIdOf(previous?.external_id ?? null);
   if (moving) {
-    const known = previous ?? row;
     if (conn.api_mode === "crear") {
       throw new Review(`Movelo a mano en Smile Connect: ${previous ? `de ${describe({ ...row, starts_at: previous.starts_at })} ` : ""}a ${describe(row)}.`);
     }
@@ -257,9 +257,35 @@ async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: 
     return { status: "sombra" };
   }
   const result = await scCreateAppointment(client, { ...request, patient_id: patientId }, `turnia-turno-${row.id}`);
+  if (!Number.isSafeInteger(result?.appointment_id) || result.appointment_id <= 0) {
+    throw new Review("Smile Connect no devolvió un número de turno válido.");
+  }
   await tx`update appointments set external_id = ${`sc:${result.appointment_id}`} where id = ${row.id}`;
   await logChange(tx, row, "crear", "hecho", { request, result });
+  if (verifyCreation) await verifyNewAppointment(tx, client, row, result.appointment_id, patientId);
   return { status: "ok" };
+}
+
+async function verifyNewAppointment(tx: TransactionSql, client: SmileClient, row: Row, id: number, patientId: number) {
+  const start = Date.parse(row.starts_at);
+  const end = Date.parse(row.ends_at);
+  const appointments = (await scAppointments(client, new Date(start - 86400_000), new Date(end), 25))
+    .filter((a) => !a.cancelled && a.attendance !== "Canceled with Notice");
+  const own = appointments.find((a) => a.appointment_id === id);
+  if (!own || own.patient_id !== patientId || own.professional_ids.length !== 1
+      || own.professional_ids[0] !== row.smile_professional_id || own.box_id !== row.smile_box_id
+      || !sameInstant(own.start_date, row.starts_at) || !sameInstant(own.end_date, row.ends_at)) {
+    throw new Review("Hay un alta en Smile Connect que recepción tiene que comprobar antes de confirmar.");
+  }
+  const overlap = appointments.some((a) => a.appointment_id !== id && a.professional_ids.includes(own.professional_ids[0])
+    && Date.parse(a.start_date) < end && Date.parse(a.end_date) > start);
+  if (!overlap) return;
+  // Si recepción tomó el horario mientras se creaba, se revierte solo el alta que acabamos de verificar.
+  const undone = await scCancelAppointment(client, id);
+  if (undone?.appointment_id !== id) throw new Review("Hay un turno superpuesto que recepción tiene que revisar en Smile Connect.");
+  await logChange(tx, row, "cancelar", "hecho", { request: { appointment_id: id }, before: own, result: undone });
+  await tx`update appointments set status = 'cancelado', cancelled_at = now() where id = ${row.id}`;
+  throw new Review("Otro turno ocupó ese horario en Smile Connect. Se revirtió el alta de Turnia.");
 }
 
 /** Aviso al consultorio (si cargó celulares) cuando algo quedó para hacer a mano. */
@@ -277,6 +303,61 @@ async function noticeReview(tx: TransactionSql, row: Row, message: string) {
   await tx`insert into clinic_notices ${tx(phones.map((x) => ({ clinic_id: row.clinic_id, phone: x.phone, kind: "smile", appointment_id: row.id, body })))}`;
 }
 
+async function pendingRow(tx: TransactionSql, id: string, skipLocked = false) {
+  const [row] = await tx<Row[]>`
+    select a.id, a.clinic_id, a.patient_id, a.professional_id, a.second_professional_id, a.starts_at, a.ends_at, a.status, a.source,
+           a.notes, a.title, a.external_id, a.external_status, a.replaced_by, a.smile_attempts,
+           t.name as type_name, p.smile_professional_id, p.smile_box_id, p.full_name as professional, c.timezone, c.agent_name
+    from appointments a
+      join appointment_types t on t.id = a.appointment_type_id
+      join professionals p on p.id = a.professional_id
+      join clinics c on c.id = a.clinic_id
+    where a.id = ${id} and a.smile_sync in ('pendiente', 'error')
+    for update of a ${skipLocked ? tx`skip locked` : tx``}`;
+  return row;
+}
+
+/** Confirma una sola alta dentro de la transacción que reservó el horario en Turnia. */
+export async function confirmNewSmileAppointment(tx: TransactionSql, clinicId: string, id: string): Promise<string | null> {
+  await tx`select set_config('turnia.smile_quiet', 'on', true)`;
+  const row = await pendingRow(tx, id);
+  try {
+    const conn = await getSmileApiConnection(clinicId, tx);
+    if (!row || row.clinic_id !== clinicId || row.status !== "pendiente" || !conn?.api_key_encrypted
+        || !writesEnabledOnServer() || !isLiveSmileMode(conn.api_mode) || conn.api_writes_paused) {
+      throw new Review("La escritura en Smile Connect no está disponible.");
+    }
+    const [{ n }] = await tx<Array<{ n: number }>>`
+      select count(*)::int as n from smile_connect_changes
+      where clinic_id = ${clinicId} and status = 'hecho' and created_at > now() - interval '1 hour'`;
+    if (n >= MAX_WRITES_PER_HOUR) {
+      const reason = "Se frenó la escritura en Smile Connect por el límite de cambios por hora.";
+      await tx`update smile_connect_connections set api_writes_paused = ${reason} where clinic_id = ${clinicId}`;
+      throw new Review(reason);
+    }
+    const deadline = Date.now() + 8_000;
+    const client: SmileClient = {
+      request: (path, req) => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Review("Venció el plazo para confirmar el turno en Smile Connect.");
+        return clientFor(conn, Math.min(remaining, 3_000), tx).request(path, req);
+      },
+    };
+    const result = await processRow(tx, conn, client, row, true);
+    if (result.status !== "ok") throw new Review("Smile Connect no confirmó el turno.");
+    await tx`update appointments set status = 'confirmado', smile_sync = 'ok', smile_error = null where id = ${id}`;
+    return null;
+  } catch (e) {
+    const message = smileErrorText(e).slice(0, 300);
+    await tx`update appointments set smile_sync = 'revisar', smile_error = ${message} where id = ${id}`;
+    if (row) {
+      await logChange(tx, row, "crear", "revisar", { error: message });
+      await noticeReview(tx, row, message);
+    }
+    return message;
+  }
+}
+
 /**
  * Escribe en Smile Connect lo pendiente de una clínica (de a un turno, con su verificación).
  * Corre después de los cambios y con la automatización de cada 10 minutos.
@@ -285,7 +366,6 @@ export async function pushPendingSmile(clinicId: string): Promise<Record<string,
   const conn = await getSmileApiConnection(clinicId);
   if (!conn?.api_key_encrypted || !WRITE_MODES.includes(conn.api_mode)) return { omitido: "La escritura está apagada." };
   if (conn.api_writes_paused) return { frenado: conn.api_writes_paused };
-  const client = clientFor(conn);
   const pending = await sql<Array<{ id: string }>>`
     select id from appointments
     where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error') and smile_attempts < ${MAX_ATTEMPTS}
@@ -301,20 +381,14 @@ export async function pushPendingSmile(clinicId: string): Promise<Record<string,
       return { ...result, frenado: reason };
     }
     const outcome = await sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
+      const current = await getSmileApiConnection(clinicId, tx);
+      if (current?.api_mode !== conn.api_mode || current.api_key_encrypted !== conn.api_key_encrypted || current.api_writes_paused) return null;
       await tx`select set_config('turnia.smile_quiet', 'on', true)`;
-      const [row] = await tx<Row[]>`
-        select a.id, a.clinic_id, a.patient_id, a.professional_id, a.second_professional_id, a.starts_at, a.ends_at, a.status, a.source,
-               a.notes, a.title, a.external_id, a.external_status, a.replaced_by, a.smile_attempts,
-               t.name as type_name, p.smile_professional_id, p.smile_box_id, p.full_name as professional, c.timezone, c.agent_name
-        from appointments a
-          join appointment_types t on t.id = a.appointment_type_id
-          join professionals p on p.id = a.professional_id
-          join clinics c on c.id = a.clinic_id
-        where a.id = ${id} and a.smile_sync in ('pendiente', 'error')
-        for update of a skip locked`;
+      const row = await pendingRow(tx, id, true);
       if (!row) return null;
       try {
-        const out = await processRow(tx, conn, client, row);
+        const out = await processRow(tx, current, clientFor(current, undefined, tx), row);
         await tx`
           update appointments set smile_sync = ${out.status === "nada" ? null : "ok"}, smile_error = null
           where id = ${row.id}`;
@@ -375,6 +449,7 @@ export async function smileReviewList(clinicId: string) {
 export async function dismissSmileReview(clinicId: string, appointmentId: string): Promise<void> {
   await sql.begin(async (tx) => {
     await tx`select set_config('turnia.smile_quiet', 'on', true)`;
-    await tx`update appointments set smile_sync = null, smile_error = null where id = ${appointmentId} and clinic_id = ${clinicId}`;
+    await tx`update appointments set smile_sync = null, smile_error = null where id = ${appointmentId}
+      and clinic_id = ${clinicId} and status <> 'pendiente'`;
   });
 }

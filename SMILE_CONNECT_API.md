@@ -53,8 +53,8 @@ Panel → Configuración → Calendario → **Smile Connect por API**. Solo Turn
 | Apagada (por defecto) | Nada. La clave queda guardada, cifrada. |
 | Solo lectura | Trae la agenda y Sofi ofrece y reserva solo lo libre en Smile Connect (con bloqueos y feriados). No escribe nada. |
 | Escritura de prueba | Además anota qué escribiría, con la verificación previa, pero sin escribir. |
-| Crear turnos | Escribe en Smile Connect los turnos nuevos. Lo que se mueve o cancela queda para hacer a mano, con aviso. |
-| Crear, mover y cancelar | Escribe todo lo que hace Sofi con los turnos. |
+| Crear turnos | Sofi confirma altas simples después de crearlas y verificarlas en Smile Connect. Recepción coordina cambios, cancelaciones y visitas combinadas. |
+| Crear, mover y cancelar | También sincroniza los cambios y cancelaciones del panel. Sofi deriva esos pedidos a recepción. |
 
 La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Sin esa variable, «Crear turnos» y «Crear, mover y cancelar» funcionan como «Escritura de prueba».
 
@@ -68,10 +68,11 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 - **Tope propio:** 8.000 lecturas por día, contadas en `smile_connect_connections.api_reads`.
 - **Disponibilidad en vivo (`smileBusy`):**
   - lo que no figura libre en Smile Connect cuenta como ocupado para Sofi, al consultar y al reservar (al reservar, se pregunta en el momento);
-  - guarda 2 minutos lo leído; si Smile Connect no responde, usa lo leído en la última media hora o la agenda que Turnia ya trajo.
+  - para ofrecer horarios, guarda 2 minutos lo leído; si Smile Connect falla, puede usar datos recientes. Al confirmar, la comprobación en vivo es obligatoria.
 - **Copia diaria** (de 3 a 6 de la mañana): pacientes y turnos de 30 días atrás a 120 adelante. Se guardan las últimas 14 en `smile_connect_backups`.
 
 **Escritura** (`src/lib/smile-connect-push.ts`). Es la data operativa del consultorio; hay que asumir que no tiene backup:
+- Sofi confirma un turno nuevo solo después de comprobar en Smile Connect el identificador, paciente, horario, profesional y consultorio del alta. Si hay un turno que lo pisa, revierte su propia alta. Si falta respuesta, queda una tarea de recepción y el pedido no se anuncia como confirmado.
 - **Sin bucles:**
   - un trigger (`turnia_smile_mark`) marca para escribir solo los cambios que hace Turnia;
   - lo que trae o escribe la sincronización va marcado con `turnia.smile_quiet` y nunca vuelve a Smile Connect.
