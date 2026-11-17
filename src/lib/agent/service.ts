@@ -855,6 +855,7 @@ function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id
     pendiente_confirmacion: !review,
     pendiente_recepcion: review,
     turno_id: appointment.id,
+    segundo_turno_id: undefined,
     mensaje: review
       ? "El pedido sigue pendiente y ya está en recepción. No crees otra tarea ni confirmes el turno."
       : appointment.smile_reply_phone
@@ -1001,7 +1002,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   if (deferSmile) {
     const [appointment] = created;
     if (appointment.status === "pendiente") return pendingSmileResult(clinic.id, appointment);
-    return { ok: true, turno_id: appointment.id, mensaje: "Ese turno ya estaba confirmado.", direccion: clinic.address };
+    return { ok: true, turno_id: appointment.id, segundo_turno_id: undefined, mensaje: "Ese turno ya estaba confirmado.", direccion: clinic.address };
   }
   if (smileProblem !== null) {
     throw new SmileHandoff(

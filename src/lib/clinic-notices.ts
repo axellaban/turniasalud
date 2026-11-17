@@ -240,7 +240,10 @@ const isSmilePatientNotice = (kind: NoticeRow["kind"]) => kind === "smile_pacien
 async function reviewSmileDelivery(noticeId: string, reason: string) {
   await sql`
     with failed as (
-      update clinic_notices set status = 'vencido', error = ${reason} where id = ${noticeId} and status = 'enviando'
+      update clinic_notices set status = 'vencido', error = ${reason} where id = ${noticeId} and (
+        status = 'enviando' or (kind in ('smile_paciente', 'smile_confirmado')
+          and status = 'pendiente' and created_at < now() - interval '1 day')
+      )
       returning clinic_id, appointment_id, body
     )
     insert into tasks (clinic_id, patient_id, type, title, details)
@@ -295,7 +298,10 @@ async function sendOne(clinic: Clinic, row: NoticeRow): Promise<"enviado" | "err
  */
 export async function sendPendingNotices(clinicId?: string): Promise<{ enviados: number; errores: number; vencidos: number }> {
   const uncertain = await sql<{ id: string }[]>`
-    select id from clinic_notices where status = 'enviando' and attempted_at < now() - interval '1 minute'
+    select id from clinic_notices where (
+      (status = 'enviando' and attempted_at < now() - interval '1 minute')
+      or (kind in ('smile_paciente', 'smile_confirmado') and status = 'pendiente' and created_at < now() - interval '1 day')
+    )
       ${clinicId ? sql`and clinic_id = ${clinicId}` : sql``}`;
   for (const row of uncertain) await reviewSmileDelivery(row.id, "No hay confirmación de entrega de WhatsApp.");
   const expired = await sql`
