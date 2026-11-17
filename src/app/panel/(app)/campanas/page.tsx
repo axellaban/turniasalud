@@ -140,7 +140,7 @@ export default async function CampaignsPage() {
             {opp.value > 0 ? (
               <>
                 <strong className="font-semibold text-white">≈ {money.format(opp.value)}</strong> en turnos, con los precios de referencia de tus
-                prestaciones.
+                prestaciones. Cada paciente cuenta una vez, aunque esté en más de una lista de abajo.
               </>
             ) : (
               <>

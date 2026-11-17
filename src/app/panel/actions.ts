@@ -283,13 +283,16 @@ export async function rescheduleFromPanel(_prev: FormState | undefined, form: Fo
 }
 
 export async function setTaskStatus(form: FormData) {
-  await requireSession();
+  const user = await requireSession();
   const id = uuid(form, "id");
   const status = text(form, "status");
   if (!id || !status || !["abierta", "en_curso", "resuelta"].includes(status)) return;
   const clinic = await getPanelClinic(form);
+  // «Me ocupo»: queda anotado quién la tomó, para que el resto del equipo no la duplique.
+  const who = status === "en_curso" ? (user.role === "admin" ? "Turnia" : user.label || "El consultorio") : null;
   await sql`
-    update tasks set status = ${status}, resolved_at = case when ${status} = 'resuelta' then now() else null end
+    update tasks set status = ${status}, resolved_at = case when ${status} = 'resuelta' then now() else null end,
+      assigned_to = case when ${status} = 'en_curso' then ${who} when ${status} = 'abierta' then null else assigned_to end
     where id = ${id} and clinic_id = ${clinic.id}`;
   revalidatePath("/panel/tareas");
   revalidatePath("/panel");

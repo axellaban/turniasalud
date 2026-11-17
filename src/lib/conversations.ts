@@ -43,6 +43,19 @@ function collected(data: PostCallPayload, key: string): string | null {
 }
 
 /** Puntaje 0-10 de la encuesta (ElevenLabs lo manda como número o como texto). */
+/**
+ * Columnas para las listas de conversaciones del panel (alias `c`): el celular de la charla de WhatsApp
+ * y, mientras no hay resumen, lo último que escribió el paciente. Es una función (no una constante)
+ * para no armar SQL al cargar el módulo, cuando el build todavía no tiene base.
+ */
+export function conversationPreviewColumns() {
+  return sql`
+    (select cc.phone from channel_conversations cc where cc.elevenlabs_conversation_id = c.elevenlabs_conversation_id) as phone,
+    case when c.title is null and c.summary is null then (
+      select t->>'message' from jsonb_array_elements(case when jsonb_typeof(c.transcript) = 'array' then c.transcript else '[]'::jsonb end) with ordinality as x(t, i)
+      where t->>'role' = 'user' and coalesce(t->>'message', '') <> '' order by i desc limit 1) end as last_message`;
+}
+
 export function satisfactionScore(data: PostCallPayload): number | null {
   const value = data.analysis?.data_collection_results?.satisfaccion?.value;
   const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;

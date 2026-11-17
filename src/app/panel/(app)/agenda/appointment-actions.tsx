@@ -170,7 +170,8 @@ export function MarkAttended({ clinicId, ids }: { clinicId: string; ids: string[
   const [sure, setSure] = useState(false);
   return (
     <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-950 ring-1 ring-amber-200">
-      <p className="min-w-0 flex-1">
+      {/* Con un ancho mínimo el texto no se aplasta en el celular: el botón baja a otra línea. */}
+      <p className="min-w-[15rem] flex-1">
         {state?.ok ? state.message : (
           <>
             <strong className="font-semibold">{ids.length === 1 ? "1 turno ya pasó" : `${ids.length} turnos ya pasaron`} sin marcar.</strong>{" "}

@@ -172,6 +172,27 @@ export const STATUS_LABEL: Record<string, string> = {
   finalizada: "Finalizada",
 };
 
+/** El motivo que anota ElevenLabs en cada conversación, dicho como lo diría recepción. */
+export const INTENT_LABEL: Record<string, string> = {
+  agendar: "Pidió turno",
+  reprogramar: "Mover turno",
+  cancelar: "Cancelar turno",
+  confirmar: "Confirmó asistencia",
+  consulta_informativa: "Consulta",
+  receta: "Receta",
+  resultados: "Resultados",
+  orden_medica: "Orden médica",
+  consulta_clinica: "Consulta clínica",
+  urgencia: "Urgencia",
+  facturacion: "Facturación",
+  encuesta: "Encuesta",
+  otro: "Otro",
+};
+
+export function intentLabel(value: string): string {
+  return INTENT_LABEL[value] ?? value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, " ");
+}
+
 export function StatusBadge({ value }: { value: string | null | undefined }) {
   if (!value) return null;
   const label = STATUS_LABEL[value] ?? value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, " ");

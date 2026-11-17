@@ -5,7 +5,7 @@ import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { formatDateTime } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
-import { Badge, Card, CHANNEL_LABEL, PageHeader, StatusBadge } from "@/components/ui";
+import { Badge, Card, CHANNEL_LABEL, intentLabel, PageHeader, StatusBadge } from "@/components/ui";
 import type { Conversation } from "@/lib/types";
 import type { Metadata } from "next";
 
@@ -62,7 +62,7 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
             <h2 className="font-semibold text-brand-950">Resumen</h2>
             <p className="mt-2 text-sm leading-relaxed text-brand-900/75">{c.summary || "Sin resumen."}</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              {c.intent && <Badge>{c.intent.replace(/_/g, " ")}</Badge>}
+              {c.intent && <Badge>{intentLabel(c.intent)}</Badge>}
               <StatusBadge value={c.outcome} />
               {sentiment && <Badge tone={sentiment === "negativo" ? "red" : sentiment === "positivo" ? "green" : "gray"}>{sentiment}</Badge>}
               {c.duration_secs !== null && <Badge>{Math.round((c.duration_secs ?? 0) / 60)} min</Badge>}
