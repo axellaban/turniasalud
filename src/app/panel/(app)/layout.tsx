@@ -18,7 +18,7 @@ export default async function PanelLayout({ children }: LayoutProps<"/panel">) {
         <Link href="/panel" className="px-5 pb-2 pt-5">
           <Logo light />
         </Link>
-        <PanelSidebarNav admin={admin} agent={agent} />
+        <PanelSidebarNav admin={admin} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-brand-900/10 bg-white/90 px-4 backdrop-blur sm:px-8">
@@ -38,7 +38,7 @@ export default async function PanelLayout({ children }: LayoutProps<"/panel">) {
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-28 pt-6 sm:px-8 md:pb-12 md:pt-8">{children}</main>
       </div>
-      <PanelMobileNav admin={admin} agent={agent} />
+      <PanelMobileNav admin={admin} />
       {admin && <MarcaInterna />}
     </div>
   );

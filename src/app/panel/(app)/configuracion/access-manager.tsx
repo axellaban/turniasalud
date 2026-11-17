@@ -14,7 +14,7 @@ export function AccessCreator({ clinicId, loginUrl }: { clinicId: string; loginU
   return <div className="space-y-3">
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="clinic_id" value={clinicId} />
-      <div className="min-w-0 flex-1"><Field label="Para quién (opcional)"><input name="label" maxLength={80} placeholder="Dr. Guerra" className={inputClass} /></Field></div>
+      <div className="min-w-0 flex-1"><Field label="Para quién (opcional)"><input name="label" maxLength={80} placeholder="Recepción" className={inputClass} /></Field></div>
       <button disabled={pending} className={buttonClass}>{pending ? "Creando…" : "Crear código"}</button>
     </form>
     {state.code && <Notice tone="success">

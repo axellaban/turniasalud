@@ -142,7 +142,7 @@ export default async function SettingsPage() {
             </div>}
             <ActionForm action={addStaffPhone} submit="Dar acceso" resetOnSuccess secondary className="mt-4 grid gap-3">
               <input type="hidden" name="clinic_id" value={clinic.id} />
-              <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dr. Mininni" className={inputClass} /></Field>
+              <Field label="De quién es"><input name="name" required maxLength={80} placeholder="Dra. López" className={inputClass} /></Field>
               <Field label="Celular" hint="Con código de área. Es el de WhatsApp."><input name="phone" required inputMode="tel" placeholder="11 5555-0100" className={inputClass} /></Field>
             </ActionForm>
             <div className="mt-4 border-t border-brand-900/5 pt-4">

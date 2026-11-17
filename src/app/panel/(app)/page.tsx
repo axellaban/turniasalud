@@ -1,6 +1,8 @@
 import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
+import { conversationPreviewColumns } from "@/lib/conversations";
+import { displayPhone } from "@/lib/phone";
 import { isConfigured } from "@/lib/env";
 import { formatDateTime, formatTime, localDateKey, addDaysKey, zonedTimeToUtc } from "@/lib/time";
 import { Badge, Card, CHANNEL_LABEL, Empty, Notice, PageHeader, Stat, StatusBadge } from "@/components/ui";
@@ -77,8 +79,8 @@ export default async function PanelHome() {
       where a.clinic_id = ${clinic.id} and a.starts_at >= ${dayStart} and a.starts_at < ${dayEnd}
         and a.status in ('confirmado', 'pendiente', 'atendido', 'ausente')
       order by a.starts_at`,
-    sql<Array<{ id: string; started_at: string; channel: string; title: string | null; summary: string | null; patient: string | null }>>`
-      select c.id, c.started_at, c.channel, c.title, c.summary, p.full_name as patient
+    sql<Array<{ id: string; started_at: string; channel: string; title: string | null; summary: string | null; patient: string | null; phone: string | null; last_message: string | null }>>`
+      select c.id, c.started_at, c.channel, c.title, c.summary, p.full_name as patient, ${conversationPreviewColumns()}
       from conversations c left join patients p on p.id = c.patient_id
       where c.clinic_id = ${clinic.id}
       order by c.started_at desc
@@ -202,6 +204,13 @@ export default async function PanelHome() {
             ) : (
               <p className="text-sm text-brand-900/65">Nada urgente.</p>
             )}
+            {/* La lista muestra solo las urgentes y de prioridad alta: el resto se cuenta para que el número cierre. */}
+            {stats.open_tasks > urgentTasks.length && (
+              <p className="mt-2 text-sm text-brand-900/65">
+                {urgentTasks.length ? "Y " : ""}
+                {stats.open_tasks - urgentTasks.length === 1 ? "1 más" : `${stats.open_tasks - urgentTasks.length} más`} sin apuro.
+              </p>
+            )}
             <Link href="/panel/tareas" className="mt-3 inline-block text-sm text-brand-700 hover:underline">
               Ver tareas
             </Link>
@@ -220,11 +229,11 @@ export default async function PanelHome() {
                   <li key={c.id}>
                     <Link href={`/panel/conversaciones/${c.id}`} className="block rounded-xl p-2 hover:bg-brand-50">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-brand-950">{c.patient ?? "Paciente sin identificar"}</span>
+                        <span className="font-medium text-brand-950">{c.patient ?? (c.phone ? displayPhone(c.phone) : "Paciente sin identificar")}</span>
                         <span className="text-xs text-brand-900/65">{formatDateTime(c.started_at, tz)}</span>
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-brand-900/60">
-                        {CHANNEL_LABEL[c.channel]} · {c.title || c.summary || "Sin resumen"}
+                        {CHANNEL_LABEL[c.channel]} · {c.title || c.summary || (c.last_message ? `«${c.last_message}»` : "Sin resumen todavía")}
                       </p>
                     </Link>
                   </li>

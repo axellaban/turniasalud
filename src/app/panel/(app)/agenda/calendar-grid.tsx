@@ -98,10 +98,14 @@ export function CalendarGrid({ columns, events, hours, minWidth }: { columns: Gr
               ))}
 
               {/* Huecos para agregar un turno a mano. */}
-              {c.bookableFrom !== null && c.open.flatMap((s) => {
+              {/* Con «Todos», los horarios de dos profesionales se pisan: cada hueco va una sola vez. */}
+              {c.bookableFrom !== null && (() => {
+                const seen = new Set<number>();
+                return c.open.flatMap((s) => {
                 const out = [];
                 for (let m = Math.ceil(s.start / SLOT_MIN) * SLOT_MIN; m + SLOT_MIN <= s.end; m += SLOT_MIN) {
-                  if (m < c.bookableFrom! || m < hours.start || m >= hours.end) continue;
+                  if (m < c.bookableFrom! || m < hours.start || m >= hours.end || seen.has(m)) continue;
+                  seen.add(m);
                   out.push(
                     <Link
                       key={`s${m}`}
@@ -117,7 +121,8 @@ export function CalendarGrid({ columns, events, hours, minWidth }: { columns: Gr
                   );
                 }
                 return out;
-              })}
+                });
+              })()}
 
               {c.blocks.map((b) => {
                 const v = clip(b);

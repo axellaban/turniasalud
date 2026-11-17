@@ -33,6 +33,7 @@ type Row = {
   details: string | null;
   created_at: string;
   conversation_id: string | null;
+  assigned_to: string | null;
   response: string | null;
   patients: { id: string; full_name: string | null; phone: string | null } | null;
 };
@@ -42,7 +43,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
   const { ver } = await searchParams;
   const showResolved = ver === "resueltas";
   const result = await sql<Row[]>`
-    select t.id, t.type, t.priority, t.status, t.title, t.details, t.created_at, t.conversation_id, t.response,
+    select t.id, t.type, t.priority, t.status, t.title, t.details, t.created_at, t.conversation_id, t.response, t.assigned_to,
       case when p.id is null then null
            else json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) end as patients
     from tasks t left join patients p on p.id = t.patient_id
@@ -76,9 +77,10 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
                   <p className="text-xs text-brand-900/65">{TYPE_LABEL[t.type] ?? t.type}</p>
                   <h2 className="mt-1 font-semibold text-brand-950">{t.title}</h2>
                 </div>
+                {/* La pestaña ya dice si está pendiente o resuelta: solo se marca lo que cambia la lectura. */}
                 <div className="flex shrink-0 gap-1">
-                  <StatusBadge value={t.priority} />
-                  <StatusBadge value={t.status} />
+                  {(t.priority === "urgente" || t.priority === "alta") && <StatusBadge value={t.priority} />}
+                  {t.status === "en_curso" && <Badge tone="blue">{t.assigned_to ? `La tomó ${t.assigned_to}` : "En curso"}</Badge>}
                 </div>
               </div>
               {t.details && <p className="mt-2 whitespace-pre-wrap text-sm text-brand-900/70">{t.details}</p>}
@@ -103,8 +105,8 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
                   <form action={setTaskStatus} className="flex gap-1">
                     <input type="hidden" name="id" value={t.id} />
                     {t.status === "abierta" && (
-                      <button name="status" value="en_curso" className={smallButtonClass}>
-                        Tomar
+                      <button name="status" value="en_curso" className={smallButtonClass} title="Avisarle al resto del equipo que te ocupás vos">
+                        Me ocupo
                       </button>
                     )}
                     <button name="status" value="resuelta" className={smallButtonClass} title="Marcarla resuelta sin mandarle nada al paciente">
