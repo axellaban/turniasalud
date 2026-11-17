@@ -2,10 +2,10 @@ import "server-only";
 import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
-import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock } from "../slots";
+import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock, type SlotQuery } from "../slots";
 import { agentCanMove, agentSchedules, checkCoverage, coverageKey, durationPhrase, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
 import { env } from "../env";
-import { addDaysKey, formatDate, humanSlot, localDateKey, parseDateKey, weekdayOfKey, zonedParts } from "../time";
+import { addDaysKey, formatDate, humanSlot, localDateKey, parseClockTime, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
@@ -349,10 +349,13 @@ export async function checkAvailability(
     profesional_id?: string;
     desde?: string;
     hasta?: string;
+    hora_exacta?: string;
     franja?: "manana" | "tarde" | "cualquiera";
     cobertura?: string;
   },
 ) {
+  const exactTime = parseClockTime(input.hora_exacta);
+  if (input.hora_exacta !== undefined && !exactTime) throw new ToolError("La hora exacta debe ser válida, por ejemplo 15:00.");
   const clinic = await getClinic(ctx.clinicId);
   const catalog = await getCatalog(clinic.id);
   const links = catalog.links ?? [];
@@ -454,7 +457,7 @@ export async function checkAvailability(
     { urgent: urgent || asClinic, released: releaseUntil !== null },
   );
   const releasedOk = (start: Date, block: ScheduleBlock) => urgent || asClinic || !block.urgent_only || (releaseUntil !== null && start.getTime() <= releaseUntil);
-  const slots = computeSlots({
+  const slotQuery: SlotQuery = {
     schedules: usable,
     busy: [...busy, ...calendar],
     blocked,
@@ -472,24 +475,30 @@ export async function checkAvailability(
     timeZone: clinic.timezone,
     now,
     minLeadMinutes: urgent ? 30 : undefined,
-    partOfDay: input.franja,
     limit: 6,
     perDayPerProfessional: 2,
-  });
+  };
+  const matches = exactTime ? computeSlots({ ...slotQuery, startTime: exactTime }) : [];
+  const slots = matches.length ? matches : computeSlots({ ...slotQuery, partOfDay: input.franja });
+  const requestedTime = exactTime ? { hora_solicitada: { hora: exactTime, disponible: matches.length > 0 } } : {};
+  const timeMessage = !exactTime ? "" : matches.length
+    ? `Hay disponibilidad a las ${exactTime}. Ofrecé el horario solicitado. `
+    : `La hora solicitada (${exactTime}) no está disponible en las fechas buscadas. Si hay opciones, ofrecelas como alternativas. `;
 
   const names = new Map(professionals.map((p) => [p.id, p.full_name]));
   if (!slots.length) {
     return {
       ok: true,
       turnos: [],
+      ...requestedTime,
       ...(coverageNotice && { aviso_cobertura: coverageNotice }),
-      mensaje: move
+      mensaje: timeMessage + (move
         ? `No hay horarios para mover esa visita entre ${fromKey} y ${toKey}. Ofrecé buscar otras fechas. El turno original sigue reservado.`
         : urgent && span === 1
           ? "No hay lugar de urgencia hoy ni mañana. Creá una tarea de tipo «urgencia» con prioridad «urgente» para que el equipo lo contacte hoy, y decile qué hacer mientras tanto según el protocolo de urgencias."
           : next
           ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
-          : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`,
+          : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`),
     };
   }
   const turnos = slots.map((s) => ({
@@ -502,6 +511,7 @@ export async function checkAvailability(
   }));
   // Lo que la prestación pide preguntar antes de reservar, y el aviso si nadie atiende su cobertura.
   const extras = {
+    ...requestedTime,
     ...(coverageNotice && { aviso_cobertura: coverageNotice }),
     ...(visit.some((t) => t.ask_before) && { preguntar_antes: visit.map((t) => t.ask_before).filter(Boolean).join(" ") }),
     ...(urgent && !move && { urgencia: true }),
@@ -509,12 +519,13 @@ export async function checkAvailability(
   if (move) {
     return {
       ok: true,
+      ...requestedTime,
       turno_id: move.appt.id,
       tipo_turno: move.appt.title || type.name,
       ...(next && { segunda_practica: move.follower?.title || next.name }),
       duracion_min: duration,
       turnos,
-      mensaje: "Ofrecé opciones para mover el turno existente. Tras la confirmación explícita, usá reprogramar_turno con este turno_id, el nuevo inicio y el profesional elegido. El turno original sigue reservado hasta que el cambio se confirma.",
+      mensaje: timeMessage + "Ofrecé los horarios devueltos para mover el turno existente. Tras la confirmación explícita, usá reprogramar_turno con este turno_id, el nuevo inicio y el profesional elegido. El turno original sigue reservado hasta que el cambio se confirma.",
     };
   }
   await recordOffer(ctx, input, next ? `${type.name} y ${next.name}` : type.name);
@@ -526,7 +537,7 @@ export async function checkAvailability(
       duracion_min: type.duration_min + next.duration_min,
       indicaciones: joinInstructions(type, next),
       turnos,
-      mensaje: `Cada horario es una sola visita con el mismo profesional: ${type.name} (${type.duration_min} min) y enseguida ${next.name} (${next.duration_min} min), hasta la hora de 'termina'. Ofrecé 2 o 3 opciones leyendo 'cuando'. Para reservar usá reservar_turno con los dos ids, y 'inicio' y 'profesional_id' tal cual.`,
+      mensaje: timeMessage + `Cada horario es una sola visita con el mismo profesional: ${type.name} (${type.duration_min} min) y enseguida ${next.name} (${next.duration_min} min), hasta la hora de 'termina'. Ofrecé hasta 3 opciones leyendo 'cuando'. Para reservar usá reservar_turno con los dos ids, y 'inicio' y 'profesional_id' tal cual.`,
     };
   }
   return {
@@ -536,9 +547,9 @@ export async function checkAvailability(
     duracion_min: type.duration_min,
     indicaciones: type.instructions,
     turnos,
-    mensaje: urgent
+    mensaje: timeMessage + (urgent
       ? "Es un turno de urgencia: ofrecé el primero o los dos primeros, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual."
-      : "Ofrecé 2 o 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual.",
+      : "Ofrecé hasta 3 opciones al paciente, leyendo el campo 'cuando'. Para reservar usá 'inicio' y 'profesional_id' tal cual."),
   };
 }
 

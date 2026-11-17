@@ -95,7 +95,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "consultar_disponibilidad",
     description:
-      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios; nunca inventes horarios. Ya deja afuera a los profesionales que no atienden la cobertura del paciente (si viene 'aviso_cobertura', decíselo antes de ofrecer), y con un turno de urgencia busca hoy y mañana. Si trae 'preguntar_antes', preguntalo antes de reservar.",
+      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios. Si el paciente pide una hora concreta, pasá hora_exacta y usá hora_solicitada.disponible para saber si se puede ofrecer. Filtra por cobertura, y con un turno de urgencia busca hoy y mañana. Si trae aviso_cobertura, decíselo antes de ofrecer. Si trae preguntar_antes, preguntalo antes de reservar.",
     params: {
       tipo_turno_id: { type: "string", description: "Para reservar: id del tipo de turno, copiado del catálogo." },
       turno_id: { type: "string", description: "Para reprogramar: turno_id del turno existente (si son dos prácticas seguidas, usá el de la primera)." },
@@ -103,6 +103,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       profesional_id: { type: "string", description: "id del profesional si el paciente pidió uno en particular." },
       desde: { type: "string", description: `Primer día a buscar. ${isoDate} Por defecto, hoy.` },
       hasta: { type: "string", description: `Último día a buscar. ${isoDate} Por defecto, dos semanas después de 'desde'.` },
+      hora_exacta: { type: "string", description: "Hora concreta que pidió el paciente, en hora local (HH:MM, 24 h), por ejemplo 15:00. Si pidió un día específico, mandá ese mismo día en desde y hasta." },
       franja: { type: "string", description: "Franja horaria preferida.", enum: ["manana", "tarde", "cualquiera"] },
       cobertura: {
         type: "string",
@@ -118,6 +119,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       profesional_id: z.string().optional(),
       desde: z.string().optional(),
       hasta: z.string().optional(),
+      hora_exacta: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
       franja: z.enum(["manana", "tarde", "cualquiera"]).optional(),
       cobertura: z.string().optional(),
     }).refine((input) => Boolean(input.tipo_turno_id) !== Boolean(input.turno_id), "Usá tipo_turno_id para reservar o turno_id para reprogramar."),
