@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { GUERRA_MININNI } from "@/lib/agent/appointment-access";
 import { READ_CAP, SMILE_MODE_LABEL, SMILE_MODES, WRITE_MODES, getSmileApiConnection, writesEnabledOnServer } from "@/lib/smile-connect-link";
 import { recentSmileChanges, smileReviewList } from "@/lib/smile-connect-push";
 import { formatDateTime } from "@/lib/time";
@@ -101,7 +102,9 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
               <legend className="mb-1 text-sm font-medium text-brand-950">Qué hace</legend>
               {SMILE_MODES.map((m) => <label key={m} className="flex gap-2 text-sm">
                 <input type="radio" name="mode" value={m} defaultChecked={m === mode} className="mt-1" />
-                <span><span className="font-medium text-brand-950">{SMILE_MODE_LABEL[m].label}.</span> <span className="text-brand-900/70">{SMILE_MODE_LABEL[m].detail}</span></span>
+                <span><span className="font-medium text-brand-950">{SMILE_MODE_LABEL[m].label}.</span> <span className="text-brand-900/70">{clinic.id === GUERRA_MININNI && m === "completa"
+                  ? "Sofi crea, reprograma y cancela turnos simples después de verificarlos en Smile Connect. Aplica las reglas de turnos del consultorio."
+                  : SMILE_MODE_LABEL[m].detail}</span></span>
               </label>)}
             </fieldset>
             <label className="flex gap-2 text-xs text-brand-900/80">

@@ -26,7 +26,7 @@ export type NoticeRow = {
   id: string;
   clinic_id: string;
   phone: string;
-  kind: NoticeKind | "prueba" | "smile" | "smile_paciente" | "smile_confirmado";
+  kind: NoticeKind | "prueba" | "smile" | "smile_paciente" | "smile_confirmado" | "smile_cancelado";
   body: string;
   status: "pendiente" | "enviando" | "enviado" | "error" | "vencido";
   attempts: number;
@@ -235,13 +235,14 @@ export function noticeLine(clinic: Clinic): { phone: string | null; problem: str
   return { phone: own?.phone ?? null, problem: whatsappReadiness(clinic) };
 }
 
-const isSmilePatientNotice = (kind: NoticeRow["kind"]) => kind === "smile_paciente" || kind === "smile_confirmado";
+const SMILE_PATIENT_NOTICES = ["smile_paciente", "smile_confirmado", "smile_cancelado"] as const;
+const isSmilePatientNotice = (kind: NoticeRow["kind"]) => SMILE_PATIENT_NOTICES.some((value) => value === kind);
 
 async function reviewSmileDelivery(noticeId: string, reason: string) {
   await sql`
     with failed as (
       update clinic_notices set status = 'vencido', error = ${reason} where id = ${noticeId} and (
-        status = 'enviando' or (kind in ('smile_paciente', 'smile_confirmado')
+        status = 'enviando' or (kind = any(${[...SMILE_PATIENT_NOTICES]}::text[])
           and status = 'pendiente' and created_at < now() - interval '1 day')
       )
       returning clinic_id, appointment_id, body
@@ -267,8 +268,9 @@ async function sendOne(clinic: Clinic, row: NoticeRow): Promise<"enviado" | "err
     if (patientNotice) {
       const [current] = await sql`
         select 1 from appointments a join clinic_notices n on n.appointment_id = a.id
-        where n.id = ${row.id} and a.smile_reply_phone = n.phone
-          and (n.kind <> 'smile_confirmado' or (a.status = 'confirmado' and a.smile_sync = 'ok' and a.starts_at > now()))`;
+        where n.id = ${row.id} and a.clinic_id = n.clinic_id
+          and (n.kind <> 'smile_confirmado' or (a.smile_reply_phone = n.phone and a.status = 'confirmado' and a.starts_at > now()))
+          and (n.kind <> 'smile_cancelado' or a.status = 'cancelado')`;
       if (!current) {
         await sql`update clinic_notices set status = 'vencido' where id = ${row.id}`;
         return "omitido";
@@ -300,7 +302,7 @@ export async function sendPendingNotices(clinicId?: string): Promise<{ enviados:
   const uncertain = await sql<{ id: string }[]>`
     select id from clinic_notices where (
       (status = 'enviando' and attempted_at < now() - interval '1 minute')
-      or (kind in ('smile_paciente', 'smile_confirmado') and status = 'pendiente' and created_at < now() - interval '1 day')
+      or (kind = any(${[...SMILE_PATIENT_NOTICES]}::text[]) and status = 'pendiente' and created_at < now() - interval '1 day')
     )
       ${clinicId ? sql`and clinic_id = ${clinicId}` : sql``}`;
   for (const row of uncertain) await reviewSmileDelivery(row.id, "No hay confirmación de entrega de WhatsApp.");

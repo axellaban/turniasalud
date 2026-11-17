@@ -49,6 +49,8 @@ const fake = {
   beforeCreate: undefined as (() => void) | undefined,
   createStatus: 201,
   dropCreateReply: false,
+  dropMoveReply: false,
+  dropCancelReply: false,
   whatsapps: [] as Array<{ chatId: string; text: string }>,
 };
 const PROS = [
@@ -137,12 +139,20 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     if (!a) return err(404, "not_found");
     if (method === "GET") return ok({ data: a });
     Object.assign(a, { start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id] });
+    if (fake.dropMoveReply) {
+      fake.dropMoveReply = false;
+      return err(503, "respuesta_perdida");
+    }
     return ok({ data: { appointment_id: a.appointment_id } });
   }
   if ((m = /^\/appointments\/(\d+)\/cancel$/.exec(path))) {
     const a = fake.appointments.get(Number(m[1]));
     if (!a) return err(404, "not_found");
     a.cancelled = true;
+    if (fake.dropCancelReply) {
+      fake.dropCancelReply = false;
+      return err(503, "respuesta_perdida");
+    }
     return ok({ data: { appointment_id: a.appointment_id } });
   }
   return err(404, "not_found");
@@ -604,6 +614,65 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(tasks.n).toBe(1);
       await send();
       expect(fake.whatsapps.at(-1)?.text).toContain("sigue pendiente");
+    });
+
+    it("mueve el mismo turno y después lo cancela, verificando los dos cambios aun sin respuesta de escritura", async () => {
+      await link.setSmileMode(gm, "completa");
+      const booking = await book(23);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+      fake.whatsapps.length = 0;
+      fake.calls.length = 0;
+      const before = await smileSync(booking.turno_id!);
+      const remoteId = Number(before.external_id.slice(3));
+      const move = { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(23, "11:00"), profesional_id: gmPro };
+      const replies = await Promise.all([tool("reprogramar_turno", move), tool("reprogramar_turno", move)]);
+      for (const r of replies) expect(r).toMatchObject({ ok: false, pendiente_confirmacion: true, turno_id: booking.turno_id });
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado" });
+      expect(fake.appointments.get(remoteId)?.start_date).toBe(at(23, "10:00"));
+      fake.dropMoveReply = true;
+      expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ error: 1 });
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "error" });
+      expect(fake.whatsapps).toHaveLength(0);
+      expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+      const [moved] = await sql`select id, starts_at, status from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
+      expect(moved).toMatchObject({ starts_at: at(23, "11:00"), status: "confirmado" });
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "reprogramado", external_id: null });
+      expect(writes().map((w) => [w.method, w.path])).toEqual([["PATCH", `/appointments/${remoteId}`]]);
+      await Promise.all([send(), send()]);
+      expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Reprogramación confirmada")]);
+
+      const result = await tool("cancelar_turno", { clinic_id: gm, turno_id: moved.id, motivo: "Prueba" });
+      expect(result).toMatchObject({ ok: false, pendiente_confirmacion: true });
+      expect(await smileSync(moved.id)).toMatchObject({ status: "confirmado" });
+      fake.dropCancelReply = true;
+      expect(await push.pushPendingSmile(gm, moved.id)).toMatchObject({ error: 1 });
+      expect(await smileSync(moved.id)).toMatchObject({ status: "confirmado" });
+      expect(await push.pushPendingSmile(gm, moved.id)).toMatchObject({ ok: 1 });
+      expect(await smileSync(moved.id)).toMatchObject({ status: "cancelado", external_id: before.external_id });
+      expect(fake.appointments.get(remoteId)?.cancelled).toBe(true);
+      expect(writes().filter((w) => w.path.endsWith("/cancel"))).toHaveLength(1);
+      await send();
+      expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Reprogramación confirmada"), expect.stringContaining("Cancelación confirmada")]);
+    });
+
+    it("conserva el turno original si recepción ocupa el destino y mantiene las restricciones de reprogramación", async () => {
+      const booking = await book(24);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      const before = await smileSync(booking.turno_id!);
+      const target = { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(24, "11:00"), profesional_id: gmPro };
+      await sql`update clinics set reception_only_terms = 'implante' where id = ${gm}`;
+      await sql`update appointments set title = 'Colocación de implante' where id = ${booking.turno_id!}`;
+      expect(await tool("reprogramar_turno", target)).toMatchObject({ ok: false, error: expect.stringContaining("coordina recepción") });
+      await sql`update appointments set title = null where id = ${booking.turno_id!}`;
+      expect(await tool("reprogramar_turno", target)).toMatchObject({ pendiente_confirmacion: true });
+      fake.appointments.set(80504, scAppt(80504, 5002, 24, "11:00", "11:30"));
+      fake.calls.length = 0;
+      await push.pushPendingSmile(gm, booking.turno_id);
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", external_id: before.external_id });
+      expect(writes()).toEqual([]);
+      await send();
+      expect(fake.whatsapps.at(-1)?.text).toContain("El turno original sigue reservado");
     });
   });
 });

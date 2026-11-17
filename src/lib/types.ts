@@ -176,6 +176,10 @@ export type PatientVisit = {
 export type AppointmentStatus = "confirmado" | "pendiente" | "cancelado" | "ausente" | "atendido" | "reprogramado";
 export type AppointmentSource = "whatsapp" | "telegram" | "telefono" | "web" | "panel" | "campana" | "smile_connect";
 
+export type SmileManagement = { via: AppointmentSource; replyPhone: string | null }
+  & ({ operation: "cancelar"; reason: string | null }
+    | { operation: "mover"; startsAt: string; endsAt: string; professionalId: string; coverage: string | null });
+
 export type Appointment = {
   id: string;
   clinic_id: string;
@@ -205,6 +209,7 @@ export type Appointment = {
   smile_sync?: string | null;
   smile_deferred?: boolean;
   smile_reply_phone?: string | null;
+  smile_management?: SmileManagement | null;
   created_at: string;
 };
 

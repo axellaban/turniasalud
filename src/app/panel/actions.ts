@@ -268,6 +268,7 @@ export async function rescheduleFromPanel(_prev: FormState | undefined, form: Fo
     );
     syncCalendarLater(clinic.id);
     revalidatePath("/panel/agenda");
+    if ("pendiente_confirmacion" in r && r.pendiente_confirmacion) return { ok: true, message: r.mensaje };
     moved = { id: r.turno_id, day: localDateKey(start.at, clinic.timezone) };
   } catch (e) {
     return panelError(e);

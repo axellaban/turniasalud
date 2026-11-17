@@ -1624,7 +1624,7 @@ create table if not exists clinic_notices (
   sent_at timestamptz
 );
 alter table clinic_notices drop constraint if exists clinic_notices_kind_check;
-alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba', 'smile', 'smile_paciente', 'smile_confirmado'));
+alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba', 'smile', 'smile_paciente', 'smile_confirmado', 'smile_cancelado'));
 alter table clinic_notices add column if not exists attempted_at timestamptz;
 alter table clinic_notices drop constraint if exists clinic_notices_status_check;
 alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviando', 'enviado', 'error', 'vencido'));
@@ -1666,6 +1666,7 @@ alter table professionals add column if not exists smile_box_id integer;
 alter table appointments add column if not exists smile_sync text;
 alter table appointments add column if not exists smile_deferred boolean not null default false;
 alter table appointments add column if not exists smile_reply_phone text;
+alter table appointments add column if not exists smile_management jsonb;
 alter table appointments drop constraint if exists appointments_smile_sync_check;
 alter table appointments add constraint appointments_smile_sync_check
   check (smile_sync is null or smile_sync in ('pendiente', 'ok', 'error', 'revisar'));

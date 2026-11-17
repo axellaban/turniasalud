@@ -169,7 +169,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
         mensaje: "Recepción ya tiene el pedido. Explicale al paciente qué quedó pendiente.",
       });
     }
-    if (name === "reservar_turno" && (result as { ok?: boolean }).ok === false) {
+    if (CHANGES_AGENDA.has(name) && (result as { ok?: boolean }).ok === false) {
       log("pendiente");
       return NextResponse.json(result);
     }
