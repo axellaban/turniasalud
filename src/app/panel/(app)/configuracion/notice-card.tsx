@@ -10,10 +10,14 @@ import { NoticeTestButton } from "./notice-test";
 const STATUS: Record<NoticeRow["status"], { label: string; tone: "green" | "yellow" | "red" | "gray" }> = {
   enviado: { label: "Enviado", tone: "green" },
   pendiente: { label: "En cola", tone: "yellow" },
+  enviando: { label: "Enviando", tone: "yellow" },
   error: { label: "Reintentando", tone: "red" },
   vencido: { label: "No salió", tone: "gray" },
 };
-const KIND: Record<NoticeRow["kind"], string> = { nuevo: "Turno nuevo", movido: "Turno movido", cancelado: "Turno cancelado", prueba: "Prueba", smile: "Revisar en Smile Connect" };
+const KIND: Record<NoticeRow["kind"], string> = {
+  nuevo: "Turno nuevo", movido: "Turno movido", cancelado: "Turno cancelado", prueba: "Prueba",
+  smile: "Revisar en Smile Connect", smile_paciente: "Seguimiento al paciente", smile_confirmado: "Confirmación al paciente",
+};
 
 export type NoticeCardData = { phones: NoticePhone[]; recent: NoticeRow[]; line: ReturnType<typeof noticeLine> };
 

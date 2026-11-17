@@ -23,6 +23,7 @@ import {
   type ScPatient,
   type ScSlot,
   type SmileClient,
+  type SmileRequest,
 } from "./smile-connect-api";
 import { addDaysKey, localDateKey, zonedParts, zonedTimeToUtc } from "./time";
 
@@ -356,43 +357,65 @@ export async function smileBusy(
   professionalIds: string[],
   from: Date,
   to: Date,
-  opts: { fresh?: boolean; timeZone: string },
+  opts: { fresh?: boolean; verified?: { from: string; to: string }; timeZone: string },
 ): Promise<BusyInterval[]> {
   if (!professionalIds.length) return [];
   const conn = await getSmileApiConnection(clinicId);
-  if (!conn?.api_key_encrypted || conn.api_mode === "apagada") return [];
+  if (!conn?.api_key_encrypted || conn.api_mode === "apagada") {
+    if (opts.verified) throw new Error("La conexión con Smile Connect está apagada.");
+    return [];
+  }
   const pros = await sql<Array<{ id: string; smile_professional_id: number }>>`
     select id, smile_professional_id from professionals
     where id = any(${professionalIds}::uuid[]) and clinic_id = ${clinicId} and smile_professional_id is not null`;
   if (opts.fresh && pros.length !== new Set(professionalIds).size) {
     throw new Error("Falta vincular un profesional con Smile Connect.");
   }
-  if (!pros.length) return [];
-  const client = clientFor(conn, opts.fresh ? 3_000 : undefined);
-  const professionalId = opts.fresh && pros.length === 1 ? pros[0].smile_professional_id : undefined;
+  if (!pros.length && !opts.verified) return [];
+  const deadline = Date.now() + 12_000;
+  const client: SmileClient = opts.verified
+    ? { request: <T>(path: string, req?: SmileRequest) => {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error("Venció el plazo de la consulta de horarios.");
+        return clientFor(conn, remaining).request<T>(path, req);
+      } }
+    : clientFor(conn, opts.fresh ? 3_000 : undefined);
+  const fresh = Boolean(opts.fresh || opts.verified);
+  const professionalId = fresh && pros.length === 1 ? pros[0].smile_professional_id : undefined;
+  const selected = opts.verified
+    ? professionalIds.map((id) => ({ id, smileId: pros.find((p) => p.id === id)?.smile_professional_id }))
+    : pros.map((p) => ({ id: p.id, smileId: p.smile_professional_id }));
   const today = localDateKey(new Date(), opts.timeZone);
-  const first = localDateKey(from, opts.timeZone);
+  const first = opts.verified?.from ?? localDateKey(from, opts.timeZone);
+  const last = opts.verified?.to ?? localDateKey(new Date(to.getTime() - 1), opts.timeZone);
   const days: string[] = [];
-  for (let d = first < today ? today : first; d <= localDateKey(new Date(to.getTime() - 1), opts.timeZone) && days.length < 62; d = addDaysKey(d, 1)) days.push(d);
+  for (let d = first < today ? today : first; d <= last && days.length < 62; d = addDaysKey(d, 1)) days.push(d);
 
   const out: BusyInterval[] = [];
+  let verifiedDays = 0;
   // De a cuatro días a la vez: la API permite 90 pedidos por minuto.
   for (let i = 0; i < days.length; i += 4) {
     const chunk = days.slice(i, i + 4);
-    const results = await Promise.all(chunk.map((day) => daySlots(conn, client, day, Boolean(opts.fresh), professionalId)));
+    const results = await Promise.all(chunk.map((day) => {
+      if (!opts.verified) return daySlots(conn, client, day, fresh, professionalId);
+      if (!pros.length || Date.now() >= deadline) return null;
+      return daySlots(conn, client, day, true, professionalId).catch(() => null);
+    }));
     chunk.forEach((day, j) => {
       const slots = results[j];
-      if (!slots) return;
-      const free = freeRanges(slots);
+      if (!slots && !opts.verified) return;
+      if (slots) verifiedDays++;
+      const free = freeRanges(slots ?? []);
       const start = localMidnight(day, opts.timeZone).getTime();
       const end = localMidnight(addDaysKey(day, 1), opts.timeZone).getTime();
-      for (const p of pros) {
-        for (const [a, b] of busyFromFree(free.get(p.smile_professional_id) ?? [], start, end)) {
+      for (const p of selected) {
+        for (const [a, b] of busyFromFree(p.smileId ? free.get(p.smileId) ?? [] : [], start, end)) {
           out.push({ professional_id: p.id, starts_at: new Date(a).toISOString(), ends_at: new Date(b).toISOString(), source: "smile" });
         }
       }
     });
   }
+  if (opts.verified && !verifiedDays) throw new Error("Smile Connect no devolvió disponibilidad para las fechas pedidas.");
   return out;
 }
 

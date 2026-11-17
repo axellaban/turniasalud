@@ -1624,9 +1624,10 @@ create table if not exists clinic_notices (
   sent_at timestamptz
 );
 alter table clinic_notices drop constraint if exists clinic_notices_kind_check;
-alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba', 'smile'));
+alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba', 'smile', 'smile_paciente', 'smile_confirmado'));
+alter table clinic_notices add column if not exists attempted_at timestamptz;
 alter table clinic_notices drop constraint if exists clinic_notices_status_check;
-alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviado', 'error', 'vencido'));
+alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviando', 'enviado', 'error', 'vencido'));
 create index if not exists clinic_notices_pending_idx on clinic_notices (created_at) where status in ('pendiente', 'error');
 create index if not exists clinic_notices_clinic_idx on clinic_notices (clinic_id, created_at desc);
 alter table clinic_notices enable row level security;
@@ -1663,6 +1664,8 @@ alter table professionals add column if not exists smile_box_id integer;
 
 -- Estado de cada turno en Smile Connect (lo que hay que escribir allá) y, al moverlo, el turno nuevo.
 alter table appointments add column if not exists smile_sync text;
+alter table appointments add column if not exists smile_deferred boolean not null default false;
+alter table appointments add column if not exists smile_reply_phone text;
 alter table appointments drop constraint if exists appointments_smile_sync_check;
 alter table appointments add constraint appointments_smile_sync_check
   check (smile_sync is null or smile_sync in ('pendiente', 'ok', 'error', 'revisar'));

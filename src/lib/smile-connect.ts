@@ -553,6 +553,7 @@ type ExistingApptRow = {
   cancelled_at: string | null;
   external_id: string | null;
   external_status: string | null;
+  smile_deferred: boolean;
 };
 
 async function syncAppointments(
@@ -584,7 +585,7 @@ async function syncAppointments(
     allExtIds.length || (minStart && maxEnd)
       ? await tx<ExistingApptRow[]>`
           select id, patient_id, professional_id, second_professional_id, appointment_type_id,
-                 starts_at, ends_at, status, source, notes, reminder_sent_at, cancelled_at, external_id, external_status
+                 starts_at, ends_at, status, source, notes, reminder_sent_at, cancelled_at, external_id, external_status, smile_deferred
           from appointments
           where clinic_id = ${clinicId} and (
             ${allExtIds.length ? tx`external_id = any(${allExtIds}::text[])` : tx`false`}
@@ -622,6 +623,8 @@ async function syncAppointments(
 
     const existing = byExternalId.get(a.externalId);
     if (existing) {
+      // La confirmación del pedido y el aviso salen juntos cuando lo verifica la cola.
+      if (existing.smile_deferred && existing.status === "pendiente") continue;
       const sameTimes =
         new Date(existing.starts_at).getTime() === new Date(a.startsAt).getTime() &&
         new Date(existing.ends_at).getTime() === new Date(a.endsAt).getTime();
@@ -690,8 +693,9 @@ async function syncAppointments(
           r.patient_id === patientId &&
           r.professional_id === primaryPro.id &&
           (r.status === "confirmado" || r.status === "pendiente") &&
-          new Date(r.starts_at).getTime() < aEnd &&
-          new Date(r.ends_at).getTime() > aStart,
+          (r.smile_deferred && r.status === "pendiente"
+            ? new Date(r.starts_at).getTime() === aStart && new Date(r.ends_at).getTime() === aEnd && a.professionalExternalIds.length === 1
+            : new Date(r.starts_at).getTime() < aEnd && new Date(r.ends_at).getTime() > aStart),
       );
       if (nativeMatch) {
         adoptedNativeIds.add(nativeMatch.id);

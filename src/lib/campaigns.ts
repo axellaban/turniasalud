@@ -194,7 +194,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
       join professionals pr on pr.id = a.professional_id
       join appointment_types t on t.id = a.appointment_type_id
       where a.clinic_id = ${clinic.id} and a.status in ('confirmado', 'pendiente') and a.reminder_sent_at is null
-        and not (a.status = 'pendiente' and a.smile_sync is not distinct from 'revisar')
+        and not (a.status = 'pendiente' and (a.smile_deferred or a.smile_sync is not distinct from 'revisar'))
         and a.starts_at >= ${from} and a.starts_at <= ${to}
       order by a.starts_at`;
     // Dos prácticas seguidas en la misma visita (control y limpieza): un solo recordatorio.

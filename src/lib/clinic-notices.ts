@@ -26,9 +26,9 @@ export type NoticeRow = {
   id: string;
   clinic_id: string;
   phone: string;
-  kind: NoticeKind | "prueba" | "smile";
+  kind: NoticeKind | "prueba" | "smile" | "smile_paciente" | "smile_confirmado";
   body: string;
-  status: "pendiente" | "enviado" | "error" | "vencido";
+  status: "pendiente" | "enviando" | "enviado" | "error" | "vencido";
   attempts: number;
   error: string | null;
   created_at: string;
@@ -235,15 +235,45 @@ export function noticeLine(clinic: Clinic): { phone: string | null; problem: str
   return { phone: own?.phone ?? null, problem: whatsappReadiness(clinic) };
 }
 
-async function sendOne(clinic: Clinic, row: Pick<NoticeRow, "id" | "phone" | "body" | "attempts">): Promise<"enviado" | "error" | "omitido"> {
+const isSmilePatientNotice = (kind: NoticeRow["kind"]) => kind === "smile_paciente" || kind === "smile_confirmado";
+
+async function reviewSmileDelivery(noticeId: string, reason: string) {
+  await sql`
+    with failed as (
+      update clinic_notices set status = 'vencido', error = ${reason} where id = ${noticeId} and (
+        status = 'enviando' or (kind in ('smile_paciente', 'smile_confirmado')
+          and status = 'pendiente' and created_at < now() - interval '1 day')
+      )
+      returning clinic_id, appointment_id, body
+    )
+    insert into tasks (clinic_id, patient_id, type, title, details)
+    select f.clinic_id, a.patient_id, 'derivacion_humana', 'Verificar entrega del aviso del turno',
+      'Revisá el chat antes de reenviarlo. ' || f.body
+    from failed f join appointments a on a.id = f.appointment_id`;
+}
+
+async function sendOne(clinic: Clinic, row: NoticeRow): Promise<"enviado" | "error" | "omitido"> {
+  const patientNotice = isSmilePatientNotice(row.kind);
+  const own = wahaConnectionForClinic(clinic.id);
+  if (patientNotice && !own) return "omitido";
   // Se cuenta el intento antes de mandar: si dos corridas se cruzan, manda una sola.
   const claimed = await sql`
-    update clinic_notices set attempts = attempts + 1
+    update clinic_notices set attempts = attempts + 1, attempted_at = now(),
+      status = case when ${patientNotice} then 'enviando' else status end
     where id = ${row.id} and status in ('pendiente', 'error') and attempts = ${row.attempts}
     returning id`;
   if (!claimed.length) return "omitido";
-  const own = wahaConnectionForClinic(clinic.id);
   try {
+    if (patientNotice) {
+      const [current] = await sql`
+        select 1 from appointments a join clinic_notices n on n.appointment_id = a.id
+        where n.id = ${row.id} and a.smile_reply_phone = n.phone
+          and (n.kind <> 'smile_confirmado' or (a.status = 'confirmado' and a.smile_sync = 'ok' and a.starts_at > now()))`;
+      if (!current) {
+        await sql`update clinic_notices set status = 'vencido' where id = ${row.id}`;
+        return "omitido";
+      }
+    }
     if (own && normalizePhone(own.phone) === row.phone) throw new Error("Es el mismo número de la línea de WhatsApp: cargá otro celular.");
     const send = () => wahaSendText(chatIdForPhone(row.phone), row.body);
     await (own ? withWahaConnection(own, send) : send());
@@ -251,6 +281,11 @@ async function sendOne(clinic: Clinic, row: Pick<NoticeRow, "id" | "phone" | "bo
     return "enviado";
   } catch (e) {
     const message = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+    if (patientNotice) {
+      // WAHA no da una clave de idempotencia. Recepción verifica si el mensaje salió.
+      await reviewSmileDelivery(row.id, message);
+      return "error";
+    }
     await sql`update clinic_notices set status = 'error', error = ${message} where id = ${row.id}`;
     console.error("Aviso al consultorio: no se pudo mandar", row.id, message);
     return "error";
@@ -262,6 +297,13 @@ async function sendOne(clinic: Clinic, row: Pick<NoticeRow, "id" | "phone" | "bo
  * que cambia la agenda y con la automatización de cada 10 minutos (/api/automations/calendario).
  */
 export async function sendPendingNotices(clinicId?: string): Promise<{ enviados: number; errores: number; vencidos: number }> {
+  const uncertain = await sql<{ id: string }[]>`
+    select id from clinic_notices where (
+      (status = 'enviando' and attempted_at < now() - interval '1 minute')
+      or (kind in ('smile_paciente', 'smile_confirmado') and status = 'pendiente' and created_at < now() - interval '1 day')
+    )
+      ${clinicId ? sql`and clinic_id = ${clinicId}` : sql``}`;
+  for (const row of uncertain) await reviewSmileDelivery(row.id, "No hay confirmación de entrega de WhatsApp.");
   const expired = await sql`
     update clinic_notices set status = 'vencido'
     where status in ('pendiente', 'error') and (created_at < now() - interval '1 day' or attempts >= ${MAX_ATTEMPTS})
@@ -272,7 +314,7 @@ export async function sendPendingNotices(clinicId?: string): Promise<{ enviados:
     where status in ('pendiente', 'error') and attempts < ${MAX_ATTEMPTS}
       ${clinicId ? sql`and clinic_id = ${clinicId}` : sql``}
     order by created_at limit 50`;
-  const result = { enviados: 0, errores: 0, vencidos: expired.length };
+  const result = { enviados: 0, errores: 0, vencidos: expired.length + uncertain.length };
   const clinics = new Map<string, Clinic | null>();
   for (const row of pending) {
     if (!clinics.has(row.clinic_id)) {
