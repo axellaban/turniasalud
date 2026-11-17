@@ -505,10 +505,11 @@ async function processSmileManagement(tx: TransactionSql, client: SmileClient, r
     && sameInstant(remote.start_date, row.starts_at) && sameInstant(remote.end_date, row.ends_at);
 
   if (request.operation === "cancelar") {
-    if (!cancelledInSmile(remote)) {
+    // La baja de la API libera la agenda. Una marca de asistencia sola puede seguir ocupando el horario.
+    if (!remote.cancelled) {
       if (!stillOriginal) throw new Review("Smile Connect muestra el turno en otro horario. Recepción debe revisarlo.");
       await scCancelAppointment(client, id);
-      if (!cancelledInSmile(await scAppointment(client, id))) throw new VerificationPending("Smile Connect todavía no muestra el turno cancelado.");
+      if (!(await scAppointment(client, id)).cancelled) throw new VerificationPending("Smile Connect todavía no muestra el turno cancelado.");
     }
     const notes = [row.notes, request.reason && `Cancelado: ${request.reason}`].filter(Boolean).join(" | ");
     const [after] = await tx<Appointment[]>`
