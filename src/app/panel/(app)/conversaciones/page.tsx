@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { getPanelClinic } from "@/lib/panel-clinic";
+import { completePendingSummaries } from "@/lib/conversations-backfill";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { formatDateTime } from "@/lib/time";
@@ -12,6 +14,10 @@ export const metadata: Metadata = { title: "Conversaciones · Panel" };
 
 type Row = {
   id: string;
+  /** El número, si la charla no está ligada a una ficha (WhatsApp). */
+  phone: string | null;
+  /** Lo último que escribió el paciente: mientras no hay resumen, la lista muestra eso. */
+  last_message: string | null;
   started_at: string;
   channel: string;
   direction: string;
@@ -32,11 +38,17 @@ const FILTERS = [
 
 export default async function ConversationsPage({ searchParams }: PageProps<"/panel/conversaciones">) {
   const clinic = await getPanelClinic();
+  // Al mirar la lista, las charlas que quedaron sin resumen se completan con ElevenLabs (se ven al recargar).
+  after(() => completePendingSummaries({ limit: 8, budgetMs: 25_000 }).catch((e) => console.error("Completar resúmenes", e)));
   const { canal } = await searchParams;
   const channel = typeof canal === "string" && canal ? canal : null;
   const rows = await sql<Row[]>`
     select c.id, c.started_at, c.channel, c.direction, c.duration_secs, c.title, c.summary, c.intent, c.outcome,
-           p.full_name as patient
+           p.full_name as patient,
+           (select cc.phone from channel_conversations cc where cc.elevenlabs_conversation_id = c.elevenlabs_conversation_id) as phone,
+           case when c.title is null and c.summary is null then (
+             select t->>'message' from jsonb_array_elements(case when jsonb_typeof(c.transcript) = 'array' then c.transcript else '[]'::jsonb end) with ordinality as x(t, i)
+             where t->>'role' = 'user' and coalesce(t->>'message', '') <> '' order by i desc limit 1) end as last_message
     from conversations c left join patients p on p.id = c.patient_id
     where c.clinic_id = ${clinic.id} ${channel ? sql`and c.channel = ${channel}` : sql``}
     order by c.started_at desc
@@ -74,8 +86,10 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
                     </p>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-brand-950">{c.patient ?? "Paciente sin identificar"}</p>
-                    <p className="line-clamp-2 text-sm text-brand-900/60">{c.title || c.summary || "Sin resumen todavía"}</p>
+                    <p className="font-medium text-brand-950">{c.patient ?? (c.phone ? displayPhone(c.phone) : "Paciente sin identificar")}</p>
+                    <p className="line-clamp-2 text-sm text-brand-900/60">
+                      {c.title || c.summary || (c.last_message ? <>«{c.last_message}» <span className="text-brand-900/45">· el resumen llega al terminar la charla</span></> : "Sin resumen todavía")}
+                    </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     {c.intent && <Badge>{c.intent.replace(/_/g, " ")}</Badge>}
