@@ -40,7 +40,7 @@ const fake = {
   appointments: new Map<number, Appt>(),
   patients: new Map<number, Pat>(),
   blocks: [] as Array<{ pro: number; start: string; end: string }>,
-  calls: [] as Array<{ method: string; path: string; body?: unknown; idem?: string | null }>,
+  calls: [] as Array<{ method: string; path: string; body?: unknown; idem?: string | null; professionalId?: string | null }>,
   idem: new Map<string, unknown>(),
   nextAppt: 90000,
   nextPatient: 7000,
@@ -78,7 +78,7 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   const path = u.pathname.replace("/api/v1", "");
   const headers = new Headers(init.headers);
   const body = init.body ? JSON.parse(String(init.body)) : undefined;
-  fake.calls.push({ method, path, body, idem: headers.get("idempotency-key") });
+  fake.calls.push({ method, path, body, idem: headers.get("idempotency-key"), professionalId: u.searchParams.get("professional_id") });
   const ok = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
   const err = (status: number, code: string) => ok({ error: { code, message: code, request_id: "test" } }, status);
   if (headers.get("authorization") !== `Bearer ${KEY}`) return err(401, "unauthorized");
@@ -335,6 +335,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       const input = { tipo_turno_id: consult, profesional_id: pro, inicio: at(5, "10:00"), notas: "Le duele una muela" };
       const booked = await tool("reservar_turno", input);
       expect(booked.ok).toBe(true);
+      expect(fake.calls.filter((c) => c.path === "/availability").map((c) => c.professionalId)).toEqual(["334", "334"]);
       expect(await tool("reservar_turno", input)).toMatchObject({ ok: true, turno_id: booked.turno_id });
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 0 });
       const row = await smileSync(booked.turno_id!);

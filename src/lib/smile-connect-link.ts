@@ -323,16 +323,19 @@ export async function pullSmileConnect(clinicId: string, which: "cerca" | "lejos
 
 // ── Disponibilidad en vivo ───────────────────────────────────────────────────
 
-async function daySlots(conn: SmileApiConnection, client: SmileClient, day: string, fresh: boolean): Promise<ScSlot[] | null> {
-  const [cached] = await sql<Array<{ slots: ScSlot[]; fetched_at: string }>>`
+async function daySlots(conn: SmileApiConnection, client: SmileClient, day: string, fresh: boolean, professionalId?: number): Promise<ScSlot[] | null> {
+  const [cached] = fresh ? [] : await sql<Array<{ slots: ScSlot[]; fetched_at: string }>>`
     select slots, fetched_at from smile_connect_availability where clinic_id = ${conn.clinic_id} and day = ${day}`;
   const age = cached ? Date.now() - new Date(cached.fetched_at).getTime() : Infinity;
   if (!fresh && age < AVAILABILITY_TTL_MS) return cached!.slots;
   try {
-    const slots = await scAvailability(client, day, 5);
-    await sql`
-      insert into smile_connect_availability (clinic_id, day, slots, fetched_at) values (${conn.clinic_id}, ${day}, ${json(slots)}, now())
-      on conflict (clinic_id, day) do update set slots = excluded.slots, fetched_at = now()`;
+    const slots = await scAvailability(client, day, 5, professionalId);
+    // La caché se comparte entre todos los profesionales de la clínica.
+    if (professionalId === undefined) {
+      await sql`
+        insert into smile_connect_availability (clinic_id, day, slots, fetched_at) values (${conn.clinic_id}, ${day}, ${json(slots)}, now())
+        on conflict (clinic_id, day) do update set slots = excluded.slots, fetched_at = now()`;
+    }
     return slots;
   } catch (e) {
     await recordSmileError(conn.clinic_id, e).catch(() => {});
@@ -366,6 +369,7 @@ export async function smileBusy(
   }
   if (!pros.length) return [];
   const client = clientFor(conn, opts.fresh ? 3_000 : undefined);
+  const professionalId = opts.fresh && pros.length === 1 ? pros[0].smile_professional_id : undefined;
   const today = localDateKey(new Date(), opts.timeZone);
   const first = localDateKey(from, opts.timeZone);
   const days: string[] = [];
@@ -375,7 +379,7 @@ export async function smileBusy(
   // De a cuatro días a la vez: la API permite 90 pedidos por minuto.
   for (let i = 0; i < days.length; i += 4) {
     const chunk = days.slice(i, i + 4);
-    const results = await Promise.all(chunk.map((day) => daySlots(conn, client, day, Boolean(opts.fresh))));
+    const results = await Promise.all(chunk.map((day) => daySlots(conn, client, day, Boolean(opts.fresh), professionalId)));
     chunk.forEach((day, j) => {
       const slots = results[j];
       if (!slots) return;
