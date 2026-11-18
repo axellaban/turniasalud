@@ -4,7 +4,7 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-**Estado al 18/11/2026:** todo el código está en producción. Para terminar el trabajo funcional faltan la **tarea 7** y la **tarea 8**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
+**Estado al 18/11/2026:** todo el código está en producción. Para terminar el trabajo funcional faltan la **tarea 9** (primero), la **tarea 7** y la **tarea 8**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
 
 **Prompt para empezar** (copiar tal cual en la otra computadora):
 
@@ -14,6 +14,7 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 
 | Prioridad | Tarea | Estado (16/11) | Acción restante |
 | --- | --- | --- | --- |
+| **P0** | 9. Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11 | Código y migraciones en producción el 18/11. Los horarios de Turnia no coinciden con Smile Connect. | Verificar lo que se cargó solo, copiar los horarios de Smile Connect a «Equipo y horarios», corregir el horario de atención y una línea de las instrucciones. |
 | **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Clave cargada, lectura verificada y «Escritura de prueba» activa. Resumen manual enviado a los dos celulares configurados. | Revisar los cambios de prueba y conciliar las reservas previas que Sofi dio por WhatsApp. Después, C y D con el consultorio. |
 | **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Código en producción el 18/11. Herramientas nuevas sin registrar en ElevenLabs; pausa automática apagada. | Parte A: «Actualizar a Sofi». Parte B, con el «sí» del usuario: sumar `message.any` al webhook de WAHA de Guerra–Mininni, prender la pausa y probarla. |
 | **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
@@ -28,6 +29,81 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 - Cambiá solo lo que dice la tarea. No borres proyectos, dominios, variables ni webhooks. No cambies secretos. No mandes mensajes de WhatsApp. No cierres sesiones de WAHA.
 - Si algo no coincide con lo que describe la tarea (otro nombre, otro menú, un valor distinto), frená y preguntá.
 - Al terminar cada tarea, contestá: qué quedó hecho en cada paso, qué no se pudo y por qué, y el resultado de la verificación.
+
+---
+
+## Tarea 9 (P0) · Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11
+
+**Contexto.** El 18/11 el Dr. Mininni marcó problemas en una charla real de Sofi. Se corrigieron en el código y en sus instrucciones, que se cambiaron solas con el deploy (PR #223 a #227). Falta lo que se hace en el panel.
+
+La fuente de verdad es **Smile Connect**: los horarios de Turnia tienen que coincidir con los de Smile Connect. Hoy no coinciden, y por eso Sofi no ofrece el último turno de cada día ni los viernes del Dr. Mininni. Los horarios de abajo se leyeron de Smile Connect el 18/11 (`/professionals/{id}/hours`) y se confirmaron con su agenda libre de febrero de 2027.
+
+**Reglas de esta tarea**
+- Es la agenda real de un consultorio en producción. **No reserves, muevas ni canceles turnos, y no le des datos a Sofi.**
+- No toques Smile Connect: solo el panel de Turnia.
+- No apretes «Actualizar a Sofi» ni «Crear / actualizar agente»: no hace falta para esta tarea.
+- Captura antes y después de cada cambio.
+
+### Paso 0 · Entrar y elegir la clínica
+1. Entrá a `https://turniasalud.app/panel` con la contraseña del panel. **La escribe el usuario.**
+2. En el selector de clínicas, elegí «Consultorio Odontológico Dr. Guerra y Dr. Mininni» (la principal, no una demo).
+
+### Paso 1 · Verificar lo que se cargó solo (no cambiar nada)
+1. **Configuración → Turnos y urgencias:**
+   - «Primer turno del día» dice «Desde el día anterior».
+   - Abajo, el «Protocolo odontológico de Turnia» dice **«Versión 2026-11-18.2»**. Si dice otra versión, el último deploy todavía no salió: **frená y avisá**.
+2. **Configuración → Consultorio → «Instrucciones adicionales»:** comprobá, sin editar, que el texto incluya estas cinco frases:
+   - «Si no la nombró, no menciones a la Dra. Coldeira»
+   - «Por WhatsApp pedí en un solo mensaje todos los datos que falten»
+   - «Una molestia o sensibilidad no es una urgencia»
+   - «nunca escribas la palabra «limpieza»»
+   - «en un párrafo aparte que empiece con «*Radiografías:*»»
+
+   Si falta alguna, no la escribas a mano: avisá cuál falta.
+
+### Paso 2 · Horarios iguales a Smile Connect (Configuración → Equipo y horarios)
+Antes de cambiar, mirá los horarios actuales de cada profesional. Si alguno tiene la marca «urgencias» o «solo …» (solo algunas prestaciones), **frená y avisá**: esos no se recrean así nomás.
+
+Para cada día que cambia:
+1. Primero agregá el horario nuevo con «+ Agregar horario»: tildá los días, poné «Desde» y «Hasta», sin «Solo urgencias» y sin prestaciones, y apretá «Guardar horario».
+2. Después quitá el horario viejo de esos días con la «×».
+
+**Cómo tiene que quedar:**
+
+| Profesional | Lun | Mar | Mié | Jue | Vie |
+| --- | --- | --- | --- | --- | --- |
+| Dr. Mariano O. Mininni | 11:00–17:30 | 11:00–17:30 | 11:00–17:30 | 11:00–18:30 | **11:00–17:30 (nuevo)** |
+| Dra. María Emilia Coldeira | 10:00–17:30 | 10:00–18:30 | 10:00–17:30 | — | — |
+| Dra. Lara Fernández | — | — | — | 11:00–17:30 | — |
+
+- Hoy en Turnia: Mininni lunes a jueves 11:00–17:00; Coldeira lunes a miércoles 10:00–18:00; Fernández jueves 11:00–17:00.
+- El Dr. Guerra está desactivado: no lo toques.
+- Al final, cada profesional tiene que tener **un solo horario por día**, el de la tabla.
+
+### Paso 3 · Horario de atención (Configuración → Consultorio → «Horario de atención»)
+1. Reemplazá «Lunes a miércoles de 10 a 18 y jueves de 11 a 17» por:
+   > Lunes de 10 a 17:30, martes de 10 a 18:30, miércoles de 10 a 17:30, jueves de 11 a 18:30 y viernes de 11 a 17:30
+2. Apretá «Guardar cambios».
+
+### Paso 4 · Una línea de las instrucciones (Configuración → Consultorio → «Instrucciones adicionales»)
+1. En la sección «HORARIOS», reemplazá **solo** esta línea:
+   > - Atención del consultorio: lunes a miércoles de 10 a 18 h y jueves de 11 a 17 h. Horario telefónico: lunes a jueves de 12 a 17 h. Para dar un turno, usá los horarios de la herramienta con el profesional elegido; las franjas generales no representan su disponibilidad. Ningún turno puede terminar después de las 18 h.
+
+   por esta:
+   > - Atención del consultorio (según la agenda de Smile Connect): lunes de 10 a 17:30, martes de 10 a 18:30, miércoles de 10 a 17:30, jueves de 11 a 18:30 y viernes de 11 a 17:30. Horario telefónico: lunes a jueves de 12 a 17 h. Para dar un turno, usá solo los horarios que devuelve la herramienta con el profesional elegido: la agenda de Smile Connect es la que manda y las franjas generales no representan su disponibilidad.
+2. No cambies nada más del texto.
+3. Apretá «Guardar cambios».
+
+### Paso 5 · Verificación
+1. **Agenda:** «Agenda» → dar un turno a mano. Elegí la «Consulta de primera vez / diagnóstico», el Dr. Mininni y el viernes 12 de febrero de 2027. Tienen que aparecer horarios entre las 11:00 y las 17:00 (ese día está libre en Smile Connect). **No guardes el turno:** cerrá el formulario.
+2. **Probar a Sofi:**
+   - Abrí «Probar a Sofi» → «Empezar la prueba» y escribí solo: «Hola, tengo molestias en una muela».
+   - La respuesta no puede hablar de guardia, 107, emergencias ni riesgo de vida, ni ofrecer «hoy o mañana». Puede preguntar «¿Cómo es la molestia?» y pedir los datos.
+   - **No contestes más:** cerrá la prueba.
+3. Al terminar, contestá con:
+   - qué viste en el paso 1;
+   - cómo quedaron los horarios de los tres profesionales (con captura);
+   - el resultado de las dos verificaciones.
 
 ---
 

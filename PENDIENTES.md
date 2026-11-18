@@ -1,5 +1,11 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Feedback de Guerra–Mininni sobre Sofi (18/11/2026)
+
+- Hecho y en producción (PR #223 a #227): primer turno del día, «molestia» no es urgencia (la guardia solo con mucho dolor, sangrado o hinchazón), no prometer días antes de mirar la agenda, datos juntos por WhatsApp, sin reglas internas ni «limpieza», radiografías en un párrafo aparte, y días que Smile Connect no confirmó a tiempo sin darlos por llenos. Prompt actualizado en los dos agentes de ElevenLabs.
+- **Falta, en el panel:** [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md), tarea 9. Copiar los horarios de Smile Connect (la fuente de verdad) a «Equipo y horarios», corregir el horario de atención y la línea de horarios de las instrucciones.
+- Idea, sin pedir todavía: que Turnia copie sola los horarios de cada profesional desde Smile Connect (`/professionals/{id}/hours`), para que no se vuelvan a desalinear.
+
 ## Costo de Neon en producción (18/11/2026)
 
 - [ ] **Revisar el consumo de Neon Launch el 25/11.** Se activó el 18/11 para recuperar Turnia después de que se agotó el cupo de Free. En Vercel → Integraciones → Neon → Usage, anotar el gasto real desde el cambio, separando producción de la otra base si el panel lo permite. Con ese dato, decidir si seguimos en Launch o evaluamos un PostgreSQL gratuito administrado (Supabase o Aiven) o en el VPS de Hostinger. Antes de evaluar el VPS, comprobar capacidad, backups externos y restauración.
