@@ -1961,3 +1961,17 @@ update smile_connect_connections set api_key_saved_at = coalesce(api_key_saved_a
 -- 10 minutos solo lo que cambió y las ventanas pasan a ser una conciliación cada 3 horas.
 alter table smile_connect_connections add column if not exists api_supports_delta boolean not null default false;
 alter table smile_connect_connections add column if not exists api_delta_at timestamptz;
+
+-- ---------------------------------------------------------------------------
+-- Guerra–Mininni pasa a «Crear, mover y cancelar» (pedido de Axel, 18/11/2026): Sofi también mueve y cancela
+-- en Smile Connect, verificando cada cambio allá antes de confirmárselo al paciente. Las visitas combinadas
+-- y los turnos con dos profesionales siguen yendo a recepción. Solo si estaba en «Crear turnos»; una vez.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-18-smile-completa-guerra-mininni') then
+    update smile_connect_connections set api_mode = 'completa', updated_at = now()
+    where clinic_id = '67c3954a-8df8-46c2-a604-f818832bee36' and api_mode = 'crear' and api_key_encrypted is not null;
+    insert into data_migrations (name) values ('2026-11-18-smile-completa-guerra-mininni');
+  end if;
+end $$;

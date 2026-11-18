@@ -821,6 +821,31 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Reprogramación confirmada"), expect.stringContaining("Cancelación confirmada")]);
     });
 
+    it("en «Crear, mover y cancelar» Sofi cancela en Smile Connect, pero las visitas combinadas van a recepción", async () => {
+      await link.setSmileMode(gm, "completa");
+      const booking = await book(26);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+      const [first] = await sql`select * from appointments where id = ${booking.turno_id!}`;
+      // Otra práctica de la misma visita, justo a continuación.
+      const [{ id: second }] = await sql`
+        insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+        values (${gm}, ${first.patient_id}, ${gmPro}, ${gmConsult}, ${first.ends_at}, ${new Date(Date.parse(first.ends_at) + 30 * 60_000)}, 'confirmado', 'whatsapp')
+        returning id`;
+      const tasks = async () => (await sql`select count(*)::int as n from tasks where clinic_id = ${gm} and title = 'Revisar turno en Smile Connect'`)[0].n;
+      const before = await tasks();
+      expect(await tool("cancelar_turno", { clinic_id: gm, turno_id: booking.turno_id, motivo: "No puedo" })).toMatchObject({ ok: false, pendiente_recepcion: true });
+      expect(await tool("cancelar_turno", { clinic_id: gm, turno_id: second, motivo: "No puedo" })).toMatchObject({ ok: false, pendiente_recepcion: true });
+      expect(await tasks()).toBe(before + 2);
+      expect((await sql`select smile_management from appointments where id = ${booking.turno_id!}`)[0].smile_management).toBeNull();
+      // Sin la otra práctica, es un turno simple: lo cancela Sofi, verificando en Smile Connect.
+      await sql`delete from appointments where id = ${second}`;
+      expect(await tool("cancelar_turno", { clinic_id: gm, turno_id: booking.turno_id, motivo: "No puedo" })).toMatchObject({ ok: false, pendiente_confirmacion: true });
+      expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "cancelado" });
+      await send();
+    });
+
     it("retoma una reprogramación tras el límite de Smile y avisa una sola vez en la corrida de calendario", async () => {
       await link.setSmileMode(gm, "completa");
       const booking = await book(38);

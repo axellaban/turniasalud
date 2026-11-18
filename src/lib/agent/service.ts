@@ -1299,6 +1299,10 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
   }
   const via = sourceFromChannel(ctx.channel, ctx.patientPhone);
   if (await usesSmileManagement(clinic.id)) {
+    // Las visitas combinadas (dos prácticas seguidas) las coordina recepción también al cancelar.
+    if (await inCombinedVisit(appt)) {
+      throw new SmileHandoff("La cancelación de esta visita combinada la coordina recepción. El turno sigue reservado.", `Cancelar la visita combinada del turno ${appt.id}. ${input.motivo ?? ""}`);
+    }
     return requestSmileManagement(appt, { operation: "cancelar", via, reason: input.motivo ?? null, replyPhone: smileReplyPhone(ctx, via) });
   }
   if (await usesLiveSmile(clinic.id)) {
@@ -1528,6 +1532,22 @@ async function followerOf(appt: Appointment, opts: { movable?: { move_panel_only
   return row;
 }
 
+/** El turno anterior de la misma visita combinada (otra práctica que termina justo cuando empieza esta). */
+async function predecessorOf(appt: Appointment): Promise<Appointment | undefined> {
+  if (appt.second_professional_id) return undefined;
+  const [row] = await sql<Appointment[]>`
+    select * from appointments
+    where patient_id = ${appt.patient_id} and professional_id = ${appt.professional_id} and id <> ${appt.id}
+      and second_professional_id is null and status = any(${ACTIVE}::text[]) and ends_at = ${appt.starts_at}
+    limit 1`;
+  return row;
+}
+
+/** Si el turno es parte de una visita combinada (dos prácticas seguidas, en cualquier orden). */
+async function inCombinedVisit(appt: Appointment): Promise<boolean> {
+  return Boolean((await followerOf(appt)) ?? (await predecessorOf(appt)));
+}
+
 async function loadReschedule(ctx: ToolContext, clinic: Clinic, id: string) {
   const { patient, appt } = await getOwnAppointment(ctx, id);
   assertNotOver(appt);
@@ -1572,7 +1592,7 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
   const { patient, appt, follower } = await loadReschedule(ctx, clinic, input.turno_id);
   const via = sourceFromChannel(ctx.channel, ctx.patientPhone);
   if (await usesSmileManagement(clinic.id)) {
-    if (follower) throw new SmileHandoff("Recepción coordina el cambio de esta visita combinada.", `Reprogramar la visita del turno ${appt.id}.`);
+    if (follower || (await predecessorOf(appt))) throw new SmileHandoff("Recepción coordina el cambio de esta visita combinada.", `Reprogramar la visita del turno ${appt.id}.`);
     return rescheduleLoaded(clinic, patient, appt, input, ctx.staff ? appt.source : via, false, undefined, Boolean(ctx.staff), via, {
       via, replyPhone: smileReplyPhone(ctx, via),
     });
