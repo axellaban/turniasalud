@@ -294,12 +294,14 @@ export default async function CampaignsPage() {
           </Card>
         </section>
 
-        <aside className="min-w-0 space-y-6">
+        {/* Lo de arriba es el trabajo del día; acá, los ajustes que cambian a quiénes aparecen. */}
+        <aside aria-labelledby="ajustes" className="min-w-0 space-y-6">
+          <h2 id="ajustes" className="font-semibold text-brand-950">Ajustes de las campañas</h2>
           <Card id="controles">
             <h2 className="font-semibold text-brand-950">Controles periódicos</h2>
             <p className="mt-1 text-sm text-brand-900/65">
-              Cada cuánto vuelve un paciente por cada prestación. Cuando se le vence, aparece en «Controles vencidos». Los controles puntuales se
-              cargan en la ficha de cada paciente.
+              Cada cuánto vuelve un paciente por cada prestación. Cuando se le vence, aparece en «Controles vencidos». Es el mismo dato que se ve en
+              Configuración → Prestaciones: cambialo acá o allá. Los controles puntuales se cargan en la ficha de cada paciente.
             </p>
             {types.length ? (
               <ul className="mt-4 divide-y divide-brand-900/5">
@@ -340,6 +342,10 @@ export default async function CampaignsPage() {
             <p className="mt-1 text-sm text-brand-900/70">
               Con WhatsApp conectado a Sofi, estas salen solas (las programa n8n) y cada corrida queda en la lista de campañas. Se activan después de
               probar el canal con la clínica.
+            </p>
+            <p className="mt-2 text-xs text-brand-900/65">
+              «Turnos de mañana» y «Atendidos estos días» sirven para mandarlas a mano antes de que estén activas: a quien ya le llegó el
+              recordatorio o la encuesta (a mano o automática) no le llega otra.
             </p>
             <ul className="mt-3 space-y-1.5 text-sm">
               {AUTOMATIC.map(([type, when]) => (
