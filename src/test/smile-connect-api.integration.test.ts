@@ -954,6 +954,16 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect((await link.syncSmileHours(T)).cambiados).toEqual([]);
       expect((await sql`select count(*)::int as n from schedules where professional_id = ${emilia} and not urgent_only`)[0].n).toBe(3);
       fake.hours.set(335, { "1": cells("10:00", "17:30"), "2": [...cells("10:00", "11:00"), ...cells("14:00", "15:00")] });
+      // Cada 6 horas también se revisa si la API ya acepta el motivo del turno (sin esperar a la copia diaria).
+      fake.notes = true;
+      try {
+        await link.syncSmileHours(T);
+        expect((await link.getSmileApiConnection(T))!.api_supports_notes).toBe(true);
+      } finally {
+        fake.notes = false;
+      }
+      await link.syncSmileHours(T);
+      expect((await link.getSmileApiConnection(T))!.api_supports_notes).toBe(false);
     });
 
     it("sin el permiso events:read no toca los bloqueos ni avisa a nadie; con el permiso los trae de Smile Connect", async () => {

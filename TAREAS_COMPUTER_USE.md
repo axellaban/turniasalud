@@ -16,7 +16,7 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 | --- | --- | --- | --- |
 | **P0** | 10. Guerra–Mininni: clave con permiso de bloqueos y control de Smile Connect como fuente de la verdad | Código en producción el 18/11. La clave del 16/11 no tiene `events:read`. | Que el consultorio cree una clave nueva con todos los permisos, cargarla y verificar la tarjeta y la Agenda. |
 | **P0** | 9. Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11 (hecha el 18/11) | Código y migraciones en producción el 18/11. Los horarios de Turnia no coinciden con Smile Connect. | Verificar lo que se cargó solo, copiar los horarios de Smile Connect a «Equipo y horarios», corregir el horario de atención y una línea de las instrucciones. |
-| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Clave cargada, lectura verificada y «Escritura de prueba» activa. Resumen manual enviado a los dos celulares configurados. | Revisar los cambios de prueba y conciliar las reservas previas que Sofi dio por WhatsApp. Después, C y D con el consultorio. |
+| **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Etapa C activa: `SMILE_CONNECT_WRITES=on` y modo «Crear turnos» (18/11). | Etapa D («Crear, mover y cancelar») cuando el usuario lo decida, con el consultorio. |
 | **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Código en producción el 18/11. Herramientas nuevas sin registrar en ElevenLabs; pausa automática apagada. | Parte A: «Actualizar a Sofi». Parte B, con el «sí» del usuario: sumar `message.any` al webhook de WAHA de Guerra–Mininni, prender la pausa y probarla. |
 | **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
 | **P3** | 1. Dominio nuevo: webhooks de WAHA (opcional) | Funciona: los dos webhooks apuntan al dominio anterior y llegan por su redirección 308, que se mantiene. | Solo si algún día se saca la redirección. |
@@ -48,7 +48,7 @@ Para traer los bloqueos de agenda, la clave necesita el permiso `events:read`, y
 
    **La clave la copia y la pega el usuario; vos no la ves ni la copiás.** Si Smile Connect permite sumarle permisos a la clave actual en vez de crear otra, también sirve.
 2. **Cargarla en Turnia.** Configuración → Agenda e integraciones → tarjeta «Smile Connect por API» → «Cambiar la clave». La pega el usuario. Revisá que siga diciendo el mismo nombre de clínica y los tres profesionales vinculados. Si no, frená y avisá.
-3. **No cambies el modo.** Tiene que seguir en «Escritura de prueba».
+3. **No cambies el modo.** Tiene que seguir en «Crear turnos».
 4. **Sincronizar.** Tocá «Sincronizar ahora». En la tarjeta revisá:
    - que no aparezca «Último problema»;
    - que «Bloqueos» diga **«Por la API»** (antes decía «Falta el permiso events:read»);
@@ -140,7 +140,9 @@ Para cada día que cambia:
 
 ## Tarea 7 (P0) · Smile Connect por API y resumen diario (Guerra–Mininni)
 
-**Contexto.** La API de Smile Connect de Guerra–Mininni está conectada en **«Escritura de prueba»** desde el 16/11. La API todavía omite las notas y la prestación. Esos datos van en el resumen de Sofi, programado de lunes a jueves a las 10, hora del consultorio. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+**Estado al 18/11:** etapa C activa (`SMILE_CONNECT_WRITES=on` y modo «Crear turnos»). Sofi crea sus turnos en Smile Connect. Falta la etapa D, cuando el usuario lo decida.
+
+**Contexto (16/11).** La API de Smile Connect de Guerra–Mininni se conectó en **«Escritura de prueba»** el 16/11. La API todavía omite las notas y la prestación. Esos datos van en el resumen de Sofi, programado de lunes a jueves a las 10, hora del consultorio. Detalle técnico en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
 
 **Verificación del 16/11.** Tres profesionales vinculados. El Dr. Guerra, ausente de la lista de Smile Connect, se desactivó para nuevas reservas en Turnia. El userscript de Tampermonkey de Guerra–Mininni quedó desactivado por pedido de Axel. La sincronización manual leyó 146 turnos. El 17 y 18 de noviembre coincidieron los 39 turnos vigentes de Smile Connect por profesional y horario. Otras seis reservas de Turnia se originaron por WhatsApp y quedan para revisión. Sofi descartó un horario ocupado y las tres alternativas ofrecidas estaban libres en Smile Connect. Turnia confirmó el envío manual del resumen a dos celulares después de publicar el [PR #200](https://github.com/axellaban/turniasalud/pull/200).
 

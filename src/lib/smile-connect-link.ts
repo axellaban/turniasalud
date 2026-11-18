@@ -803,7 +803,16 @@ export async function syncSmileHours(clinicId: string): Promise<{ cambiados: str
     ? `Horarios copiados de Smile Connect el ${stamp}: ${cambiados.join(" ")}`
     : (conn.api_hours_note?.split("\n").find((l) => l.startsWith("Horarios copiados")) ?? null);
   const note = [lastChange, ...revisar].filter(Boolean).join("\n") || null;
-  await sql`update smile_connect_connections set api_hours_at = now(), api_hours_note = ${note} where clinic_id = ${clinicId}`;
+  // Lo que la API ya permite (mandar el motivo del turno, pedir solo lo que cambió) se revisa también acá, cada
+  // 6 horas: si dependiera solo de la copia diaria, un día sin cupo para la copia lo atrasaría.
+  const [supportsNotes, supportsDelta] = await Promise.all([
+    scSupportsNotes(client).catch(() => conn.api_supports_notes),
+    scSupportsDelta(client).catch(() => conn.api_supports_delta),
+  ]);
+  await sql`
+    update smile_connect_connections set api_hours_at = now(), api_hours_note = ${note},
+      api_supports_notes = ${supportsNotes}, api_supports_delta = ${supportsDelta}
+    where clinic_id = ${clinicId}`;
   return { cambiados, revisar };
 }
 
