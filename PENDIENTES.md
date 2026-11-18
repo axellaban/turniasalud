@@ -1,5 +1,9 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Costo de Neon en producción (18/11/2026)
+
+- [ ] **Revisar el consumo de Neon Launch el 25/11.** Se activó el 18/11 para recuperar Turnia después de que se agotó el cupo de Free. En Vercel → Integraciones → Neon → Usage, anotar el gasto real desde el cambio, separando producción de la otra base si el panel lo permite. Con ese dato, decidir si seguimos en Launch o evaluamos un PostgreSQL gratuito administrado (Supabase o Aiven) o en el VPS de Hostinger. Antes de evaluar el VPS, comprobar capacidad, backups externos y restauración.
+
 ## Smile Connect por API y avisos por WhatsApp (16/11/2026)
 
 - **Lectura verificada y «Escritura de prueba» en producción.** El consultorio cargó la clave y el userscript de Tampermonkey quedó desactivado. Los 39 turnos vigentes de Smile Connect para el 17 y 18 estaban en Turnia. Seis turnos adicionales de Sofi por WhatsApp quedan para conciliar antes de activar la escritura real.
