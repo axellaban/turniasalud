@@ -34,6 +34,8 @@ type Row = {
   created_at: string;
   conversation_id: string | null;
   assigned_to: string | null;
+  chat_id: string | null;
+  chat_phone: string | null;
   response: string | null;
   patients: { id: string; full_name: string | null; phone: string | null } | null;
 };
@@ -45,7 +47,10 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
   const result = await sql<Row[]>`
     select t.id, t.type, t.priority, t.status, t.title, t.details, t.created_at, t.conversation_id, t.response, t.assigned_to,
       case when p.id is null then null
-           else json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) end as patients
+           else json_build_object('id', p.id, 'full_name', p.full_name, 'phone', p.phone) end as patients,
+      -- La charla donde Sofi dejó el pedido y, si no hay ficha, el celular desde el que escribió.
+      (select c.id from conversations c where c.clinic_id = t.clinic_id and c.elevenlabs_conversation_id = t.conversation_id limit 1) as chat_id,
+      (select cc.phone from channel_conversations cc where cc.clinic_id = t.clinic_id and cc.elevenlabs_conversation_id = t.conversation_id limit 1) as chat_phone
     from tasks t left join patients p on p.id = t.patient_id
     where t.clinic_id = ${clinic.id} and ${showResolved ? sql`t.status = 'resuelta'` : sql`t.status <> 'resuelta'`}
     order by t.created_at desc
@@ -96,10 +101,20 @@ export default async function TasksPage({ searchParams }: PageProps<"/panel/tare
                     <Link href={`/panel/pacientes/${t.patients.id}`} className="font-medium text-brand-800 hover:underline">
                       {t.patients.full_name ?? displayPhone(t.patients.phone)}
                     </Link>
+                  ) : t.chat_phone ? (
+                    <a href={`https://wa.me/${t.chat_phone}`} target="_blank" rel="noreferrer" className="font-medium text-brand-800 hover:underline">
+                      {displayPhone(t.chat_phone)} ↗
+                    </a>
                   ) : (
                     "Sin paciente"
                   )}{" "}
                   · {formatDateTime(t.created_at, clinic.timezone)}
+                  {t.chat_id && (
+                    <>
+                      {" · "}
+                      <Link href={`/panel/conversaciones/${t.chat_id}`} className="font-medium text-brand-800 hover:underline">Ver la charla</Link>
+                    </>
+                  )}
                 </span>
                 {t.status !== "resuelta" ? (
                   <form action={setTaskStatus} className="flex gap-1">

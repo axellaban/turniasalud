@@ -37,6 +37,8 @@ type Row = {
   patient: string | null;
   phone: string | null;
   type_name: string;
+  /** La charla en la que se dio el turno (la última del paciente poco antes de crearlo), si la hay. */
+  conversation_id: string | null;
 };
 
 const VISIBLE = ["confirmado", "pendiente", "atendido", "ausente"];
@@ -72,7 +74,10 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const [rows, blocks, google] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.smile_management, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name
+             a.calendar_sync, a.smile_management, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name,
+             (select c.id from conversations c where c.clinic_id = a.clinic_id and c.patient_id = a.patient_id
+                and c.started_at between a.created_at - interval '6 hours' and a.created_at + interval '10 minutes'
+              order by c.started_at desc limit 1) as conversation_id
       from appointments a
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
@@ -436,7 +441,9 @@ function AppointmentDetail({ row: a, healthForm, pro, tz, closeHref, clinicId, t
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-medium text-brand-900/60 first-letter:uppercase">{when} · {time(a.starts_at)}–{time(a.ends_at)}</p>
-          <h2 className="mt-1 truncate text-lg font-semibold text-brand-950">{a.patient ?? "Paciente"}</h2>
+          <h2 className="mt-1 truncate text-lg font-semibold text-brand-950">
+            <Link href={`/panel/pacientes/${a.patient_id}`} className="hover:underline">{a.patient ?? "Paciente"}</Link>
+          </h2>
         </div>
         <Link href={closeHref} scroll={false} className={ghostButtonClass} aria-label="Cerrar el turno">✕</Link>
       </div>
@@ -456,6 +463,8 @@ function AppointmentDetail({ row: a, healthForm, pro, tz, closeHref, clinicId, t
         ))}
       </dl>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+        <Link href={`/panel/pacientes/${a.patient_id}`} className="text-sm font-medium text-brand-700 hover:underline">Ver la ficha →</Link>
+        {a.conversation_id && <Link href={`/panel/conversaciones/${a.conversation_id}`} className="text-sm font-medium text-brand-700 hover:underline">Ver la charla →</Link>}
         {wa && <a href={wa} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-700 hover:underline">Escribirle por WhatsApp →</a>}
         {healthForm && (
           <a href={`/panel/pacientes/${a.patient_id}/ficha`} className="text-sm font-medium text-brand-700 hover:underline">

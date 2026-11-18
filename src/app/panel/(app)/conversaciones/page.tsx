@@ -106,7 +106,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
   );
 }
 
-const MUTE_LABEL: Record<ChatMute["reason"], string> = { bot: "Posible bot", vendedor: "Vendedor o publicidad", exceso: "Exceso de mensajes" };
+const MUTE_LABEL: Record<ChatMute["reason"], string> = { bot: "Posible bot", vendedor: "Vendedor o publicidad", exceso: "Exceso de mensajes", equipo: "Lo atiende el equipo" };
 
 /** Números a los que Sofi no les contesta por un tiempo (bots, vendedores o exceso de mensajes). */
 async function MutedNumbers({ mutes, clinicId, timezone, agent }: { mutes: ChatMute[]; clinicId: string; timezone: string; agent: string }) {
@@ -119,7 +119,7 @@ async function MutedNumbers({ mutes, clinicId, timezone, agent }: { mutes: ChatM
       <div className="px-5 pt-4">
         <h2 className="font-medium text-brand-950">Números en pausa</h2>
         <p className="mt-1 text-sm text-brand-900/60">
-          {agent} no les contesta por un tiempo: bots que se responden solos, vendedores o alguien que escribió sin parar. Si es un paciente, reactivalo.
+          {agent} no les contesta por un tiempo: chats que tomó el equipo, bots que se responden solos, vendedores o alguien que escribió sin parar. Al reactivarlo, {agent} vuelve a contestar.
         </p>
       </div>
       <ul className="mt-3 divide-y divide-brand-900/5 border-t border-brand-900/5">
@@ -127,7 +127,7 @@ async function MutedNumbers({ mutes, clinicId, timezone, agent }: { mutes: ChatM
           <li key={m.phone} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
             <div className="min-w-0 flex-1">
               <p className="font-medium text-brand-950">
-                {names.get(m.phone) ?? displayPhone(m.phone)} <Badge tone={m.reason === "exceso" ? "yellow" : "gray"}>{MUTE_LABEL[m.reason]}</Badge>
+                {names.get(m.phone) ?? displayPhone(m.phone)} <Badge tone={m.reason === "exceso" ? "yellow" : m.reason === "equipo" ? "blue" : "gray"}>{MUTE_LABEL[m.reason]}</Badge>
               </p>
               <p className="text-sm text-brand-900/60">
                 {m.detail ? `${m.detail} ` : ""}Hasta el {formatDateTime(m.until, timezone)}.

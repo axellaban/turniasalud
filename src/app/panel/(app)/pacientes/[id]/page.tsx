@@ -229,7 +229,9 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
             <ul className="divide-y divide-brand-900/5 text-sm">
               {appointments.map((a) => (
                 <li key={a.id} className="flex flex-wrap items-center gap-3 py-2">
-                  <span className="w-40 text-brand-900/70">{formatDateTime(a.starts_at, tz)}</span>
+                  <Link href={`/panel/agenda?fecha=${localDateKey(new Date(a.starts_at), tz)}&turno=${a.id}`} className="w-40 text-brand-700 hover:underline">
+                    {formatDateTime(a.starts_at, tz)}
+                  </Link>
                   <span className="flex-1">
                     {a.type_name} · {a.professional}
                   </span>

@@ -16,7 +16,10 @@ import {
 // clínica y número: un bot que se pone a charlar con una clínica no afecta a las demás.
 
 type Db = Sql | TransactionSql;
-export type MuteReason = "bot" | "vendedor" | "exceso";
+export type MuteReason = "bot" | "vendedor" | "exceso" | "equipo";
+/** Las horas que el equipo puede pausar a Sofi en un chat desde el panel. */
+export const PAUSE_HOURS = [1, 4, 24, 72] as const;
+
 export type ChatMute = { phone: string; until: string; reason: MuteReason; detail: string | null; created_at: string };
 
 /** El número está en silencio: Sofi no le contesta (ni se transcriben sus audios ni se leen sus fotos). */

@@ -8,7 +8,7 @@ import { sql } from "@/lib/db";
 import { findPatientByPhone, getClinic, isUuid } from "@/lib/clinic";
 import { setupAgent } from "@/lib/agent/setup";
 import { resolveTask } from "@/lib/tasks";
-import { unmuteNumber } from "@/lib/chat-guard";
+import { PAUSE_HOURS, muteNumber, unmuteNumber } from "@/lib/chat-guard";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, safeNext, sessionCookieOptions } from "@/lib/session";
 import { bookAppointment, cancelClinicAppointment, freeSlotsOnDay, registerPatient, rescheduleClinicAppointment, ToolError, type ToolContext } from "@/lib/agent/service";
 import { normalizePhone } from "@/lib/phone";
@@ -298,6 +298,22 @@ export async function setTaskStatus(form: FormData) {
   revalidatePath("/panel");
 }
 
+/**
+ * Conversación → «Pausar a Sofi en este chat»: el equipo le contesta desde su WhatsApp y Sofi no
+ * responde a ese número hasta que pase el tiempo o lo reactiven. Los avisos y confirmaciones que
+ * manda Turnia (también los de Smile Connect) siguen saliendo: la pausa solo frena las respuestas.
+ */
+export async function pauseChatNumber(form: FormData) {
+  const user = await requireSession();
+  const phone = normalizePhone(text(form, "phone"));
+  const hours = Number(text(form, "hours"));
+  if (!/^\d{8,15}$/.test(phone) || !PAUSE_HOURS.includes(hours as (typeof PAUSE_HOURS)[number])) return;
+  const clinic = await getPanelClinic(form);
+  const who = user.role === "admin" ? "Turnia" : user.label || "el consultorio";
+  await muteNumber(clinic.id, phone, "equipo", `La pausó ${who}: el equipo atiende este chat.`, hours);
+  revalidatePath("/panel/conversaciones", "layout");
+}
+
 /** Conversaciones → Números en pausa → «Reactivar»: Sofi le vuelve a contestar a ese número. */
 export async function reactivateChatNumber(form: FormData) {
   await requireSession();
@@ -305,7 +321,7 @@ export async function reactivateChatNumber(form: FormData) {
   if (!phone) return;
   const clinic = await getPanelClinic(form);
   await unmuteNumber(clinic.id, phone);
-  revalidatePath("/panel/conversaciones");
+  revalidatePath("/panel/conversaciones", "layout");
 }
 
 /**

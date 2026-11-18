@@ -1784,3 +1784,10 @@ create table if not exists clinic_daily_summaries (
 create unique index if not exists clinic_daily_summaries_day_idx on clinic_daily_summaries (clinic_id, day) where day is not null;
 create index if not exists clinic_daily_summaries_clinic_idx on clinic_daily_summaries (clinic_id, sent_at desc);
 alter table clinic_daily_summaries enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Pausar a Sofi en un chat (17/11/2026): el equipo toma la conversación desde su WhatsApp y Sofi no
+-- contesta a ese número por un rato. Usa la misma tabla que los silencios por bot o vendedor.
+-- ---------------------------------------------------------------------------
+alter table chat_mutes drop constraint if exists chat_mutes_reason_check;
+alter table chat_mutes add constraint chat_mutes_reason_check check (reason in ('bot', 'vendedor', 'exceso', 'equipo'));
