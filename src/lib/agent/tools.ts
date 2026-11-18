@@ -48,7 +48,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "buscar_paciente",
     description:
-      "Busca la ficha de alguien que dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
+      "Con un paciente (no con el equipo: para eso es buscar_pacientes). Busca la ficha de quien te escribe y dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
     params: {
       dni: { type: "string", description: "DNI, solo números.", required: true },
       fecha_nacimiento: { type: "string", description: isoDate },
@@ -65,7 +65,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "registrar_paciente",
     description:
-      "Guarda o actualiza los datos del paciente con el que estás hablando (nombre, DNI, cobertura, etc.). Usala para admisión de un turno nuevo o cuando el paciente quiere actualizar sus datos. Para encontrar, mover o cancelar un turno existente, usá buscar_paciente y ver_turnos_paciente sin registrar otra ficha.",
+      "Con un paciente (para que el equipo cree la ficha de otra persona es crear_paciente). Guarda o actualiza los datos del paciente con el que estás hablando (nombre, DNI, cobertura, etc.). Usala para admisión de un turno nuevo o cuando el paciente quiere actualizar sus datos. Para encontrar, mover o cancelar un turno existente, usá buscar_paciente y ver_turnos_paciente sin registrar otra ficha.",
     params: {
       nombre_completo: { type: "string", description: "Nombre y apellido del paciente." },
       dni: { type: "string", description: "DNI, solo números." },
@@ -296,13 +296,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "buscar_pacientes",
-    description: `${STAFF} Busca pacientes por nombre, DNI o celular y devuelve su paciente_id, cobertura y próximos turnos.`,
+    description: `${STAFF} Busca pacientes por nombre, DNI o celular y devuelve su paciente_id, cobertura y próximos turnos. No es buscar_paciente (esa es para que un paciente se identifique).`,
     params: { texto: { type: "string", description: "Nombre, apellido, DNI o celular.", required: true } },
     schema: z.object({ texto: z.string().min(1) }),
   },
   {
     name: "crear_paciente",
-    description: `${STAFF} Crea la ficha de alguien que todavía no es paciente, para darle un turno. Devuelve su paciente_id.`,
+    description: `${STAFF} Crea la ficha de otra persona que todavía no es paciente, para darle un turno. Devuelve su paciente_id. No es registrar_paciente (esa guarda los datos de quien te escribe).`,
     params: {
       nombre_completo: { type: "string", description: "Nombre y apellido.", required: true },
       celular: { type: "string", description: "Celular del paciente, si lo sabe." },

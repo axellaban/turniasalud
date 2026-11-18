@@ -11,7 +11,7 @@ import { ConfigHeader } from "../header";
 import { SmileConnectCard } from "../smile-connect-card";
 import { SmileApiCard, loadSmileApiCard } from "../smile-api-card";
 
-export const metadata: Metadata = { title: "Google Calendar · Panel" };
+export const metadata: Metadata = { title: "Agenda e integraciones · Panel" };
 
 const RESULT: Record<string, { tone: "success" | "warning" | "error"; text: string }> = {
   conectado: { tone: "success", text: "Google Calendar quedó conectado. Ahora elegí el calendario de cada profesional." },
@@ -40,6 +40,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
     getSmileConnectStatus(clinic.id),
     loadSmileApiCard(clinic.id),
   ]);
+  const smileApiOn = Boolean(smileApi.conn?.api_key_encrypted) && (smileApi.conn?.api_mode ?? "apagada") !== "apagada";
   let calendars: GoogleCalendar[] | null = null;
   if (conn && conn.status === "conectado") calendars = await listCalendars(conn).catch(() => null);
 
@@ -136,12 +137,30 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
         </Card>
       </div>
 
-      <SmileConnectCard
-        clinicId={clinic.id}
-        status={smileStatus}
-        lastSyncFormatted={smileStatus.lastSyncAt ? formatDateTime(smileStatus.lastSyncAt, clinic.timezone) : null}
-      />
-      <SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} />
+      {/* Con la API de Smile Connect en uso, va primero y el método anterior (importar y Tampermonkey) queda plegado. */}
+      {smileApiOn ? (
+        <>
+          <SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} />
+          <details className="mt-6 rounded-2xl border border-brand-900/10 bg-white px-5 py-4">
+            <summary className="cursor-pointer text-sm font-semibold text-brand-950">Smile Connect: método anterior (importar el histórico y Tampermonkey)</summary>
+            <p className="mt-2 text-xs text-brand-900/65">Con la API ya no hace falta la extensión. Queda acá para importar un histórico o volver atrás si hiciera falta.</p>
+            <SmileConnectCard
+              clinicId={clinic.id}
+              status={smileStatus}
+              lastSyncFormatted={smileStatus.lastSyncAt ? formatDateTime(smileStatus.lastSyncAt, clinic.timezone) : null}
+            />
+          </details>
+        </>
+      ) : (
+        <>
+          <SmileConnectCard
+            clinicId={clinic.id}
+            status={smileStatus}
+            lastSyncFormatted={smileStatus.lastSyncAt ? formatDateTime(smileStatus.lastSyncAt, clinic.timezone) : null}
+          />
+          <SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} />
+        </>
+      )}
     </>
   );
 }

@@ -14,6 +14,15 @@
 - **Recuperación histórica.** `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` trae las conversaciones de ElevenLabs sin duplicarlas ni disparar tareas y avisos. Chapa Labs lo ejecuta todos los días a las 8:20 para los últimos tres días. La ejecución del 14/11 desde el 05/11 recuperó el registro que faltaba y terminó sin errores.
 - El trabajo de configuración restante está en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 
+## Auditoría del panel: lo que quedó pendiente (18/11/2026)
+
+Las seis fases de la auditoría del panel están hechas (PR #210 a #215; ver `ESTADO_Y_PRIORIDADES.md`). Queda:
+
+- [ ] **«Actualizar a Sofi»** en Configuración → Equipo por WhatsApp (o «Crear / actualizar agente» en Sistema), para que el agente tome las descripciones nuevas de `buscar_paciente`, `registrar_paciente`, `buscar_pacientes` y `crear_paciente`. Sin esto todo sigue funcionando como antes.
+- [ ] **Pausa de Sofi por WhatsApp para el equipo** (una herramienta `pausar_sofi`). Hoy se pausa desde el panel. Va junto con la próxima actualización del agente: el contexto del equipo no puede nombrar una herramienta que el agente todavía no tiene.
+- [ ] **Pausa automática cuando recepción contesta desde el celular.** Hay que distinguir los mensajes de recepción de los que manda Turnia por WAHA (guardar los ids enviados). No se hizo para no arriesgar la línea de Guerra–Mininni.
+- [ ] **Renombrar las herramientas parecidas** (`buscar_pacientes` → `equipo_buscar_pacientes`, `crear_paciente` → `equipo_crear_paciente`). Se reemplazó por descripciones más claras. Si se hace, la ruta tiene que aceptar los dos nombres y el agente tiene que actualizarse en el mismo momento que el contexto del equipo.
+
 ## Resumen diario de Sofi para Guerra–Mininni (16/11/2026)
 
 El Dr. Mininni pidió **un resumen de Sofi a las 10** y poder **preguntarle a Sofi** por los datos del turno. Así recibe el motivo y la prestación que la API de Smile Connect todavía omite.
@@ -21,7 +30,8 @@ El Dr. Mininni pidió **un resumen de Sofi a las 10** y poder **preguntarle a So
 - [x] El celular del Dr. Mininni está cargado en «Acceso total por WhatsApp». El envío de prueba salió a los dos celulares configurados el 16/11, con el [PR #200](https://github.com/axellaban/turniasalud/pull/200) en producción.
 - [ ] Verificar el primer resumen automático del martes 17/11 a partir de las 10.
 - [x] Agentes actualizados por el usuario el 16/11: Sofi ya tiene `detalle_turno` y `turnos_de_sofi`.
-- [ ] Unificar listas: los avisos por turno (`clinic_notice_phones`) y el resumen (`clinic_staff_phones.daily_summary`) son dos listas; conviene ofrecer el resumen como una opción más de «Avisos por WhatsApp» y decir en el resumen si el turno ya quedó escrito en Smile Connect. Las dos usan la misma columna `replaced_by`.
+- [x] Unificar listas (18/11, [PR #211](https://github.com/axellaban/turniasalud/pull/211)): Configuración → «Equipo por WhatsApp» muestra cada celular una vez con avisos, resumen y acceso total. Por dentro siguen las dos tablas.
+- [ ] Decir en el resumen si el turno ya quedó escrito en Smile Connect.
 
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
 

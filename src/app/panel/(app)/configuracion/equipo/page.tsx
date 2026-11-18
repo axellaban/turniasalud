@@ -79,7 +79,10 @@ export default async function TeamPage() {
                 </div>
                 {!ranges.length && <p className="mt-2 text-sm text-sun-700">Sin horarios: {clinic.agent_name || "Sofi"} no va a ofrecer turnos con este profesional.</p>}
 
-                <form action={addSchedule} className="mt-3 flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-brand-900/15 p-3">
+                {/* Plegado: con varios profesionales, el formulario abierto en cada uno alargaba la pantalla. Abierto si no tiene horarios. */}
+                <details className="mt-3" open={!ranges.length}>
+                <summary className="cursor-pointer text-sm font-semibold text-brand-700">+ Agregar horario</summary>
+                <form action={addSchedule} className="mt-2 flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-brand-900/15 p-3">
                   <input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="professional_id" value={p.id} />
                   <fieldset>
@@ -110,8 +113,9 @@ export default async function TeamPage() {
                       </div>
                     </details>
                   )}
-                  <button className={smallButtonClass}>+ Agregar horario</button>
+                  <button className={smallButtonClass}>Guardar horario</button>
                 </form>
+                </details>
               </>}
 
               <div className="mt-3"><EditDetails summary="Editar profesional" submit="Guardar profesional" action={saveProfessionalWithFeedback} className="mt-3 grid gap-3 sm:grid-cols-2">

@@ -10,6 +10,7 @@ import { ActionForm } from "../action-form";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Clinic, Professional, ProfessionalType } from "@/lib/types";
 import { ConfigHeader, loadConfigConflicts } from "../header";
+import { RecallSelect } from "../../campanas/recall-select";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Prestaciones · Panel" };
@@ -83,7 +84,7 @@ export default async function ServicesPage() {
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion/prestaciones" conflicts={await loadConfigConflicts(clinic)} />
-      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (para las campañas de recall) se carga en <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link>.</p>
+      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (cada cuánto vuelve el paciente) se elige acá al lado del precio: con él, <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link> muestra a quién le toca volver.</p>
       {dental && (
         <Card className="mb-6">
           <h2 className="font-semibold text-brand-950">Plantilla odontológica</h2>
@@ -106,7 +107,7 @@ export default async function ServicesPage() {
                     {!agentCanMove(x, clinic) && !x.panel_only && <Badge>la mueve recepción</Badge>} {!x.active && <Badge>Inactiva</Badge>}
                   </p>
                   <p className="text-sm text-brand-900/65">
-                    {x.specialty} · {x.duration_min} min{x.recall_months ? ` · control cada ${x.recall_months} meses` : ""}
+                    {x.specialty} · {x.duration_min} min
                     {x.requires_type_id ? ` · antes: ${typeName.get(x.requires_type_id) ?? "otra prestación"}` : ""}
                     {x.active && !staffed(x) && <span className="text-sun-700"> · ningún profesional activo la hace</span>}
                   </p>
@@ -116,6 +117,7 @@ export default async function ServicesPage() {
                     ? <span className="font-normal text-brand-900/65">No lo dice</span>
                     : x.price ? `${x.price_mode === "desde" ? "desde " : ""}${money.format(Number(x.price))}` : <span className="font-normal text-brand-900/65">Sin precio</span>}
                 </p>
+                {x.active && <RecallSelect clinicId={clinic.id} typeId={x.id} name={x.name} value={x.recall_months} />}
                 <form action={toggleAppointmentType}><input type="hidden" name="clinic_id" value={clinic.id} />
                   <input type="hidden" name="id" value={x.id} />
                   <input type="hidden" name="active" value={String(!x.active)} />

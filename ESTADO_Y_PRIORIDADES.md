@@ -1,6 +1,36 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 17/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Auditoría del panel y de Sofi, en seis fases — 18/11/2026
+
+Auditoría completa en local, con datos ficticios, como Turnia y como consultorio, en escritorio y en celular. Todo se hizo sin tocar el código de Smile Connect.
+
+1. **Correcciones rápidas** ([#210](https://github.com/axellaban/turniasalud/pull/210)):
+   - los ejemplos de los campos ya no usan nombres de clientes;
+   - la agenda ya no repite claves y su aviso no se aplasta en el celular;
+   - el motivo de cada charla se muestra en palabras («Pidió turno»);
+   - Inicio muestra el número y el último mensaje de cada charla;
+   - Tareas tiene «Me ocupo», que anota quién la tomó;
+   - «Probar a Sofi» queda solo en el botón de arriba.
+2. **Un solo lugar para cada dato** ([#211](https://github.com/axellaban/turniasalud/pull/211)):
+   - «Equipo por WhatsApp» junta avisos, resumen y acceso total, cada celular una vez. El consultorio elige quién recibe el resumen; el acceso total lo da Turnia;
+   - avisa cuando un dato se contradice: horas de aviso del texto contra las del campo, precios de las preguntas frecuentes, formas de pago repetidas (`src/lib/config-conflicts.ts`);
+   - aclara el «Teléfono para pasar llamadas».
+3. **Ficha del paciente editable** ([#212](https://github.com/axellaban/turniasalud/pull/212)):
+   - con «Dar turno» y «Escribir por WhatsApp»;
+   - el celular anterior sigue reconociendo la ficha;
+   - la sincronización con Smile Connect solo completa campos vacíos, así que no pisa lo editado.
+4. **Vínculos y pausa por chat** ([#213](https://github.com/axellaban/turniasalud/pull/213)):
+   - **Vínculos:** el turno lleva a la ficha y a la charla, la tarea lleva a la charla y al celular, y la charla muestra los próximos turnos.
+   - **Pausa:** «Pausar a Sofi en este chat» usa `chat_mutes` con el motivo `equipo`. Solo frena las respuestas de Sofi: los avisos y confirmaciones, también los de Smile Connect, siguen saliendo.
+5. **Celular** ([#214](https://github.com/axellaban/turniasalud/pull/214)): Pacientes como tarjetas y Agenda día con la columna de horas fija.
+6. **Campañas, Configuración y herramientas** (#215):
+   - el control periódico se edita también en Prestaciones;
+   - Campañas separa el trabajo del día de los ajustes;
+   - la pestaña pasa a llamarse «Agenda e integraciones». Con la API de Smile Connect prendida, el método anterior (Tampermonkey) queda plegado;
+   - el formulario de horario queda plegado;
+   - las descripciones de las herramientas parecidas de Sofi quedan más claras. No se renombraron: ver `PENDIENTES.md`.
 
 ## Conversaciones de WhatsApp: resumen aunque no llegue el webhook — 17/11/2026
 
