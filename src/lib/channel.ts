@@ -7,7 +7,7 @@ import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
 import { isHealthFormText, splitHealthFormMessage } from "./health-form";
 import { wahaSendText, wahaSendVoice } from "./waha";
-import { announcePause, checkChatFuse, guardIncoming } from "./chat-guard";
+import { announcePause, checkChatFuse, guardIncoming, isMuted } from "./chat-guard";
 import { staffForPhone } from "./staff";
 import { chatIsActive, requireActiveWhatsapp, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
@@ -260,7 +260,7 @@ export const FAILED_REPLY = "Perdón, tuve un problema para responderte. ¿Me lo
 
 export type ReplyOutcome =
   | { status: "unknown_conversation" }
-  | { status: "duplicate" | "inactive" }
+  | { status: "duplicate" | "inactive" | "paused" }
   | { status: "send_failed"; error: string }
   | { status: "sent" | "empty"; ended: boolean };
 
@@ -282,6 +282,13 @@ export async function handleReply(reply: ChannelReply): Promise<ReplyOutcome> {
 async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Promise<ReplyOutcome> {
 
   if (conv.closed_at || !(await chatIsActive(conv.chat_id, conv.channel_revision))) return { status: "inactive" };
+  // El equipo tomó el chat mientras Sofi escribía (lo pausó en el panel, con pausar_chat o contestando
+  // desde el celular): esa respuesta ya no se manda ni queda en la charla. Al reactivarla, Sofi sigue
+  // con el próximo mensaje del paciente.
+  if (await isMuted(conv.clinic_id, conv.phone)) {
+    console.log(JSON.stringify({ evento: "respuesta-descartada", motivo: "chat en pausa", clinica: conv.clinic_id }));
+    return { status: "paused" };
+  }
 
   const { text: agentText, ended, responseIds } = summarizeReply(reply);
   const ids = [...(reply.user_message_ids ?? [])].sort();

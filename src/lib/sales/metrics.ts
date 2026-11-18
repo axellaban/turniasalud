@@ -7,13 +7,20 @@ import { conversoSql, fijoSinRespuesta } from "./outreach";
 // Métricas agregadas para el tablero de Chapa Labs (/api/metricas): prospección, demos, pedidos de
 // demo y uso del producto, en totales y por día. Sin nombres, teléfonos ni textos. Las cuentas de la
 // prospección son las mismas del panel (outreachStats en outreach.ts). Las clínicas temporales de las
-// demos (is_demo) no cuentan como uso real.
+// demos (is_demo) no cuentan como uso real; las cuentas de los consultorios sí, aunque sean clínicas
+// conservadas de una demo (ver realClinic).
 
 const TZ = DEFAULT_TZ;
 export type Range = { from: string | null; to: string | null };
 type Counts<K extends string> = Record<K, number>;
 
 const REPLIED = ["respondio", "reunion", "cliente", "no_interesa", "baja"];
+
+// Clínica real (alias «c»): no es de una demo, o es la cuenta de un consultorio, que se crea como clínica
+// conservada (is_demo) con su código de «Acceso del consultorio». Una cuenta es una clínica con algún
+// código sin revocar: la misma definición que scripts/embudo.mjs, para que los números coincidan.
+const realClinic = () =>
+  sql`(not c.is_demo or exists (select 1 from clinic_access ca where ca.clinic_id = c.id and ca.revoked_at is null))`;
 
 export async function turniaMetrics({ from, to }: Range) {
   // Un instante cae en el rango según su día en Buenos Aires; sin fechas, todo.
@@ -24,6 +31,7 @@ export async function turniaMetrics({ from, to }: Range) {
   // Los fijos que no respondieron no cuentan (no tienen WhatsApp), igual que en el panel.
   const cohort = sql`first_contact_at is not null and ${inRange("first_contact_at")} and not ${fijoSinRespuesta()}`;
   const counted = sql`not ${fijoSinRespuesta()}`;
+  const real = realClinic();
 
   const [
     [funnel],
@@ -105,42 +113,42 @@ export async function turniaMetrics({ from, to }: Range) {
     // Uso real: turnos que tomó Turnia (no el panel) y conversaciones de Sofi, en clínicas reales.
     sql<Array<Counts<"clinicas" | "clinicas_activas" | "ultimos7" | "previos7" | "turnos" | "cancelados" | "ausentes" | "atendidos" | "conversaciones">>>`
       select
-        (select count(*)::int from clinics where not is_demo) as clinicas,
+        (select count(*)::int from clinics c where ${real}) as clinicas,
         (select count(distinct a.clinic_id)::int from appointments a join clinics c on c.id = a.clinic_id
-           where not c.is_demo and a.created_at > now() - interval '30 days') as clinicas_activas,
+           where ${real} and a.created_at > now() - interval '30 days') as clinicas_activas,
         count(*) filter (where a.created_at > now() - interval '7 days')::int as ultimos7,
         count(*) filter (where a.created_at <= now() - interval '7 days' and a.created_at > now() - interval '14 days')::int as previos7,
         count(*) filter (where ${inRange("a.created_at")})::int as turnos,
         count(*) filter (where ${inRange("a.created_at")} and a.status = 'cancelado')::int as cancelados,
         count(*) filter (where ${inRange("a.created_at")} and a.status = 'ausente')::int as ausentes,
         count(*) filter (where ${inRange("a.created_at")} and a.status = 'atendido')::int as atendidos,
-        (select count(*)::int from conversations v join clinics c on c.id = v.clinic_id where not c.is_demo and ${inRange("v.started_at")}) as conversaciones
+        (select count(*)::int from conversations v join clinics c on c.id = v.clinic_id where ${real} and ${inRange("v.started_at")}) as conversaciones
       from appointments a join clinics c on c.id = a.clinic_id
-      where not c.is_demo and a.source <> 'panel'`,
+      where ${real} and a.source <> 'panel'`,
     sql<Array<Record<string, number | string>>>`
       select date, sum(turnos)::int as turnos, sum(conversaciones)::int as conversaciones from (
         select ${day("a.created_at")} as date, count(*) as turnos, 0 as conversaciones
           from appointments a join clinics c on c.id = a.clinic_id
-          where not c.is_demo and a.source <> 'panel' and ${inRange("a.created_at")} group by 1
+          where ${real} and a.source <> 'panel' and ${inRange("a.created_at")} group by 1
         union all
         select ${day("v.started_at")}, 0, count(*)
           from conversations v join clinics c on c.id = v.clinic_id
-          where not c.is_demo and ${inRange("v.started_at")} group by 1
+          where ${real} and ${inRange("v.started_at")} group by 1
       ) t group by 1 order by 1`,
     // North Star: conversaciones con Sofi, en clínicas reales y en las demos (cada demo arma su clínica).
     sql<Array<Counts<"ultimos7" | "previos7" | "clinicas7" | "demos7" | "total" | "clinicas" | "demos">>>`
       select
         count(*) filter (where v.started_at > now() - interval '7 days')::int as ultimos7,
         count(*) filter (where v.started_at <= now() - interval '7 days' and v.started_at > now() - interval '14 days')::int as previos7,
-        count(*) filter (where v.started_at > now() - interval '7 days' and not c.is_demo)::int as clinicas7,
-        count(*) filter (where v.started_at > now() - interval '7 days' and c.is_demo)::int as demos7,
+        count(*) filter (where v.started_at > now() - interval '7 days' and ${real})::int as clinicas7,
+        count(*) filter (where v.started_at > now() - interval '7 days' and not ${real})::int as demos7,
         count(*) filter (where ${inRange("v.started_at")})::int as total,
-        count(*) filter (where ${inRange("v.started_at")} and not c.is_demo)::int as clinicas,
-        count(*) filter (where ${inRange("v.started_at")} and c.is_demo)::int as demos
+        count(*) filter (where ${inRange("v.started_at")} and ${real})::int as clinicas,
+        count(*) filter (where ${inRange("v.started_at")} and not ${real})::int as demos
       from conversations v join clinics c on c.id = v.clinic_id`,
     sql<Array<Record<string, number | string>>>`
       select ${day("v.started_at")} as date, count(*)::int as conversaciones,
-        count(*) filter (where not c.is_demo)::int as clinicas, count(*) filter (where c.is_demo)::int as demos
+        count(*) filter (where ${real})::int as clinicas, count(*) filter (where not ${real})::int as demos
       from conversations v join clinics c on c.id = v.clinic_id
       where ${inRange("v.started_at")} group by 1 order by 1`,
   ]);

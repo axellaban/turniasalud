@@ -155,8 +155,29 @@ export async function getConnection(clinicId: string): Promise<CalendarConnectio
   return row ?? null;
 }
 
+/**
+ * Marca la conexión para reconectar. La primera vez que se cae (no en cada intento que vuelve a fallar),
+ * le avisa a Axel por WhatsApp desde la línea de Turnia, para que no dependa de que alguien abra el panel.
+ */
 export async function markConnectionError(clinicId: string, message: string): Promise<void> {
-  await sql`update calendar_connections set status = 'error', last_error = ${message.slice(0, 300)}, updated_at = now() where clinic_id = ${clinicId}`;
+  const [row] = await sql<Array<{ was: string; clinic: string }>>`
+    with prev as (select id, status from calendar_connections where clinic_id = ${clinicId} for update)
+    update calendar_connections c set status = 'error', last_error = ${message.slice(0, 300)}, updated_at = now()
+    from prev where c.id = prev.id
+    returning prev.status as was, (select name from clinics where id = ${clinicId}) as clinic`;
+  if (!row || row.was === "error") return;
+  console.warn(JSON.stringify({ evento: "google_reconectar", clinica: clinicId }));
+  try {
+    // Import diferido: chat-guard arrastra WAHA y la ficha de la clínica, que no hacen falta para Calendar.
+    const { notifyAxel } = await import("../chat-guard");
+    await notifyAxel(
+      `⚠️ Turnia: Google pidió volver a conectar el calendario de ${row.clinic}. Los turnos se siguen dando y se ` +
+        `escriben en Google al reconectar. Elegí esa clínica en el panel y andá a Configuración → Calendario: ` +
+        `${env.appUrl().replace(/\/$/, "")}/panel/configuracion/calendario`,
+    );
+  } catch (e) {
+    console.error("No se pudo avisar que Google pide reconectar", e instanceof Error ? e.message : e);
+  }
 }
 
 /** Token de acceso vigente; lo renueva si vence en menos de un minuto. */

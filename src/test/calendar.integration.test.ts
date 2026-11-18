@@ -8,6 +8,7 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 const mocks = vi.hoisted(() => ({
   cookies: new Map<string, string>(),
   after: [] as Array<() => unknown>,
+  axel: [] as string[],
 }));
 
 vi.mock("next/headers", () => ({
@@ -24,6 +25,10 @@ vi.mock("next/server", async (importOriginal) => ({
   after: (fn: () => unknown) => mocks.after.push(fn),
 }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn(async () => {}) }));
+vi.mock("@/lib/chat-guard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat-guard")>()),
+  notifyAxel: async (text: string) => { mocks.axel.push(text); return true; },
+}));
 
 const baseUrl = testDatabaseUrl();
 const MAIN = "00000000-0000-4000-8000-000000000001";
@@ -337,6 +342,11 @@ describe.runIf(baseUrl)("Google Calendar", () => {
     expect(r.turnos.length).toBeGreaterThan(0);
     const [conn] = await sql`select status, last_error from calendar_connections where clinic_id = ${MAIN}`;
     expect(conn).toEqual({ status: "error", last_error: "Google pidió volver a conectar la cuenta." });
+    // A Axel le llega un solo aviso, aunque otro pedido que estaba en curso también reciba el rechazo.
+    expect(mocks.axel).toEqual([expect.stringMatching(/Google pidió volver a conectar el calendario de .+Configuración → Calendario/)]);
+    const { markConnectionError } = await import("@/lib/calendar/google");
+    await markConnectionError(MAIN, "Google rechazó el acceso: volvé a conectar la cuenta.");
+    expect(mocks.axel).toHaveLength(1);
     const Page = (await import("@/app/panel/(app)/configuracion/calendario/page")).default;
     const { renderToStaticMarkup } = await import("react-dom/server");
     expect(renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) } as never))).toContain("Reconectar");
