@@ -141,9 +141,9 @@ export type ScService = { service_id: number; name: string };
 type Page<T> = { data: T[]; next_cursor: number | null };
 
 /** Todas las páginas de un listado (after = next_cursor). `max` corta antes, por las dudas. */
-async function all<T>(client: SmileClient, path: string, query: Record<string, string | number | undefined>, opts: { limit: number; sensitive: boolean; max?: number }): Promise<T[]> {
+async function all<T>(client: SmileClient, path: string, query: Record<string, string | number | undefined>, opts: { limit: number; sensitive: boolean; max?: number; after?: number }): Promise<T[]> {
   const out: T[] = [];
-  let after = 0;
+  let after = opts.after ?? 0;
   for (let page = 0; page < (opts.max ?? 50); page++) {
     const r = await client.request<Page<T>>(path, { query: { ...query, limit: opts.limit, after }, reserve: opts.sensitive ? opts.limit : undefined });
     out.push(...r.data);
@@ -184,6 +184,9 @@ export const scPatient = async (c: SmileClient, id: number) =>
 export const scSearchPatients = async (c: SmileClient, search: string, limit = 5) =>
   (await c.request<Page<ScPatient>>("/patients", { query: { search, limit, after: 0 }, reserve: limit })).data;
 export const scAllPatients = (c: SmileClient) => all<ScPatient>(c, "/patients", {}, { limit: 100, sensitive: true, max: 200 });
+/** Los pacientes con id mayor a `afterId`: la API pagina por id, así que son los cargados después. */
+export const scPatientsAfter = (c: SmileClient, afterId: number) =>
+  all<ScPatient>(c, "/patients", {}, { limit: 100, sensitive: true, max: 200, after: afterId });
 
 export type ScNewPatient = {
   name: string;

@@ -1928,3 +1928,10 @@ alter table smile_connect_connections add column if not exists api_events_checke
 alter table smile_connect_connections add column if not exists api_mirror_at timestamptz;
 alter table smile_connect_connections add column if not exists api_mirror_summary jsonb;
 alter table patient_external_ids add column if not exists smile_data jsonb;
+
+-- Copia diaria (18/11/2026): la lista completa de pacientes es lo que más gasta del cupo diario de la API.
+-- Todos los días se leen solo los pacientes nuevos (la API pagina por id) y la lista completa, dos veces por
+-- semana. Las copias anteriores son todas completas.
+alter table smile_connect_backups add column if not exists patients_full boolean not null default true;
+alter table smile_connect_connections add column if not exists api_patients_full_at timestamptz;
+alter table smile_connect_connections add column if not exists api_patients_last_id bigint;
