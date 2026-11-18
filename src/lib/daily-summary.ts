@@ -69,6 +69,8 @@ export type SummaryItem = {
   motivo?: string | null;
   /** Lo que se pega en la nota del turno del otro sistema. */
   nota: string;
+  /** Si el consultorio usa Smile Connect por API: si este turno (o su cancelación) ya quedó escrito allá. */
+  smile?: string | null;
 };
 
 export type DailySummary = { from: Date; to: Date; nuevos: SummaryItem[]; movidos: SummaryItem[]; cancelados: SummaryItem[] };
@@ -94,6 +96,8 @@ type Row = {
   coverage_plan: string | null;
   member_number: string | null;
   patient_created_at: string;
+  /** null si la clínica no escribe en Smile Connect: entonces el resumen no dice nada. */
+  smile_sync: "pendiente" | "ok" | "error" | "revisar" | null;
 };
 
 type Ancestor = { leaf: string; id: string; created_at: string; source: string; starts_at: string; professional: string; cancelled_via: string | null; depth: number };
@@ -114,6 +118,14 @@ function coverageText(r: Pick<Row, "coverage" | "patient_coverage" | "coverage_p
   return [name, samePlan ? r.coverage_plan : null, r.member_number && samePlan ? `afiliado ${r.member_number}` : null].filter(Boolean).join(" ");
 }
 
+/** Qué decir de Smile Connect en el resumen, según cómo quedó la escritura del turno. */
+export function smileLine(sync: Row["smile_sync"], cancelled: boolean): string | null {
+  if (!sync) return null;
+  if (sync === "ok") return cancelled ? "Smile Connect: ya está cancelado allá." : "Smile Connect: ya está cargado.";
+  if (sync === "revisar") return "Smile Connect: hay que revisarlo allá (no se pudo confirmar).";
+  return cancelled ? "Smile Connect: todavía no se canceló allá." : "Smile Connect: todavía no está cargado allá.";
+}
+
 function toItem(r: Row, clinic: Clinic, from: Date | null): SummaryItem {
   const { notes, reason } = splitNotes(r.notes);
   const by = givenBy(r.source, clinic.agent_name);
@@ -132,6 +144,7 @@ function toItem(r: Row, clinic: Clinic, from: Date | null): SummaryItem {
     paciente_nuevo: from ? new Date(r.patient_created_at) >= from : false,
     motivo: reason,
     nota: [r.type_name, coverage ?? "sin cobertura cargada", notes && `«${notes}»`, `Dio ${by}`].filter(Boolean).join(" · "),
+    smile: smileLine(r.smile_sync, r.status === "cancelado"),
   };
 }
 
@@ -139,7 +152,8 @@ const rowColumns = () => sql`
   a.id, a.starts_at, a.status, a.source, a.created_at, a.cancelled_at, a.cancelled_via, a.notes, a.coverage,
   (select prev.id from appointments prev where prev.replaced_by = a.id limit 1) as previous_id,
   coalesce(a.title, t.name) as type_name, pr.full_name || coalesce(' y ' || p2.full_name, '') as professional,
-  p.full_name, p.dni, p.phone, p.coverage as patient_coverage, p.coverage_plan, p.member_number, p.created_at as patient_created_at`;
+  p.full_name, p.dni, p.phone, p.coverage as patient_coverage, p.coverage_plan, p.member_number, p.created_at as patient_created_at,
+  a.smile_sync`;
 const rowJoins = () => sql`
   join patients p on p.id = a.patient_id
   join appointment_types t on t.id = a.appointment_type_id
@@ -210,8 +224,8 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function itemLines(item: SummaryItem, n: number, kind: "nuevo" | "movido" | "cancelado"): string {
   const who = [item.paciente + (item.paciente_nuevo ? " (paciente nuevo)" : ""), item.dni && `DNI ${item.dni}`, item.celular].filter(Boolean).join(" · ");
   const head = kind === "movido" ? `${n}. *${capitalize(item.cuando)}* · ${item.profesional} (antes: ${item.antes})` : `${n}. *${capitalize(item.cuando)}* · ${item.profesional}`;
-  if (kind === "cancelado") return [head, who, `${item.prestacion}${item.motivo ? ` · motivo: ${item.motivo}` : ""}`].join("\n");
-  return [head, who, `Nota: ${item.nota}`].join("\n");
+  if (kind === "cancelado") return [head, who, `${item.prestacion}${item.motivo ? ` · motivo: ${item.motivo}` : ""}`, item.smile].filter(Boolean).join("\n");
+  return [head, who, `Nota: ${item.nota}`, item.smile].filter(Boolean).join("\n");
 }
 
 function section(title: string, items: SummaryItem[], kind: "nuevo" | "movido" | "cancelado"): string | null {

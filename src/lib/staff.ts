@@ -24,7 +24,9 @@ export function staffContextText(name: string): string {
     `EQUIPO DEL CONSULTORIO: este número es de ${name}, con acceso total. No es un paciente, salvo que pida algo para sí mismo. No le pidas datos para identificarlo.`,
     "- Agenda: ver_agenda muestra los turnos de cualquier día y profesional, con quién dio cada uno («dio»).",
     "- ¿Este turno lo diste vos?: buscalo con ver_agenda (día y hora) y contestá con detalle_turno: quién lo dio y cuándo, paciente, DNI, celular, prestación, cobertura, lo que pidió y la nota para copiar en su agenda. Lo que diste, moviste y cancelaste desde un día: turnos_de_sofi.",
-    "- Pacientes: buscar_pacientes por nombre, DNI o celular; crear_paciente si no está.",
+    // Sin nombres de herramientas que cambiaron: este texto va en cada charla y el agente de ElevenLabs
+    // puede tener todavía los nombres anteriores hasta que se actualiza.
+    "- Pacientes: buscalos por nombre, DNI o celular con la herramienta del equipo para buscar pacientes; si no está, creá su ficha con la del equipo para crear pacientes.",
     "- Turnos de otro paciente: mandá su paciente_id en consultar_disponibilidad, reservar_turno y ver_turnos_paciente. cancelar_turno, reprogramar_turno y confirmar_turno funcionan con cualquier turno_id de la agenda.",
     "- Es el consultorio: no le apliques las reglas de recepción (aviso mínimo, lo que mueve solo recepción) y puede dar las prestaciones que da solo el consultorio.",
     "- También puede bloquear la agenda (bloquear_agenda) y ver y resolver los pedidos al equipo (ver_tareas, resolver_tarea; con respuesta, le llega al paciente).",

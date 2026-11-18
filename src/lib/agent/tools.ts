@@ -20,10 +20,10 @@ export type ToolDefinition = {
 };
 
 const isoDate = "Fecha en formato AAAA-MM-DD (hora de Argentina).";
-/** Para el equipo del consultorio: el paciente para el que se pide (de buscar_pacientes o ver_agenda). */
+/** Para el equipo del consultorio: el paciente para el que se pide (de equipo_buscar_pacientes o ver_agenda). */
 const PATIENT_PARAM = {
   type: "string" as const,
-  description: "Solo si te escribe alguien del equipo del consultorio (el contexto lo dice): el paciente_id del paciente para el que pide, de buscar_pacientes o ver_agenda. Con un paciente, no lo mandes.",
+  description: "Solo si te escribe alguien del equipo del consultorio (el contexto lo dice): el paciente_id del paciente para el que pide, de equipo_buscar_pacientes o ver_agenda. Con un paciente, no lo mandes.",
 };
 const STAFF = "Solo para el equipo del consultorio (el contexto lo dice); con un paciente, no la uses.";
 
@@ -48,7 +48,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "buscar_paciente",
     description:
-      "Con un paciente (no con el equipo: para eso es buscar_pacientes). Busca la ficha de quien te escribe y dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
+      "Con un paciente (no con el equipo: para eso es equipo_buscar_pacientes). Busca la ficha de quien te escribe y dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
     params: {
       dni: { type: "string", description: "DNI, solo números.", required: true },
       fecha_nacimiento: { type: "string", description: isoDate },
@@ -65,7 +65,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "registrar_paciente",
     description:
-      "Con un paciente (para que el equipo cree la ficha de otra persona es crear_paciente). Guarda o actualiza los datos del paciente con el que estás hablando (nombre, DNI, cobertura, etc.). Usala para admisión de un turno nuevo o cuando el paciente quiere actualizar sus datos. Para encontrar, mover o cancelar un turno existente, usá buscar_paciente y ver_turnos_paciente sin registrar otra ficha.",
+      "Con un paciente (para que el equipo cree la ficha de otra persona es equipo_crear_paciente). Guarda o actualiza los datos del paciente con el que estás hablando (nombre, DNI, cobertura, etc.). Usala para admisión de un turno nuevo o cuando el paciente quiere actualizar sus datos. Para encontrar, mover o cancelar un turno existente, usá buscar_paciente y ver_turnos_paciente sin registrar otra ficha.",
     params: {
       nombre_completo: { type: "string", description: "Nombre y apellido del paciente." },
       dni: { type: "string", description: "DNI, solo números." },
@@ -295,13 +295,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     schema: z.object({ desde: z.string().optional() }),
   },
   {
-    name: "buscar_pacientes",
+    name: "equipo_buscar_pacientes",
     description: `${STAFF} Busca pacientes por nombre, DNI o celular y devuelve su paciente_id, cobertura y próximos turnos. No es buscar_paciente (esa es para que un paciente se identifique).`,
     params: { texto: { type: "string", description: "Nombre, apellido, DNI o celular.", required: true } },
     schema: z.object({ texto: z.string().min(1) }),
   },
   {
-    name: "crear_paciente",
+    name: "equipo_crear_paciente",
     description: `${STAFF} Crea la ficha de otra persona que todavía no es paciente, para darle un turno. Devuelve su paciente_id. No es registrar_paciente (esa guarda los datos de quien te escribe).`,
     params: {
       nombre_completo: { type: "string", description: "Nombre y apellido.", required: true },
@@ -347,6 +347,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     schema: z.object({ tarea_id: z.string().min(1), respuesta: z.string().optional() }),
   },
+  {
+    name: "pausar_chat",
+    description: `${STAFF} Pausa tus respuestas en el chat de WhatsApp de un paciente, para que le conteste el equipo desde el celular del consultorio sin que respondan los dos. Los avisos y confirmaciones de turnos siguen saliendo. Pasá el celular o el paciente_id (de equipo_buscar_pacientes o ver_agenda). Confirmá antes.`,
+    params: {
+      celular: { type: "string", description: "Celular del paciente, con código de área." },
+      paciente_id: { type: "string", description: "paciente_id, si lo tenés en vez del celular." },
+      horas: { type: "number", description: "Por cuántas horas: 1, 4, 24 o 72. Por defecto, 4." },
+    },
+    schema: z.object({ celular: z.string().optional(), paciente_id: z.string().optional(), horas: z.coerce.number().optional() }),
+  },
+  {
+    name: "reactivar_chat",
+    description: `${STAFF} Vuelve a contestar en el chat de WhatsApp de un paciente que estaba en pausa. Pasá el celular o el paciente_id.`,
+    params: {
+      celular: { type: "string", description: "Celular del paciente, con código de área." },
+      paciente_id: { type: "string", description: "paciente_id, si lo tenés en vez del celular." },
+    },
+    schema: z.object({ celular: z.string().optional(), paciente_id: z.string().optional() }),
+  },
 ];
 
 /** Parámetros que no completa el LLM sino ElevenLabs, a partir de variables dinámicas. */
@@ -364,6 +383,19 @@ export const contextSchema = z.object({
   canal: z.string().optional(),
 });
 
+/**
+ * Nombres anteriores de herramientas renombradas. Un agente de ElevenLabs que todavía no se actualizó
+ * las sigue llamando con el nombre viejo: la ruta las atiende igual.
+ */
+export const TOOL_ALIASES: Record<string, string> = {
+  buscar_pacientes: "equipo_buscar_pacientes",
+  crear_paciente: "equipo_crear_paciente",
+};
+
+/** El nombre vigente de una herramienta (resuelve los nombres anteriores). */
+export const currentToolName = (name: string) => TOOL_ALIASES[name] ?? name;
+
 export function getToolDefinition(name: string): ToolDefinition | undefined {
-  return TOOL_DEFINITIONS.find((t) => t.name === name);
+  const current = currentToolName(name);
+  return TOOL_DEFINITIONS.find((t) => t.name === current);
 }
