@@ -45,6 +45,8 @@ const fake = {
   nextAppt: 90000,
   nextPatient: 7000,
   status: 200,
+  /** Días (YYYY-MM-DD) en que /availability falla, como si Smile Connect tardara de más. */
+  failDates: new Set<string>(),
   notes: false,
   beforeCreate: undefined as (() => void) | undefined,
   createStatus: 201,
@@ -106,6 +108,7 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   if (path === "/professionals") return page(PROS);
   if (path === "/boxes") return page([{ box_id: 189, name: "Consultorio 1" }, { box_id: 190, name: "Consultorio 2" }]);
   if (path === "/openapi") return ok({ paths: fake.notes ? { "/appointments": { post: { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } } }, "/appointments/{id}": { patch: { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } } } } : {} });
+  if (path === "/availability" && fake.failDates.has(u.searchParams.get("date")!)) return err(503, "falla_simulada");
   if (path === "/availability") return ok({ data: { timezone: TZ, slots: availability(u.searchParams.get("date")!, Number(u.searchParams.get("duration_minutes")), u.searchParams.get("professional_id") ? Number(u.searchParams.get("professional_id")) : undefined) } });
   if (path === "/patients" && method === "GET") {
     const q = (u.searchParams.get("search") ?? "").toLowerCase();
@@ -578,6 +581,43 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
         expect(await tool("consultar_disponibilidad", args)).toMatchObject({ ok: false, pendiente_recepcion: true });
       } finally {
         fake.status = 200;
+      }
+    });
+
+    it("un día que Smile Connect no confirma no se da por lleno: Sofi sabe cuál fue y vuelve a buscar", async () => {
+      const [full, failing, free] = [41, 42, 43];
+      const args = { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro };
+      fake.blocks.push({ pro: 334, start: at(full, "00:00"), end: at(full + 1, "00:00") });
+      fake.failDates.add(day(failing));
+      try {
+        // El único otro día buscado está lleno: no dice «no hay turnos», dice qué día no revisó.
+        const none = await tool("consultar_disponibilidad", { ...args, desde: day(full), hasta: day(failing) });
+        expect(none).toMatchObject({ ok: true, turnos: [], dias_sin_revisar: [day(failing)] });
+        expect(none.mensaje).toContain(`desde=${day(failing)}`);
+        expect(none.mensaje).not.toContain("No hay turnos libres");
+        // Con lugar en otro día, ofrece ese y avisa del que no pudo revisar.
+        const some = await tool("consultar_disponibilidad", { ...args, desde: day(failing), hasta: day(free) });
+        const offered = some.turnos ?? [];
+        expect(offered.length).toBeGreaterThan(0);
+        for (const t of offered) expect(t.inicio >= at(free, "00:00")).toBe(true);
+        expect(some).toMatchObject({ dias_sin_revisar: [day(failing)], aviso_agenda: expect.stringContaining(day(failing)) });
+      } finally {
+        fake.blocks.pop();
+        fake.failDates.clear();
+      }
+    });
+
+    it("a Smile Connect solo le pregunta por los días en que el profesional atiende", async () => {
+      const offset = 45;
+      const weekday = new Date(`${day(offset)}T12:00:00Z`).getUTCDay();
+      await sql`delete from schedules where professional_id = ${gmPro} and weekday = ${weekday}`;
+      try {
+        fake.calls.length = 0;
+        await tool("consultar_disponibilidad", { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro, desde: day(offset), hasta: day(offset + 1) });
+        const asked = fake.calls.filter((c) => c.path === "/availability").length;
+        expect(asked).toBe(1);
+      } finally {
+        await sql`insert into schedules (professional_id, weekday, start_time, end_time) values (${gmPro}, ${weekday}, '09:00', '18:00')`;
       }
     });
 
