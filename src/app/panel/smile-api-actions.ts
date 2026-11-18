@@ -8,6 +8,7 @@ import {
   getSmileApiConnection,
   linkSmileProfessional,
   pullSmileConnect,
+  syncSmileHours,
   recordSmileError,
   removeSmileApiKey,
   saveSmileApiKey,
@@ -79,12 +80,14 @@ export async function syncSmileNowAction(_previous: FormState, form: FormData): 
     try {
       const near = await pullSmileConnect(clinic.id, "cerca");
       const far = await pullSmileConnect(clinic.id, "lejos");
+      // También el horario de los profesionales (no gasta cupo). Si falla, queda para la vuelta automática.
+      const hours = await syncSmileHours(clinic.id).catch(() => null);
       await clearSmileRetryAfterSync(clinic.id, conn.api_retry_at);
       revalidatePath(PAGE);
       const n = (k: keyof typeof near) => near[k] + far[k];
       return {
         ok: true,
-        message: `Listo: ${n("leidos")} turnos leídos de Smile Connect (${n("appointmentsCreated")} nuevos, ${n("appointmentsUpdated")} con cambios, ${n("appointmentsCancelled")} cancelados).${n("pendientes") ? ` ${n("pendientes")} de pacientes nuevos entran en la próxima vuelta.` : ""}`,
+        message: `Listo: ${n("leidos")} turnos leídos de Smile Connect (${n("appointmentsCreated")} nuevos, ${n("appointmentsUpdated")} con cambios, ${n("appointmentsCancelled")} cancelados).${n("pendientes") ? ` ${n("pendientes")} de pacientes nuevos entran en la próxima vuelta.` : ""}${hours?.cambiados.length ? ` Horarios actualizados: ${hours.cambiados.length === 1 ? "1 profesional" : `${hours.cambiados.length} profesionales`}.` : ""}`,
       };
     } catch (e) {
       return { ok: false, message: await recordSmileError(clinic.id, e) };

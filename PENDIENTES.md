@@ -6,7 +6,15 @@
 - **Falta, en el panel:** [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md), tarea 9. Copiar los horarios de Smile Connect (la fuente de verdad) a «Equipo y horarios», corregir el horario de atención y la línea de horarios de las instrucciones.
 - Hecho (tarea 9, por computer use): horarios de los tres profesionales iguales a Smile Connect, horario de atención y línea de horarios de las instrucciones.
 - **Guerra–Mininni es cliente** (migración `2026-11-18-guerra-mininni-cliente`): su ficha dejó de ser una demo conservada. Ahora Sofi avisa a la lista de espera cuando se libera un turno, la respuesta de recepción a un pedido le llega al paciente y vuelve a escribirle a quien no contestó los horarios. Las campañas salen solo si alguien las manda. El WhatsApp general de Turnia nunca toma una clínica con línea propia (`whatsappClinic`).
-- Idea, sin pedir todavía: que Turnia copie sola los horarios de cada profesional desde Smile Connect (`/professionals/{id}/hours`), para que no se vuelvan a desalinear.
+- **Smile Connect es la fuente de la verdad** (18/11). El consultorio no entra al panel de Turnia y todo lo que cambia en Smile Connect llega solo:
+  - turnos y asistencia, cada 30 minutos;
+  - lo que se cargue tarde (hasta 30 días atrás), los turnos de 61 a 120 días y los datos de los pacientes, con la copia diaria;
+  - el horario de cada profesional, cada 6 horas;
+  - las notas, la prestación y los bloqueos.
+
+  La Agenda ya no pide marcar asistencia. Detalle en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+- [ ] **Clave nueva de Smile Connect para Guerra–Mininni**, sin vencimiento, con todos los permisos, incluidos `events:read` (bloqueos) y `services:read` (prestaciones). Sin `events:read`, la Agenda de Turnia no muestra los bloqueos; Sofi igual los respeta. La crea el consultorio en Smile Connect y Turnia la carga en Configuración → «Smile Connect por API» (tarea 10 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md)).
+- [ ] Propuesta, sin pedir todavía: cuando recepción cancela un turno en Smile Connect, ofrecérselo a la lista de espera de Turnia (hoy solo se ofrece lo que se cancela por Sofi o por el panel). Es un mensaje nuevo a pacientes en producción: confirmarlo antes.
 
 ## Costo de Neon en producción (18/11/2026)
 

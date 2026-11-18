@@ -8,7 +8,7 @@ import { bookedMinutes, visibleHours, type Span } from "@/lib/agenda-layout";
 import { addDaysKey, localDateKey, parseDateKey, timeToMinutes, weekdayOfKey, zonedParts, zonedTimeToUtc } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
 import { CHANNEL_LABEL, Empty, PageHeader, StatusBadge, ghostButtonClass, secondaryButtonClass } from "@/components/ui";
-import { AppointmentActions, MarkAttended } from "./appointment-actions";
+import { AppointmentActions, MarkAttended, SmileAttendanceNotice } from "./appointment-actions";
 import { CalendarGrid, ColumnHeading, PRO_COLORS, clock, type GridColumn, type GridEvent } from "./calendar-grid";
 import { ManualAppointmentForm } from "./manual-form";
 import { ManualPanel } from "./manual-panel";
@@ -30,6 +30,7 @@ type Row = {
   reminder_sent_at: string | null;
   calendar_sync: string | null;
   smile_management: { operation: "mover" | "cancelar" } | null;
+  external_id: string | null;
   professional_id: string;
   second_professional_id: string | null;
   appointment_type_id: string;
@@ -71,10 +72,10 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const from = utc(weekStartKey);
   const to = utc(addDaysKey(weekStartKey, 7));
 
-  const [rows, blocks, google] = await Promise.all([
+  const [rows, blocks, google, smileRows] = await Promise.all([
     sql<Row[]>`
       select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
-             a.calendar_sync, a.smile_management, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name,
+             a.calendar_sync, a.smile_management, a.external_id, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name,
              (select c.id from conversations c where c.clinic_id = a.clinic_id and c.patient_id = a.patient_id
                 and c.started_at between a.created_at - interval '6 hours' and a.created_at + interval '10 minutes'
               order by c.started_at desc limit 1) as conversation_id
@@ -88,7 +89,11 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
     getScheduleBlocks(clinic.id, from, to),
     // Lo ocupado en Google Calendar (si está conectado). Si Google falla, la agenda se ve igual.
     googleBusy(clinic.id, shownIds, from, to, { timeZone: tz }).catch(() => []),
+    // Con Smile Connect prendido, la asistencia se toma de allá: el consultorio no marca nada acá.
+    sql<Array<{ on: boolean }>>`
+      select api_key_encrypted is not null and api_mode <> 'apagada' as on from smile_connect_connections where clinic_id = ${clinic.id}`,
   ]);
+  const smileTruth = Boolean(smileRows[0]?.on);
 
   // Todo pasado a minutos del día local, por día.
   const local = (iso: string | Date) => {
@@ -304,9 +309,14 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-3">
-          {unmarked.length > 0 && (
+          {unmarked.length > 0 && (smileTruth ? (
+            <SmileAttendanceNotice
+              pending={unmarked.filter((r) => r.external_id?.startsWith("sc:")).length}
+              missing={unmarked.filter((r) => !r.external_id?.startsWith("sc:")).length}
+            />
+          ) : (
             <MarkAttended clinicId={clinic.id} ids={unmarked.map((r) => r.id)} />
-          )}
+          ))}
           {!catalog.professionals.length ? (
             <Empty>Cargá profesionales en Configuración → Equipo y horarios para empezar.</Empty>
           ) : (

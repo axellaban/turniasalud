@@ -4,7 +4,7 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-**Estado al 18/11/2026:** todo el código está en producción. Para terminar el trabajo funcional faltan la **tarea 9** (primero), la **tarea 7** y la **tarea 8**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
+**Estado al 18/11/2026:** todo el código está en producción. La **tarea 9** está hecha. Para terminar el trabajo funcional faltan la **tarea 10** (primero), la **tarea 7** y la **tarea 8**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
 
 **Prompt para empezar** (copiar tal cual en la otra computadora):
 
@@ -14,7 +14,8 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 
 | Prioridad | Tarea | Estado (16/11) | Acción restante |
 | --- | --- | --- | --- |
-| **P0** | 9. Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11 | Código y migraciones en producción el 18/11. Los horarios de Turnia no coinciden con Smile Connect. | Verificar lo que se cargó solo, copiar los horarios de Smile Connect a «Equipo y horarios», corregir el horario de atención y una línea de las instrucciones. |
+| **P0** | 10. Guerra–Mininni: clave con permiso de bloqueos y control de Smile Connect como fuente de la verdad | Código en producción el 18/11. La clave del 16/11 no tiene `events:read`. | Que el consultorio cree una clave nueva con todos los permisos, cargarla y verificar la tarjeta y la Agenda. |
+| **P0** | 9. Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11 (hecha el 18/11) | Código y migraciones en producción el 18/11. Los horarios de Turnia no coinciden con Smile Connect. | Verificar lo que se cargó solo, copiar los horarios de Smile Connect a «Equipo y horarios», corregir el horario de atención y una línea de las instrucciones. |
 | **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Clave cargada, lectura verificada y «Escritura de prueba» activa. Resumen manual enviado a los dos celulares configurados. | Revisar los cambios de prueba y conciliar las reservas previas que Sofi dio por WhatsApp. Después, C y D con el consultorio. |
 | **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Código en producción el 18/11. Herramientas nuevas sin registrar en ElevenLabs; pausa automática apagada. | Parte A: «Actualizar a Sofi». Parte B, con el «sí» del usuario: sumar `message.any` al webhook de WAHA de Guerra–Mininni, prender la pausa y probarla. |
 | **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
@@ -32,7 +33,37 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 
 ---
 
-## Tarea 9 (P0) · Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11
+## Tarea 10 (P0) · Guerra–Mininni: clave con permiso de bloqueos y control de Smile Connect como fuente de la verdad
+
+**Contexto.** El consultorio trabaja solo en Smile Connect y no entra al panel de Turnia. Desde el 18/11, todo lo que cambia en Smile Connect llega solo a Turnia: turnos, asistencia, cancelaciones, pacientes, el horario de cada profesional, notas y bloqueos. Detalle en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) → «Smile Connect, fuente de la verdad».
+
+Para traer los bloqueos de agenda, la clave necesita el permiso `events:read`, y la del 16/11 no lo tiene. Sofi igual respeta los bloqueos, porque verifica cada horario en Smile Connect, pero la Agenda de Turnia no los muestra.
+
+**Dónde:** Smile Connect (`https://app.smileconnect.pro`), solo si el usuario tiene la sesión iniciada y está de acuerdo, y el panel de Turnia (`https://turniasalud.app/panel`) con la clínica **Guerra–Mininni** elegida arriba.
+
+**Pasos**
+1. **Clave nueva en Smile Connect.** La crea el consultorio, o el usuario con su sesión: «API pública» → crear clave **sin vencimiento** con estos permisos:
+   - lectura: `clinic:read`, `professionals:read`, `boxes:read`, `availability:read`, `appointments:read`, `patients:read`, `events:read` y `services:read`;
+   - escritura: `patients:create`, `appointments:create`, `appointments:reschedule` y `appointments:cancel`.
+
+   **La clave la copia y la pega el usuario; vos no la ves ni la copiás.** Si Smile Connect permite sumarle permisos a la clave actual en vez de crear otra, también sirve.
+2. **Cargarla en Turnia.** Configuración → Agenda e integraciones → tarjeta «Smile Connect por API» → «Cambiar la clave». La pega el usuario. Revisá que siga diciendo el mismo nombre de clínica y los tres profesionales vinculados. Si no, frená y avisá.
+3. **No cambies el modo.** Tiene que seguir en «Escritura de prueba».
+4. **Sincronizar.** Tocá «Sincronizar ahora». En la tarjeta revisá:
+   - que no aparezca «Último problema»;
+   - que «Bloqueos» diga **«Por la API»** (antes decía «Falta el permiso events:read»);
+   - que «Horarios de los profesionales» tenga fecha de hoy;
+   - si aparece un aviso de horarios, copiá su texto tal cual en tu respuesta. Si dice «Horarios copiados…», no hay que hacer nada; si dice «…no tiene horarios. Configuralo…», avisale al usuario y no lo configures.
+5. **Agenda.** Abrí la Agenda en la semana actual:
+   - arriba ya no tiene que estar el cartel amarillo «turnos ya pasaron sin marcar» con el botón «Marcar todos como atendidos». En su lugar dice «La asistencia se toma de Smile Connect»;
+   - si hay vacaciones o bloqueos cargados en Smile Connect en los próximos días, tienen que verse en la Agenda.
+6. **Al día siguiente (después de las 7):** en la tarjeta, «Copia diaria» tiene que decir «aplicada a Turnia» con fecha de ese día.
+
+**No hagas:** no marques asistencia en el panel, no cambies horarios a mano (ahora se copian solos de Smile Connect) y no toques el modo de escritura.
+
+**Respuesta esperada:** qué pasos quedaron hechos, el texto de «Bloqueos», «Horarios de los profesionales» y «Copia diaria», el aviso de horarios si apareció y el cartel de la Agenda. Todo sin nombres de pacientes.
+
+## Tarea 9 (hecha el 18/11) · Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11
 
 **Contexto.** El 18/11 el Dr. Mininni marcó problemas en una charla real de Sofi. Se corrigieron en el código y en sus instrucciones, que se cambiaron solas con el deploy (PR #223 a #227). Falta lo que se hace en el panel.
 

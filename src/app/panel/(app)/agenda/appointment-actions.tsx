@@ -164,6 +164,24 @@ function MoveForm({ clinicId, appt, today, professionals, onCancel }: { clinicId
   );
 }
 
+/**
+ * Con Smile Connect prendido, la asistencia la marca recepción en Smile Connect y llega sola: no se pide
+ * marcar nada en Turnia. Se muestra cuántos turnos pasados siguen sin marca allá y cuántos de Turnia no
+ * aparecen en Smile Connect (por ejemplo, un turno de Sofi que recepción no copió).
+ */
+export function SmileAttendanceNotice({ pending, missing }: { pending: number; missing: number }) {
+  const turnos = (n: number) => (n === 1 ? "1 turno" : `${n} turnos`);
+  return (
+    <div role="status" className="rounded-2xl bg-brand-50 px-4 py-3 text-sm text-brand-950 ring-1 ring-brand-100">
+      <p>
+        <strong className="font-semibold">La asistencia se toma de Smile Connect.</strong>{" "}
+        {pending > 0 && <>{turnos(pending)} ya {pending === 1 ? "pasó" : "pasaron"} sin marca allá: se actualizan solos cuando recepción los marque (cada 30 minutos; lo que se marque días después, con la copia de cada mañana). </>}
+        {missing > 0 && <>{turnos(missing)} de Turnia no {missing === 1 ? "aparece" : "aparecen"} en Smile Connect: revisá si se {missing === 1 ? "cargó" : "cargaron"} allá.</>}
+      </p>
+    </div>
+  );
+}
+
 /** Aviso arriba de la grilla: turnos que ya pasaron sin marcar, con un botón para marcarlos todos como atendidos. */
 export function MarkAttended({ clinicId, ids }: { clinicId: string; ids: string[] }) {
   const [state, action, pending] = useActionState(markDayAttended, undefined);

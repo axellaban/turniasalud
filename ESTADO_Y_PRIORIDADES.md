@@ -2,6 +2,18 @@
 
 Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Smile Connect, fuente de la verdad — 18/11/2026
+
+Guerra–Mininni trabaja solo en Smile Connect y no entra al panel de Turnia. Ahora todo lo que cambia allá llega solo:
+- la asistencia y los cambios cargados tarde (hasta 30 días atrás), con la copia diaria;
+- los turnos a 61–120 días y los datos de cada paciente, también con la copia diaria. Solo pasa lo que cambió en Smile Connect: no se pisa lo que Sofi sabe;
+- el horario de cada profesional, cada 6 horas;
+- las notas, la prestación y los bloqueos (con el permiso `events:read`).
+
+La Agenda ya no pide marcar asistencia en las clínicas con Smile Connect.
+
+El primer pase no cambia horarios: la conversión de los horarios reales de Smile Connect coincidió con lo que se cargó a mano el 18/11. Falta una clave con `events:read` (tarea 10 de `TAREAS_COMPUTER_USE.md`). Detalle en `SMILE_CONNECT_API.md`.
+
 ## Pendientes técnicos cerrados — 18/11/2026
 
 - **El equipo toma el chat mientras Sofi escribe:** si el chat se pausa (en el panel, con `pausar_chat` o porque el equipo contestó desde el celular) mientras Sofi prepara su respuesta, esa respuesta ya no se manda ni queda en la charla (`deliverReply` en `src/lib/channel.ts`, estado `paused`). Con esto queda cerrada «Atención humana por chat».

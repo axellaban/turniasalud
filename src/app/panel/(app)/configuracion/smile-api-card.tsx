@@ -52,6 +52,10 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
         Con la clave de la API de Smile Connect, Turnia trae la agenda sin Tampermonkey y Sofi ofrece solo lo que está libre ahí, con bloqueos y
         feriados. En modo «Crear turnos», Sofi confirma cada alta simple después de comprobarla en Smile Connect.
       </p>
+      <p className="mt-1 max-w-3xl text-sm text-brand-900/60">
+        Smile Connect es la fuente de la verdad: los turnos, la asistencia, las cancelaciones, los datos de los pacientes, el horario de cada
+        profesional y los bloqueos se copian solos a Turnia. El consultorio no tiene que cargar ni marcar nada acá.
+      </p>
 
       {hasKey && !conn?.api_supports_notes && <Notice tone="warning" className="mt-3">
         La API de Smile Connect todavía no acepta el motivo del turno: lo que escriba Turnia llega allá sin prestación ni motivo. Cuando lo
@@ -67,6 +71,14 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
           <button className={smallButtonClass}>Reanudar la escritura</button>
         </form>}
       </Notice>}
+      {hasKey && conn?.api_events_ok === false && <Notice tone="warning" className="mt-3">
+        La clave no tiene el permiso para leer los bloqueos de agenda (<code>events:read</code>). Sofi igual los respeta, porque verifica cada
+        horario en Smile Connect, pero la Agenda de Turnia no los muestra. Pedile al consultorio que sume ese permiso a la clave (o que cree
+        una nueva con todos los permisos) y cargala acá.
+      </Notice>}
+      {hasKey && conn?.api_hours_note && <Notice tone={conn.api_hours_note.split("\n").some((l) => !l.startsWith("Horarios copiados")) ? "warning" : "info"} className="mt-3 whitespace-pre-line">
+        {conn.api_hours_note}
+      </Notice>}
       {conn?.api_error && <Notice tone="error" className="mt-3">Último problema ({when(conn.api_error_at)}): {conn.api_error}</Notice>}
       {conn?.api_retry_at && new Date(conn.api_retry_at) > now && (
         <Notice tone="warning" className="mt-3">Smile Connect pidió esperar hasta {when(conn.api_retry_at)}. Una sincronización manual exitosa permite retomar antes.</Notice>
@@ -79,13 +91,15 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
             <dt className="text-brand-900/60">Clave</dt><dd className="text-brand-950">…{conn?.api_key_hint} · probada {when(conn?.api_checked_at)}</dd>
             <dt className="text-brand-900/60">Agenda cercana</dt><dd className="text-brand-950">{when(conn?.api_near_pull_at)}</dd>
             <dt className="text-brand-900/60">Agenda lejana</dt><dd className="text-brand-950">{when(conn?.api_wide_pull_at)}</dd>
-            <dt className="text-brand-900/60">Copia diaria</dt><dd className="text-brand-950">{when(conn?.api_backup_at)}</dd>
+            <dt className="text-brand-900/60">Horarios de los profesionales</dt><dd className="text-brand-950">{when(conn?.api_hours_at)}</dd>
+            <dt className="text-brand-900/60">Bloqueos</dt><dd className="text-brand-950">{conn?.api_events_ok ? "Por la API" : conn?.api_events_ok === false ? "Falta el permiso events:read" : "Sin probar"}</dd>
+            <dt className="text-brand-900/60">Copia diaria</dt><dd className="text-brand-950">{when(conn?.api_backup_at)}{conn?.api_mirror_at ? ` · aplicada a Turnia ${when(conn.api_mirror_at)}` : ""}</dd>
             <dt className="text-brand-900/60">Lecturas de hoy</dt><dd className="text-brand-950">{readsToday.toLocaleString("es-AR")} de {READ_CAP.toLocaleString("es-AR")}</dd>
           </dl>}
 
           {admin && <ActionForm action={saveSmileApiKeyAction} submit={hasKey ? "Cambiar la clave" : "Probar y guardar la clave"} resetOnSuccess secondary className="grid gap-3">
             <input type="hidden" name="clinic_id" value={clinic.id} />
-            <Field label="Clave de la API" hint="La crea el consultorio en Smile Connect («API pública»). Mejor sin vencimiento: por defecto vence a los 30 días. Permisos de lectura de clínica, profesionales, consultorios, disponibilidad, turnos y pacientes; para escribir, además crear pacientes y crear, mover y cancelar turnos.">
+            <Field label="Clave de la API" hint="La crea el consultorio en Smile Connect («API pública»). Mejor sin vencimiento: por defecto vence a los 30 días. Permisos de lectura de clínica, profesionales, consultorios, disponibilidad, turnos, pacientes, bloqueos (events:read) y prestaciones (services:read); para escribir, además crear pacientes y crear, mover y cancelar turnos.">
               <input name="api_key" type="password" autoComplete="off" required placeholder="sc_live_…" className={inputClass} />
             </Field>
           </ActionForm>}

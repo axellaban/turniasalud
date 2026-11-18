@@ -1,6 +1,10 @@
 # Smile Connect por API y avisos al consultorio
 
-**Estado (16/11/2026). Guerra–Mininni está en «Escritura de prueba».** Se cargó la clave, se verificó la lectura y se desactivó el userscript de Tampermonkey. Faltan revisar las operaciones de prueba y coordinar la habilitación de la escritura real con el consultorio. El resumen de Sofi a las 10 y «¿este turno lo diste vos?» por WhatsApp cubren la prestación y el motivo, que la API aún omite. El primer envío manual del resumen salió a los dos celulares configurados. El cliente se comparó el 16/11 con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0). Coinciden las rutas, parámetros, cuerpos, paginación, límites y formato de error. El alta de paciente deja afuera un mail o un documento que la API rechazaría.
+**Estado (18/11/2026). Smile Connect es la fuente de la verdad de Guerra–Mininni.** El consultorio trabaja solo en Smile Connect y no entra al panel de Turnia. Todo lo que cambia allá llega solo a Turnia: turnos, asistencia, cancelaciones, pacientes, horarios y bloqueos. Ver «Smile Connect, fuente de la verdad», abajo.
+
+La conexión sigue en «Escritura de prueba»: falta coordinar con el consultorio la escritura real. Para los bloqueos, falta sumar a la clave el permiso `events:read`; mientras tanto, Sofi los respeta igual porque verifica cada horario en vivo.
+
+**Del 16/11:** se cargó la clave, se verificó la lectura y se desactivó el userscript de Tampermonkey. El resumen de Sofi a las 10 y «¿este turno lo diste vos?» por WhatsApp cubren la prestación y el motivo de los turnos de Sofi. El cliente se comparó con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0).
 
 ## Qué ofrece la API de Smile Connect
 
@@ -24,9 +28,12 @@ La documentación OpenAPI es pública: `GET https://app.smileconnect.pro/api/v1/
 
 Según la documentación, no cobra nada ni manda mensajes.
 
+**Desde noviembre de 2026 también:**
+- las **notas** y la **prestación** (`service_id`) de cada turno, al leer, crear y mover;
+- los **bloqueos de agenda** (`/events`: vacaciones, fuera de servicio y otros), con el permiso `events:read`;
+- las **prestaciones** (`/services`), con el permiso `services:read`.
+
 **No se puede:**
-- leer ni escribir las notas o la prestación del turno;
-- leer los bloqueos (solo se ven en la disponibilidad);
 - editar o borrar pacientes;
 - marcar la asistencia;
 - leer la historia clínica, los pagos o los mensajes.
@@ -36,13 +43,16 @@ Según la documentación, no cobra nada ni manda mensajes.
 - 10.000 registros sensibles (turnos y pacientes) por día y clínica, contando el tamaño de página pedido aunque vuelva vacía;
 - las claves vencen a los 30 días, salvo que se creen sin vencimiento.
 
-## Qué se le pidió a Smile Connect (lo gestiona Mininni)
+## Qué se le pidió a Smile Connect (lo gestionó Mininni): hecho
 
-1. Un campo `notes` al crear y al mover un turno, y que también se devuelva al leerlo.
-2. Idealmente, la prestación del turno (`service_id`).
-3. Poder leer los bloqueos de agenda (eventos).
+Smile Connect sumó las tres cosas que se le pidieron:
+1. las notas del turno;
+2. la prestación;
+3. los bloqueos.
 
-Turnia revisa todos los días si la API ya acepta `notes`, con la copia diaria o al guardar la clave. Desde ese momento manda el motivo sin otro cambio: prestación, nombre propio del turno, notas del paciente y «Lo dio Sofi (Turnia)».
+Turnia ya usa las tres:
+- **Al escribir:** manda el motivo (prestación, nombre propio del turno, notas del paciente y «Lo dio Sofi (Turnia)»). Lo detecta solo con la revisión diaria del OpenAPI.
+- **Al leer:** trae las notas y la prestación de cada turno, y los bloqueos.
 
 ## Cómo funciona en Turnia
 
@@ -62,7 +72,7 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 - **Sincronización dosificada para el cupo diario** (con la automatización de cada 10 minutos, `/api/automations/calendario`):
   - de ayer a 4 días: cada 30 minutos de 7 a 22, y cada 2 horas de noche;
   - de 4 a 60 días: cada 8 horas.
-- **Usa el mismo sincronizador que el userscript** (`syncSmileConnect`, con `skipBlocks`): la API no da los bloqueos y, sin `skipBlocks`, la ventana borraría los que trajo el userscript.
+- **Usa el mismo sincronizador que el userscript** (`syncSmileConnect`). Los bloqueos llegan por `/events` si la clave tiene `events:read`; sin ese permiso va con `skipBlocks`, para no borrar los que ya están en Turnia.
 - **Pacientes nuevos:** se leen de a 30 por vuelta.
 - **Freno:** si de golpe desaparecen más de 5 turnos, no aplica nada y lo muestra en el panel.
 - **Tope propio:** 8.000 lecturas por día, contadas en `smile_connect_connections.api_reads`.
@@ -90,6 +100,48 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 - **Registro:** cada cambio queda en `smile_connect_changes`, con cómo estaba antes. Se ve en el panel, en «Detalle».
 - **Freno automático:** con más de 15 cambios en una hora se frena la escritura y hay que reanudarla desde el panel.
 - **Fuera de la API, siempre «para revisar»:** atendido y ausente no se escriben, y los turnos con dos profesionales se derivan a mano.
+
+## Smile Connect, fuente de la verdad (18/11/2026)
+
+El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect llega solo, con estos tiempos:
+
+| Qué cambia en Smile Connect | Cómo llega a Turnia | Cada cuánto |
+| --- | --- | --- |
+| Turnos nuevos, movidos o cancelados, y la asistencia (de ayer a 4 días) | Sincronización cercana | 30 minutos de 7 a 22; 2 horas de noche |
+| Turnos de 4 a 61 días | Sincronización lejana | 8 horas |
+| Asistencia, cancelaciones o cambios cargados tarde (hasta 30 días atrás) y turnos de 61 a 120 días | Copia diaria aplicada a Turnia (`mirrorSmileBackup`) | Una vez por día, después de la copia (de 3 a 6) |
+| Datos de los pacientes (nombre, DNI, mail y celular) y pacientes nuevos sin turno | Copia diaria | Una vez por día |
+| Horario semanal de cada profesional | `syncSmileHours`, a sus horarios de Turnia | 6 horas, y con «Sincronizar ahora» |
+| Bloqueos de agenda (vacaciones, fuera de servicio) | Las dos sincronizaciones y la copia, si la clave tiene `events:read` | Igual que los turnos |
+| Notas y prestación del turno | A las notas del turno en Turnia (la prestación, adelante) | Igual que los turnos |
+
+**Reglas para no romper nada:**
+- **Horarios:**
+  - se copian solo las franjas comunes: las de «solo urgencias» o de algunas prestaciones las arma Turnia y no se tocan;
+  - un profesional que en Turnia no tiene ningún horario no se habilita solo, porque qué ofrece Sofi lo configura Turnia. Queda anotado en el panel para revisar;
+  - si Smile Connect no devuelve el horario de alguien, no se le borra nada (lo libre se verifica igual en vivo);
+  - el 18/11 la conversión dio exactamente lo que se cargó a mano ese día (Mininni de lunes a viernes, el jueves hasta 18:30; Coldeira de lunes a miércoles; Fernández los jueves), así que el primer pase no cambia nada.
+- **Pacientes:**
+  - la primera vez que se ve a un paciente, solo se anota cómo está en Smile Connect (`patient_external_ids.smile_data`). Lo que Turnia ya sabe, como el WhatsApp desde el que escribe, no se pisa con un dato viejo;
+  - desde ahí, cada cambio que se haga en Smile Connect pasa a Turnia;
+  - si cambia el celular, el anterior queda vinculado para que Sofi lo siga reconociendo;
+  - una ficha de Turnia unida a dos de Smile Connect no se toca;
+  - los pacientes que Turnia no tiene entran de a 300 por día.
+- **Bloqueos:**
+  - sin el permiso `events:read`, los bloqueos de Turnia no se tocan y no se avisa nada al consultorio (no es un problema de la clave). Se vuelve a probar una vez por día;
+  - un bloqueo de un profesional que Smile Connect ya no lista no entra, porque en Turnia quedaría como bloqueo de toda la clínica.
+- **Notas:**
+  - en los turnos que vienen de Smile Connect, mandan las notas de Smile Connect;
+  - en los que dio Turnia (Sofi o el panel) y recepción copió allá, se conserva el motivo del paciente, que usa el resumen de las 10. Antes se pisaba con el nombre del consultorio.
+- **Copia diaria:**
+  - se aplica en la vuelta siguiente a la copia, no en la misma;
+  - si de golpe faltan más de 5 turnos en una ventana, esa ventana no se aplica;
+  - si falla, queda el error en el panel y se prueba con la copia del día siguiente.
+- **Agenda del panel:** con Smile Connect prendido ya no pide marcar asistencia. Dice cuántos turnos pasados siguen sin marca en Smile Connect y cuántos de Turnia no aparecen allá (por ejemplo, un turno de Sofi que recepción no copió).
+
+**Falta para Guerra–Mininni:** que el consultorio cree en Smile Connect una clave sin vencimiento con todos los permisos, incluidos `events:read` y `services:read`, y cargarla en Configuración → «Smile Connect por API». Hasta entonces, el panel muestra «Falta el permiso events:read» en «Bloqueos».
+
+Pruebas: `src/test/smile-connect-api.integration.test.ts`, bloque «Smile Connect como fuente de la verdad». Cada regla tiene una verificación de mutación: sin ella, su prueba falla.
 
 ## Avisos al consultorio por WhatsApp (`src/lib/clinic-notices.ts`)
 
@@ -147,7 +199,7 @@ Guerra–Mininni recibió sus valores con una migración de una sola vez y no ca
 
 ## Para sumar otra clínica con Smile Connect
 
-1. **Clave:** que el consultorio cree en Smile Connect una clave **sin vencimiento**, con los permisos de lectura y escritura de abajo.
+1. **Clave:** que el consultorio cree en Smile Connect una clave **sin vencimiento**, con los permisos de lectura (incluidos `events:read` y `services:read`) y de escritura de abajo.
 2. **Cargarla:** Turnia la carga en Configuración → Agenda e integraciones → «Smile Connect por API».
 3. **Revisar lo que muestra:**
    - el nombre de la clínica;
@@ -164,7 +216,7 @@ Guerra–Mininni recibió sus valores con una migración de una sola vez y no ca
 Los pasos 3 a 8 están, listos para una IA con computer use, en la **tarea 7** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 
 2. ~~Que el consultorio cree en Smile Connect una clave **sin vencimiento**~~ (hecho el 16/11):
-   - **para leer:** `clinic:read`, `professionals:read`, `boxes:read`, `availability:read`, `appointments:read` y `patients:read`;
+   - **para leer:** `clinic:read`, `professionals:read`, `boxes:read`, `availability:read`, `appointments:read`, `patients:read`, `events:read` y `services:read` (los dos últimos, desde noviembre de 2026; la clave del 16/11 no los tiene);
    - **para escribir:** además, `patients:create`, `appointments:create`, `appointments:reschedule` y `appointments:cancel`.
 3. Panel → Calendario → «Smile Connect por API» → pegar la clave. Revisar el nombre de la clínica y los profesionales vinculados.
 4. Cargar los celulares de los avisos y mandar un aviso de prueba.

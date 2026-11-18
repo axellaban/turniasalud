@@ -34,7 +34,17 @@ const patientPhone = "5491100006001";
 const newPhone = "5491100006002";
 
 // ── Smile Connect simulado ───────────────────────────────────────────────────
-type Appt = { appointment_id: number; patient_id: number; start_date: string; end_date: string; box_id: number | null; professional_ids: number[]; attendance: string | null; cancelled: boolean };
+type Appt = { appointment_id: number; patient_id: number; start_date: string; end_date: string; box_id: number | null; professional_ids: number[]; attendance: string | null; cancelled: boolean; notes?: string | null; service_id?: number | null };
+type Ev = { event_id: number; type: "vacation" | "outOfService" | "other"; name: string | null; start_date: string; end_date: string; professional_id: number; box_id: number | null; notes: string | null };
+/** Celdas cada 30 minutos de `from` a `to` (sin incluir `to`), como las devuelve Smile Connect. */
+const cells = (from: string, to: string) => {
+  const out: string[] = [];
+  const m = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  for (let x = m(from); x < m(to); x += 30) out.push(`${String(Math.floor(x / 60)).padStart(2, "0")}:${String(x % 60).padStart(2, "0")}`);
+  return out;
+};
+/** El horario de siempre de los profesionales simulados: todos los días de 9 a 18 (igual que la disponibilidad). */
+const allWeek = () => Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), cells("09:00", "18:00")]));
 type Pat = { patient_id: number; name: string; surname: string; id_number: string | null; email: string | null; phone_country_code: string | null; phone_number: string | null };
 const fake = {
   appointments: new Map<number, Appt>(),
@@ -56,6 +66,11 @@ const fake = {
   appointmentListRetryAfter: null as string | null,
   dropCancelReply: false,
   whatsapps: [] as Array<{ chatId: string; text: string }>,
+  /** Horario semanal por profesional (si no está, todos los días de 9 a 18). */
+  hours: new Map<number, Record<string, string[]>>(),
+  events: [] as Ev[],
+  /** Como la clave real de hoy: sin el permiso events:read. */
+  eventsScope: false,
 };
 const PROS = [
   { professional_id: 334, name: "Mariano", surname: "Prueba", box_id: 189 },
@@ -106,6 +121,17 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   let m: RegExpExecArray | null;
   if (path === "/clinic") return ok({ data: { clinic_id: 229, clinic_name: "Consultorio ficticio", timezone: TZ } });
   if (path === "/professionals") return page(PROS);
+  if ((m = /^\/professionals\/(\d+)\/hours$/.exec(path))) {
+    const id = Number(m[1]);
+    return ok({ data: { professional_id: id, timezone: TZ, interval_minutes: 30, hours: fake.hours.get(id) ?? allWeek() } });
+  }
+  if (path === "/events") {
+    if (!fake.eventsScope) return err(403, "insufficient_scope");
+    const s = Date.parse(u.searchParams.get("start")!);
+    const e = Date.parse(u.searchParams.get("end")!);
+    return page(fake.events.filter((x) => Date.parse(x.start_date) >= s && Date.parse(x.start_date) < e));
+  }
+  if (path === "/services") return page([{ service_id: 12, name: "Limpieza", prices: [] }]);
   if (path === "/boxes") return page([{ box_id: 189, name: "Consultorio 1" }, { box_id: 190, name: "Consultorio 2" }]);
   if (path === "/openapi") return ok({ paths: fake.notes ? { "/appointments": { post: { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } } }, "/appointments/{id}": { patch: { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } } } } : {} });
   if (path === "/availability" && fake.failDates.has(u.searchParams.get("date")!)) return err(503, "falla_simulada");
@@ -842,6 +868,145 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       await sql`update smile_connect_connections set api_retry_at = ${later} where clinic_id = ${gm}`;
       await link.clearSmileRetryAfterSync(gm, retryAt);
       expect(await link.getSmileApiConnection(gm)).toMatchObject({ api_retry_at: later });
+    });
+  });
+
+  describe("Smile Connect como fuente de la verdad", () => {
+    let T: string, emilia: string, mariano: string;
+
+    beforeAll(async () => {
+      [{ id: T }] = await sql`insert into clinics (name, specialty, is_demo, retained_at) values ('Consultorio espejo de prueba', 'Odontología', true, now()) returning id`;
+      [{ id: emilia }] = await sql`insert into professionals (clinic_id, full_name, specialty) values (${T}, 'Dra. Emilia Ficticia', 'Odontología') returning id`;
+      [{ id: mariano }] = await sql`insert into professionals (clinic_id, full_name, specialty) values (${T}, 'Dr. Mariano Prueba', 'Odontología') returning id`;
+      await sql`insert into schedules (professional_id, weekday, start_time, end_time, urgent_only)
+        values (${emilia}, 1, '10:00', '12:00', false), (${emilia}, 2, '08:00', '09:00', true)`;
+      await sql`insert into appointment_types (clinic_id, name, specialty, duration_min) values (${T}, 'Consulta', 'Odontología', 30)`;
+      await link.saveSmileApiKey(T, KEY);
+      await link.setSmileMode(T, "lectura");
+    });
+
+    it("copia el horario de Smile Connect a quien ya atiende en Turnia, sin tocar las franjas especiales", async () => {
+      const linked = await sql`select full_name, smile_professional_id from professionals where clinic_id = ${T} order by smile_professional_id`;
+      expect(linked.map((p) => [p.full_name, p.smile_professional_id])).toEqual([["Dr. Mariano Prueba", 334], ["Dra. Emilia Ficticia", 335]]);
+      fake.hours.set(335, { "1": cells("10:00", "17:30"), "2": [...cells("10:00", "11:00"), ...cells("14:00", "15:00")] });
+      const r = await link.syncSmileHours(T);
+      expect(r.cambiados).toEqual(["Dra. Emilia Ficticia: antes lun 10:00–12:00; ahora lun 10:00–17:30, mar 10:00–11:00, mar 14:00–15:00."]);
+      // Mariano atiende en Smile Connect, pero en Turnia no tiene horarios: no se habilita solo, queda para revisar.
+      expect(r.revisar).toEqual([expect.stringContaining("Dr. Mariano Prueba: atiende en Smile Connect")]);
+      const rows = await sql`select weekday, start_time::text as s, end_time::text as e, urgent_only from schedules where professional_id = ${emilia} order by weekday, start_time`;
+      expect(rows.map((x) => [x.weekday, x.s.slice(0, 5), x.e.slice(0, 5), x.urgent_only])).toEqual([
+        [1, "10:00", "17:30", false], [2, "08:00", "09:00", true], [2, "10:00", "11:00", false], [2, "14:00", "15:00", false],
+      ]);
+      expect((await sql`select count(*)::int as n from schedules where professional_id = ${mariano}`)[0].n).toBe(0);
+      // Sin cambios en Smile Connect no toca nada y sigue mostrando el último cambio.
+      expect((await link.syncSmileHours(T)).cambiados).toEqual([]);
+      expect((await link.getSmileApiConnection(T))!.api_hours_note).toMatch(/^Horarios copiados de Smile Connect el .*Emilia/);
+      // Si Smile Connect no devuelve horario para alguien, no se le borra nada.
+      fake.hours.set(335, {});
+      expect((await link.syncSmileHours(T)).cambiados).toEqual([]);
+      expect((await sql`select count(*)::int as n from schedules where professional_id = ${emilia} and not urgent_only`)[0].n).toBe(3);
+      fake.hours.set(335, { "1": cells("10:00", "17:30"), "2": [...cells("10:00", "11:00"), ...cells("14:00", "15:00")] });
+    });
+
+    it("sin el permiso events:read no toca los bloqueos ni avisa a nadie; con el permiso los trae de Smile Connect", async () => {
+      await sql`insert into schedule_blocks (clinic_id, professional_id, starts_at, ends_at, reason, external_id)
+        values (${T}, ${emilia}, ${at(2, "15:00")}, ${at(2, "16:00")}, 'Bloqueo viejo', 'sc:499')`;
+      fake.events = [
+        { event_id: 501, type: "vacation", name: "Vacaciones", start_date: at(2, "09:00"), end_date: at(2, "13:00"), professional_id: 335, box_id: null, notes: null },
+        // De un profesional que Smile Connect ya no lista: en Turnia sería un bloqueo de toda la clínica.
+        { event_id: 502, type: "other", name: "Ya no está", start_date: at(3, "09:00"), end_date: at(3, "10:00"), professional_id: 999, box_id: null, notes: null },
+      ];
+      const blocks = async () => (await sql`select external_id, professional_id, reason from schedule_blocks where clinic_id = ${T} order by external_id`)
+        .map((b) => [b.external_id, b.professional_id, b.reason]);
+      await link.pullSmileConnect(T, "cerca");
+      expect(await link.getSmileApiConnection(T)).toMatchObject({ api_events_ok: false, api_error: null });
+      expect(await blocks()).toEqual([["sc:499", emilia, "Bloqueo viejo"]]);
+      expect((await sql`select count(*)::int as n from clinic_notices where clinic_id = ${T}`)[0].n).toBe(0);
+      // Le suman el permiso a la clave: se vuelve a probar al día siguiente.
+      fake.eventsScope = true;
+      await link.pullSmileConnect(T, "cerca");
+      expect(await blocks()).toEqual([["sc:499", emilia, "Bloqueo viejo"]]);
+      await sql`update smile_connect_connections set api_events_checked_at = now() - interval '25 hours' where clinic_id = ${T}`;
+      await link.pullSmileConnect(T, "cerca");
+      expect(await blocks()).toEqual([["sc:501", emilia, "Vacaciones"]]);
+      expect((await link.getSmileApiConnection(T))!.api_events_ok).toBe(true);
+      fake.eventsScope = false;
+      fake.events = [];
+    });
+
+    it("las notas y la prestación de Smile Connect llegan al turno de Turnia", async () => {
+      fake.appointments.set(95010, scAppt(95010, 5002, 3, "15:00", "15:30", { professional_ids: [335], box_id: 190, notes: "Control de brackets", service_id: 12 }));
+      await link.pullSmileConnect(T, "cerca");
+      const [a] = await sql`select notes, professional_id from appointments where clinic_id = ${T} and external_id = 'sc:95010'`;
+      expect(a).toMatchObject({ notes: expect.stringContaining("Limpieza · Control de brackets"), professional_id: emilia });
+
+      // Un turno que dio Sofi y recepción copió en Smile Connect con sus propias notas: el motivo del
+      // paciente (que usa el resumen de las 10) no se pisa, ni al vincularlo ni en las vueltas siguientes.
+      const [{ patient_id: pedro }] = await sql`select patient_id from patient_external_ids where clinic_id = ${T} and external_id = 'sc:5002'`;
+      const [{ id: sofi }] = await sql`
+        insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source, notes)
+        select ${T}, ${pedro}, ${emilia}, id, ${at(3, "16:00")}, ${at(3, "16:30")}, 'confirmado', 'whatsapp', 'Le duele una muela'
+        from appointment_types where clinic_id = ${T} and name = 'Consulta' returning id`;
+      fake.appointments.set(95011, scAppt(95011, 5002, 3, "16:00", "16:30", { professional_ids: [335], box_id: 190, notes: "Consulta" }));
+      await link.pullSmileConnect(T, "cerca");
+      await link.pullSmileConnect(T, "cerca");
+      expect((await sql`select external_id, notes from appointments where id = ${sofi}`)[0]).toEqual({ external_id: "sc:95011", notes: "Le duele una muela" });
+      fake.appointments.delete(95011);
+      await sql`update appointments set status = 'cancelado' where id = ${sofi}`;
+    });
+
+    it("la copia diaria pasa a Turnia la asistencia cargada tarde, los turnos lejanos y lo que cambió de cada paciente", async () => {
+      const [pedro] = await sql`select patient_id from patient_external_ids where clinic_id = ${T} and external_id = 'sc:5002'`;
+      // Un turno de hace 10 días que Turnia trajo sin marca: recepción lo marcó como ausente días después.
+      fake.appointments.set(95020, scAppt(95020, 5002, -10, "10:00", "10:30", { professional_ids: [335], attendance: "Did not attend" }));
+      await sql`
+        insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source, external_id)
+        select ${T}, ${pedro.patient_id}, ${emilia}, id, ${at(-10, "10:00")}, ${at(-10, "10:30")}, 'confirmado', 'smile_connect', 'sc:95020'
+        from appointment_types where clinic_id = ${T} and name = 'Consulta'`;
+      // Un turno a 90 días (fuera de la sincronización frecuente) y una paciente nueva sin turnos.
+      fake.appointments.set(95021, scAppt(95021, 5002, 90, "10:00", "10:30", { professional_ids: [335] }));
+      fake.patients.set(5003, { patient_id: 5003, name: "Lucía", surname: "Nueva", id_number: "30111444", email: null, phone_country_code: "AR", phone_number: "1100006011" });
+      // Lo que Sofi sabe de Juana (su WhatsApp) no se pisa con el dato viejo de Smile Connect la primera vez.
+      await link.pullSmileConnect(T, "cerca");
+      const status = async (ext: string) => (await sql`select status from appointments where clinic_id = ${T} and external_id = ${ext}`)[0]?.status;
+
+      await link.backupSmileConnect(T);
+      const first = await link.mirrorSmileBackup(T);
+      expect(first.pacientes).toMatchObject({ actualizados: 0 });
+      expect(await status("sc:95020")).toBe("ausente");
+      expect(await status("sc:95021")).toBe("confirmado");
+      const [lucia] = await sql`select p.full_name, p.dni from patient_external_ids x join patients p on p.id = x.patient_id where x.clinic_id = ${T} and x.external_id = 'sc:5003'`;
+      expect(lucia).toEqual({ full_name: "Lucía Nueva", dni: "30111444" });
+
+      // Recepción le cambia el apellido y el celular a Pedro en Smile Connect.
+      const [before] = await sql`select full_name, phone from patients where id = ${pedro.patient_id}`;
+      const saved = fake.patients.get(5002)!;
+      fake.patients.set(5002, { ...saved, surname: "Inventado Gómez", phone_number: "1100006012" });
+      await link.backupSmileConnect(T);
+      const second = await link.mirrorSmileBackup(T);
+      expect(second.pacientes).toMatchObject({ actualizados: 1 });
+      const [after] = await sql`select full_name, phone from patients where id = ${pedro.patient_id}`;
+      expect(after).toEqual({ full_name: "Pedro Inventado Gómez", phone: before.phone.replace(/6009$/, "6012") });
+      // El celular anterior lo sigue identificando cuando escribe.
+      expect((await sql`select patient_id from patient_phones where clinic_id = ${T} and phone = ${before.phone}`)[0]?.patient_id).toBe(pedro.patient_id);
+      expect((await link.getSmileApiConnection(T))!.api_mirror_at).not.toBeNull();
+
+      fake.patients.set(5002, saved);
+      fake.patients.delete(5003);
+      fake.appointments.delete(95010);
+      fake.appointments.delete(95020);
+      fake.appointments.delete(95021);
+    });
+
+    it("la vuelta automática aplica la copia una sola vez y copia los horarios cada 6 horas", async () => {
+      await link.backupSmileConnect(T);
+      await sql`update smile_connect_connections set api_hours_at = now() - interval '7 hours', api_near_pull_at = now(), api_wide_pull_at = now() where clinic_id = ${T}`;
+      const first = (await link.runSmileConnect())[T] as Record<string, unknown>;
+      expect(first).toHaveProperty("horarios");
+      expect(first).toHaveProperty("espejo");
+      const again = (await link.runSmileConnect())[T] as Record<string, unknown>;
+      expect(again).not.toHaveProperty("horarios");
+      expect(again).not.toHaveProperty("espejo");
     });
   });
 });
