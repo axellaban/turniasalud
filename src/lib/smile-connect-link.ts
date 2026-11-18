@@ -8,6 +8,7 @@ import {
   busyFromFree,
   freeRanges,
   scAllPatients,
+  scAppointment,
   scAppointments,
   scPatientsAfter,
   scAvailability,
@@ -426,6 +427,27 @@ async function smileMetadata(client: SmileClient) {
 }
 
 /**
+ * Que un turno no aparezca en una ventana no prueba que se borró: recepción pudo moverlo a otro día, fuera
+ * de la ventana. Se pregunta por cada uno (son pocos: con más de MAX_VANISHED se frena todo antes) y se
+ * devuelven los que siguen en Smile Connect, para actualizarlos en vez de darlos de baja. Si Smile Connect
+ * no contesta, se corta la vuelta: no se da de baja nada con una respuesta a medias.
+ */
+async function stillInSmile(client: SmileClient, externalIds: string[]): Promise<ScAppointment[]> {
+  const out: ScAppointment[] = [];
+  for (const ext of externalIds) {
+    const id = Number(ext.slice(3));
+    if (!Number.isSafeInteger(id) || id <= 0) continue;
+    try {
+      out.push(await scAppointment(client, id));
+    } catch (e) {
+      if (e instanceof SmileApiError && e.status === 404) continue;
+      throw e;
+    }
+  }
+  return out;
+}
+
+/**
  * Trae de Smile Connect los turnos de una ventana y los sincroniza, con sus notas y, si la clave tiene
  * el permiso, los bloqueos de agenda. Los pacientes que Turnia no conoce se leen de a uno.
  */
@@ -467,6 +489,7 @@ export async function pullSmileConnect(clinicId: string, which: "cerca" | "lejos
     if (vanished.length > MAX_VANISHED) {
       throw new Error(`Smile Connect dejó de mostrar ${vanished.length} turnos de golpe. No se aplicó la sincronización: revisalo antes de seguir.`);
     }
+    const moved = await stillInSmile(client, vanished.map((r) => r.external_id));
 
     const nowIso = now.toISOString();
     // Con turnos que todavía no se pudieron leer (pacientes nuevos de a poco), la ventana queda
@@ -478,7 +501,7 @@ export async function pullSmileConnect(clinicId: string, which: "cerca" | "lejos
     const payload = {
       ...(complete && { from: from.toISOString(), to: to.toISOString() }),
       metadata,
-      appointments: usable.map((a) => apiAppointmentPayload(a, fetched.get(a.patient_id), nowIso, services)),
+      appointments: [...usable, ...moved].map((a) => apiAppointmentPayload(a, fetched.get(a.patient_id), nowIso, services)),
       // Un bloqueo de un profesional que Smile Connect ya no lista sería de toda la clínica en Turnia: se deja afuera.
       ...(events && { events: events.filter((e) => proIds.has(e.professional_id)) }),
     };
@@ -820,6 +843,8 @@ export async function mirrorSmileBackup(clinicId: string, now = new Date()): Pro
   const taken = new Date(b.taken_at);
   const today = localDateKey(taken, clinic.timezone);
   // Las ventanas que no mira la sincronización frecuente (cerca: de ayer a 4 días; lejos: hasta 61).
+  const frequentFrom = localMidnight(addDaysKey(today, -1), clinic.timezone);
+  const frequentTo = localMidnight(addDaysKey(today, 61), clinic.timezone);
   const windows: Array<[Date, Date]> = [
     [localMidnight(addDaysKey(today, -30), clinic.timezone), localMidnight(addDaysKey(today, -1), clinic.timezone)],
     [localMidnight(addDaysKey(today, 61), clinic.timezone), localMidnight(addDaysKey(today, 120), clinic.timezone)],
@@ -846,15 +871,26 @@ export async function mirrorSmileBackup(clinicId: string, now = new Date()): Pro
       out[label] = `Smile Connect dejó de mostrar ${vanished.length} turnos de golpe: esta ventana no se aplicó.`;
       continue;
     }
+    // Los que faltan en la ventana pueden estar en otra parte de la copia (los movieron de día); si no, se
+    // pregunta por ellos (pudieron ir más allá de los 120 días). Si la copia los ubica dentro de lo que miran
+    // las sincronizaciones frecuentes, no se pisa lo que ellas trajeron después: solo no se da de baja nada.
+    const elsewhere = new Map(b.appointments.map((a) => [`sc:${a.appointment_id}`, a]));
+    const found = vanished.flatMap((r) => (elsewhere.has(r.external_id) ? [elsewhere.get(r.external_id)!] : []));
+    const frequent = (a: ScAppointment) => Date.parse(a.start_date) >= frequentFrom.getTime() && Date.parse(a.start_date) < frequentTo.getTime();
+    const moved = [
+      ...found.filter((a) => !frequent(a)),
+      ...(await stillInSmile(client, vanished.filter((r) => !elsewhere.has(r.external_id)).map((r) => r.external_id))),
+    ];
+    const keepAll = found.some(frequent);
     // Un turno cuyo paciente no está en la copia (no debería pasar) deja la ventana incompleta: no se da de baja nada.
     const usable = appts.filter((a) => known.has(`sc:${a.patient_id}`) || byId.has(a.patient_id));
     const complete = usable.length === appts.length;
     const events = complete ? await readEvents(conn, client, from, to) : null;
     const services = await serviceNames(client, usable);
     const payload = {
-      ...(complete && { from: from.toISOString(), to: to.toISOString() }),
+      ...(complete && !keepAll && { from: from.toISOString(), to: to.toISOString() }),
       metadata,
-      appointments: usable.map((a) => apiAppointmentPayload(a, known.has(`sc:${a.patient_id}`) ? undefined : byId.get(a.patient_id), nowIso, services)),
+      appointments: [...usable, ...moved].map((a) => apiAppointmentPayload(a, known.has(`sc:${a.patient_id}`) ? undefined : byId.get(a.patient_id), nowIso, services)),
       ...(events && { events: events.filter((e) => proIds.has(e.professional_id)) }),
     };
     const { summary } = await syncSmileConnect(clinicId, payload, { mode: "live", actor: "Smile Connect (copia diaria)", skipBlocks: !events, now });
