@@ -5,7 +5,8 @@ import { displayPhone } from "@/lib/phone";
 import { formatDateTime } from "@/lib/time";
 import type { Clinic } from "@/lib/types";
 import { Badge, Card, Field, Notice, inputClass, smallButtonClass } from "@/components/ui";
-import { addNoticePhone, addTeamMember, removeTeamMember, setNoticeEvents } from "../../notice-actions";
+import { addNoticePhone, addTeamMember, removeTeamMember, setAutoPause, setNoticeEvents } from "../../notice-actions";
+import { AUTO_PAUSE_HOURS } from "@/lib/waha-own";
 import { addStaffPhone, sendSummaryNowAction, toggleStaffSummary } from "../../protocol-actions";
 import { ActionForm } from "./action-form";
 import { NoticeTestButton } from "./notice-test";
@@ -145,6 +146,24 @@ export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line 
           </>}
         </fieldset>
       </ActionForm>
+
+      {/* Pausa automática: si el equipo contesta desde el celular, Sofi no responde en ese chat por un rato. */}
+      <div className="mt-4 border-t border-brand-900/5 pt-4 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-medium text-brand-950">
+            Pausa automática {clinic.auto_pause_on_staff_reply ? <Badge tone="green">Prendida</Badge> : <Badge>Apagada</Badge>}
+          </p>
+          <form action={setAutoPause}>
+            {hidden(clinic.id, { on: clinic.auto_pause_on_staff_reply ? "0" : "1" })}
+            <button className={smallButtonClass}>{clinic.auto_pause_on_staff_reply ? "Apagarla" : "Prenderla"}</button>
+          </form>
+        </div>
+        <p className="mt-1 text-xs text-brand-900/65">
+          Si alguien del equipo le contesta a un paciente desde el WhatsApp del consultorio, {agent} deja de contestarle por {AUTO_PAUSE_HOURS} horas
+          para que no respondan los dos. Se reactiva desde la charla o desde Conversaciones. Los mensajes automáticos de WhatsApp Business
+          (bienvenida o ausencia) no la activan. Necesita que la conexión de WhatsApp avise también los mensajes propios: lo configura Turnia.
+        </p>
+      </div>
 
       {admin && withAccess > 0 && <div className="mt-4 rounded-lg bg-brand-50/60 p-3 text-sm text-brand-900/70">
         <p>¿Querés ver el resumen ahora? Sale a quienes lo reciben, con lo de hoy desde el último envío.</p>

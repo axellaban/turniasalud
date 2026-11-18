@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "./env";
 import { requireActiveWhatsapp } from "./messaging-settings";
 import { currentWahaConnection } from "./waha-connections";
+import { noteOutgoingId, noteOutgoingText, noteOutgoingVoice, type OwnMessage } from "./waha-sent";
 
 // WAHA (WhatsApp HTTP API): WhatsApp Web con un chip común, en el VPS del
 // dueño. Es una API no oficial: el número puede quedar bloqueado si se mandan
@@ -41,6 +42,8 @@ export type WahaMessagePayload = {
   hasMedia?: boolean;
   media?: { url?: string | null; mimetype?: string | null; filename?: string | null } | null;
   participant?: string | null;
+  /** En los mensajes propios, versiones nuevas de WAHA dicen si salió por la API («api») o desde el celular («app»). */
+  source?: string | null;
   _data?: Record<string, unknown>;
 };
 
@@ -127,6 +130,26 @@ export function parseWahaEvent(event: WahaEvent, expectedSession?: string): Pars
   };
 }
 
+/**
+ * Un mensaje propio de la línea (fromMe), avisado por WAHA con `message.any`: puede ser de Turnia o
+ * del equipo desde el celular. Solo chats de personas. Puro. Ver waha-own.ts.
+ */
+export function parseOwnMessage(event: WahaEvent): OwnMessage | null {
+  if (event.event !== "message.any" && event.event !== "message") return null;
+  const p = event.payload;
+  if (!p?.id || !p.fromMe) return null;
+  const to = p.to ?? "";
+  if (!to || to.endsWith("@g.us") || to.endsWith("@broadcast") || to.endsWith("@newsletter") || !isWhatsappChatId(to)) return null;
+  const chatId = to.endsWith("@s.whatsapp.net") ? to.replace("@s.whatsapp.net", "@c.us") : to;
+  return {
+    id: p.id,
+    chatId,
+    text: (p.body ?? "").trim(),
+    hasMedia: Boolean(p.hasMedia),
+    source: p.source === "api" || p.source === "app" ? p.source : null,
+  };
+}
+
 /** chatId de WAHA para un teléfono guardado en Turnia (549…). */
 export const chatIdForPhone = (phone: string) => `${phone}@c.us`;
 
@@ -148,13 +171,17 @@ async function waha(path: string, init: RequestInit = {}): Promise<Response> {
 export async function wahaSendText(chatId: string, text: string): Promise<{ id?: string }> {
   if (!isWhatsappChatId(chatId)) throw new Error("El destinatario no es un chat de WhatsApp.");
   await requireActiveWhatsapp();
+  // Se anota antes de mandar: WAHA puede avisar el mensaje propio antes de que vuelva esta respuesta.
+  await noteOutgoingText(chatId, text);
   const res = await waha("/api/sendText", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session: currentWahaConnection()?.session ?? env.wahaSession(), chatId, text }),
   });
   const body = (await res.json().catch(() => ({}))) as { id?: string | { _serialized?: string } };
-  return { id: typeof body.id === "string" ? body.id : body.id?._serialized };
+  const id = typeof body.id === "string" ? body.id : body.id?._serialized;
+  await noteOutgoingId(id);
+  return { id };
 }
 
 /** Busca el teléfono de un chat @lid (WhatsApp oculta el número en algunos chats). */
@@ -195,6 +222,7 @@ export async function wahaDownloadMedia(url: string | null): Promise<Blob | null
 export async function wahaSendVoice(chatId: string, audio: Buffer, { convert = true }: { convert?: boolean } = {}): Promise<void> {
   if (!isWhatsappChatId(chatId)) throw new Error("El destinatario no es un chat de WhatsApp.");
   await requireActiveWhatsapp();
+  await noteOutgoingVoice(chatId);
   await waha("/api/sendVoice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

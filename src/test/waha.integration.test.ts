@@ -532,6 +532,43 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     ]);
   });
 
+  it("pausa automática: un mensaje del equipo desde el celular pausa a Sofi; el eco de lo que manda Turnia, no", async () => {
+    await sql`
+      insert into clinics (id, name, is_demo, retained_at) values (${OWN_CLINIC}, 'Consultorio de prueba', true, now())
+      on conflict (id) do update set auto_pause_on_staff_reply = false`;
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+    const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
+    const context = { params: Promise.resolve({ connection: ownConnection.id }) };
+    const patientChat = "5491155550070@c.us";
+    const me = { id: `${ownConnection.phone}@c.us` };
+    const ownEvent = (id: string, body: string) => ({
+      event: "message.any", session: "default", me,
+      payload: { id, from: `${ownConnection.phone}@c.us`, to: patientChat, fromMe: true, body, hasMedia: false },
+    });
+    const post = async (event: unknown) => (await ownInbound(wahaRequest(event, { key: ownConnection.webhookHmac }), context)).json();
+    const { isMuted } = await import("@/lib/chat-guard");
+
+    // Apagada (lo de siempre): el mensaje propio se ignora y Sofi sigue.
+    expect(await post(ownEvent("own-a", "Hola, soy de recepción"))).toEqual({ ignored: "mensaje propio" });
+    expect(await isMuted(OWN_CLINIC, "5491155550070")).toBe(false);
+
+    await sql`update clinics set auto_pause_on_staff_reply = true where id = ${OWN_CLINIC}`;
+    // Lo que manda Turnia por esa línea vuelve como propio y no pausa.
+    const { wahaSendText } = await import("@/lib/waha");
+    const { withWahaConnection } = await import("@/lib/waha-connections");
+    await withWahaConnection(ownConnection, () => wahaSendText(patientChat, "Te esperamos el martes a las 10."));
+    expect(await post(ownEvent("own-b", "Te esperamos el martes a las 10."))).toMatchObject({ pausa: "de-turnia" });
+    expect(await isMuted(OWN_CLINIC, "5491155550070")).toBe(false);
+
+    // El equipo contesta desde el celular: Sofi se pausa y el mensaje siguiente del paciente no le llega.
+    expect(await post(ownEvent("own-c", "Hola, soy Laura de recepción, te llamo en un rato."))).toMatchObject({ pausa: "pausado" });
+    expect(await isMuted(OWN_CLINIC, "5491155550070")).toBe(true);
+    expect(await post({ ...textMessage("own-d", "Dale, gracias", patientChat), me })).toEqual({ ignored: "número en silencio" });
+    expect(fake.sent("channel")).toHaveLength(0);
+    await sql`update clinics set auto_pause_on_staff_reply = false where id = ${OWN_CLINIC}`;
+    await sql`delete from chat_mutes where clinic_id = ${OWN_CLINIC}`;
+  });
+
   it("la firma de otra instancia, otro número o sesión no alcanzan al agente", async () => {
     vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
     const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;

@@ -16,12 +16,13 @@
 
 ## Auditoría del panel: lo que quedó pendiente (18/11/2026)
 
-Las seis fases de la auditoría del panel están hechas (PR #210 a #215; ver `ESTADO_Y_PRIORIDADES.md`). Queda:
+Las seis fases de la auditoría están hechas (PR #210 a #215) y, después, lo pendiente (PR #216 y #217; ver `ESTADO_Y_PRIORIDADES.md`). Lo que falta es configuración, en la **tarea 8** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md):
 
-- [ ] **«Actualizar a Sofi»** en Configuración → Equipo por WhatsApp (o «Crear / actualizar agente» en Sistema), para que el agente tome las descripciones nuevas de `buscar_paciente`, `registrar_paciente`, `buscar_pacientes` y `crear_paciente`. Sin esto todo sigue funcionando como antes.
-- [ ] **Pausa de Sofi por WhatsApp para el equipo** (una herramienta `pausar_sofi`). Hoy se pausa desde el panel. Va junto con la próxima actualización del agente: el contexto del equipo no puede nombrar una herramienta que el agente todavía no tiene.
-- [ ] **Pausa automática cuando recepción contesta desde el celular.** Hay que distinguir los mensajes de recepción de los que manda Turnia por WAHA (guardar los ids enviados). No se hizo para no arriesgar la línea de Guerra–Mininni.
-- [ ] **Renombrar las herramientas parecidas** (`buscar_pacientes` → `equipo_buscar_pacientes`, `crear_paciente` → `equipo_crear_paciente`). Se reemplazó por descripciones más claras. Si se hace, la ruta tiene que aceptar los dos nombres y el agente tiene que actualizarse en el mismo momento que el contexto del equipo.
+- [ ] **«Actualizar a Sofi»**, para que el agente tome las herramientas renombradas (`equipo_buscar_pacientes`, `equipo_crear_paciente`) y las nuevas (`pausar_chat`, `reactivar_chat`). Hasta entonces todo sigue andando: la ruta acepta los nombres anteriores.
+- [ ] **Pausa automática en Guerra–Mininni:** sumar `message.any` al webhook de WAHA (con el «sí» del usuario), prenderla en Configuración → Equipo por WhatsApp y probarla.
+- [x] Pausa de Sofi por WhatsApp para el equipo (`pausar_chat`, `reactivar_chat`).
+- [x] Pausa automática cuando recepción contesta desde el celular: Turnia anota lo que manda y lo distingue de lo que escribe el equipo. Ignora los automáticos de WhatsApp Business. Apagada por defecto.
+- [x] Renombrar las herramientas parecidas, con alias de los nombres anteriores.
 
 ## Resumen diario de Sofi para Guerra–Mininni (16/11/2026)
 
@@ -31,7 +32,7 @@ El Dr. Mininni pidió **un resumen de Sofi a las 10** y poder **preguntarle a So
 - [ ] Verificar el primer resumen automático del martes 17/11 a partir de las 10.
 - [x] Agentes actualizados por el usuario el 16/11: Sofi ya tiene `detalle_turno` y `turnos_de_sofi`.
 - [x] Unificar listas (18/11, [PR #211](https://github.com/axellaban/turniasalud/pull/211)): Configuración → «Equipo por WhatsApp» muestra cada celular una vez con avisos, resumen y acceso total. Por dentro siguen las dos tablas.
-- [ ] Decir en el resumen si el turno ya quedó escrito en Smile Connect.
+- [x] Decir en el resumen si el turno ya quedó escrito en Smile Connect (18/11, [PR #216](https://github.com/axellaban/turniasalud/pull/216)).
 
 ## Resultados de Chapa Labs: ejecución de la cola (11/11/2026)
 

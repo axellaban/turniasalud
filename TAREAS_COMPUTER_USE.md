@@ -4,7 +4,7 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-**Estado al 16/11/2026:** todo el código está en producción. Lo único que falta para terminar el trabajo funcional es la **tarea 7**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
+**Estado al 18/11/2026:** todo el código está en producción. Para terminar el trabajo funcional faltan la **tarea 7** y la **tarea 8**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
 
 **Prompt para empezar** (copiar tal cual en la otra computadora):
 
@@ -15,6 +15,7 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 | Prioridad | Tarea | Estado (16/11) | Acción restante |
 | --- | --- | --- | --- |
 | **P0** | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Clave cargada, lectura verificada y «Escritura de prueba» activa. Resumen manual enviado a los dos celulares configurados. | Revisar los cambios de prueba y conciliar las reservas previas que Sofi dio por WhatsApp. Después, C y D con el consultorio. |
+| **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Código en producción el 18/11. Herramientas nuevas sin registrar en ElevenLabs; pausa automática apagada. | Parte A: «Actualizar a Sofi». Parte B, con el «sí» del usuario: sumar `message.any` al webhook de WAHA de Guerra–Mininni, prender la pausa y probarla. |
 | **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
 | **P3** | 1. Dominio nuevo: webhooks de WAHA (opcional) | Funciona: los dos webhooks apuntan al dominio anterior y llegan por su redirección 308, que se mantiene. | Solo si algún día se saca la redirección. |
 | — | 2. Certificado de `www.turniasalud.app` | Resuelta. | — |
@@ -92,6 +93,36 @@ Este modo sincroniza los movimientos y cancelaciones que recepción hace desde e
 - qué quedó «para revisar», si hay algo.
 
 **Si algo falla:** volvé a «Solo lectura», o a «Apagada» si escribió algo mal, y avisá con una captura de la tarjeta, sin la clave.
+
+---
+
+## Tarea 8 (P1) · Actualizar a Sofi y pausa automática (Guerra–Mininni)
+
+**Contexto.** El 18/11 se publicaron cuatro cambios:
+- dos herramientas del equipo renombradas (`equipo_buscar_pacientes`, `equipo_crear_paciente`);
+- dos nuevas (`pausar_chat`, `reactivar_chat`);
+- la pausa automática: si alguien del equipo le contesta a un paciente desde el WhatsApp del consultorio, Sofi deja de contestarle por 4 horas.
+
+Mientras no se actualice el agente, todo sigue andando como antes: la ruta acepta los nombres anteriores.
+
+**Parte A · Actualizar a Sofi** (sin riesgo para la línea):
+1. Panel de Turnia → elegí la clínica Guerra–Mininni → Configuración → Consultorio → «Equipo por WhatsApp» → «Actualizar a Sofi». Esperá el mensaje de que quedó actualizado. Captura.
+2. Si la clínica principal o otras clínicas usan el agente compartido, hacé lo mismo en Sistema → «Crear / actualizar agente».
+3. **Verificación:** el usuario (con un celular cargado con acceso total) le escribe a Sofi «buscame a un paciente de prueba». Sofi tiene que contestar con la búsqueda, sin errores. No uses pacientes reales.
+
+**Parte B · Pausa automática** (toca la instancia de WAHA: **pedí el «sí» del usuario antes de empezar**, y no la hagas mientras se activa una etapa de la tarea 7):
+1. En el dashboard de la instancia de WAHA de Guerra–Mininni, en el webhook de la sesión (`…/api/waha/webhook/guerra-mininni`), **sumá** el evento `message.any` y dejá `message` como está. No cambies la URL ni la clave HMAC. Captura antes y después.
+2. Si WAHA pide reiniciar la sesión, preguntale al usuario. **No cierres la sesión (logout) ni la desvincules.** Si pide el QR, frená.
+3. Panel → Configuración → «Equipo por WhatsApp» → «Pausa automática» → «Prenderla».
+4. **Prueba**, con el celular del usuario (no con pacientes reales):
+   - el usuario le escribe a la línea y Sofi contesta, como siempre;
+   - desde el WhatsApp del consultorio, alguien le contesta a ese chat a mano;
+   - en Panel → Conversaciones → «Números en pausa» aparece ese número como «Lo atiende el equipo»;
+   - el usuario vuelve a escribir y Sofi no contesta;
+   - «Reactivar» → el usuario escribe y Sofi contesta de nuevo.
+5. **Si algo falla:**
+   - Sofi se pausa sola sin que nadie haya contestado a mano: apagá la pausa automática y avisá. Puede ser un mensaje automático de WhatsApp Business que tarda más de 15 segundos.
+   - Sofi deja de contestar del todo: sacá `message.any` del webhook y avisá.
 
 ---
 

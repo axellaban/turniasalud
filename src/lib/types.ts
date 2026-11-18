@@ -19,6 +19,8 @@ export type Clinic = {
   elevenlabs_voice_id: string | null;
   templates: Record<string, string>;
   handoff_phone: string | null;
+  /** Pausar a Sofi en un chat cuando el equipo le contesta al paciente desde el WhatsApp del consultorio. */
+  auto_pause_on_staff_reply: boolean;
   after_hours_instructions: string | null;
   /** Clínica temporal de la demo del lead magnet (/probar-demo), armada con la web del interesado. */
   is_demo: boolean;

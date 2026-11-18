@@ -4,7 +4,9 @@ import { normalizePhone } from "@/lib/phone";
 import { transcribeAudio } from "@/lib/elevenlabs";
 import { AUDIO_FAILED_REPLY, MEDIA_ONLY_REPLY, claimEvent, forwardToAgent, releaseEvent, requestsVoiceReply, whatsappClinic } from "@/lib/channel";
 import { analyzeDemo, handleDemoMessage } from "@/lib/demo/session";
-import { parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wahaSendText, type WahaEvent } from "@/lib/waha";
+import { parseOwnMessage, parseWahaEvent, verifyWahaHmac, wahaDownloadMedia, wahaPhoneForLid, wahaSendText, type WahaEvent } from "@/lib/waha";
+import { handleOwnMessage } from "@/lib/waha-own";
+import { sql } from "@/lib/db";
 
 import { messagingSettings } from "@/lib/messaging-settings";
 import { readPatientDocument, type DocumentRead } from "@/lib/documents";
@@ -44,6 +46,24 @@ export async function POST(request: Request) {
   }
   if (own && event.session !== own.session) return NextResponse.json({ ignored: "otra sesión" });
   if (own && event.me?.id && normalizePhone(phoneFromJid(event.me.id)) !== normalizePhone(own.phone)) return NextResponse.json({ ignored: "otro número" });
+  // Mensaje propio de la línea de una clínica (WAHA lo avisa con `message.any`): si lo escribió el equipo
+  // desde el celular, Sofi deja de contestarle a ese paciente un rato. Si la clínica no lo prendió, nada cambia.
+  const mine = own ? parseOwnMessage(event) : null;
+  if (own && mine) {
+    try {
+      const [clinic] = await sql<{ id: string; auto_pause_on_staff_reply: boolean | null }[]>`
+        select id, auto_pause_on_staff_reply from clinics where id = ${own.clinicId}`;
+      if (!clinic?.auto_pause_on_staff_reply) return NextResponse.json({ ignored: "mensaje propio" });
+      const chatPhone = normalizePhone(phoneFromJid(mine.chatId) ?? (mine.chatId.endsWith("@lid") ? await wahaPhoneForLid(mine.chatId) : null));
+      if (!chatPhone) return NextResponse.json({ ignored: "mensaje propio sin teléfono" });
+      const result = await handleOwnMessage(clinic, mine, chatPhone, { linePhone: normalizePhone(own.phone) });
+      if (result === "pausado") console.log(JSON.stringify({ evento: "pausa-automatica", clinica: clinic.id, motivo: "contestó el equipo desde el celular" }));
+      return NextResponse.json({ ignored: "mensaje propio", pausa: result });
+    } catch (e) {
+      console.error("WAHA: no se pudo revisar un mensaje propio", e instanceof Error ? e.message : e);
+      return NextResponse.json({ ignored: "mensaje propio" });
+    }
+  }
   const parsed = parseWahaEvent(event, own?.session ?? env.wahaSession());
   if (parsed.kind === "ignore") return NextResponse.json({ ignored: parsed.reason });
 
