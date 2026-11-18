@@ -1,7 +1,9 @@
 import "server-only";
 import { sql } from "../db";
 import { getCatalog, getClinic, isUuid } from "../clinic";
-import { normalizePhone } from "../phone";
+import { displayPhone, normalizePhone } from "../phone";
+import { PAUSE_HOURS, isMuted, muteNumber, unmuteNumber } from "../chat-guard";
+import { staffForPhone } from "../staff";
 import { findOrCreatePatientForPhone } from "../patients";
 import { createScheduleBlock } from "../schedule-blocks";
 import { resolveTask } from "../tasks";
@@ -73,7 +75,7 @@ export async function viewAgenda(ctx: ToolContext, input: { desde?: string; hast
   };
 }
 
-/** buscar_pacientes: por nombre, DNI o celular, con sus próximos turnos. */
+/** equipo_buscar_pacientes: por nombre, DNI o celular, con sus próximos turnos. */
 export async function searchPatients(ctx: ToolContext, input: { texto: string }) {
   requireStaff(ctx);
   const text = input.texto.trim();
@@ -106,11 +108,11 @@ export async function searchPatients(ctx: ToolContext, input: { texto: string })
     })),
     mensaje: rows.length
       ? "Si hay más de uno, preguntale cuál es. Para darle o moverle un turno, usá su paciente_id."
-      : "No encontré a nadie así. Si es nuevo, pedile nombre y apellido, DNI y celular y usá crear_paciente.",
+      : "No encontré a nadie así. Si es nuevo, pedile nombre y apellido, DNI y celular y creá la ficha nueva con la herramienta del equipo para crear pacientes.",
   };
 }
 
-/** crear_paciente: una ficha nueva, para darle un turno a alguien que todavía no es paciente. */
+/** equipo_crear_paciente: una ficha nueva, para darle un turno a alguien que todavía no es paciente. */
 export async function createPatientForStaff(
   ctx: ToolContext,
   input: { nombre_completo: string; celular?: string; dni?: string; cobertura?: string; plan?: string },
@@ -239,5 +241,46 @@ export async function agentActivityForStaff(ctx: ToolContext, input: { desde?: s
       summary.nuevos.length + summary.movidos.length + summary.cancelados.length
         ? "Contale primero cuántos fueron y después cada uno (día y hora, profesional, paciente y prestación). Para todos los datos de uno, usá detalle_turno."
         : "Desde ese día no diste, moviste ni cancelaste turnos.",
+  };
+}
+
+/** El celular del chat que el equipo quiere pausar o reactivar: el que dijo o el de la ficha elegida. */
+async function chatPhoneFor(ctx: ToolContext, celular: string | undefined): Promise<string> {
+  if (ctx.patientId) {
+    const [p] = await sql<{ phone: string | null }[]>`select phone from patients where id = ${ctx.patientId} and clinic_id = ${ctx.clinicId}`;
+    if (!p?.phone) throw new ToolError("Esa ficha no tiene celular. Pedile el número del chat.");
+    return p.phone;
+  }
+  const phone = normalizePhone(celular);
+  if (!/^\d{10,15}$/.test(phone)) throw new ToolError("Necesito el celular del paciente (con código de área) o su paciente_id.");
+  return phone;
+}
+
+/** pausar_chat: el equipo le contesta desde el celular del consultorio y Sofi no responde a ese número por un rato. */
+export async function pauseChatForStaff(ctx: ToolContext, input: { celular?: string; horas?: number }) {
+  requireStaff(ctx);
+  const hours = PAUSE_HOURS.includes(input.horas as (typeof PAUSE_HOURS)[number]) ? (input.horas as number) : 4;
+  const phone = await chatPhoneFor(ctx, input.celular);
+  if (normalizePhone(ctx.patientPhone) === phone) throw new ToolError("Ese es tu propio número: la pausa es para el chat de un paciente.");
+  if (await staffForPhone(ctx.clinicId, phone)) throw new ToolError("Ese número es del equipo: no se pausa.");
+  await muteNumber(ctx.clinicId, phone, "equipo", `La pausó ${ctx.staff!.name} por WhatsApp: el equipo atiende este chat.`, hours);
+  return {
+    ok: true,
+    celular: displayPhone(phone),
+    horas: hours,
+    mensaje: `Listo: no le contesto a ${displayPhone(phone)} por ${hours === 1 ? "1 hora" : hours < 24 ? `${hours} horas` : hours === 24 ? "1 día" : `${hours / 24} días`}. Los avisos y confirmaciones de turnos siguen saliendo. Para que vuelva a contestar, pedímelo o reactivalo desde el panel.`,
+  };
+}
+
+/** reactivar_chat: Sofi vuelve a contestar en un chat que estaba en pausa. */
+export async function reactivateChatForStaff(ctx: ToolContext, input: { celular?: string }) {
+  requireStaff(ctx);
+  const phone = await chatPhoneFor(ctx, input.celular);
+  const wasMuted = await isMuted(ctx.clinicId, phone);
+  await unmuteNumber(ctx.clinicId, phone);
+  return {
+    ok: true,
+    celular: displayPhone(phone),
+    mensaje: wasMuted ? `Listo: vuelvo a contestarle a ${displayPhone(phone)}.` : `Ese chat no estaba en pausa: le contesto como siempre.`,
   };
 }

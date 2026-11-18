@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { syncCalendarLater } from "@/lib/calendar/sync";
 import { readAppointmentAccess } from "@/lib/agent/appointment-access";
 import { hasValidSecret } from "@/lib/agent/auth";
-import { contextSchema, getToolDefinition } from "@/lib/agent/tools";
+import { contextSchema, currentToolName, getToolDefinition } from "@/lib/agent/tools";
 import {
   bookAppointment,
   cancelAppointment,
@@ -21,7 +21,7 @@ import {
   ToolError,
   type ToolContext,
 } from "@/lib/agent/service";
-import { agentActivityForStaff, appointmentDetailForStaff, blockAgenda, createPatientForStaff, listOpenTasks, resolveTaskForStaff, searchPatients, viewAgenda } from "@/lib/agent/staff-tools";
+import { agentActivityForStaff, appointmentDetailForStaff, blockAgenda, createPatientForStaff, listOpenTasks, pauseChatForStaff, reactivateChatForStaff, resolveTaskForStaff, searchPatients, viewAgenda } from "@/lib/agent/staff-tools";
 import { isUuid } from "@/lib/clinic";
 import { queueAppointmentNotice, sendNoticesLater, type NoticeKind } from "@/lib/clinic-notices";
 import { sql } from "@/lib/db";
@@ -49,11 +49,13 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   ver_agenda: viewAgenda,
   detalle_turno: appointmentDetailForStaff,
   turnos_de_sofi: agentActivityForStaff,
-  buscar_pacientes: searchPatients,
-  crear_paciente: createPatientForStaff,
+  equipo_buscar_pacientes: searchPatients,
+  equipo_crear_paciente: createPatientForStaff,
   bloquear_agenda: blockAgenda,
   ver_tareas: listOpenTasks,
   resolver_tarea: resolveTaskForStaff,
+  pausar_chat: pauseChatForStaff,
+  reactivar_chat: reactivateChatForStaff,
 };
 
 const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
@@ -88,7 +90,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
   if (!hasValidSecret(request)) {
     return NextResponse.json({ ok: false, error: "No autorizado" }, { status: 401 });
   }
-  const { name } = await params;
+  // Un agente que todavía no se actualizó llama a las herramientas renombradas con su nombre anterior.
+  const name = currentToolName((await params).name);
   const def = getToolDefinition(name);
   const handler = HANDLERS[name];
   if (!def || !handler) return NextResponse.json({ ok: false, error: `Herramienta desconocida: ${name}` }, { status: 404 });
@@ -125,7 +128,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
     if (patientId) {
       if (!staff) throw new ToolError("Pedir por otro paciente es solo para el equipo del consultorio. Seguí con la ficha de este número.");
       const [patient] = isUuid(patientId) ? await sql`select id from patients where id = ${patientId} and clinic_id = ${ctx.data.clinic_id}` : [];
-      if (!patient) throw new ToolError("No encontré ese paciente. Usá buscar_pacientes.");
+      if (!patient) throw new ToolError("No encontré ese paciente. Buscalo con la herramienta del equipo para buscar pacientes.");
     }
     const context: ToolContext = {
       clinicId: ctx.data.clinic_id,

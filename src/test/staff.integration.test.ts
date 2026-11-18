@@ -157,6 +157,35 @@ describe.runIf(url)("acceso total por WhatsApp para el equipo del consultorio", 
     expect(await tool("ver_tareas", {}, patientPhone)).toMatchObject({ ok: false });
   });
 
+  it("las herramientas renombradas andan con el nombre nuevo y con el anterior (agente sin actualizar)", async () => {
+    // Las de arriba usan los nombres anteriores (buscar_pacientes, crear_paciente): siguen andando.
+    expect(await tool("equipo_buscar_pacientes", { texto: "marta" })).toMatchObject({ ok: true, pacientes: [expect.objectContaining({ paciente_id: otherPatient })] });
+    const again = await tool("equipo_crear_paciente", { nombre_completo: "Nueva Paciente", dni: "41000111" });
+    expect(again).toMatchObject({ ok: true, mensaje: expect.stringContaining("Ya tenía ficha") });
+    // Un paciente no puede usarlas con ninguno de los dos nombres.
+    expect(await tool("equipo_buscar_pacientes", { texto: "marta" }, patientPhone)).toMatchObject({ ok: false, error: expect.stringContaining("solo para el equipo") });
+    // El contexto que va en cada charla no nombra herramientas que cambiaron de nombre.
+    const { staffContextText } = await import("@/lib/staff");
+    expect(staffContextText("Dr. Mariano Prueba")).not.toMatch(/\bbuscar_pacientes\b|\bcrear_paciente\b/);
+  });
+
+  it("pausar_chat y reactivar_chat: el equipo contesta desde el celular sin que responda Sofi", async () => {
+    const { isMuted } = await import("@/lib/chat-guard");
+    const paused = await tool("pausar_chat", { paciente_id: otherPatient, horas: 24 });
+    expect(paused).toMatchObject({ ok: true, horas: 24 });
+    expect(await isMuted(clinicId, otherPhone)).toBe(true);
+    expect((await sql`select reason from chat_mutes where clinic_id = ${clinicId} and phone = ${otherPhone}`)[0].reason).toBe("equipo");
+    // Un horario raro vuelve a 4 horas; el número del equipo y el propio no se pausan.
+    expect(await tool("pausar_chat", { celular: "11 0000-9001", horas: 999 })).toMatchObject({ ok: true, horas: 4 });
+    expect(await tool("pausar_chat", { celular: doctor })).toMatchObject({ ok: false });
+    expect(await tool("pausar_chat", {})).toMatchObject({ ok: false });
+    // Un paciente no puede pausar a nadie.
+    expect(await tool("pausar_chat", { celular: "11 0000-9002" }, patientPhone)).toMatchObject({ ok: false, error: expect.stringContaining("solo para el equipo") });
+    expect(await tool("reactivar_chat", { paciente_id: otherPatient })).toMatchObject({ ok: true, mensaje: expect.stringContaining("vuelvo a contestarle") });
+    expect(await isMuted(clinicId, otherPhone)).toBe(false);
+    await tool("reactivar_chat", { celular: "11 0000-9001" });
+  });
+
   it("Sofi sabe que es del equipo solo cuando el número llega por WhatsApp, y quitar el acceso lo corta", async () => {
     const clinicLib = await import("@/lib/clinic");
     const clinic = await clinicLib.getClinic(clinicId);
