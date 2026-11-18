@@ -59,7 +59,7 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
           <input name="q" defaultValue={search} placeholder="Buscar por nombre, celular o DNI" className={inputClass} />
           <button className={secondaryButtonClass}>Buscar</button>
         </form>
-        {canDelete && rows.length > 0 && <DeleteSelectedPatients formId={DELETE_FORM} />}
+        {canDelete && rows.length > 0 && <div className="max-md:hidden"><DeleteSelectedPatients formId={DELETE_FORM} /></div>}
       </div>
       {total > rows.length && (
         <p className="mb-3 text-xs text-brand-900/65">
@@ -72,7 +72,31 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
         </form>
       )}
       {rows.length ? (
-        <Card className="overflow-x-auto p-0">
+        <>
+        {/* En el celular, una tarjeta por paciente: la tabla no entra y escondía la cobertura y la memoria. */}
+        <ul className="space-y-2 md:hidden">
+          {rows.map((p) => (
+            <li key={p.id}>
+              <Link href={`/panel/pacientes/${p.id}`} className="block rounded-2xl border border-brand-900/10 bg-white px-4 py-3 active:bg-brand-50">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate font-medium text-brand-950">{p.full_name ?? "Sin nombre"}</span>
+                  <span className="shrink-0 text-xs text-brand-900/60">{p.last_contact_at ? formatDate(p.last_contact_at, clinic.timezone) : ""}</span>
+                </div>
+                <p className="mt-0.5 text-sm text-brand-900/70">
+                  {p.phone ? displayPhone(p.phone) : "Sin celular"}
+                  {p.coverage && <> · {p.coverage}{p.coverage_plan ? ` ${p.coverage_plan}` : ""}</>}
+                </p>
+                {(p.same_dni > 1 || p.same_phone > 1) && (
+                  <p className="mt-0.5 text-xs font-medium text-sun-700">
+                    {[p.same_dni > 1 && `${p.same_dni} fichas con este DNI`, p.same_phone > 1 && `celular compartido · ${p.same_phone} fichas`].filter(Boolean).join(" · ")}
+                  </p>
+                )}
+                {p.memory_summary && <p className="mt-1 line-clamp-2 text-xs text-brand-900/60">{p.memory_summary}</p>}
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Card className="overflow-x-auto p-0 max-md:hidden">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-brand-900/10 text-xs uppercase tracking-wider text-brand-900/65">
               <tr>
@@ -130,6 +154,7 @@ export default async function PatientsPage({ searchParams }: PageProps<"/panel/p
             </tbody>
           </table>
         </Card>
+        </>
       ) : (
         <Empty>
           {search ? (

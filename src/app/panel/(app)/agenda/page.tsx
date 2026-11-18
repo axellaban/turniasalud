@@ -317,7 +317,10 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                 </div>
               )}
               <div className={view === "semana" ? "md:hidden" : ""}>
-                <CalendarGrid columns={dayColumns} events={dayEvents} hours={hours} minWidth={splitByPro ? dayColumns.length * 140 : undefined} />
+                {splitByPro && dayColumns.length > 2 && (
+                  <p className="mb-2 text-xs text-brand-900/60 md:hidden">Deslizá la grilla para ver a los {dayColumns.length} profesionales →, o elegí uno arriba.</p>
+                )}
+                <CalendarGrid columns={dayColumns} events={dayEvents} hours={hours} minWidth={splitByPro ? 52 + dayColumns.length * 120 : undefined} />
               </div>
               <Legend google={google.length > 0} />
               {cancelled.length > 0 && (

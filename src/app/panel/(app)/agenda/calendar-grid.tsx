@@ -70,7 +70,8 @@ export function CalendarGrid({ columns, events, hours, minWidth }: { columns: Gr
     <div className="max-h-[calc(100dvh-14rem)] min-h-[26rem] overflow-auto rounded-2xl bg-white ring-1 ring-brand-900/10">
       <div style={{ minWidth }}>
         <div className="sticky top-0 z-30 grid border-b border-brand-900/10 bg-white/95 backdrop-blur" style={{ gridTemplateColumns: template }}>
-          <span className="flex items-end justify-center pb-2 text-[10px] text-brand-900/45">GMT-3</span>
+          {/* La columna de las horas queda fija al deslizar de costado (en el celular, con varios profesionales). */}
+          <span className="sticky left-0 z-10 flex items-end justify-center bg-white pb-2 text-[10px] text-brand-900/45">GMT-3</span>
           {columns.map((c) => (
             <div key={c.key} className="min-w-0 border-l border-brand-900/5 px-1 py-2">{c.heading}</div>
           ))}
@@ -78,7 +79,7 @@ export function CalendarGrid({ columns, events, hours, minWidth }: { columns: Gr
 
         <div className="relative grid" style={{ gridTemplateColumns: template, height }}>
           {/* Horas */}
-          <div className="relative">
+          <div className="sticky left-0 z-20 bg-white">
             {hourMarks.slice(0, -1).map((m) => (
               <span key={m} className="absolute right-2 -translate-y-1/2 text-[11px] tabular-nums text-brand-900/50" style={{ top: top(m) }}>
                 {m === hours.start ? "" : clock(m)}
