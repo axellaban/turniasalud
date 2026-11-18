@@ -142,13 +142,17 @@ function logLimit(tipo: string, clinicId: string, extra: Record<string, unknown>
 // No corta a nadie: avisa una sola vez por día y por tipo.
 // ---------------------------------------------------------------------------
 
-/** Le escribe a Axel desde la línea de Turnia (nunca desde la línea de una clínica). */
+/**
+ * Le escribe a Axel desde la línea de Turnia (nunca desde la línea de una clínica), aunque la demo pública
+ * esté pausada. Si el WhatsApp no sale, el aviso va igual a n8n (`axel.aviso`) para que no se pierda.
+ */
 export async function notifyAxel(text: string): Promise<boolean> {
   try {
-    await withGeneralWaha(() => wahaSendText(chatIdForPhone(AXEL_WHATSAPP), text));
+    await withGeneralWaha(() => wahaSendText(chatIdForPhone(AXEL_WHATSAPP), text, { internal: true }));
     return true;
   } catch (e) {
     console.error("No se pudo avisar a Axel por WhatsApp", e instanceof Error ? e.message : e);
+    await notifyN8n("axel.aviso", { texto: text, error: e instanceof Error ? e.message : String(e) }).catch(() => {});
     return false;
   }
 }

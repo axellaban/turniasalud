@@ -85,6 +85,10 @@ const fake = {
   events: [] as Ev[],
   /** Como la clave real de hoy: sin el permiso events:read. */
   eventsScope: false,
+  /** La API con `updated_since` (todavía no existe en la real) y cuándo cambió cada turno y paciente. */
+  delta: false,
+  changedAt: new Map<number, number>(),
+  patientChangedAt: new Map<number, number>(),
 };
 const PROS = [
   { professional_id: 334, name: "Mariano", surname: "Prueba", box_id: 189 },
@@ -147,9 +151,26 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   }
   if (path === "/services") return page([{ service_id: 12, name: "Limpieza", prices: [] }]);
   if (path === "/boxes") return page([{ box_id: 189, name: "Consultorio 1" }, { box_id: 190, name: "Consultorio 2" }]);
-  if (path === "/openapi") return ok({ paths: fake.notes ? { "/appointments": { post: { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } } }, "/appointments/{id}": { patch: { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } } } } : {} });
+  if (path === "/openapi") {
+    const notesBody = { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } };
+    const deltaGet = { get: { parameters: [{ name: "limit" }, { name: "after" }, { name: "updated_since" }] } };
+    return ok({ paths: {
+      "/appointments": { ...(fake.notes && { post: notesBody }), ...(fake.delta && deltaGet) },
+      "/appointments/{id}": { ...(fake.notes && { patch: notesBody }) },
+      "/patients": { ...(fake.delta && deltaGet) },
+    } });
+  }
   if (path === "/availability" && fake.failDates.has(u.searchParams.get("date")!)) return err(503, "falla_simulada");
   if (path === "/availability") return ok({ data: { timezone: TZ, slots: availability(u.searchParams.get("date")!, Number(u.searchParams.get("duration_minutes")), u.searchParams.get("professional_id") ? Number(u.searchParams.get("professional_id")) : undefined) } });
+  if (path === "/patients" && method === "GET" && u.searchParams.has("updated_since")) {
+    if (!fake.delta) return err(400, "invalid_request");
+    const since = Date.parse(u.searchParams.get("updated_since")!);
+    const limit = Number(u.searchParams.get("limit") ?? 50);
+    const after = Number(u.searchParams.get("after") ?? 0);
+    const rows = [...fake.patients.values()].filter((p) => (fake.patientChangedAt.get(p.patient_id) ?? 0) >= since && p.patient_id > after).sort((a, b) => a.patient_id - b.patient_id);
+    const slice = rows.slice(0, limit);
+    return ok({ data: slice, next_cursor: rows.length > limit ? slice[slice.length - 1].patient_id : null });
+  }
   if (path === "/patients" && method === "GET") {
     const q = (u.searchParams.get("search") ?? "").toLowerCase();
     // Como la API real: pagina por id (after = el último id de la página anterior).
@@ -174,6 +195,11 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     if (retry !== null) {
       fake.appointmentListRetryAfter = null;
       return Response.json({ error: { code: "rate_limited" } }, { status: 429, headers: { "retry-after": retry } });
+    }
+    if (u.searchParams.has("updated_since")) {
+      if (!fake.delta) return err(400, "invalid_request");
+      const since = Date.parse(u.searchParams.get("updated_since")!);
+      return page([...fake.appointments.values()].filter((a) => (fake.changedAt.get(a.appointment_id) ?? 0) >= since).sort((a, b) => a.appointment_id - b.appointment_id));
     }
     const s = Date.parse(u.searchParams.get("start")!);
     const e = Date.parse(u.searchParams.get("end")!);
@@ -1093,6 +1119,11 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await link.checkSmileHealth(T)).toEqual([]);
       await sql`delete from channel_events where key like ${`smile-axel:escritura:%:${T}:fallo:%`}`;
       expect(await link.checkSmileHealth(T)).toEqual(["escritura"]);
+      // A los 6 meses de cargada, se recuerda renovar la clave (una vez por clave).
+      await sql`update smile_connect_connections set api_key_saved_at = now() - interval '181 days' where clinic_id = ${T}`;
+      expect(await link.checkSmileHealth(T)).toEqual(["clave-vieja"]);
+      expect(await link.checkSmileHealth(T)).toEqual([]);
+      await sql`update smile_connect_connections set api_key_saved_at = now() where clinic_id = ${T}`;
       // La clave rechazada también le llega a Axel (además de al consultorio).
       mocks.axel.length = 0;
       await link.alertSmileKeyProblem(T, new (await import("@/lib/smile-connect-api")).SmileApiError("revocada", 401));
@@ -1101,6 +1132,53 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
 
       await sql`update smile_connect_connections set api_near_pull_at = now(), api_error = null, api_writes_paused = null, api_events_ok = null where clinic_id = ${T}`;
       await sql`delete from professionals where id = ${gone}`;
+    });
+
+    it("cuando Smile Connect sume updated_since, trae cada 10 minutos solo lo que cambió (también fuera de las ventanas)", async () => {
+      // Hoy la API no lo tiene: no se usa.
+      expect((await link.getSmileApiConnection(T))!.api_supports_delta).toBe(false);
+      fake.delta = true;
+      try {
+        await link.saveSmileApiKey(T, KEY);
+        await link.setSmileMode(T, "lectura");
+        expect((await link.getSmileApiConnection(T))!.api_supports_delta).toBe(true);
+        const [{ patient_id: pedro }] = await sql`select patient_id from patient_external_ids where clinic_id = ${T} and external_id = 'sc:5002'`;
+        // Un turno de hace 3 días (fuera de la ventana cercana) al que recepción le marcó la ausencia recién.
+        fake.appointments.set(95040, scAppt(95040, 5002, -3, "10:00", "10:30", { professional_ids: [335], attendance: "Did not attend" }));
+        await sql`
+          insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source, external_id)
+          select ${T}, ${pedro}, ${emilia}, id, ${at(-3, "10:00")}, ${at(-3, "10:30")}, 'confirmado', 'smile_connect', 'sc:95040'
+          from appointment_types where clinic_id = ${T} and name = 'Consulta'`;
+        fake.changedAt.set(95040, Date.now());
+        // Y a Pedro le corrigen el apellido (ya se lo había visto antes en Smile Connect).
+        const saved = fake.patients.get(5002)!;
+        fake.patients.set(5002, { ...saved, surname: "Inventado Ruiz" });
+        fake.patientChangedAt.set(5002, Date.now());
+        fake.calls.length = 0;
+        const r = await link.pullSmileChanges(T);
+        expect(r).toMatchObject({ leidos: 1, pendientes: 0, pacientes_cambiados: 1 });
+        expect((await link.getSmileApiConnection(T))!.api_delta_at).not.toBeNull();
+        expect((await sql`select status from appointments where clinic_id = ${T} and external_id = 'sc:95040'`)[0].status).toBe("ausente");
+        expect((await sql`select full_name from patients where id = ${pedro}`)[0].full_name).toBe("Pedro Inventado Ruiz");
+        // Páginas chicas: casi siempre son pocos cambios y el cupo cuenta el tamaño de página pedido.
+        expect(fake.calls.filter((c) => c.path === "/appointments" || c.path === "/patients").length).toBe(2);
+        // La marca de agua avanzó: lo mismo no se vuelve a traer.
+        await sql`update smile_connect_connections set api_delta_at = now() + interval '5 minutes' where clinic_id = ${T}`;
+        expect(await link.pullSmileChanges(T)).toMatchObject({ leidos: 0, pacientes_cambiados: 0 });
+        // En la vuelta automática corre «cambios» y la ventana cercana pasa a ser una conciliación cada 3 horas.
+        await sql`update smile_connect_connections set api_delta_at = now() - interval '20 minutes', api_near_pull_at = now() - interval '40 minutes',
+          api_wide_pull_at = now(), api_hours_at = now() where clinic_id = ${T}`;
+        const run = (await link.runSmileConnect())[T] as Record<string, unknown>;
+        expect(run).not.toHaveProperty("cerca");
+        expect(run).not.toHaveProperty("error_cambios");
+        fake.patients.set(5002, saved);
+        fake.appointments.delete(95040);
+      } finally {
+        fake.delta = false;
+        fake.changedAt.clear();
+        fake.patientChangedAt.clear();
+        await sql`update smile_connect_connections set api_supports_delta = false, api_delta_at = null where clinic_id = ${T}`;
+      }
     });
 
     it("la vuelta automática aplica la copia una sola vez y copia los horarios cada 6 horas", async () => {
@@ -1112,6 +1190,17 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       const again = (await link.runSmileConnect())[T] as Record<string, unknown>;
       expect(again).not.toHaveProperty("horarios");
       expect(again).not.toHaveProperty("espejo");
+      // Cada paso queda en el historial, con lo que tardó y lo que gastó del cupo.
+      const runs = await link.recentSmileRuns(T, 50);
+      expect(runs.filter((r) => r.kind === "espejo" || r.kind === "horarios").map((r) => [r.kind, r.ok])).toEqual(
+        expect.arrayContaining([["espejo", true], ["horarios", true]]),
+      );
+      expect(runs.every((r) => r.duration_ms >= 0 && r.reads >= 0)).toBe(true);
+      // Una clave nueva puede traer el permiso de bloqueos: se vuelve a probar enseguida, sin esperar un día.
+      await sql`update smile_connect_connections set api_events_ok = false, api_events_checked_at = now() where clinic_id = ${T}`;
+      await link.saveSmileApiKey(T, KEY);
+      expect(await link.getSmileApiConnection(T)).toMatchObject({ api_events_ok: null, api_events_checked_at: null });
+      await link.setSmileMode(T, "lectura");
     });
   });
 });
