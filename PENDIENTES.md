@@ -14,6 +14,11 @@
 - **Recuperación histórica.** `POST /api/prospeccion { followup: { op: "conversations-backfill", desde } }` trae las conversaciones de ElevenLabs sin duplicarlas ni disparar tareas y avisos. Chapa Labs lo ejecuta todos los días a las 8:20 para los últimos tres días. La ejecución del 14/11 desde el 05/11 recuperó el registro que faltaba y terminó sin errores.
 - El trabajo de configuración restante está en [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 
+## Smile Connect: después del QA del 18/11
+
+- [ ] En Guerra–Mininni, mirar «Lecturas de hoy» en Configuración → Agenda e integraciones un par de días. Si pasa de 7.000, la sincronización ya se espacia sola; si sigue cerca, revisar la ventana cercana.
+- [ ] Para vender a otras clínicas, pasar a la configuración de cada clínica lo que todavía está atado a Guerra–Mininni en el código: la verificación de identidad para gestionar un turno desde otro número, la ficha de salud y los días del resumen.
+
 ## Auditoría del panel: lo que quedó pendiente (18/11/2026)
 
 Las seis fases de la auditoría están hechas (PR #210 a #215) y, después, lo pendiente (PR #216 y #217; ver `ESTADO_Y_PRIORIDADES.md`). Lo que falta es configuración, en la **tarea 8** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md):

@@ -24,7 +24,7 @@ import {
   type ScAppointment,
   type SmileClient,
 } from "./smile-connect-api";
-import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
+import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, SmilePatientReview, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
 import { humanSlot, localDateKey } from "./time";
 import type { Appointment, Patient, SmileManagement } from "./types";
 
@@ -121,7 +121,13 @@ async function smilePatientId(tx: TransactionSql, client: SmileClient, row: Row,
   if (linked) return scIdOf(linked.external_id);
   const [p] = await tx<Array<{ full_name: string | null; phone: string | null; dni: string | null; email: string | null }>>`
     select full_name, phone, dni, email from patients where id = ${row.patient_id}`;
-  const found = await findSmilePatient(client, { dni: p?.dni ?? null, phone: p?.phone ?? null });
+  let found;
+  try {
+    found = await findSmilePatient(client, { dni: p?.dni ?? null, phone: p?.phone ?? null, name: p?.full_name ?? null });
+  } catch (e) {
+    if (e instanceof SmilePatientReview) throw new Review(e.message);
+    throw e;
+  }
   if (found) {
     await tx`
       insert into patient_external_ids (clinic_id, external_id, patient_id) values (${row.clinic_id}, ${`sc:${found.patient_id}`}, ${row.patient_id})
@@ -422,7 +428,7 @@ export async function confirmNewSmileAppointment(tx: TransactionSql, clinicId: s
       request: (path, req) => {
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw new Review("Venció el plazo para confirmar el turno en Smile Connect.");
-        return clientFor(conn, Math.min(remaining, 3_000), tx).request(path, req);
+        return clientFor(conn, Math.min(remaining, 3_000), tx, { forWrites: true }).request(path, req);
       },
     };
     const result = await processRow(tx, conn, client, row, true);
@@ -624,7 +630,7 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
       if (pauseReason && !deferred && !management) return null;
       try {
         if (pauseReason) throw new Review(pauseReason);
-        const client = clientFor(current, undefined, tx);
+        const client = clientFor(current, undefined, tx, { forWrites: true });
         if (management) {
           if (!writesEnabledOnServer() || current.api_mode !== "completa") throw new Review("La gestión en Smile Connect está deshabilitada.");
           return { status: "ok", managed: await processSmileManagement(tx, client, row, management) } as Outcome;
