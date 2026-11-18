@@ -132,6 +132,7 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
 - **Bloqueos:**
   - sin el permiso `events:read`, los bloqueos de Turnia no se tocan y no se avisa nada al consultorio (no es un problema de la clave). Se vuelve a probar una vez por día;
   - un bloqueo de un profesional que Smile Connect ya no lista no entra, porque en Turnia quedaría como bloqueo de toda la clínica.
+- **Turnos que «desaparecen» de una ventana:** que no aparezcan no prueba que se borraron. Recepción pudo moverlos a otro día fuera de la ventana. Antes de darlos de baja, se pregunta por cada uno a Smile Connect (1 lectura; son como mucho 5, porque con más se frena todo). Si sigue existiendo, se actualiza con su día nuevo. Si Smile Connect no contesta, la vuelta se corta sin dar de baja nada. En la copia diaria se busca primero en la propia copia.
 - **Notas:**
   - en los turnos que vienen de Smile Connect, mandan las notas de Smile Connect;
   - en los que dio Turnia (Sofi o el panel) y recepción copió allá, se conserva el motivo del paciente, que usa el resumen de las 10. Antes se pisaba con el nombre del consultorio.
@@ -151,6 +152,22 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
 - la clave sin `events:read` (una vez por clave).
 
 Si el WhatsApp no sale, se reintenta una vez por hora. **Ojo:** salen por la línea general de Turnia, y con esa línea pausada no llegan, igual que el aviso de Google.
+
+**Comparación con buenas prácticas (18/11/2026).** Se revisaron guías de integraciones por consulta periódica de una API y de sincronización en los dos sentidos con un sistema que manda: Merge, Truto, Jenifer Ciuciu-Kiss («Incremental API Sync») y cómo lo hacen Weave y NexHealth con los sistemas de los consultorios.
+
+| Buena práctica | Cómo está |
+| --- | --- |
+| Un solo sistema que manda («source authority»), con dueño por campo | Sí. Manda Smile Connect; el motivo de los turnos de Sofi es de Turnia |
+| Escrituras idempotentes y verificadas después de escribir | Sí (`Idempotency-Key` y verificación en Smile Connect antes de confirmar) |
+| Sin bucles: lo que se trajo no vuelve | Sí (`turnia.smile_quiet` y el trigger `turnia_smile_mark`) |
+| No borrar por una respuesta a medias | Sí: ventana incompleta, freno con más de 5 faltantes y, desde el 18/11, pregunta por cada faltante |
+| Respetar los límites (`Retry-After`, reintentos espaciados, cupo) | Sí, con reserva para confirmar turnos |
+| Frecuencia según cuánto cambia cada dato | Sí: turnos cercanos 30 min, lejanos 8 h, horarios 6 h, pacientes 2 veces por semana. Weave sincroniza la disponibilidad cada 15 a 20 minutos; Sofi la mira en vivo |
+| Conciliación periódica completa | Sí (copia diaria aplicada a Turnia) |
+| Medir la frescura y avisar | Sí, avisos a Axel. Pero con la línea general de Turnia pausada no llegan |
+| Probar en sombra antes de escribir de verdad, con interruptor y freno automático | Sí («Escritura de prueba», `SMILE_CONNECT_WRITES`, freno con más de 15 cambios por hora) |
+| Traer solo lo que cambió (`updated_since` o webhooks, como NexHealth) | **No: la API no lo ofrece.** Es lo que más falta, y lo tiene que sumar Smile Connect |
+| Historial de corridas para diagnosticar | Parcial: el último resumen y los logs. No hay una tabla con cada corrida |
 
 **Falta para Guerra–Mininni:** que el consultorio cree en Smile Connect una clave sin vencimiento con todos los permisos, incluidos `events:read` y `services:read`, y cargarla en Configuración → «Smile Connect por API». Hasta entonces, el panel muestra «Falta el permiso events:read» en «Bloqueos».
 

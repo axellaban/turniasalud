@@ -977,6 +977,26 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       await sql`update appointments set status = 'cancelado' where id = ${sofi}`;
     });
 
+    it("un turno que recepción movió fuera de la ventana no se da de baja: se pregunta por él y se actualiza", async () => {
+      const row = async (ext: string) => (await sql`select status, starts_at from appointments where clinic_id = ${T} and external_id = ${ext}`)[0];
+      fake.appointments.set(95030, scAppt(95030, 5002, 2, "10:00", "10:30", { professional_ids: [335] }));
+      fake.appointments.set(95031, scAppt(95031, 5002, 2, "11:00", "11:30", { professional_ids: [335] }));
+      await link.pullSmileConnect(T, "cerca");
+      expect((await row("sc:95030")).status).toBe("confirmado");
+      // 95030 pasa a la semana siguiente (fuera de la ventana cercana); 95031 se borra de verdad.
+      fake.appointments.set(95030, { ...fake.appointments.get(95030)!, start_date: at(10, "10:00"), end_date: at(10, "10:30") });
+      fake.appointments.delete(95031);
+      fake.calls.length = 0;
+      await link.pullSmileConnect(T, "cerca");
+      const moved = await row("sc:95030");
+      expect(moved.status).toBe("confirmado");
+      expect(new Date(moved.starts_at).toISOString()).toBe(at(10, "10:00"));
+      expect((await row("sc:95031")).status).toBe("cancelado");
+      expect(fake.calls.filter((c) => /^\/appointments\/\d+$/.test(c.path)).map((c) => c.path).sort()).toEqual(["/appointments/95030", "/appointments/95031"]);
+      fake.appointments.delete(95030);
+      await sql`update appointments set status = 'cancelado' where clinic_id = ${T} and external_id = 'sc:95030'`;
+    });
+
     it("la copia diaria pasa a Turnia la asistencia cargada tarde, los turnos lejanos y lo que cambió de cada paciente", async () => {
       const [pedro] = await sql`select patient_id from patient_external_ids where clinic_id = ${T} and external_id = 'sc:5002'`;
       // Un turno de hace 10 días que Turnia trajo sin marca: recepción lo marcó como ausente días después.
