@@ -1842,3 +1842,35 @@ begin
     insert into data_migrations (name) values ('2026-11-18-primer-turno-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Feedback de Guerra–Mininni sobre una charla real de Sofi (18/11/2026). Cambia solo estas frases de sus
+-- instrucciones (si ya no están, no hace nada) y una sola vez: si después las editan desde el panel, el
+-- deploy no las pisa. Que no explique a quién se le da cada turno ni nombre a la Dra. Coldeira si el
+-- paciente no la pidió, que diga «mantenimiento periodontal» y no «limpieza», que por WhatsApp pida los
+-- datos juntos y que una molestia no la trate como urgencia.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-18-feedback-sofi-guerra-mininni') then
+    update clinics set
+      agent_context = replace(replace(replace(replace(replace(replace(agent_context,
+        'Solo con la Dra. Coldeira si la solicita explícitamente para su primera consulta. Explicá la diferencia antes de ofrecer un horario.',
+        'Solo con la Dra. Coldeira si el paciente la pide por su nombre para su primera consulta. Si no la nombró, no menciones a la Dra. Coldeira ni el mantenimiento periodontal y no le expliques esta regla.'),
+        'preguntá una vez si también quiere mantenimiento periodontal (limpieza), salvo',
+        'preguntá una vez si también quiere mantenimiento periodontal, salvo'),
+        'El mantenimiento periodontal (limpieza) lo hace la Dra.',
+        'El mantenimiento periodontal lo hace la Dra.'),
+        'No sustituyas una limpieza por un control',
+        'No sustituyas el mantenimiento periodontal por un control'),
+        'Pedí de a uno o dos datos y aprovechá lo que ya escribió o dijo.',
+        'Por WhatsApp pedí en un solo mensaje todos los datos que falten (por teléfono, de a uno o dos) y aprovechá lo que ya escribió o dijo.'),
+        'Si habla de un caso urgente o de dolor, atendé ese pedido antes de volver a las preguntas administrativas y seguí el protocolo de urgencias.',
+        'Si cuenta una urgencia (dolor fuerte que no se calma, la cara o la encía hinchada, un golpe), atendé ese pedido antes de volver a las preguntas administrativas y seguí el protocolo de urgencias. Una molestia o sensibilidad no es una urgencia: no le preguntes por síntomas que no mencionó.')
+        || E'\n- Al paciente nombrale siempre «mantenimiento periodontal», sin «(limpieza)»: nunca escribas la palabra «limpieza», tampoco entre paréntesis ni al confirmar, aunque figure en el catálogo. Si el paciente dice «limpieza», es el mantenimiento periodontal.',
+      context_revision = context_revision + 1,
+      updated_at = now()
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36' and agent_context is not null;
+    insert into data_migrations (name) values ('2026-11-18-feedback-sofi-guerra-mininni');
+  end if;
+end $$;
