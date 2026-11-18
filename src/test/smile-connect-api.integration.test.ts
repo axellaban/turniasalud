@@ -886,7 +886,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
     });
 
     it("copia el horario de Smile Connect a quien ya atiende en Turnia, sin tocar las franjas especiales", async () => {
-      const linked = await sql`select full_name, smile_professional_id from professionals where clinic_id = ${T} order by full_name`;
+      const linked = await sql`select full_name, smile_professional_id from professionals where clinic_id = ${T} order by smile_professional_id`;
       expect(linked.map((p) => [p.full_name, p.smile_professional_id])).toEqual([["Dr. Mariano Prueba", 334], ["Dra. Emilia Ficticia", 335]]);
       fake.hours.set(335, { "1": cells("10:00", "17:30"), "2": [...cells("10:00", "11:00"), ...cells("14:00", "15:00")] });
       const r = await link.syncSmileHours(T);
