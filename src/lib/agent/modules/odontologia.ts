@@ -8,13 +8,14 @@
 
 import type { PriceMode } from "../../types";
 
-export const DENTAL_PROTOCOL_VERSION = "2026-11-18";
+export const DENTAL_PROTOCOL_VERSION = "2026-11-18.2";
 
 export const DENTAL_PROTOCOL = `Protocolo odontológico de Turnia, para todo lo odontológico (si las instrucciones de esta clínica dicen otra cosa, mandan ellas):
-- Usá las palabras del paciente y no le sumes síntomas. «Tengo molestias», «sensibilidad» o «me molesta una muela» no son una urgencia: es un turno común. No le preguntes si tiene dolor fuerte, hinchazón u otros síntomas que no mencionó, no le nombres el 107 ni la guardia y no le ofrezcas «hoy o mañana». Si no queda claro qué le pasa, preguntá una sola vez y abierto («¿Cómo es la molestia?»).
+- Usá las palabras del paciente y no le sumes síntomas. «Tengo molestias», «sensibilidad» o «me molesta una muela» no son una urgencia: es un turno común. No le preguntes si tiene dolor fuerte, hinchazón u otros síntomas que no mencionó, no le nombres el 107 ni la guardia, no le hables de riesgos ni de emergencias y no le ofrezcas «hoy o mañana». Si no queda claro qué le pasa, preguntá una sola vez y abierto («¿Cómo es la molestia?»).
 - Urgencia odontológica, para atender en el día, solo si el paciente cuenta alguna de estas cosas: dolor fuerte que no se calma o no deja dormir, dolor que late, encía o cara hinchada (sin dificultad para respirar ni tragar), un diente roto, flojo o que se salió por un golpe, un provisorio o una corona de adelante que se cayó, o un sangrado que sigue después de una extracción aunque apriete una gasa.
 - Ante una urgencia odontológica, usá la prestación de urgencia del catálogo: consultar_disponibilidad busca lugar para hoy y mañana (no le prometas lugar antes de consultar). Si no hay urgencia en el catálogo, usá la primera consulta y buscá hoy y mañana. Si no hay lugar, creá una tarea de tipo "urgencia" con prioridad "urgente" y decile que el equipo lo contacta hoy. Nunca le des un turno común para dentro de varios días.
-- Emergencia, primero el 107 o la guardia y después la tarea urgente, solo si el paciente cuenta que: la hinchazón le dificulta respirar, tragar o abrir el ojo, tiene fiebre alta con la cara hinchada, se dio un golpe fuerte en la cara o la cabeza, o sangra mucho y no para.
+- Solo si el paciente contó que tiene mucho dolor, un sangrado o la cara o la encía hinchada, sumá una vez, al final y sin alarmar, esta frase (con el trato de la clínica): «Si considera que es un riesgo para su vida, acuda a una guardia de manera urgente.» Con molestias o sensibilidad, nunca.
+- Emergencia, primero el 107 o la guardia y después la tarea urgente, solo si el paciente cuenta (no si se lo preguntaste vos) que: la hinchazón le dificulta respirar, tragar o abrir el ojo, tiene fiebre alta con la cara hinchada, se dio un golpe fuerte en la cara o la cabeza, o sangra mucho y no para.
 - Molestias que no son urgencia (sensibilidad al frío que se pasa enseguida, una caries sin dolor, un arreglo que se cayó atrás sin dolor): turno común con la primera consulta o la prestación que corresponda.
 - Qué turno corresponde, siempre con el nombre del catálogo de esta clínica (si no hay uno que coincida, la primera consulta): sangrado de encías, sarro o mal aliento → limpieza o periodoncia; caries o "se me rompió un pedacito" → arreglo de caries o primera consulta; muela de juicio → la consulta que corresponda (la extracción la indica el profesional); chicos → odontopediatría, o el profesional que atiende chicos según su descripción; una prótesis que se mueve o lastima → prótesis o control.
 - Implantes, ortodoncia o alineadores, prótesis, coronas, carillas, blanqueamiento y cirugías empiezan con una consulta de evaluación: ofrecé esa consulta del catálogo y no el tratamiento. Preguntá si tiene una radiografía panorámica o una tomografía reciente; si la tiene, que la traiga, y anotalo en notas. No le pidas que se haga estudios: eso lo indica el profesional.
@@ -74,6 +75,7 @@ export const DENTAL_TEST_CASES: Array<{ message: string; expected: string }> = [
   { message: "Tengo la cara hinchada y me cuesta tragar", expected: "Primero el 107 o la guardia, y una tarea urgente." },
   { message: "Tengo molestias y necesito arreglos", expected: "Turno común con la primera consulta. No pregunta por dolor fuerte ni hinchazón, no nombra el 107 y no promete hoy o mañana." },
   { message: "Dolor punzante por mucha sensibilidad, no es grave", expected: "Turno común: no lo trata como urgencia." },
+  { message: "Tengo mucho dolor y la encía hinchada", expected: "Urgencia: hoy o mañana, o tarea urgente, y una sola vez al final: si considera que es un riesgo para su vida, que acuda a una guardia." },
   { message: "Quiero ponerme un implante", expected: "Consulta de implantes y pregunta por la panorámica. Nunca la colocación." },
   { message: "Me sangran las encías", expected: "La limpieza o periodoncia del catálogo." },
   { message: "Tengo OSDE 210 (con un profesional que no la atiende)", expected: "No ofrece ese profesional: otro, o como particular." },
