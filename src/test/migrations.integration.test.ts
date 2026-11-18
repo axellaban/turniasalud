@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 const base = testDatabaseUrl();
+// La frase de las radiografías como estaba en las instrucciones de Guerra–Mininni.
+const OLD_RADIOGRAFIAS = "- Una vez confirmado, si es primera consulta o el paciente refiere una molestia, preguntá brevemente si tiene radiografías actuales (de menos de un año). Si no las tiene, decí «Le conviene traer las radiografías para que el doctor pueda verlas en la primera consulta y evitar otra visita solo para traer los estudios. Si no llega a hacerlas, su turno sigue confirmado». No lo menciones en un control o mantenimiento de rutina sin molestias, salvo que el paciente pregunte.";
 describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
   let db: ReturnType<typeof postgres>;
   beforeAll(async () => {
@@ -118,6 +120,26 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect(text.startsWith("A QUIÉN DAR EL TURNO\n- Primera vez: con el Dr. Mininni.")).toBe(true);
     expect(row.context_revision).toBe(1);
     // Una sola vez: lo que editen después desde el panel no se pisa ni se repite.
+    await db`update clinics set agent_context = 'Editado desde el panel' where id = ${mininni}`;
+    await db.unsafe(schema);
+    expect((await db`select agent_context from clinics where id = ${mininni}`)[0].agent_context).toBe("Editado desde el panel");
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
+
+  it("la frase de las radiografías de Guerra–Mininni cambia una sola vez", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    const old = OLD_RADIOGRAFIAS;
+    await db`insert into clinics (id, name, agent_context) values (${mininni}, 'Guerra–Mininni ficticia', ${`ESTUDIOS\n${old}\nOtra regla.`})`;
+    await db`delete from data_migrations where name = '2026-11-18-radiografias-guerra-mininni'`;
+    await db.unsafe(schema);
+    const text = (await db`select agent_context from clinics where id = ${mininni}`)[0].agent_context as string;
+    expect(text).not.toContain("preguntá brevemente");
+    expect(text).toContain("también si el turno quedó pendiente de confirmación");
+    expect(text).toContain("Nunca digas que no hace falta ni que «no pasa nada»");
+    expect(text).toContain("«Le conviene traer las radiografías para que el doctor pueda verlas en la primera consulta");
+    expect(text.startsWith("ESTUDIOS\n- Después de reservar")).toBe(true);
+    expect(text.endsWith("\nOtra regla.")).toBe(true);
     await db`update clinics set agent_context = 'Editado desde el panel' where id = ${mininni}`;
     await db.unsafe(schema);
     expect((await db`select agent_context from clinics where id = ${mininni}`)[0].agent_context).toBe("Editado desde el panel");

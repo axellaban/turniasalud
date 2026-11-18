@@ -1874,3 +1874,22 @@ begin
     insert into data_migrations (name) values ('2026-11-18-feedback-sofi-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Radiografías en Guerra–Mininni (18/11/2026): en una charla real Sofi preguntó por las radiografías al
+-- final de otro mensaje, con el turno pendiente, y agregó «si no las tiene, no pasa nada». Cambia solo esa
+-- frase de sus instrucciones (si ya no está, no hace nada) y una sola vez.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-18-radiografias-guerra-mininni') then
+    update clinics set
+      agent_context = replace(agent_context,
+        '- Una vez confirmado, si es primera consulta o el paciente refiere una molestia, preguntá brevemente si tiene radiografías actuales (de menos de un año). Si no las tiene, decí «Le conviene traer las radiografías para que el doctor pueda verlas en la primera consulta y evitar otra visita solo para traer los estudios. Si no llega a hacerlas, su turno sigue confirmado». No lo menciones en un control o mantenimiento de rutina sin molestias, salvo que el paciente pregunte.',
+        '- Después de reservar (también si el turno quedó pendiente de confirmación), si es primera consulta o el paciente refiere una molestia, preguntá si tiene radiografías actuales (de menos de un año). Va al final de ese mensaje, en un párrafo aparte que empiece con «*Radiografías:*», sin mezclarla con otros temas. Si las tiene, pedile que las traiga a la consulta. Si no las tiene, decí tal cual «Le conviene traer las radiografías para que el doctor pueda verlas en la primera consulta y evitar otra visita solo para traer los estudios. Si no llega a hacerlas, su turno sigue confirmado» (si el turno quedó pendiente, en lugar de «su turno sigue confirmado» decí «igual puede venir a la consulta») y ofrecele la lista de centros radiológicos que recomendamos. Nunca digas que no hace falta ni que «no pasa nada». No lo menciones en un control o mantenimiento de rutina sin molestias, salvo que el paciente pregunte.'),
+      context_revision = context_revision + 1,
+      updated_at = now()
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36' and agent_context like '%preguntá brevemente si tiene radiografías actuales%';
+    insert into data_migrations (name) values ('2026-11-18-radiografias-guerra-mininni');
+  end if;
+end $$;
