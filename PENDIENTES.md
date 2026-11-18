@@ -17,7 +17,7 @@
 ## Smile Connect: después del QA del 18/11
 
 - [ ] En Guerra–Mininni, mirar «Lecturas de hoy» en Configuración → Agenda e integraciones un par de días. Si pasa de 7.000, la sincronización ya se espacia sola; si sigue cerca, revisar la ventana cercana.
-- [ ] Para vender a otras clínicas, pasar a la configuración de cada clínica lo que todavía está atado a Guerra–Mininni en el código: la verificación de identidad para gestionar un turno desde otro número, la ficha de salud y los días del resumen.
+- [x] Pasar a la configuración de cada clínica lo que estaba atado a Guerra–Mininni en el código (18/11): verificación de identidad desde otro número, ficha de salud y días del resumen. Guerra–Mininni no cambia.
 
 ## Auditoría del panel: lo que quedó pendiente (18/11/2026)
 

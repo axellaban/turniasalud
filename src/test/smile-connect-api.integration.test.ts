@@ -558,7 +558,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
         id: "guerra-mininni", clinicId: gm, phone: "5491100006666", url: "https://waha.test/",
         apiKey: "clave-ficticia-abc", webhookHmac: "firma-ficticia-abc", enabled: true, revision: 1,
       }]));
-      await sql`insert into clinics (id, name, specialty, address) values (${gm}, 'Guerra Mininni de prueba', 'Odontología', 'Dirección ficticia')`;
+      await sql`insert into clinics (id, name, specialty, address, verify_appointment_access) values (${gm}, 'Guerra Mininni de prueba', 'Odontología', 'Dirección ficticia', true)`;
       [{ id: gmPro }] = await sql`insert into professionals (clinic_id, full_name, specialty)
         values (${gm}, 'Dr. Mariano Prueba', 'Odontología') returning id`;
       [{ id: gmConsult }] = await sql`insert into appointment_types (clinic_id, name, specialty, duration_min)

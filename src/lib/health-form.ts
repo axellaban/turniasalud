@@ -3,7 +3,6 @@
 // y el panel la imprime igual a la de papel. Este archivo no toca la base: preguntas,
 // plantilla, combinación de respuestas y la hoja de cada clínica.
 
-import { GUERRA_MININNI } from "./agent/appointment-access";
 
 export type YesNo = "si" | "no";
 
@@ -255,19 +254,39 @@ export type HealthFormSheet = {
   professionals: Array<{ name: string; lines: string[] }>;
 };
 
-const SHEETS: Record<string, HealthFormSheet> = {
-  [GUERRA_MININNI]: {
-    monogram: "CG",
-    professionals: [
-      { name: "DR. CLAUDIO M. GUERRA", lines: ["ODONTOLOGO", "M. N. 13816", "Especialista en Prótesis (M.S.P.)"] },
-      { name: "DR. MARIANO MININNI", lines: ["ODONTOLOGO", "M. N. 34543"] },
-    ],
-  },
-};
+/**
+ * La hoja de la clínica (Configuración → Turnos y urgencias), o null si no usa ficha de salud. Se lee
+ * con cuidado: lo que no tenga la forma esperada cuenta como que no la usa.
+ */
+export function healthFormSheet(clinic: { health_form?: unknown }): HealthFormSheet | null {
+  const raw = clinic.health_form as Partial<HealthFormSheet> | null | undefined;
+  if (!raw || typeof raw !== "object" || !Array.isArray(raw.professionals)) return null;
+  const professionals = raw.professionals
+    .filter((p) => p && typeof p.name === "string" && p.name.trim())
+    .map((p) => ({ name: p.name.trim(), lines: Array.isArray(p.lines) ? p.lines.filter((l) => typeof l === "string" && l.trim()).map((l) => l.trim()) : [] }));
+  if (!professionals.length) return null;
+  const monogram = typeof raw.monogram === "string" && raw.monogram.trim() ? raw.monogram.trim().slice(0, 3).toUpperCase() : "";
+  return { monogram, professionals };
+}
 
-/** La hoja de la clínica, o null si la clínica no usa ficha de salud. */
-export function healthFormSheet(clinicId: string): HealthFormSheet | null {
-  return SHEETS[clinicId] ?? null;
+/**
+ * La hoja escrita en el panel: un profesional por bloque (nombre en la primera línea, después sus
+ * datos), separados por una línea en blanco.
+ */
+export function parseHealthFormSheet(monogram: string | null, text: string | null): HealthFormSheet | null {
+  const professionals = (text ?? "")
+    .split(/\n\s*\n/)
+    .map((block) => block.split("\n").map((l) => l.trim()).filter(Boolean))
+    .filter((lines) => lines.length)
+    .map(([name, ...lines]) => ({ name: name.slice(0, 80), lines: lines.slice(0, 4).map((l) => l.slice(0, 80)) }))
+    .slice(0, 4);
+  if (!professionals.length) return null;
+  return { monogram: (monogram ?? "").trim().slice(0, 3).toUpperCase(), professionals };
+}
+
+/** La hoja como se escribe en el panel (lo inverso de parseHealthFormSheet). */
+export function healthFormSheetText(sheet: HealthFormSheet | null): string {
+  return (sheet?.professionals ?? []).map((p) => [p.name, ...p.lines].join("\n")).join("\n\n");
 }
 
 /** Piezas del odontograma, como en la hoja: arriba 18→11 | 21→28, abajo 48→41 | 31→38. */

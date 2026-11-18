@@ -3,7 +3,6 @@ import { json, sql } from "./db";
 import { getClinic } from "./clinic";
 import { AGENT_SOURCES } from "./clinic-impact";
 import { registerOutbound } from "./channel";
-import { GUERRA_MININNI } from "./agent/appointment-access";
 import { requireActiveWhatsapp } from "./messaging-settings";
 import { displayPhone } from "./phone";
 import { humanSlot, localDateKey, zonedParts } from "./time";
@@ -21,12 +20,18 @@ import { wahaConnectionForClinic, withClinicWaha } from "./waha-connections";
 
 /** Hora (de la clínica) del resumen automático, de lunes a viernes. */
 export const SUMMARY_HOUR = 10;
-function summaryLastWeekday(clinicId: string): number {
-  return clinicId === GUERRA_MININNI ? 4 : 5;
+/** Hasta qué día de la semana sale (Configuración de la clínica; por defecto, viernes). */
+function summaryLastWeekday(clinic: Pick<Clinic, "summary_last_weekday">): number {
+  const n = Number(clinic.summary_last_weekday);
+  return Number.isInteger(n) && n >= 1 && n <= 6 ? n : 5;
 }
 
-export function summaryDaysLabel(clinicId: string): string {
-  return summaryLastWeekday(clinicId) === 4 ? "lunes a jueves" : "lunes a viernes";
+const WEEKDAY_NAME = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+/** «lunes a viernes», «lunes a jueves», «los lunes». */
+export function summaryDaysLabel(clinic: Pick<Clinic, "summary_last_weekday">): string {
+  const last = summaryLastWeekday(clinic);
+  return last === 1 ? "los lunes" : `lunes a ${WEEKDAY_NAME[last]}`;
 }
 /** Si a las 14 todavía no salió (disparadores caídos), ese día ya no sale: el próximo junta los dos. */
 const SUMMARY_LAST_HOUR = 14;
@@ -267,7 +272,7 @@ async function windowStart(clinic: Clinic, now: Date): Promise<Date> {
   // El primero: desde el día anterior en que se manda el resumen.
   const weekday = zonedParts(now, clinic.timezone).weekday;
   let days = 1;
-  while ((weekday - days + 7) % 7 === 0 || (weekday - days + 7) % 7 > summaryLastWeekday(clinic.id)) days++;
+  while ((weekday - days + 7) % 7 === 0 || (weekday - days + 7) % 7 > summaryLastWeekday(clinic)) days++;
   return new Date(now.getTime() - days * 86400_000);
 }
 
@@ -334,7 +339,7 @@ export async function sendDueSummaries(now = new Date()): Promise<SendResult[]> 
     const clinic = await getClinic(id);
     if (!canSendSummary(clinic)) continue;
     const local = zonedParts(now, clinic.timezone);
-    if (local.weekday < 1 || local.weekday > summaryLastWeekday(clinic.id) || local.hour < SUMMARY_HOUR || local.hour >= SUMMARY_LAST_HOUR) continue;
+    if (local.weekday < 1 || local.weekday > summaryLastWeekday(clinic) || local.hour < SUMMARY_HOUR || local.hour >= SUMMARY_LAST_HOUR) continue;
     const day = localDateKey(now, clinic.timezone);
     const from = await windowStart(clinic, now);
     // Se reserva el día antes de mandar: dos disparadores juntos no lo mandan dos veces.

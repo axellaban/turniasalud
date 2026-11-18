@@ -21,6 +21,12 @@ export type Clinic = {
   handoff_phone: string | null;
   /** Pausar a Sofi en un chat cuando el equipo le contesta al paciente desde el WhatsApp del consultorio. */
   auto_pause_on_staff_reply: boolean;
+  /** Gestionar un turno desde otro número: permiso temporal para esa charla, sin unir el celular a la ficha. */
+  verify_appointment_access: boolean;
+  /** Hasta qué día sale el resumen de las 10 (1 = lunes … 6 = sábado), siempre desde el lunes. */
+  summary_last_weekday: number;
+  /** Ficha de salud por WhatsApp e impresa (encabezado de la hoja). null: la clínica no la usa. */
+  health_form: { monogram: string; professionals: Array<{ name: string; lines: string[] }> } | null;
   after_hours_instructions: string | null;
   /** Clínica temporal de la demo del lead magnet (/probar-demo), armada con la web del interesado. */
   is_demo: boolean;

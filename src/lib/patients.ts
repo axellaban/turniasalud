@@ -1,4 +1,4 @@
-import { appointmentAccessKey, grantAppointmentAccess } from "./agent/appointment-access";
+import { appointmentAccessEnabled, appointmentAccessKey, grantAppointmentAccess } from "./agent/appointment-access";
 import "server-only";
 import { sql, type Sql, type TransactionSql } from "./db";
 import { mergeMemory } from "./memory";
@@ -278,7 +278,7 @@ export async function identifyPatient(
     if (!candidates.length) return { estado: "sin_ficha" } as const;
 
     const target = preferredPatient(candidates);
-    const accessKey = appointmentAccessKey({ clinicId, patientPhone: phone, conversationId: input.appointmentConversationId });
+    const accessKey = appointmentAccessKey({ clinicId, patientPhone: phone, conversationId: input.appointmentConversationId }, await appointmentAccessEnabled(clinicId, tx));
     if (accessKey && target.phone !== phone) {
       // Un permiso temporal para turnos nunca elige ni fusiona fichas para este teléfono.
       // En una línea ya asociada a otra ficha, exigimos los tres datos del paciente.

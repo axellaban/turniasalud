@@ -270,12 +270,13 @@ describe.runIf(url)("resumen diario de Sofi para el equipo", () => {
     }
   });
 
-  it("Guerra–Mininni envía los jueves y retoma el lunes, sin enviar el viernes", async () => {
-    const { GUERRA_MININNI } = await import("@/lib/agent/appointment-access");
+  it("una clínica con resumen de lunes a jueves (como Guerra–Mininni) envía el jueves y retoma el lunes, sin el viernes", async () => {
+    const GUERRA_MININNI = "67c3954a-8df8-46c2-a604-f818832bee36";
     const { sendDueSummaries, summaryDaysLabel } = await import("@/lib/daily-summary");
+    // Antes estaba atado a su id en el código; ahora es la opción summary_last_weekday de la clínica.
     await sql`
-      insert into clinics (id, name, specialty, is_demo, timezone, whatsapp_provider)
-      values (${GUERRA_MININNI}, 'Guerra–Mininni de prueba', 'Odontología', false, ${tz}, 'waha')`;
+      insert into clinics (id, name, specialty, is_demo, timezone, whatsapp_provider, summary_last_weekday)
+      values (${GUERRA_MININNI}, 'Guerra–Mininni de prueba', 'Odontología', false, ${tz}, 'waha', 4)`;
     await sql`insert into clinic_staff_phones (clinic_id, phone, name, daily_summary)
       values (${GUERRA_MININNI}, ${doctor}, 'Dr. Prueba', true)`;
     const firstDay = nextWeekdayAt(10, 30);
@@ -283,8 +284,12 @@ describe.runIf(url)("resumen diario de Sofi para el equipo", () => {
     const thursday = new Date(firstDay.getTime() + untilThursday * 86400_000);
     const friday = new Date(thursday.getTime() + 86400_000);
     const monday = new Date(thursday.getTime() + 4 * 86400_000);
-    expect(summaryDaysLabel(GUERRA_MININNI)).toBe("lunes a jueves");
-    expect(summaryDaysLabel(clinicId)).toBe("lunes a viernes");
+    expect(summaryDaysLabel({ summary_last_weekday: 4 })).toBe("lunes a jueves");
+    expect(summaryDaysLabel({ summary_last_weekday: 6 })).toBe("lunes a sábado");
+    expect(summaryDaysLabel({ summary_last_weekday: 1 })).toBe("los lunes");
+    // Una clínica cualquiera: de lunes a viernes (el valor por defecto).
+    const [{ summary_last_weekday: byDefault }] = await sql`select summary_last_weekday from clinics where id = ${clinicId}`;
+    expect(summaryDaysLabel({ summary_last_weekday: byDefault })).toBe("lunes a viernes");
     expect(await sendDueSummaries(thursday)).toMatchObject([{ clinic: "Guerra–Mininni de prueba", enviados: 1 }]);
     expect(await sendDueSummaries(friday)).toEqual([]);
     expect(await sendDueSummaries(monday)).toMatchObject([{ clinic: "Guerra–Mininni de prueba", enviados: 1 }]);

@@ -135,3 +135,13 @@ export async function setAutoPause(form: FormData): Promise<void> {
   await sql`update clinics set auto_pause_on_staff_reply = ${form.get("on") === "1"} where id = ${clinic.id}`;
   revalidatePath("/panel/configuracion", "layout");
 }
+
+/** Equipo por WhatsApp → hasta qué día sale el resumen de las 10 (siempre desde el lunes). */
+export async function setSummaryDays(form: FormData): Promise<void> {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const last = Number(text(form, "summary_last_weekday"));
+  if (!Number.isInteger(last) || last < 1 || last > 6) return;
+  await sql`update clinics set summary_last_weekday = ${last} where id = ${clinic.id}`;
+  revalidatePath("/panel/configuracion", "layout");
+}

@@ -147,7 +147,7 @@ function Toolbar({ children }: { children: ReactNode }) {
 export default async function HealthFormSheetPage({ params }: PageProps<"/panel/pacientes/[id]/ficha">) {
   const { id } = await params;
   const clinic = await getPanelClinic();
-  const sheet = healthFormSheet(clinic.id);
+  const sheet = healthFormSheet(clinic);
   const [p] = sheet && isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!sheet || !p) notFound();
 

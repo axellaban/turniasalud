@@ -122,7 +122,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const selectedId = one(params.turno);
   const selected = rows.find((r) => r.id === selectedId) ?? null;
   // Ficha de salud del paciente del turno elegido: para imprimirla cuando llega.
-  const selectedForm = selected && healthFormSheet(clinic.id) ? { form: await latestHealthForm(selected.patient_id) } : null;
+  const selectedForm = selected && healthFormSheet(clinic) ? { form: await latestHealthForm(selected.patient_id) } : null;
   const nowAt = new Date();
   const now = zonedParts(nowAt, tz);
   const nowMinute = now.hour * 60 + now.minute;

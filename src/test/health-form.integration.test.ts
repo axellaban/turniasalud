@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { GUERRA_MININNI } from "@/lib/agent/appointment-access";
 import { HEALTH_FORM_MARKER } from "@/lib/health-form";
 import { addDaysKey, localDateKey } from "@/lib/time";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 const url = testDatabaseUrl();
-const clinicId = GUERRA_MININNI;
+// La ficha de salud es una opción de la clínica (clinics.health_form); antes estaba atada a Guerra–Mininni.
+const clinicId = "67c3954a-8df8-46c2-a604-f818832bee36";
+const SHEET = { monogram: "CG", professionals: [{ name: "DR. PRUEBA UNO", lines: ["ODONTOLOGO", "M. N. 00001"] }, { name: "DR. PRUEBA DOS", lines: ["ODONTOLOGO"] }] };
 const otherClinic = "00000000-0000-4000-8000-000000000001";
 const timezone = "America/Argentina/Buenos_Aires";
 const secret = "turnia-test-secret";
@@ -42,7 +43,7 @@ describe.runIf(url)("ficha de salud por chat (Guerra–Mininni)", () => {
     vi.stubEnv("AGENT_TOOLS_SECRET", secret);
     ({ sql } = await import("@/lib/db"));
     ({ POST: handler } = await import("@/app/api/agent/tools/[name]/route"));
-    await sql`insert into clinics (id, name) values (${clinicId}, 'Guerra–Mininni ficticia')`;
+    await sql`insert into clinics (id, name, health_form) values (${clinicId}, 'Guerra–Mininni ficticia', ${sql.json(SHEET)})`;
     [{ id: pro }] = await sql`
       insert into professionals (clinic_id, full_name, specialty) values (${clinicId}, 'Odontóloga de prueba', 'Odontología') returning id`;
     await sql`

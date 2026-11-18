@@ -98,4 +98,29 @@ describe.runIf(url)("equipo por WhatsApp", () => {
     const members = teamMembers([notice, other] as never, [staff]);
     expect(members.map((m) => [m.phone, Boolean(m.notice), Boolean(m.staff)])).toEqual([["5491100007009", true, true], ["5491100007010", true, false]]);
   });
+
+  it("opciones de la clínica que antes eran solo de Guerra–Mininni: identidad, ficha de salud y días del resumen", async () => {
+    await asClinic();
+    const { healthFormSheet } = await import("@/lib/health-form");
+    const r = await protocol.saveBookingRules({}, form({
+      clinic_id: clinicId, rules_form: "1", verify_appointment_access: "on",
+      health_form_field: "1", health_form_monogram: "ae", health_form_text: "DRA. ANA EJEMPLO\r\nODONTÓLOGA\r\nM. N. 00000\r\n\r\nDR. JUAN EJEMPLO\nODONTÓLOGO",
+    }));
+    expect(r).toMatchObject({ ok: true });
+    const [c] = await sql`select verify_appointment_access, health_form from clinics where id = ${clinicId}`;
+    expect(c.verify_appointment_access).toBe(true);
+    expect(healthFormSheet(c)).toEqual({
+      monogram: "AE",
+      professionals: [{ name: "DRA. ANA EJEMPLO", lines: ["ODONTÓLOGA", "M. N. 00000"] }, { name: "DR. JUAN EJEMPLO", lines: ["ODONTÓLOGO"] }],
+    });
+    // Vaciar la ficha la apaga; la casilla sin marcar apaga la verificación.
+    await protocol.saveBookingRules({}, form({ clinic_id: clinicId, rules_form: "1", health_form_field: "1", health_form_text: "" }));
+    const [off] = await sql`select verify_appointment_access, health_form from clinics where id = ${clinicId}`;
+    expect(off).toEqual({ verify_appointment_access: false, health_form: null });
+
+    await actions.setSummaryDays(form({ clinic_id: clinicId, summary_last_weekday: "4" }));
+    expect((await sql`select summary_last_weekday from clinics where id = ${clinicId}`)[0].summary_last_weekday).toBe(4);
+    await actions.setSummaryDays(form({ clinic_id: clinicId, summary_last_weekday: "9" }));
+    expect((await sql`select summary_last_weekday from clinics where id = ${clinicId}`)[0].summary_last_weekday).toBe(4);
+  });
 });
