@@ -38,7 +38,8 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
   const mode = conn?.api_mode ?? "apagada";
   const when = (iso: string | null | undefined) => (iso ? formatDateTime(iso, clinic.timezone) : "todavía no");
   const tz = clinic.timezone;
-  const readsToday = conn?.api_reads_day === new Date().toISOString().slice(0, 10) ? conn.api_reads : 0;
+  const now = new Date();
+  const readsToday = conn?.api_reads_day === now.toISOString().slice(0, 10) ? conn.api_reads : 0;
 
   if (!admin && !hasKey) return null;
   return (
@@ -67,6 +68,9 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
         </form>}
       </Notice>}
       {conn?.api_error && <Notice tone="error" className="mt-3">Último problema ({when(conn.api_error_at)}): {conn.api_error}</Notice>}
+      {conn?.api_retry_at && new Date(conn.api_retry_at) > now && (
+        <Notice tone="warning" className="mt-3">Smile Connect pidió esperar hasta {when(conn.api_retry_at)}. Una sincronización manual exitosa permite retomar antes.</Notice>
+      )}
 
       <div className="mt-4 grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">

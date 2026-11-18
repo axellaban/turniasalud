@@ -778,5 +778,30 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       await send();
       expect(fake.whatsapps.at(-1)?.text).toContain("El turno original sigue reservado");
     });
+
+    it("retoma la automatización después de una sincronización manual exitosa", async () => {
+      const actions = await import("@/app/panel/smile-api-actions");
+      mocks.cookies.set("turnia_clinic", gm);
+      const retryAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      const f = new FormData();
+      f.set("clinic_id", gm);
+      await sql`update smile_connect_connections set api_retry_at = ${retryAt}, api_near_pull_at = null where clinic_id = ${gm}`;
+
+      fake.status = 503;
+      try {
+        expect(await actions.syncSmileNowAction({}, f)).toMatchObject({ ok: false, message: expect.stringContaining("503") });
+        expect(await link.getSmileApiConnection(gm)).toMatchObject({ api_retry_at: retryAt });
+      } finally {
+        fake.status = 200;
+      }
+      const synced = await actions.syncSmileNowAction({}, f);
+      expect(synced, synced.message).toMatchObject({ ok: true });
+      expect(await link.getSmileApiConnection(gm)).toMatchObject({ api_retry_at: null });
+
+      const later = new Date(Date.now() + 2 * 60 * 60_000).toISOString();
+      await sql`update smile_connect_connections set api_retry_at = ${later} where clinic_id = ${gm}`;
+      await link.clearSmileRetryAfterSync(gm, retryAt);
+      expect(await link.getSmileApiConnection(gm)).toMatchObject({ api_retry_at: later });
+    });
   });
 });
