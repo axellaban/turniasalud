@@ -67,7 +67,7 @@ async function usesLiveSmile(clinicId: string, tx?: TransactionSql): Promise<boo
  * Lo ocupado fuera de Turnia: el Google Calendar de cada profesional y la agenda de Smile Connect.
  * Si Smile Connect falla, no frena la agenda: quedan los turnos que Turnia ya trajo de ahí.
  */
-async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; verified?: { from: string; to: string }; deferSmile?: boolean; timeZone: string }): Promise<BusyInterval[]> {
+async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; verified?: { from: string; to: string; weekdays?: number[]; unchecked?: string[] }; deferSmile?: boolean; timeZone: string }): Promise<BusyInterval[]> {
   const [google, smile] = await Promise.all([
     googleBusy(clinicId, ids, from, to, opts),
     (opts.deferSmile ? Promise.resolve([] as BusyInterval[]) : smileBusy(clinicId, ids, from, to, opts)).catch((e) => {
@@ -445,11 +445,14 @@ export async function checkAvailability(
   const movingIds = move ? [move.appt.id, ...(move.follower ? [move.follower.id] : [])] : [];
   // Con Smile Connect en modo real (diferido), solo se ofrece lo verificado allá en esta misma consulta.
   const verifySmile = await usesDeferredSmile(clinic.id);
+  // Los días que Smile Connect no llegó a confirmar: cuentan como ocupados, y Sofi lo sabe.
+  const unchecked: string[] = [];
+  const workdays = [...new Set(catalog.schedules.filter((s) => checkedPros.includes(s.professional_id)).map((s) => s.weekday))];
   const [busy, blocks, calendar, patientAppointments] = await Promise.all([
     busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
     // Lo ocupado en el Google Calendar de cada profesional y en Smile Connect (si la clínica los conectó).
-    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone, ...(verifySmile && { verified: { from: fromKey, to: toKey } }) }),
+    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone, ...(verifySmile && { verified: { from: fromKey, to: toKey, weekdays: workdays, unchecked } }) }),
     move ? upcomingOf(move.patient.id) : [],
   ]);
   const preserve = clinic.keep_duration_on_reschedule && !!move;
@@ -504,6 +507,19 @@ export async function checkAvailability(
     : `La hora solicitada (${exactTime}) no está disponible en las fechas buscadas. Si hay opciones, ofrecelas como alternativas. `;
 
   const names = new Map(professionals.map((p) => [p.id, p.full_name]));
+  // Días que la agenda del consultorio no confirmó a tiempo: no se dan por llenos ante el paciente.
+  const notChecked = unchecked.length ? { dias_sin_revisar: unchecked } : {};
+  const uncheckedText = unchecked.length === 1 ? `el ${unchecked[0]}` : `${unchecked.length} días entre el ${unchecked[0]} y el ${unchecked.at(-1)}`;
+  if (!slots.length && unchecked.length) {
+    return {
+      ok: true,
+      turnos: [],
+      ...requestedTime,
+      ...notChecked,
+      ...(coverageNotice && { aviso_cobertura: coverageNotice }),
+      mensaje: `La agenda del consultorio tardó en responder y no pude revisar ${uncheckedText} (están en dias_sin_revisar). En los demás días buscados no hay lugar. No le digas al paciente que no hay turnos en esas fechas: volvé a llamar a consultar_disponibilidad con desde=${unchecked[0]} y hasta=${unchecked.at(-1)} antes de responder.`,
+    };
+  }
   if (!slots.length) {
     return {
       ok: true,
@@ -528,16 +544,21 @@ export async function checkAvailability(
     ...(coverageNotes.has(s.professional_id) && { cobertura: coverageNotes.get(s.professional_id) }),
   }));
   // Lo que la prestación pide preguntar antes de reservar, y el aviso si nadie atiende su cobertura.
+  const agendaNotice = unchecked.length
+    ? { ...notChecked, aviso_agenda: `No pude revisar ${uncheckedText} (la agenda del consultorio tardó en responder). Si el paciente prefiere esas fechas, consultá de nuevo con ellas antes de decirle que no hay lugar.` }
+    : {};
   const extras = {
     ...requestedTime,
     ...(coverageNotice && { aviso_cobertura: coverageNotice }),
     ...(visit.some((t) => t.ask_before) && { preguntar_antes: visit.map((t) => t.ask_before).filter(Boolean).join(" ") }),
     ...(urgent && !move && { urgencia: true }),
+    ...agendaNotice,
   };
   if (move) {
     return {
       ok: true,
       ...requestedTime,
+      ...agendaNotice,
       turno_id: move.appt.id,
       tipo_turno: move.appt.title || type.name,
       ...(next && { segunda_practica: move.follower?.title || next.name }),

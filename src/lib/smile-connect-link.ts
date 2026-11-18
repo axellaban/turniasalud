@@ -25,7 +25,7 @@ import {
   type SmileClient,
   type SmileRequest,
 } from "./smile-connect-api";
-import { addDaysKey, localDateKey, zonedParts, zonedTimeToUtc } from "./time";
+import { addDaysKey, localDateKey, weekdayOfKey, zonedParts, zonedTimeToUtc } from "./time";
 import { notifyN8n } from "./n8n";
 
 // Smile Connect por API (sin activar hasta que la API acepte el motivo del turno): la clave de la
@@ -48,6 +48,9 @@ export const WRITE_MODES: readonly SmileMode[] = ["sombra", "crear", "completa"]
 export const READ_CAP = 8_000;
 const AVAILABILITY_TTL_MS = 2 * 60_000;
 const AVAILABILITY_STALE_MS = 30 * 60_000;
+/** Al verificar para Sofi: hasta cuándo se consultan días (cada uno tarda de 3 a 5 segundos) y cuántos a la vez. */
+const VERIFY_DEADLINE_MS = 14_000;
+const VERIFY_PARALLEL = 6;
 /** Si una sincronización cancelaría muchos turnos de golpe, algo raro pasa: no se aplica. */
 const MAX_VANISHED = 5;
 
@@ -428,13 +431,18 @@ async function daySlots(conn: SmileApiConnection, client: SmileClient, day: stri
  * Lo ocupado en Smile Connect para estos profesionales: todo lo que no figura libre en su
  * disponibilidad (turnos, bloqueos, feriados y fuera de horario). Con `fresh` (al reservar) se
  * consulta en el momento. Solo para profesionales vinculados y con la conexión prendida.
+ *
+ * Con `verified` (Sofi ofrece solo lo verificado en esta consulta), cada día se consulta en el momento:
+ * solo los días de la semana de `weekdays` (los que atienden en Turnia), varios a la vez y en orden,
+ * hasta el plazo. Un día que no se pudo verificar cuenta como ocupado y queda en `unchecked`, para
+ * que Sofi no diga que no hay lugar en días que no se revisaron.
  */
 export async function smileBusy(
   clinicId: string,
   professionalIds: string[],
   from: Date,
   to: Date,
-  opts: { fresh?: boolean; verified?: { from: string; to: string }; timeZone: string },
+  opts: { fresh?: boolean; verified?: { from: string; to: string; weekdays?: number[]; unchecked?: string[] }; timeZone: string },
 ): Promise<BusyInterval[]> {
   if (!professionalIds.length) return [];
   const conn = await getSmileApiConnection(clinicId);
@@ -449,7 +457,8 @@ export async function smileBusy(
     throw new Error("Falta vincular un profesional con Smile Connect.");
   }
   if (!pros.length && !opts.verified) return [];
-  const deadline = Date.now() + 12_000;
+  // Sofi espera la respuesta hasta 20 segundos (response_timeout_secs en setup.ts).
+  const deadline = Date.now() + (opts.verified ? VERIFY_DEADLINE_MS : 12_000);
   const client: SmileClient = opts.verified
     ? { request: <T>(path: string, req?: SmileRequest) => {
         const remaining = deadline - Date.now();
@@ -466,33 +475,48 @@ export async function smileBusy(
   const first = opts.verified?.from ?? localDateKey(from, opts.timeZone);
   const last = opts.verified?.to ?? localDateKey(new Date(to.getTime() - 1), opts.timeZone);
   const days: string[] = [];
-  for (let d = first < today ? today : first; d <= last && days.length < 62; d = addDaysKey(d, 1)) days.push(d);
+  const weekdays = opts.verified?.weekdays ? new Set(opts.verified.weekdays) : null;
+  for (let d = first < today ? today : first; d <= last && days.length < 62; d = addDaysKey(d, 1)) {
+    if (!weekdays || weekdays.has(weekdayOfKey(d))) days.push(d);
+  }
 
   const out: BusyInterval[] = [];
   let verifiedDays = 0;
+  const addDay = (day: string, slots: ScSlot[] | null) => {
+    if (!slots && !opts.verified) return;
+    if (slots) verifiedDays++;
+    else opts.verified?.unchecked?.push(day);
+    const free = freeRanges(slots ?? []);
+    const start = localMidnight(day, opts.timeZone).getTime();
+    const end = localMidnight(addDaysKey(day, 1), opts.timeZone).getTime();
+    for (const p of selected) {
+      for (const [a, b] of busyFromFree(p.smileId ? free.get(p.smileId) ?? [] : [], start, end)) {
+        out.push({ professional_id: p.id, starts_at: new Date(a).toISOString(), ends_at: new Date(b).toISOString(), source: "smile" });
+      }
+    }
+  };
+  if (opts.verified) {
+    // Cada día tarda unos segundos en Smile Connect: varios a la vez, los más cercanos primero.
+    const results: Array<ScSlot[] | null> = days.map(() => null);
+    let next = 0;
+    const worker = async () => {
+      while (next < days.length && pros.length && Date.now() < deadline) {
+        const i = next++;
+        results[i] = await daySlots(conn, client, days[i], true, professionalId).catch(() => null);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(VERIFY_PARALLEL, days.length) }, worker));
+    days.forEach((day, i) => addDay(day, results[i]));
+    opts.verified.unchecked?.sort();
+    if (days.length && !verifiedDays) throw new Error("Smile Connect no devolvió disponibilidad para las fechas pedidas.");
+    return out;
+  }
   // De a cuatro días a la vez: la API permite 90 pedidos por minuto.
   for (let i = 0; i < days.length; i += 4) {
     const chunk = days.slice(i, i + 4);
-    const results = await Promise.all(chunk.map((day) => {
-      if (!opts.verified) return daySlots(conn, client, day, fresh, professionalId);
-      if (!pros.length || Date.now() >= deadline) return null;
-      return daySlots(conn, client, day, true, professionalId).catch(() => null);
-    }));
-    chunk.forEach((day, j) => {
-      const slots = results[j];
-      if (!slots && !opts.verified) return;
-      if (slots) verifiedDays++;
-      const free = freeRanges(slots ?? []);
-      const start = localMidnight(day, opts.timeZone).getTime();
-      const end = localMidnight(addDaysKey(day, 1), opts.timeZone).getTime();
-      for (const p of selected) {
-        for (const [a, b] of busyFromFree(p.smileId ? free.get(p.smileId) ?? [] : [], start, end)) {
-          out.push({ professional_id: p.id, starts_at: new Date(a).toISOString(), ends_at: new Date(b).toISOString(), source: "smile" });
-        }
-      }
-    });
+    const results = await Promise.all(chunk.map((day) => daySlots(conn, client, day, fresh, professionalId)));
+    chunk.forEach((day, j) => addDay(day, results[j]));
   }
-  if (opts.verified && !verifiedDays) throw new Error("Smile Connect no devolvió disponibilidad para las fechas pedidas.");
   return out;
 }
 

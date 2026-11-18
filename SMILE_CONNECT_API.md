@@ -131,6 +131,11 @@ QA de toda la integración, contra un Smile Connect simulado. Nunca contra el re
 - **Zona horaria.** Al cargar la clave, avisa si la de Smile Connect no coincide con la del consultorio en Turnia.
 - **Ventana incompleta.** Si una vuelta no pudo leer todos los pacientes nuevos (se leen de a 30), ya no da de baja en Turnia un turno que sigue en Smile Connect.
 
+- **Horarios verificados para Sofi (18/11/2026).** En una charla real Sofi dijo que Mininni no tenía lugar hasta diciembre y sí quedaban algunos. Cada día tarda de 3 a 5 segundos en `/availability`; se consultaban de a cuatro con un tope de 12 segundos, y los días que no llegaban a revisarse contaban como llenos. Ahora:
+  - se consultan solo los días en que el profesional atiende en Turnia, seis a la vez, los más cercanos primero, con un tope de 14 segundos (Sofi espera 20);
+  - un día que no se pudo verificar sigue sin ofrecerse, pero la herramienta lo devuelve en `dias_sin_revisar` y le dice a Sofi que vuelva a buscar desde ahí en vez de decir que no hay turnos.
+  - Medido contra la API real: del 18/11 al 2/12 (nueve días de lunes a jueves) en 7,7 segundos.
+
 Pruebas: `src/test/smile-connect-qa.integration.test.ts`, con una verificación de mutación: sin cada arreglo, su prueba falla.
 
 **También resuelto el 18/11:** las tres opciones que seguían atadas a Guerra–Mininni en el código ahora son de cada clínica:
