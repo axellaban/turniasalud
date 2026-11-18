@@ -38,7 +38,7 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
              count(*) filter (where calendar_sync = 'ok' and calendar_event_id is not null and ends_at > now())::int as sincronizados
       from appointments where clinic_id = ${clinic.id}`,
     getSmileConnectStatus(clinic.id),
-    loadSmileApiCard(clinic.id),
+    loadSmileApiCard(clinic.id, { admin: user.role === "admin" }),
   ]);
   const smileApiOn = Boolean(smileApi.conn?.api_key_encrypted) && (smileApi.conn?.api_mode ?? "apagada") !== "apagada";
   let calendars: GoogleCalendar[] | null = null;

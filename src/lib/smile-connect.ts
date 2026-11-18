@@ -240,15 +240,18 @@ async function resolveProfessionals(
   incoming: SmileConnectProfessional[],
   defaultSpecialty: string,
 ): Promise<{ map: Map<string, { id: string; specialty: string }>; created: number }> {
-  const existing = await tx<Array<{ id: string; full_name: string; specialty: string; active: boolean }>>`
-    select id, full_name, specialty, active from professionals where clinic_id = ${clinicId} order by active desc, created_at`;
+  const existing = await tx<Array<{ id: string; full_name: string; specialty: string; active: boolean; smile_professional_id: number | null }>>`
+    select id, full_name, specialty, active, smile_professional_id from professionals where clinic_id = ${clinicId} order by active desc, created_at`;
   const used = new Set<string>();
   const map = new Map<string, { id: string; specialty: string }>();
   let created = 0;
 
   for (const scPro of incoming) {
     const available = existing.filter((e) => !used.has(e.id));
-    const found = matchProfessional(scPro.fullName, available);
+    // Primero, el vínculo ya guardado (por la clave de la API o a mano en el panel): así un cambio de
+    // nombre en Smile Connect, o un nombre que no coincide, no crea otro profesional en Turnia.
+    const found = available.find((e) => e.smile_professional_id !== null && String(e.smile_professional_id) === scPro.externalId)
+      ?? matchProfessional(scPro.fullName, available.filter((e) => e.smile_professional_id === null || String(e.smile_professional_id) === scPro.externalId));
     if (found) {
       used.add(found.id);
       map.set(scPro.externalId, { id: found.id, specialty: found.specialty });
@@ -258,7 +261,7 @@ async function resolveProfessionals(
       insert into professionals (clinic_id, full_name, specialty, active)
       values (${clinicId}, ${scPro.fullName}, ${defaultSpecialty}, ${scPro.active})
       returning id, specialty`;
-    existing.push({ id: inserted.id, full_name: scPro.fullName, specialty: inserted.specialty, active: scPro.active });
+    existing.push({ id: inserted.id, full_name: scPro.fullName, specialty: inserted.specialty, active: scPro.active, smile_professional_id: null });
     used.add(inserted.id);
     map.set(scPro.externalId, { id: inserted.id, specialty: inserted.specialty });
     created++;

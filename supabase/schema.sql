@@ -1796,3 +1796,8 @@ alter table chat_mutes add constraint chat_mutes_reason_check check (reason in (
 -- Sofi deja de contestarle unas horas. Necesita que WAHA avise los mensajes propios (`message.any`).
 -- Apagada por defecto; cada clínica la prende en Configuración → Equipo por WhatsApp.
 alter table clinics add column if not exists auto_pause_on_staff_reply boolean not null default false;
+
+-- Smile Connect por API: confirmación diferida (18/11/2026). El pedido de Sofi queda guardado y se confirma
+-- por WhatsApp después de verificarlo en Smile Connect; mover y cancelar también se verifican allá. Empezó
+-- en Guerra–Mininni y es el flujo de toda clínica nueva. Con false, Sofi confirma dentro de la reserva.
+alter table smile_connect_connections add column if not exists api_deferred boolean not null default true;

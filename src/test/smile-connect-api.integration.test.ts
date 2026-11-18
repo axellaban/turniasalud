@@ -344,7 +344,12 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
   });
 
   describe("con la escritura real habilitada", () => {
-    beforeAll(() => vi.stubEnv("SMILE_CONNECT_WRITES", "on"));
+    beforeAll(async () => {
+      vi.stubEnv("SMILE_CONNECT_WRITES", "on");
+      // Estas pruebas cubren la confirmación dentro de la reserva (api_deferred = false). La diferida,
+      // que es la de toda clínica nueva, está en «confirmación diferida» más abajo.
+      await sql`update smile_connect_connections set api_deferred = false where clinic_id = ${clinicId}`;
+    });
 
     it("activar la escritura no envía turnos que quedaron en la cola de pruebas", async () => {
       await link.setSmileMode(clinicId, "sombra");

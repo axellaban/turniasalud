@@ -2,6 +2,20 @@
 
 Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## QA de Smile Connect: lista para otras clínicas — 18/11/2026
+
+QA de toda la integración contra un Smile Connect simulado (la Sofi de Guerra–Mininni está en producción). Ocho problemas encontrados y corregidos, con pruebas que fallan sin cada arreglo:
+1. el flujo diferido de Mininni ahora es el de toda clínica (`api_deferred`, prendido por defecto);
+2. familias que comparten celular;
+3. DNI repetido en Smile Connect;
+4. el cupo diario de lecturas, con reserva para confirmar turnos;
+5. aviso si Smile Connect rechaza la clave;
+6. los profesionales: cambio de nombre y vínculo a mano;
+7. el consultorio por defecto y la zona horaria;
+8. la ventana de sincronización incompleta.
+
+Detalle y la lista para sumar una clínica en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
+
 ## Pendientes de la auditoría, implementados — 18/11/2026
 
 - **Smile Connect en el resumen de las 10** ([#216](https://github.com/axellaban/turniasalud/pull/216)): cada turno dice si ya está cargado (o cancelado) en Smile Connect, si falta o si hay que revisarlo (`smile_sync`). Sin conexión no dice nada.

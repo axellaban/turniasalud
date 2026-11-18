@@ -1,11 +1,10 @@
 import { sql } from "@/lib/db";
-import { GUERRA_MININNI } from "@/lib/agent/appointment-access";
-import { READ_CAP, SMILE_MODE_LABEL, SMILE_MODES, WRITE_MODES, getSmileApiConnection, writesEnabledOnServer } from "@/lib/smile-connect-link";
+import { READ_CAP, SMILE_MODE_LABEL, SMILE_MODES, WRITE_MODES, getSmileApiConnection, smileDirectory, writesEnabledOnServer } from "@/lib/smile-connect-link";
 import { recentSmileChanges, smileReviewList } from "@/lib/smile-connect-push";
 import { formatDateTime } from "@/lib/time";
 import type { Clinic } from "@/lib/types";
 import { Badge, Card, Field, Notice, inputClass, smallButtonClass } from "@/components/ui";
-import { dismissSmileReviewAction, removeSmileApiKeyAction, resumeSmileWritesAction, saveSmileApiKeyAction, setSmileModeAction, syncSmileNowAction } from "../../smile-api-actions";
+import { dismissSmileReviewAction, linkSmileProfessionalAction, removeSmileApiKeyAction, resumeSmileWritesAction, saveSmileApiKeyAction, setSmileModeAction, syncSmileNowAction } from "../../smile-api-actions";
 import { ActionForm } from "./action-form";
 
 const ACTION: Record<string, string> = { crear_paciente: "Crear paciente", crear: "Crear turno", mover: "Mover turno", cancelar: "Cancelar turno" };
@@ -20,19 +19,21 @@ const STATUS: Record<string, { label: string; tone: "green" | "yellow" | "red" |
  * Configuración → Calendario: la conexión con la API pública de Smile Connect (clave, modo, estado,
  * lo que hay que revisar y el registro de cada cambio). La clave y el modo los cambia solo Turnia.
  */
-export async function loadSmileApiCard(clinicId: string) {
+export async function loadSmileApiCard(clinicId: string, opts: { admin?: boolean } = {}) {
   const conn = await getSmileApiConnection(clinicId);
   const hasKey = Boolean(conn?.api_key_encrypted);
-  const [pros, changes, review] = await Promise.all([
-    sql<Array<{ full_name: string; smile_professional_id: number | null; smile_box_id: number | null; active: boolean }>>`
-      select full_name, smile_professional_id, smile_box_id, active from professionals where clinic_id = ${clinicId} order by active desc, full_name`,
+  const [pros, changes, review, directory] = await Promise.all([
+    sql<Array<{ id: string; full_name: string; smile_professional_id: number | null; smile_box_id: number | null; active: boolean }>>`
+      select id, full_name, smile_professional_id, smile_box_id, active from professionals where clinic_id = ${clinicId} order by active desc, full_name`,
     hasKey ? recentSmileChanges(clinicId) : [],
     hasKey ? smileReviewList(clinicId) : [],
+    // Para vincular a mano (solo Turnia). Si Smile Connect no responde, la tarjeta se ve igual.
+    hasKey && opts.admin ? smileDirectory(clinicId) : null,
   ]);
-  return { conn, pros: [...pros], changes, review };
+  return { conn, pros: [...pros], changes, review, directory };
 }
 
-export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, review } }: { clinic: Clinic; admin: boolean; data: Awaited<ReturnType<typeof loadSmileApiCard>> }) {
+export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, review, directory } }: { clinic: Clinic; admin: boolean; data: Awaited<ReturnType<typeof loadSmileApiCard>> }) {
   const hasKey = Boolean(conn?.api_key_encrypted);
   const mode = conn?.api_mode ?? "apagada";
   const when = (iso: string | null | undefined) => (iso ? formatDateTime(iso, clinic.timezone) : "todavía no");
@@ -102,9 +103,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
               <legend className="mb-1 text-sm font-medium text-brand-950">Qué hace</legend>
               {SMILE_MODES.map((m) => <label key={m} className="flex gap-2 text-sm">
                 <input type="radio" name="mode" value={m} defaultChecked={m === mode} className="mt-1" />
-                <span><span className="font-medium text-brand-950">{SMILE_MODE_LABEL[m].label}.</span> <span className="text-brand-900/70">{clinic.id === GUERRA_MININNI && m === "completa"
-                  ? "Sofi crea, reprograma y cancela turnos simples después de verificarlos en Smile Connect. Aplica las reglas de turnos del consultorio."
-                  : SMILE_MODE_LABEL[m].detail}</span></span>
+                <span><span className="font-medium text-brand-950">{SMILE_MODE_LABEL[m].label}.</span> <span className="text-brand-900/70">{SMILE_MODE_LABEL[m].detail}</span></span>
               </label>)}
             </fieldset>
             <label className="flex gap-2 text-xs text-brand-900/80">
@@ -115,11 +114,36 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
 
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-brand-900/60">Profesionales</h3>
-            <ul className="mt-1 space-y-0.5 text-sm">
-              {pros.map((p) => <li key={p.full_name} className="flex flex-wrap gap-2">
-                <span className={p.active ? "text-brand-950" : "text-brand-900/50"}>{p.full_name}</span>
-                <span className="text-brand-900/60">{p.smile_professional_id ? `→ Smile Connect #${p.smile_professional_id}${p.smile_box_id ? `, consultorio #${p.smile_box_id}` : ""}` : "· sin vincular"}</span>
-              </li>)}
+            <ul className="mt-1 space-y-1 text-sm">
+              {pros.map((p) => {
+                const smilePro = directory?.professionals.find((x) => x.id === p.smile_professional_id);
+                const smileBox = directory?.boxes.find((x) => x.id === p.smile_box_id);
+                const linked = p.smile_professional_id
+                  ? `→ ${smilePro?.name ?? `Smile Connect #${p.smile_professional_id}`}${p.smile_box_id ? `, ${smileBox?.name ?? `consultorio #${p.smile_box_id}`}` : ", sin consultorio"}`
+                  : "· sin vincular";
+                return <li key={p.id}>
+                  <div className="flex flex-wrap gap-2">
+                    <span className={p.active ? "text-brand-950" : "text-brand-900/50"}>{p.full_name}</span>
+                    <span className={p.smile_professional_id && p.smile_box_id ? "text-brand-900/60" : "text-amber-700"}>{linked}</span>
+                  </div>
+                  {/* Si el nombre no coincide, se vincula a mano (sin consultorio, Sofi no puede escribir sus turnos). */}
+                  {admin && directory && <details className="mt-0.5" open={p.active && (!p.smile_professional_id || !p.smile_box_id)}>
+                    <summary className="cursor-pointer text-xs text-brand-700">{p.smile_professional_id ? "Cambiar el vínculo" : "Vincular"}</summary>
+                    <ActionForm action={linkSmileProfessionalAction} submit="Guardar" secondary className="mt-1 flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="clinic_id" value={clinic.id} />
+                      <input type="hidden" name="professional_id" value={p.id} />
+                      <select name="smile_professional_id" defaultValue={p.smile_professional_id ?? ""} aria-label={`Profesional de Smile Connect para ${p.full_name}`} className={`${inputClass} w-auto py-1.5 text-xs`}>
+                        <option value="">Sin vincular</option>
+                        {directory.professionals.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                      </select>
+                      <select name="smile_box_id" defaultValue={p.smile_box_id ?? smilePro?.boxId ?? (directory.boxes.length === 1 ? directory.boxes[0].id : "")} aria-label={`Consultorio de Smile Connect para ${p.full_name}`} className={`${inputClass} w-auto py-1.5 text-xs`}>
+                        <option value="">Consultorio…</option>
+                        {directory.boxes.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </ActionForm>
+                  </details>}
+                </li>;
+              })}
             </ul>
           </div>
         </div>

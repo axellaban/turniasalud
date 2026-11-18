@@ -124,10 +124,22 @@ function smileReplyPhone(ctx: ToolContext, source: AppointmentSource) {
   return !ctx.staff && (source === "whatsapp" || source === "telefono") && /^\d{10,15}$/.test(phone) ? phone : null;
 }
 
+/**
+ * Smile Connect por API en modo real con confirmación diferida: Sofi guarda el pedido y lo confirma
+ * después de verificarlo allá, ofrece solo horarios verificados y mueve o cancela verificando el cambio.
+ * Empezó en Guerra–Mininni y es el flujo por defecto de toda clínica (`api_deferred`).
+ */
+async function usesDeferredSmile(clinicId: string, tx?: TransactionSql): Promise<boolean> {
+  if (!writesEnabledOnServer()) return false;
+  const conn = await getSmileApiConnection(clinicId, tx);
+  return Boolean(conn?.api_key_encrypted && isLiveSmileMode(conn.api_mode) && conn.api_deferred);
+}
+
+/** Mover y cancelar turnos de Smile Connect verificándolos allá (modo «Crear, mover y cancelar»). */
 async function usesSmileManagement(clinicId: string, tx?: TransactionSql) {
-  if (clinicId !== GUERRA_MININNI || !writesEnabledOnServer()) return false;
+  if (!writesEnabledOnServer()) return false;
   const connection = await getSmileApiConnection(clinicId, tx);
-  return Boolean(connection?.api_key_encrypted && connection.api_mode === "completa");
+  return Boolean(connection?.api_key_encrypted && connection.api_mode === "completa" && connection.api_deferred);
 }
 
 /** La ficha con la que se está hablando: la elegida en el panel o la de este número. */
@@ -431,7 +443,8 @@ export async function checkAvailability(
   const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
   const checkedPros = otherPro ? [...proIds, otherPro] : proIds;
   const movingIds = move ? [move.appt.id, ...(move.follower ? [move.follower.id] : [])] : [];
-  const verifySmile = clinic.id === GUERRA_MININNI && await usesLiveSmile(clinic.id);
+  // Con Smile Connect en modo real (diferido), solo se ofrece lo verificado allá en esta misma consulta.
+  const verifySmile = await usesDeferredSmile(clinic.id);
   const [busy, blocks, calendar, patientAppointments] = await Promise.all([
     busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
@@ -889,7 +902,9 @@ function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id
 export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: Pick<BookOptions, "force" | "secondProfessionalId"> = {}) {
   const clinic = await getClinic(ctx.clinicId);
   const liveSmile = await usesLiveSmile(clinic.id);
-  const deferSmile = liveSmile && clinic.id === GUERRA_MININNI;
+  // Confirmación diferida: el pedido queda guardado y se confirma (por WhatsApp) después de verificarlo
+  // en Smile Connect, fuera de la reserva. Así una demora de Smile Connect no deja una transacción abierta.
+  const deferSmile = liveSmile && await usesDeferredSmile(clinic.id);
   // El panel y el equipo del consultorio por WhatsApp reservan como el consultorio.
   const byPanel = ctx.channel === "panel" || Boolean(ctx.staff);
   const source = sourceFromChannel(ctx.channel, ctx.patientPhone);

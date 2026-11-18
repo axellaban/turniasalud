@@ -5,6 +5,7 @@ import { isUuid } from "@/lib/clinic";
 import { getPanelClinic, logClinicChange, requireAdmin } from "@/lib/panel-clinic";
 import {
   getSmileApiConnection,
+  linkSmileProfessional,
   pullSmileConnect,
   recordSmileError,
   removeSmileApiKey,
@@ -40,7 +41,7 @@ export async function saveSmileApiKeyAction(_previous: FormState, form: FormData
     const pros = check.professionals.map((p) => `${p.name} → ${p.turnia ?? "sin vincular (se crea al sincronizar)"}`).join("; ");
     return {
       ok: true,
-      message: `Clave guardada: es de «${check.clinicName ?? "sin nombre"}» (Smile Connect #${check.smileClinicId}). Profesionales: ${pros}. La conexión sigue apagada hasta que elijas un modo.`,
+      message: `Clave guardada: es de «${check.clinicName ?? "sin nombre"}» (Smile Connect #${check.smileClinicId}). Profesionales: ${pros}. La conexión sigue apagada hasta que elijas un modo.${check.timezoneWarning ? ` Ojo: ${check.timezoneWarning}` : ""}`,
     };
   } catch (e) {
     return failed(e, "No se pudo guardar la clave.");
@@ -111,4 +112,23 @@ export async function dismissSmileReviewAction(form: FormData): Promise<void> {
   const id = text(form, "id");
   if (isUuid(id)) await dismissSmileReview(clinic.id, id);
   revalidatePath(PAGE);
+}
+
+/** Vincular a mano un profesional de Turnia con uno de Smile Connect (cuando el nombre no coincide). */
+export async function linkSmileProfessionalAction(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireAdmin();
+  try {
+    const clinic = await getPanelClinic(form);
+    const id = text(form, "professional_id");
+    if (!isUuid(id)) return { ok: false, message: "No encontré ese profesional." };
+    const raw = text(form, "smile_professional_id");
+    const box = text(form, "smile_box_id");
+    const smileId = raw && /^\d+$/.test(raw) ? Number(raw) : null;
+    await linkSmileProfessional(clinic.id, id, smileId, box && /^\d+$/.test(box) ? Number(box) : null);
+    await logClinicChange(clinic.id, "Calendario");
+    revalidatePath(PAGE);
+    return { ok: true, message: smileId ? "Vinculado." : "Desvinculado: Sofi no escribe sus turnos en Smile Connect." };
+  } catch (e) {
+    return failed(e, "No se pudo vincular.");
+  }
 }

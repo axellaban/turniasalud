@@ -109,6 +109,49 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 
 También avisan cuando algo quedó «para revisar en Smile Connect».
 
+## QA del 18/11/2026: lista para otras clínicas
+
+QA de toda la integración, contra un Smile Connect simulado. Nunca contra el real, porque la Sofi de Guerra–Mininni está en producción. Lo que se encontró y se corrigió:
+
+- **El mejor flujo era solo de Guerra–Mininni.** La confirmación diferida (el pedido queda guardado y se confirma por WhatsApp después de verificarlo), los horarios verificados en cada consulta y mover o cancelar verificando en Smile Connect estaban atados a su id. Ahora es una opción por conexión (`smile_connect_connections.api_deferred`), prendida por defecto. Guerra–Mininni no cambia; una clínica nueva arranca igual. Con `false`, Sofi confirma dentro de la reserva (flujo anterior, que sigue probado).
+- **Familias que comparten celular.** Si el paciente no tenía DNI en Smile Connect, se tomaba la única ficha con ese celular: el turno de un hijo podía quedar a nombre de la madre, y el vínculo quedaba guardado. Ahora, por celular, también tiene que coincidir el nombre (primer nombre y apellido).
+- **DNI repetido en Smile Connect.** Antes se creaba una tercera ficha. Ahora queda para recepción, sin crear nada.
+- **El cupo diario de lecturas (10.000, Turnia usa 8.000).**
+  - **El problema:** con unos 146 turnos en la ventana cercana, cada sincronización gasta 200 lecturas (dos páginas de 100). Con 35 por día, más la ventana lejana y la copia, se podía pasar el tope a media tarde. Desde ahí, las confirmaciones de los pacientes esperaban hasta las 21, cuando se renueva.
+  - **Qué se hizo:**
+    - siempre quedan 1.000 lecturas para confirmar y verificar los turnos de Sofi (`WRITE_RESERVE`);
+    - la sincronización cercana se espacia según lo que queda del cupo y del día;
+    - la lejana y la copia corren solo si alcanzan;
+    - una lectura rechazada no gasta cupo.
+- **Clave vencida o revocada.** Antes solo se veía en el panel, y Sofi derivaba todos los pedidos sin que nadie se enterara. Ahora avisa por WhatsApp a los celulares de avisos del consultorio, y a n8n (`smile.clave`), una vez cada 12 horas.
+- **Profesionales.**
+  - **Cambio de nombre en Smile Connect.** Antes, si cambiaban el nombre de un profesional (o los nombres no coincidían), cada sincronización creaba otro profesional en Turnia. Ahora manda el vínculo guardado.
+  - **Vínculo a mano.** Se puede vincular a mano desde el panel (profesional y consultorio).
+  - **Un solo consultorio.** Si el profesional no tiene consultorio por defecto y la clínica tiene uno solo, se usa ese.
+- **Zona horaria.** Al cargar la clave, avisa si la de Smile Connect no coincide con la del consultorio en Turnia.
+- **Ventana incompleta.** Si una vuelta no pudo leer todos los pacientes nuevos (se leen de a 30), ya no da de baja en Turnia un turno que sigue en Smile Connect.
+
+Pruebas: `src/test/smile-connect-qa.integration.test.ts`, con una verificación de mutación: sin cada arreglo, su prueba falla.
+
+**Queda por fuera (no es de Smile Connect, pero conviene para vender):**
+- la verificación de identidad para gestionar un turno desde otro número (`appointment-access.ts`);
+- la ficha de salud (`health-form.ts`);
+- los días del resumen diario (`daily-summary.ts`).
+
+Las tres siguen atadas a Guerra–Mininni en el código; para otra clínica serían opciones de su configuración.
+
+## Para sumar otra clínica con Smile Connect
+
+1. **Clave:** que el consultorio cree en Smile Connect una clave **sin vencimiento**, con los permisos de lectura y escritura de abajo.
+2. **Cargarla:** Turnia la carga en Configuración → Agenda e integraciones → «Smile Connect por API».
+3. **Revisar lo que muestra:**
+   - el nombre de la clínica;
+   - que no haya aviso de zona horaria;
+   - que cada profesional activo quede vinculado con su consultorio. Si no, «Vincular» a mano.
+4. **Avisos:** cargar los celulares en «Equipo por WhatsApp» (le llegan los avisos, incluido el de la clave) y mandar uno de prueba.
+5. **Probar por etapas:** seguir los pasos 5 a 8 de abajo («Solo lectura», «Escritura de prueba», «Crear turnos», «Crear, mover y cancelar»), con el consultorio mirando su Smile Connect.
+6. **Controlar el cupo:** mirar «Lecturas de hoy» los primeros días. Si llega cerca de 7.000, la sincronización se espacia sola.
+
 ## Para activarlo
 
 1. ~~Mergear el PR~~ (hecho el 16/11; el esquema se aplica solo en el build).
@@ -134,6 +177,7 @@ Los pasos 3 a 8 están, listos para una IA con computer use, en la **tarea 7** d
 
 ## Pruebas
 
+- `src/test/smile-connect-qa.integration.test.ts`: el QA del 18/11 (otra clínica, familias, DNI repetido, cupo, clave rechazada, profesionales, zona horaria).
 - `src/test/smile-connect-api.integration.test.ts`: contra un Smile Connect simulado en memoria. Cubre la clave, la lectura, la disponibilidad, los modos, crear, mover, cancelar, las verificaciones, el freno, la idempotencia, las notas y la copia diaria.
 - `src/test/clinic-notices.integration.test.ts`: los avisos, con WhatsApp simulado.
 - `src/lib/smile-connect-api.test.ts`: las conversiones.
