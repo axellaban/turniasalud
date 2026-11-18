@@ -5,6 +5,7 @@ import { parseHealthFormSheet } from "@/lib/health-form";
 import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { applyDentalTemplate } from "@/lib/dental-template";
+import { FIRST_SLOT_HOURS } from "@/lib/booking-rules";
 import { getPanelClinic, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizePhone } from "@/lib/phone";
 import { sendSummaryNow } from "@/lib/daily-summary";
@@ -84,6 +85,12 @@ export async function saveBookingRules(_previous: FormState, form: FormData): Pr
     const value = wholeNumber(form, key, min, max);
     if (value === undefined) return { ok: false, message };
     fields[key] = value;
+  }
+  if (form.has("first_slot_cutoff_hour")) {
+    const raw = text(form, "first_slot_cutoff_hour");
+    const hour = raw === null ? null : Number(raw);
+    if (hour !== null && !FIRST_SLOT_HOURS.includes(hour)) return { ok: false, message: "Elegí desde cuándo Sofi deja de dar el primer turno del día." };
+    fields.first_slot_cutoff_hour = hour;
   }
   if (form.has("followup_attempts")) {
     const attempts = Number(text(form, "followup_attempts"));

@@ -1827,3 +1827,18 @@ begin
     insert into data_migrations (name) values ('2026-11-18-opciones-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Primer turno del día (18/11/2026): Sofi no lo da si lo piden desde esta hora del último día de atención
+-- anterior (0: todo ese día) o el mismo día, para que nadie se encuentre a la mañana con un turno que no
+-- vio. Null: sin regla. El consultorio lo da igual desde el panel. Lo pidió Guerra–Mininni («no podés dar
+-- el primer turno del día siguiente»): queda prendido ahí para todo el día anterior.
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists first_slot_cutoff_hour smallint check (first_slot_cutoff_hour between 0 and 23);
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-18-primer-turno-guerra-mininni') then
+    update clinics set first_slot_cutoff_hour = 0 where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    insert into data_migrations (name) values ('2026-11-18-primer-turno-guerra-mininni');
+  end if;
+end $$;

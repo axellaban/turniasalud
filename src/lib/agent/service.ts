@@ -3,7 +3,7 @@ import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock, type SlotQuery } from "../slots";
-import { agentCanMove, agentSchedules, checkCoverage, coverageKey, durationPhrase, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
+import { agentCanMove, agentSchedules, checkCoverage, coverageKey, durationPhrase, firstSlotOfDayBlocked, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
 import { env } from "../env";
 import { addDaysKey, formatDate, humanSlot, localDateKey, parseClockTime, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
@@ -470,6 +470,10 @@ export async function checkAvailability(
     { urgent: urgent || asClinic, released: releaseUntil !== null },
   );
   const releasedOk = (start: Date, block: ScheduleBlock) => urgent || asClinic || !block.urgent_only || (releaseUntil !== null && start.getTime() <= releaseUntil);
+  // El primer turno del día no lo da Sofi si lo piden tarde (nadie lo vería antes de que llegue el paciente).
+  const firstSlotOk = (start: Date, block: ScheduleBlock) =>
+    asClinic ||
+    !firstSlotOfDayBlocked({ start, durationMin: firstDuration, professionalId: block.professional_id, schedules: catalog.schedules, cutoffHour: clinic.first_slot_cutoff_hour, now, timeZone: clinic.timezone });
   const slotQuery: SlotQuery = {
     schedules: usable,
     busy: [...busy, ...calendar],
@@ -479,6 +483,7 @@ export async function checkAvailability(
     stepMin: move ? 15 : type.duration_min,
     accepts: (start, end, block) =>
       releasedOk(start, block) &&
+      firstSlotOk(start, block) &&
       (!move ||
         ((selectedPro !== move.appt.professional_id || start.getTime() !== Date.parse(move.appt.starts_at)) &&
           !ownBusy.some((a) => start < new Date(a.ends_at) && end > new Date(a.starts_at)) &&
@@ -719,6 +724,7 @@ type BookOptions = {
 };
 
 const AGAIN = " Consultá la disponibilidad de nuevo y ofrecé otra opción.";
+const FIRST_SLOT = "Ese horario es el primero del día y con tan poco aviso lo asigna solo el consultorio: no se lo ofrezcas al paciente.";
 
 /** El agente no da, no ofrece ni mueve las prestaciones que la clínica se reserva (por ejemplo, una endodoncia que evalúa el profesional). */
 function assertAgentCanBook(type: Pick<AppointmentType, "name" | "panel_only">) {
@@ -772,6 +778,13 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
         expandBlocks(blocks, [who.id]),
       );
       if (!check.ok) throw new ToolError(`${who === pro ? "" : `${who.full_name}: `}${check.reason}${who === pro ? AGAIN : ""}`, true);
+    }
+    // El primer turno del día pedido tarde: lo da solo el consultorio.
+    if (
+      !opts.byPanel &&
+      firstSlotOfDayBlocked({ start: startsAt, durationMin, professionalId: pro.id, schedules: catalog.schedules, cutoffHour: clinic.first_slot_cutoff_hour, now: new Date(), timeZone: clinic.timezone })
+    ) {
+      throw new ToolError(`${FIRST_SLOT}${AGAIN}`);
     }
     // Al reservar se consulta Google en el momento, para ese horario exacto: lo que se
     // anotó recién en el calendario del profesional también cuenta.
