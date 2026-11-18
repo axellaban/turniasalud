@@ -110,7 +110,8 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
 | Turnos nuevos, movidos o cancelados, y la asistencia (de ayer a 4 días) | Sincronización cercana | 30 minutos de 7 a 22; 2 horas de noche |
 | Turnos de 4 a 61 días | Sincronización lejana | 8 horas |
 | Asistencia, cancelaciones o cambios cargados tarde (hasta 30 días atrás) y turnos de 61 a 120 días | Copia diaria aplicada a Turnia (`mirrorSmileBackup`) | Una vez por día, después de la copia (de 3 a 6) |
-| Datos de los pacientes (nombre, DNI, mail y celular) y pacientes nuevos sin turno | Copia diaria | Una vez por día |
+| Pacientes nuevos (aunque no tengan turno) | Copia diaria, leyendo solo desde el último id (la API pagina por id) | Una vez por día |
+| Cambios en los pacientes que ya existían (nombre, DNI, mail y celular) | Copia con la lista completa | Dos veces por semana (cada 3 días y medio) |
 | Horario semanal de cada profesional | `syncSmileHours`, a sus horarios de Turnia | 6 horas, y con «Sincronizar ahora» |
 | Bloqueos de agenda (vacaciones, fuera de servicio) | Las dos sincronizaciones y la copia, si la clave tiene `events:read` | Igual que los turnos |
 | Notas y prestación del turno | A las notas del turno en Turnia (la prestación, adelante) | Igual que los turnos |
@@ -126,7 +127,8 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
   - desde ahí, cada cambio que se haga en Smile Connect pasa a Turnia;
   - si cambia el celular, el anterior queda vinculado para que Sofi lo siga reconociendo;
   - una ficha de Turnia unida a dos de Smile Connect no se toca;
-  - los pacientes que Turnia no tiene entran de a 300 por día.
+  - los pacientes que Turnia no tiene entran de a 1.000 por copia;
+  - **por qué la lista completa va dos veces por semana:** es lo que más gasta del cupo diario (100 lecturas cada 100 pacientes). Leída todos los días, se comía el cupo y la sincronización cercana pasaba a cada hora y la lejana a una vez por día.
 - **Bloqueos:**
   - sin el permiso `events:read`, los bloqueos de Turnia no se tocan y no se avisa nada al consultorio (no es un problema de la clave). Se vuelve a probar una vez por día;
   - un bloqueo de un profesional que Smile Connect ya no lista no entra, porque en Turnia quedaría como bloqueo de toda la clínica.
@@ -138,6 +140,17 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
   - si de golpe faltan más de 5 turnos en una ventana, esa ventana no se aplica;
   - si falla, queda el error en el panel y se prueba con la copia del día siguiente.
 - **Agenda del panel:** con Smile Connect prendido ya no pide marcar asistencia. Dice cuántos turnos pasados siguen sin marca en Smile Connect y cuántos de Turnia no aparecen allá (por ejemplo, un turno de Sofi que recepción no copió).
+
+**Avisos a Axel por WhatsApp.** El consultorio no mira el panel, así que los problemas de la integración le llegan a Axel desde la línea de Turnia (`checkSmileHealth`, en cada vuelta). Llega un aviso por problema, no uno por intento:
+- la agenda lleva más de 3 horas sin sincronizarse, con el motivo (error de Smile Connect o cupo agotado);
+- la escritura quedó frenada;
+- la copia diaria lleva más de 30 horas sin hacerse, o no se pudo pasar entera a Turnia;
+- un horario para revisar: un profesional nuevo sin horarios en Turnia, o uno que ya no figura en Smile Connect;
+- el último cambio de horarios que se copió (informativo);
+- la clave rechazada;
+- la clave sin `events:read` (una vez por clave).
+
+Si el WhatsApp no sale, se reintenta una vez por hora. **Ojo:** salen por la línea general de Turnia, y con esa línea pausada no llegan, igual que el aviso de Google.
 
 **Falta para Guerra–Mininni:** que el consultorio cree en Smile Connect una clave sin vencimiento con todos los permisos, incluidos `events:read` y `services:read`, y cargarla en Configuración → «Smile Connect por API». Hasta entonces, el panel muestra «Falta el permiso events:read» en «Bloqueos».
 

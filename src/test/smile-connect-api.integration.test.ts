@@ -6,7 +6,12 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 // sincronización, la disponibilidad en vivo para Sofi y la escritura con su red de seguridad.
 // Todos los datos y números son ficticios.
 
-const mocks = vi.hoisted(() => ({ cookies: new Map<string, string>(), after: [] as Array<() => unknown> }));
+const mocks = vi.hoisted(() => ({
+  cookies: new Map<string, string>(),
+  after: [] as Array<() => unknown>,
+  axel: [] as string[],
+  axelOk: true,
+}));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: (name: string) => (mocks.cookies.has(name) ? { value: mocks.cookies.get(name) } : undefined),
@@ -18,6 +23,15 @@ vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", async (original) => ({ ...(await original<typeof import("next/server")>()), after: (fn: () => unknown) => mocks.after.push(fn) }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn(async () => {}) }));
+// Los avisos a Axel por WhatsApp se anotan acá en vez de salir.
+vi.mock("@/lib/chat-guard", async (original) => ({
+  ...(await original<typeof import("@/lib/chat-guard")>()),
+  notifyAxel: async (text: string) => {
+    if (!mocks.axelOk) return false;
+    mocks.axel.push(text);
+    return true;
+  },
+}));
 
 const url = testDatabaseUrl();
 const TZ = "America/Argentina/Buenos_Aires";
@@ -138,7 +152,15 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   if (path === "/availability") return ok({ data: { timezone: TZ, slots: availability(u.searchParams.get("date")!, Number(u.searchParams.get("duration_minutes")), u.searchParams.get("professional_id") ? Number(u.searchParams.get("professional_id")) : undefined) } });
   if (path === "/patients" && method === "GET") {
     const q = (u.searchParams.get("search") ?? "").toLowerCase();
-    return page([...fake.patients.values()].filter((p) => !q || [p.name, p.surname, p.id_number, p.phone_number].some((v) => (v ?? "").toLowerCase().includes(q))));
+    // Como la API real: pagina por id (after = el último id de la página anterior).
+    const limit = Number(u.searchParams.get("limit") ?? 50);
+    const after = Number(u.searchParams.get("after") ?? 0);
+    const rows = [...fake.patients.values()]
+      .filter((p) => !q || [p.name, p.surname, p.id_number, p.phone_number].some((v) => (v ?? "").toLowerCase().includes(q)))
+      .filter((p) => p.patient_id > after)
+      .sort((a, b) => a.patient_id - b.patient_id);
+    const slice = rows.slice(0, limit);
+    return ok({ data: slice, next_cursor: rows.length > limit ? slice[slice.length - 1].patient_id : null });
   }
   if (path === "/patients" && method === "POST") {
     const p: Pat = { patient_id: fake.nextPatient++, name: body.name, surname: body.surname, id_number: body.id_number ?? null, email: body.email ?? null, phone_country_code: body.phone_country_code ?? null, phone_number: body.phone_number ?? null };
@@ -982,6 +1004,8 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       const [before] = await sql`select full_name, phone from patients where id = ${pedro.patient_id}`;
       const saved = fake.patients.get(5002)!;
       fake.patients.set(5002, { ...saved, surname: "Inventado Gómez", phone_number: "1100006012" });
+      // Los cambios de los pacientes que ya existían llegan con la lista completa (dos veces por semana).
+      await sql`update smile_connect_connections set api_patients_full_at = now() - interval '4 days' where clinic_id = ${T}`;
       await link.backupSmileConnect(T);
       const second = await link.mirrorSmileBackup(T);
       expect(second.pacientes).toMatchObject({ actualizados: 1 });
@@ -996,6 +1020,67 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       fake.appointments.delete(95010);
       fake.appointments.delete(95020);
       fake.appointments.delete(95021);
+    });
+
+    it("la copia lee todos los días solo los pacientes nuevos y la lista completa dos veces por semana", async () => {
+      await sql`update smile_connect_connections set api_patients_full_at = null, api_patients_last_id = null where clinic_id = ${T}`;
+      const first = await link.backupSmileConnect(T);
+      expect(first).toMatchObject({ completa: true, pacientes: fake.patients.size });
+      const lastId = Math.max(...fake.patients.keys());
+      expect((await link.getSmileApiConnection(T))!.api_patients_last_id).toBe(lastId);
+      // Al día siguiente: un paciente nuevo en Smile Connect. Se lee solo ese (la API pagina por id).
+      fake.patients.set(lastId + 1, { patient_id: lastId + 1, name: "Nora", surname: "Reciente", id_number: "30111555", email: null, phone_country_code: "AR", phone_number: "1100006013" });
+      fake.calls.length = 0;
+      const next = await link.backupSmileConnect(T);
+      expect(next).toMatchObject({ completa: false, pacientes: 1 });
+      expect(fake.calls.filter((c) => c.path === "/patients")).toHaveLength(1);
+      const [row] = await sql`select patients_full, jsonb_array_length(patients) as n from smile_connect_backups where clinic_id = ${T} order by taken_at desc limit 1`;
+      expect(row).toEqual({ patients_full: false, n: 1 });
+      // Se aplica a Turnia como cualquier copia.
+      await link.mirrorSmileBackup(T);
+      expect((await sql`select count(*)::int as n from patient_external_ids where clinic_id = ${T} and external_id = ${`sc:${lastId + 1}`}`)[0].n).toBe(1);
+      // Pasados tres días y medio, vuelve la lista completa.
+      await sql`update smile_connect_connections set api_patients_full_at = now() - interval '85 hours' where clinic_id = ${T}`;
+      expect(await link.backupSmileConnect(T)).toMatchObject({ completa: true, pacientes: fake.patients.size });
+      fake.patients.delete(lastId + 1);
+    });
+
+    it("a Axel le llegan por WhatsApp los problemas de la integración, una vez cada uno", async () => {
+      const keys = async () => (await sql`select key from channel_events where key like ${`smile-axel:%:${T}`} order by key`).map((r) => r.key.split(":")[1]);
+      await sql`delete from channel_events where key like ${`smile-axel:%:${T}`}`;
+      mocks.axel.length = 0;
+      // Un profesional vinculado que Smile Connect ya no lista: queda para revisar y llega una vez.
+      const [{ id: gone }] = await sql`insert into professionals (clinic_id, full_name, specialty, smile_professional_id) values (${T}, 'Dra. Ya No Está', 'Odontología', 999) returning id`;
+      expect((await link.syncSmileHours(T)).revisar).toContain("Dra. Ya No Está ya no figura en Smile Connect. Si dejó de atender, desactivalo en Turnia (Equipo y horarios).");
+      // La agenda lleva más de 3 horas sin sincronizarse, y la clave no tiene el permiso de bloqueos.
+      await sql`update smile_connect_connections set api_near_pull_at = now() - interval '4 hours', api_checked_at = now() - interval '2 days',
+        api_backup_at = now(), api_events_ok = false, api_error = 'Smile Connect respondió 503.' where clinic_id = ${T}`;
+      const sent = await link.checkSmileHealth(T);
+      // Horarios: el último cambio copiado (informativo) y los dos para revisar.
+      expect(sent.sort()).toEqual(["agenda", "bloqueos", "horarios", "horarios", "horarios"]);
+      expect(mocks.axel.filter((t) => t.startsWith("ℹ️") && t.includes("Horarios copiados de Smile Connect"))).toHaveLength(1);
+      expect(mocks.axel.find((t) => t.includes("la agenda no se sincroniza"))).toContain("Smile Connect respondió 503.");
+      expect(mocks.axel.some((t) => t.includes("Dra. Ya No Está ya no figura en Smile Connect"))).toBe(true);
+      expect(mocks.axel.some((t) => t.includes("Dr. Mariano Prueba: atiende en Smile Connect"))).toBe(true);
+      expect(mocks.axel.some((t) => t.includes("events:read"))).toBe(true);
+      // En la vuelta siguiente, el mismo problema no se repite.
+      expect(await link.checkSmileHealth(T)).toEqual([]);
+      // Si el WhatsApp no sale (la línea de Turnia pausada), se reintenta una vez por hora, no en cada vuelta.
+      mocks.axelOk = false;
+      await sql`update smile_connect_connections set api_writes_paused = 'Se frenó la escritura: más de 15 cambios en una hora.' where clinic_id = ${T}`;
+      expect(await link.checkSmileHealth(T)).toEqual([]);
+      mocks.axelOk = true;
+      expect(await link.checkSmileHealth(T)).toEqual([]);
+      await sql`delete from channel_events where key like ${`smile-axel:escritura:%:${T}:fallo:%`}`;
+      expect(await link.checkSmileHealth(T)).toEqual(["escritura"]);
+      // La clave rechazada también le llega a Axel (además de al consultorio).
+      mocks.axel.length = 0;
+      await link.alertSmileKeyProblem(T, new (await import("@/lib/smile-connect-api")).SmileApiError("revocada", 401));
+      expect(mocks.axel).toEqual([expect.stringContaining("no acepta la clave")]);
+      expect(await keys()).toContain("escritura");
+
+      await sql`update smile_connect_connections set api_near_pull_at = now(), api_error = null, api_writes_paused = null, api_events_ok = null where clinic_id = ${T}`;
+      await sql`delete from professionals where id = ${gone}`;
     });
 
     it("la vuelta automática aplica la copia una sola vez y copia los horarios cada 6 horas", async () => {

@@ -9,6 +9,7 @@ import {
   freeRanges,
   scAllPatients,
   scAppointments,
+  scPatientsAfter,
   scAvailability,
   scBoxes,
   scClinic,
@@ -32,6 +33,8 @@ import {
 } from "./smile-connect-api";
 import { addDaysKey, localDateKey, weekdayOfKey, zonedParts, zonedTimeToUtc } from "./time";
 import { notifyN8n } from "./n8n";
+import { env } from "./env";
+import { createHash } from "node:crypto";
 
 // Smile Connect por API (sin activar hasta que la API acepte el motivo del turno): la clave de la
 // clínica, la sincronización desde Smile Connect (dosificada para el cupo diario de la API), la
@@ -89,6 +92,9 @@ export type SmileApiConnection = {
   /** Última vez que la copia diaria se aplicó a Turnia, con su resumen. */
   api_mirror_at: string | null;
   api_mirror_summary: Record<string, unknown> | null;
+  /** Última lectura de la lista completa de pacientes y el id más alto leído (los demás días, solo los nuevos). */
+  api_patients_full_at: string | null;
+  api_patients_last_id: number | null;
 };
 
 export class SmileBudgetError extends Error {}
@@ -101,7 +107,8 @@ export async function getSmileApiConnection(clinicId: string, tx?: TransactionSq
     select clinic_id, api_key_encrypted, api_key_hint, api_clinic_id, api_clinic_name, api_mode, api_error, api_error_at,
            api_checked_at, api_near_pull_at, api_near_count, api_wide_pull_at, api_backup_at, api_reads_day::text as api_reads_day,
            api_reads, api_supports_notes, api_writes_paused, api_retry_at, api_deferred,
-           api_hours_at, api_hours_note, api_events_ok, api_events_checked_at, api_mirror_at, api_mirror_summary
+           api_hours_at, api_hours_note, api_events_ok, api_events_checked_at, api_mirror_at, api_mirror_summary,
+           api_patients_full_at, api_patients_last_id::int as api_patients_last_id
     from smile_connect_connections where clinic_id = ${clinicId}`;
   return row ?? null;
 }
@@ -606,8 +613,17 @@ export async function smileBusy(
 
 // ── Copia diaria ─────────────────────────────────────────────────────────────
 
-/** Copia de los pacientes y de los turnos de 30 días atrás a 120 adelante. Guarda las últimas 14. */
-export async function backupSmileConnect(clinicId: string, now = new Date()): Promise<{ pacientes: number; turnos: number }> {
+/** La lista completa de pacientes se relee dos veces por semana; los otros días, solo los nuevos. */
+const FULL_PATIENTS_EVERY_MIN = 84 * 60;
+export const patientsFullDue = (c: Pick<SmileApiConnection, "api_patients_full_at" | "api_patients_last_id">) =>
+  c.api_patients_last_id == null || minutesSince(c.api_patients_full_at) >= FULL_PATIENTS_EVERY_MIN;
+
+/**
+ * Copia de los turnos de 30 días atrás a 120 adelante y de los pacientes. Guarda las últimas 14. La lista
+ * completa de pacientes es lo que más gasta del cupo diario: se lee dos veces por semana, y los otros días
+ * solo los pacientes nuevos (la API pagina por id, así que son los posteriores al último leído).
+ */
+export async function backupSmileConnect(clinicId: string, now = new Date()): Promise<{ pacientes: number; turnos: number; completa: boolean }> {
   const conn = await getSmileApiConnection(clinicId);
   if (!conn?.api_key_encrypted) throw new Error("Falta la clave de la API de Smile Connect.");
   const clinic = await getClinic(clinicId);
@@ -615,7 +631,9 @@ export async function backupSmileConnect(clinicId: string, now = new Date()): Pr
   const today = localDateKey(now, clinic.timezone);
   const from = localMidnight(addDaysKey(today, -30), clinic.timezone);
   const to = localMidnight(addDaysKey(today, 120), clinic.timezone);
-  const patients = await scAllPatients(client);
+  const full = patientsFullDue(conn);
+  const patients = full ? await scAllPatients(client) : await scPatientsAfter(client, conn.api_patients_last_id!);
+  const lastId = patients.reduce((m, p) => Math.max(m, p.patient_id), conn.api_patients_last_id ?? 0);
   const appointments: ScAppointment[] = [];
   for (let start = from; start < to; ) {
     const end = new Date(Math.min(start.getTime() + 31 * 86_400_000, to.getTime()));
@@ -623,14 +641,17 @@ export async function backupSmileConnect(clinicId: string, now = new Date()): Pr
     start = end;
   }
   await sql`
-    insert into smile_connect_backups (clinic_id, patients, appointments, window_from, window_to)
-    values (${clinicId}, ${json(patients)}, ${json(appointments)}, ${from}, ${to})`;
+    insert into smile_connect_backups (clinic_id, patients, appointments, window_from, window_to, patients_full)
+    values (${clinicId}, ${json(patients)}, ${json(appointments)}, ${from}, ${to}, ${full})`;
   await sql`
     delete from smile_connect_backups where clinic_id = ${clinicId} and id not in (
       select id from smile_connect_backups where clinic_id = ${clinicId} order by taken_at desc limit 14)`;
   const supportsNotes = await scSupportsNotes(client).catch(() => conn.api_supports_notes);
-  await sql`update smile_connect_connections set api_backup_at = now(), api_supports_notes = ${supportsNotes} where clinic_id = ${clinicId}`;
-  return { pacientes: patients.length, turnos: appointments.length };
+  await sql`
+    update smile_connect_connections set api_backup_at = now(), api_supports_notes = ${supportsNotes},
+      api_patients_last_id = ${lastId}, api_patients_full_at = case when ${full} then now() else api_patients_full_at end
+    where clinic_id = ${clinicId}`;
+  return { pacientes: patients.length, turnos: appointments.length, completa: full };
 }
 
 // ── Smile Connect, fuente de la verdad ──────────────────────────────────────
@@ -662,7 +683,13 @@ export async function syncSmileHours(clinicId: string): Promise<{ cambiados: str
     group by p.id order by p.full_name`;
   const cambiados: string[] = [];
   const revisar: string[] = [];
+  // Un profesional que Smile Connect ya no lista sigue habilitado en Turnia: queda para revisar (no se apaga solo).
+  const listed = new Set((await scProfessionals(client)).map((x) => x.professional_id));
   for (const p of pros) {
+    if (!listed.has(p.smile_professional_id)) {
+      revisar.push(`${p.full_name} ya no figura en Smile Connect. Si dejó de atender, desactivalo en Turnia (Equipo y horarios).`);
+      continue;
+    }
     const h = await scProfessionalHours(client, p.smile_professional_id);
     if (h.timezone && h.timezone !== clinic.timezone) {
       revisar.push(`${p.full_name}: Smile Connect usa otra zona horaria (${h.timezone}); no se copió su horario.`);
@@ -774,8 +801,8 @@ export async function applySmilePatientChanges(
   return { actualizados: updates.length };
 }
 
-/** Pacientes de Smile Connect que Turnia todavía no tiene: se suman de a estos por día. */
-const NEW_PATIENTS_PER_MIRROR = 300;
+/** Pacientes de Smile Connect que Turnia todavía no tiene: se suman de a estos por copia. */
+const NEW_PATIENTS_PER_MIRROR = 1_000;
 
 /**
  * Aplica a Turnia la última copia diaria (no gasta lecturas: ya se leyó). Cubre lo que las
@@ -834,7 +861,7 @@ export async function mirrorSmileBackup(clinicId: string, now = new Date()): Pro
     out[label] = summary;
   }
   // Todos los pacientes: a los conocidos se les pasa lo que cambió allá y los nuevos se vinculan (o se
-  // crean) de a NEW_PATIENTS_PER_MIRROR por día, para que la primera vez no se pase del tiempo de la corrida.
+  // crean) de a NEW_PATIENTS_PER_MIRROR por copia, para que la primera vez no se pase del tiempo de la corrida.
   const fresh = b.patients.filter((p) => !known.has(`sc:${p.patient_id}`));
   const patients = [...b.patients.filter((p) => known.has(`sc:${p.patient_id}`)), ...fresh.slice(0, NEW_PATIENTS_PER_MIRROR)];
   const { parsed, summary } = await syncSmileConnect(clinicId, { metadata, patients, appointments: [] }, {
@@ -842,7 +869,7 @@ export async function mirrorSmileBackup(clinicId: string, now = new Date()): Pro
   });
   out.pacientes = {
     nuevos: summary.patientsCreated,
-    ...(fresh.length > NEW_PATIENTS_PER_MIRROR && { siguen_mañana: fresh.length - NEW_PATIENTS_PER_MIRROR }),
+    ...(fresh.length > NEW_PATIENTS_PER_MIRROR && { siguen_despues: fresh.length - NEW_PATIENTS_PER_MIRROR }),
     ...(await applySmilePatientChanges(clinicId, patients, parsed.patients)),
   };
   await sql`update smile_connect_connections set api_mirror_at = now(), api_mirror_summary = ${json(out)} where clinic_id = ${clinicId}`;
@@ -935,15 +962,18 @@ async function readsAvailable(clinicId: string, now: Date): Promise<number> {
 }
 
 /**
- * Lo que va a gastar la copia diaria, por el tamaño de la anterior (una copia que no entra en el cupo
- * se corta a la mitad y no sirve). La primera vez, un mínimo.
+ * Lo que va a gastar la copia diaria, por el tamaño de las anteriores (una copia que no entra en el cupo
+ * se corta a la mitad y no sirve): los turnos de la última y, si toca la lista completa, los pacientes de
+ * la última completa. La primera vez, un mínimo.
  */
-async function backupCost(clinicId: string): Promise<number> {
-  const [last] = await sql<Array<{ p: number; a: number }>>`
-    select jsonb_array_length(patients) as p, jsonb_array_length(appointments) as a
-    from smile_connect_backups where clinic_id = ${clinicId} order by taken_at desc limit 1`;
-  if (!last) return BACKUP_MIN_BUDGET;
-  return (Math.ceil(last.p / 100) + 1) * 100 + (Math.ceil(last.a / 100) + 5) * 100;
+async function backupCost(clinicId: string, fullPatients: boolean): Promise<number> {
+  const [last] = await sql<Array<{ a: number }>>`
+    select jsonb_array_length(appointments) as a from smile_connect_backups where clinic_id = ${clinicId} order by taken_at desc limit 1`;
+  const [lastFull] = await sql<Array<{ p: number }>>`
+    select jsonb_array_length(patients) as p from smile_connect_backups where clinic_id = ${clinicId} and patients_full order by taken_at desc limit 1`;
+  if (!last || (fullPatients && !lastFull)) return BACKUP_MIN_BUDGET;
+  const patients = fullPatients ? (Math.ceil(lastFull.p / 100) + 1) * 100 : 200;
+  return patients + (Math.ceil(last.a / 100) + 5) * 100;
 }
 
 /**
@@ -970,10 +1000,95 @@ export async function alertSmileKeyProblem(clinicId: string, e: unknown): Promis
       await sql`insert into clinic_notices ${sql(phones.map((p) => ({ clinic_id: clinicId, phone: p.phone, kind: "smile", body })))}`;
     }
     await notifyN8n("smile.clave", { clinic_id: clinicId, status: e.status, mensaje: problem });
+    const clinic = await getClinic(clinicId);
+    await sendAxel(`${axelHead(clinic.name)} no acepta la clave (${problem}). Sofi le pasa los pedidos a recepción hasta que se cargue una nueva: ${panelLink()}`);
   } catch (err) {
     console.error("Smile Connect: no se pudo avisar del problema con la clave", err instanceof Error ? err.message : err);
   }
 }
+
+// ── Avisos a Axel ────────────────────────────────────────────────────────────
+// El consultorio trabaja solo en Smile Connect y nadie mira el panel todos los días: los problemas de la
+// integración le llegan a Axel por WhatsApp, desde la línea de Turnia. Uno por problema, no por intento.
+
+const panelLink = () => `${env.appUrl().replace(/\/$/, "")}/panel/configuracion/calendario#smile-connect-api`;
+const axelHead = (clinic: string) => `⚠️ Turnia · Smile Connect de ${clinic}:`;
+const shortHash = (text: string) => createHash("sha1").update(text).digest("hex").slice(0, 16);
+
+async function sendAxel(text: string): Promise<boolean> {
+  const { notifyAxel } = await import("./chat-guard");
+  return notifyAxel(text);
+}
+
+/**
+ * Manda el aviso si esa clave de aviso no salió antes. Si el WhatsApp falla (por ejemplo, con la línea de
+ * Turnia pausada), se reintenta una vez por hora, no en cada vuelta de 10 minutos.
+ */
+async function alertAxelOnce(key: string, text: string): Promise<boolean> {
+  const failed = `${key}:fallo:${Math.floor(Date.now() / 3600_000)}`;
+  const [blocked] = await sql`select 1 from channel_events where key = ${failed}`;
+  if (blocked) return false;
+  const [claimed] = await sql`insert into channel_events (key) values (${key}) on conflict do nothing returning key`;
+  if (!claimed) return false;
+  if (await sendAxel(text)) return true;
+  await sql`delete from channel_events where key = ${key}`;
+  await sql`insert into channel_events (key) values (${failed}) on conflict do nothing`;
+  return false;
+}
+
+/** Sin la ventana cercana por más de esto, la agenda de Turnia quedó vieja: se avisa. */
+const STALE_NEAR_MIN = 3 * 60;
+/** Sin copia por más de esto (corre una vez por día), se avisa. */
+const STALE_BACKUP_MIN = 30 * 60;
+
+/**
+ * Revisa cómo quedó la integración de una clínica después de cada vuelta y le avisa a Axel lo que hay que
+ * mirar: la agenda que dejó de sincronizarse (con el motivo), la escritura frenada, la copia diaria vieja o
+ * con problemas, los horarios para revisar (un profesional nuevo o que ya no está) y, una vez por clave, si
+ * falta el permiso de los bloqueos. Devuelve las claves de los avisos que salieron.
+ */
+export async function checkSmileHealth(clinicId: string, run: Record<string, unknown> = {}, now = new Date()): Promise<string[]> {
+  const conn = await getSmileApiConnection(clinicId);
+  if (!conn?.api_key_encrypted || conn.api_mode === "apagada") return [];
+  const clinic = await getClinic(clinicId);
+  const head = axelHead(clinic.name);
+  const day = localDateKey(now, clinic.timezone);
+  const half = Math.floor(now.getTime() / (12 * 3600_000));
+  const connectedFor = minutesSince(conn.api_checked_at);
+  const sent: string[] = [];
+  const alert = async (key: string, text: string) => {
+    if (await alertAxelOnce(`smile-axel:${key}:${clinicId}`, text)) sent.push(key.split(":")[0]);
+  };
+
+  if (connectedFor > STALE_NEAR_MIN && minutesSince(conn.api_near_pull_at) > STALE_NEAR_MIN) {
+    const since = conn.api_near_pull_at ? `desde el ${formatWhen(conn.api_near_pull_at, clinic.timezone)}` : "todavía";
+    const why = conn.api_error ?? (typeof run.cupo === "string" ? run.cupo : "sin un error registrado");
+    await alert(`agenda:${half}`, `${head} la agenda no se sincroniza ${since} (${why}). Sofi igual verifica cada horario en vivo, pero sus turnos y la asistencia en Turnia pueden estar atrasados: ${panelLink()}`);
+  }
+  if (conn.api_writes_paused) {
+    await alert(`escritura:${day}`, `${head} la escritura quedó frenada: ${conn.api_writes_paused} Se reanuda desde el panel: ${panelLink()}`);
+  }
+  if (connectedFor > STALE_BACKUP_MIN && minutesSince(conn.api_backup_at) > STALE_BACKUP_MIN) {
+    await alert(`copia:${day}`, `${head} no se hizo la copia diaria ${conn.api_backup_at ? `desde el ${formatWhen(conn.api_backup_at, clinic.timezone)}` : "todavía"}. Sin ella no llegan a Turnia la asistencia cargada tarde ni los cambios de los pacientes. Mirá «Lecturas de hoy» y «Último problema»: ${panelLink()}`);
+  }
+  const mirror = conn.api_mirror_summary ?? {};
+  const mirrorProblems = Object.entries(mirror).flatMap(([k, v]) => (typeof v === "string" ? [k === "error" ? v : `${k}: ${v}`] : []));
+  if (conn.api_mirror_at && mirrorProblems.length) {
+    await alert(`espejo:${shortHash(conn.api_mirror_at)}`, `${head} la copia diaria no se pudo pasar entera a Turnia: ${mirrorProblems.join(" ")} ${panelLink()}`);
+  }
+  for (const line of (conn.api_hours_note ?? "").split("\n").filter(Boolean)) {
+    await alert(`horarios:${shortHash(line)}`, line.startsWith("Horarios copiados")
+      ? `ℹ️ Turnia · Smile Connect de ${clinic.name}: ${line}`
+      : `${head} ${line} ${panelLink()}`);
+  }
+  if (conn.api_events_ok === false) {
+    await alert(`bloqueos:${conn.api_key_hint ?? "clave"}`, `${head} la clave no tiene el permiso events:read, así que la Agenda de Turnia no muestra los bloqueos (Sofi los respeta igual). Hace falta una clave nueva con ese permiso: tarea 10 de TAREAS_COMPUTER_USE.md.`);
+  }
+  return sent;
+}
+
+const formatWhen = (iso: string, timeZone: string) =>
+  new Intl.DateTimeFormat("es-AR", { timeZone, day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 async function recordAndAlert(clinicId: string, e: unknown): Promise<string> {
   await alertSmileKeyProblem(clinicId, e);
@@ -989,7 +1104,7 @@ async function recordAndAlert(clinicId: string, e: unknown): Promise<string> {
 export async function runSmileConnect(now = new Date()): Promise<Record<string, unknown>> {
   const conns = await sql<Array<SmileApiConnection & { timezone: string }>>`
     select c.clinic_id, c.api_mode, c.api_near_pull_at, c.api_near_count, c.api_wide_pull_at, c.api_backup_at,
-           c.api_hours_at, c.api_mirror_at, cl.timezone
+           c.api_hours_at, c.api_mirror_at, c.api_patients_full_at, c.api_patients_last_id::int as api_patients_last_id, cl.timezone
     from smile_connect_connections c join clinics cl on cl.id = c.clinic_id
     where c.api_key_encrypted is not null and c.api_mode <> 'apagada'`;
   const out: Record<string, unknown> = {};
@@ -1004,6 +1119,8 @@ export async function runSmileConnect(now = new Date()): Promise<Record<string, 
         const pending = await pushPendingSmile(c.clinic_id);
         result.escritura = pending;
         if (pending.reintentar_en) {
+          // Smile Connect pidió esperar: no se lee nada en esta vuelta, pero si dura horas, Axel se entera.
+          await checkSmileHealth(c.clinic_id, result, now).catch(() => []);
           out[c.clinic_id] = result;
           continue;
         }
@@ -1030,7 +1147,7 @@ export async function runSmileConnect(now = new Date()): Promise<Record<string, 
         result.error_horarios = await recordAndAlert(c.clinic_id, e);
       }
     }
-    if (hour >= 3 && hour < 6 && minutesSince(c.api_backup_at) >= 20 * 60 && (await readsAvailable(c.clinic_id, now)) >= await backupCost(c.clinic_id)) {
+    if (hour >= 3 && hour < 6 && minutesSince(c.api_backup_at) >= 20 * 60 && (await readsAvailable(c.clinic_id, now)) >= await backupCost(c.clinic_id, patientsFullDue(c))) {
       try {
         result.copia = await backupSmileConnect(c.clinic_id, now);
       } catch (e) {
@@ -1045,6 +1162,12 @@ export async function runSmileConnect(now = new Date()): Promise<Record<string, 
         // No se reintenta cada 10 minutos: queda el error en el panel y se prueba con la copia de mañana.
         await sql`update smile_connect_connections set api_mirror_at = now(), api_mirror_summary = ${json({ error: result.error_espejo })} where clinic_id = ${c.clinic_id}`;
       }
+    }
+    try {
+      const avisos = await checkSmileHealth(c.clinic_id, result, now);
+      if (avisos.length) result.avisos_axel = avisos;
+    } catch (e) {
+      console.error("Smile Connect: no se pudo revisar el estado para avisar", e instanceof Error ? e.message : e);
     }
     out[c.clinic_id] = result;
   }

@@ -14,7 +14,16 @@
 
   La Agenda ya no pide marcar asistencia. Detalle en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
 - [ ] **Clave nueva de Smile Connect para Guerra–Mininni**, sin vencimiento, con todos los permisos, incluidos `events:read` (bloqueos) y `services:read` (prestaciones). Sin `events:read`, la Agenda de Turnia no muestra los bloqueos; Sofi igual los respeta. La crea el consultorio en Smile Connect y Turnia la carga en Configuración → «Smile Connect por API» (tarea 10 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md)).
-- [ ] Propuesta, sin pedir todavía: cuando recepción cancela un turno en Smile Connect, ofrecérselo a la lista de espera de Turnia (hoy solo se ofrece lo que se cancela por Sofi o por el panel). Es un mensaje nuevo a pacientes en producción: confirmarlo antes.
+- [ ] Propuesta, sin pedir todavía (el 18/11 Axel dijo «por ahora no»): cuando recepción cancela un turno en Smile Connect, ofrecérselo a la lista de espera de Turnia. Hoy solo se ofrece lo que se cancela por Sofi o por el panel. Es un mensaje nuevo a pacientes en producción.
+- **Pacientes en la copia diaria y avisos a Axel** (18/11):
+  - los pacientes nuevos se leen todos los días y la lista completa, dos veces por semana, para no comerse el cupo de lecturas;
+  - los problemas de la integración le llegan a Axel por WhatsApp.
+- [ ] **La línea general de WhatsApp de Turnia figura pausada** (`/api/health`: `demo.canal = pausado`). Con la línea pausada no le llega ningún aviso a Axel: ni los de Smile Connect, ni el de Google al reconectar, ni el fusible de uso. Para recibirlos, hay que activar la línea general, o decidir otra vía.
+- Ideas evaluadas el 18/11, sin pedir:
+  - ventana cercana de 4 a 8 días («la semana que viene», casi al mismo costo);
+  - copia hasta 180 días (controles semestrales);
+  - pedirle a Smile Connect un filtro `updated_since`;
+  - precios de Sofi desde Smile Connect.
 
 ## Costo de Neon en producción (18/11/2026)
 
