@@ -10,7 +10,7 @@ export const SMILE_API_BASE = "https://app.smileconnect.pro/api/v1";
 const apiBase = () => (process.env.SMILE_CONNECT_API_URL || SMILE_API_BASE).replace(/\/$/, "");
 
 /** Lo que pide Turnia a la clave. Las de escritura solo hacen falta para escribir. */
-export const READ_SCOPES = ["clinic:read", "professionals:read", "boxes:read", "availability:read", "appointments:read", "patients:read"] as const;
+export const READ_SCOPES = ["clinic:read", "professionals:read", "boxes:read", "availability:read", "appointments:read", "patients:read", "events:read", "services:read"] as const;
 export const WRITE_SCOPES = ["patients:create", "appointments:create", "appointments:reschedule", "appointments:cancel"] as const;
 
 export class SmileApiError extends Error {
@@ -120,7 +120,24 @@ export type ScAppointment = {
   professional_ids: number[];
   attendance: string | null;
   cancelled: boolean;
+  /** Desde noviembre de 2026 la API devuelve las notas y la prestación del turno. */
+  notes?: string | null;
+  service_id?: number | null;
 };
+/** Bloqueo de agenda (vacaciones, fuera de servicio u otro). Necesita el permiso `events:read`. */
+export type ScEvent = {
+  event_id: number;
+  type: "vacation" | "outOfService" | "other";
+  name: string | null;
+  start_date: string;
+  end_date: string;
+  professional_id: number;
+  box_id: number | null;
+  notes: string | null;
+};
+/** Horario semanal: por día (0 = domingo), las celdas que cubre, cada `interval_minutes`. */
+export type ScHours = { professional_id: number; timezone: string; interval_minutes: number; hours: Record<string, string[]> };
+export type ScService = { service_id: number; name: string };
 type Page<T> = { data: T[]; next_cursor: number | null };
 
 /** Todas las páginas de un listado (after = next_cursor). `max` corta antes, por las dudas. */
@@ -151,6 +168,14 @@ export async function scAvailability(c: SmileClient, date: string, duration = 5,
 export function scAppointments(c: SmileClient, start: Date, end: Date, limit = 100): Promise<ScAppointment[]> {
   return all<ScAppointment>(c, "/appointments", { start: start.toISOString(), end: end.toISOString() }, { limit, sensitive: true });
 }
+
+/** Bloqueos que empiezan en [start, end) (máximo 31 días). No son registros sensibles. */
+export function scEvents(c: SmileClient, start: Date, end: Date): Promise<ScEvent[]> {
+  return all<ScEvent>(c, "/events", { start: start.toISOString(), end: end.toISOString() }, { limit: 100, sensitive: false });
+}
+export const scProfessionalHours = async (c: SmileClient, id: number) =>
+  (await c.request<{ data: ScHours }>(`/professionals/${id}/hours`)).data;
+export const scServices = (c: SmileClient) => all<ScService>(c, "/services", {}, { limit: 100, sensitive: false });
 
 export const scAppointment = async (c: SmileClient, id: number) =>
   (await c.request<{ data: ScAppointment }>(`/appointments/${id}`, { reserve: 1 })).data;
@@ -195,6 +220,26 @@ export async function scSupportsNotes(c: SmileClient): Promise<boolean> {
 }
 
 // ── Conversiones ─────────────────────────────────────────────────────────────
+
+/**
+ * Celdas del horario de Smile Connect → franjas de Turnia. Las celdas seguidas forman una franja que
+ * termina una celda después de la última («11:00 … 17:00» cada 30 → 11:00 a 17:30).
+ */
+export function hoursToRanges(cells: string[], intervalMinutes: number): Array<{ start: string; end: string }> {
+  const step = Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes : 30;
+  const mins = [...new Set(cells.map((c) => /^(\d{1,2}):(\d{2})/.exec(c)).filter((m): m is RegExpExecArray => Boolean(m)).map((m) => Number(m[1]) * 60 + Number(m[2])))]
+    .filter((m) => m >= 0 && m < 24 * 60)
+    .sort((a, b) => a - b);
+  const out: Array<{ start: string; end: string }> = [];
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  for (let i = 0; i < mins.length; ) {
+    let j = i;
+    while (j + 1 < mins.length && mins[j + 1] - mins[j] === step) j++;
+    out.push({ start: hhmm(mins[i]), end: hhmm(Math.min(mins[j] + step, 24 * 60 - 1)) });
+    i = j + 1;
+  }
+  return out;
+}
 
 /** «María José García» → nombre «María José», apellido «García». Smile Connect pide los dos. */
 export function splitName(full: string | null | undefined): { name: string; surname: string } {

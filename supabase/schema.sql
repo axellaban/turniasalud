@@ -1909,3 +1909,22 @@ begin
     insert into data_migrations (name) values ('2026-11-18-guerra-mininni-cliente');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Smile Connect es la fuente de la verdad (18/11/2026). El consultorio trabaja solo en Smile Connect y no
+-- entra al panel de Turnia: lo que cambia allá tiene que llegar solo.
+--   * api_hours_*: el horario semanal de cada profesional se copia de Smile Connect a sus horarios de Turnia.
+--   * api_events_ok: si la clave tiene el permiso events:read, los bloqueos de agenda llegan por la API
+--     (null: todavía no se probó; false: la clave no lo tiene y se vuelve a probar una vez por día).
+--   * api_mirror_at: la copia diaria se aplica también a Turnia (asistencia o cancelaciones cargadas
+--     tarde, turnos de 61 a 120 días y cambios en los datos de los pacientes).
+--   * patient_external_ids.smile_data: lo último que se vio de cada paciente en Smile Connect, para pasar a
+--     Turnia solo lo que cambió allá (y no pisar lo que Sofi sabe de un paciente con datos viejos de Smile).
+-- ---------------------------------------------------------------------------
+alter table smile_connect_connections add column if not exists api_hours_at timestamptz;
+alter table smile_connect_connections add column if not exists api_hours_note text;
+alter table smile_connect_connections add column if not exists api_events_ok boolean;
+alter table smile_connect_connections add column if not exists api_events_checked_at timestamptz;
+alter table smile_connect_connections add column if not exists api_mirror_at timestamptz;
+alter table smile_connect_connections add column if not exists api_mirror_summary jsonb;
+alter table patient_external_ids add column if not exists smile_data jsonb;

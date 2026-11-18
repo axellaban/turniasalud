@@ -655,7 +655,9 @@ async function syncAppointments(
 
       const nextReminder = existing.reminder_sent_at ?? (a.reminderSent ? a.createdAt ?? nowIso : null);
       const nextCancelled = nextStatus === "cancelado" ? existing.cancelled_at ?? a.cancelledAt ?? nowIso : existing.cancelled_at;
-      const nextNotes = a.notes ?? existing.notes;
+      // Las notas de un turno que dio Turnia (Sofi o el panel) llevan el motivo del paciente y la baja
+      // («| Cancelado: …»), que usa el resumen de las 10: no se pisan con las de Smile Connect.
+      const nextNotes = existing.source === "smile_connect" ? (a.notes ?? existing.notes) : (existing.notes ?? a.notes);
 
       const changed =
         !sameTimes ||
