@@ -32,7 +32,8 @@
 
 ## Smile Connect por API y avisos por WhatsApp (16/11/2026)
 
-- **Lectura verificada y «Escritura de prueba» en producción.** El consultorio cargó la clave y el userscript de Tampermonkey quedó desactivado. Los 39 turnos vigentes de Smile Connect para el 17 y 18 estaban en Turnia. Seis turnos adicionales de Sofi por WhatsApp quedan para conciliar antes de activar la escritura real.
+- **Actualizado el 18/11:** la escritura real está activa (`SMILE_CONNECT_WRITES=on` y modo «Crear turnos»), así que Sofi crea sus turnos en Smile Connect. Lo de abajo es el estado del 16/11.
+- **Lectura verificada y «Escritura de prueba» en producción (16/11).** El consultorio cargó la clave y el userscript de Tampermonkey quedó desactivado. Los 39 turnos vigentes de Smile Connect para el 17 y 18 estaban en Turnia. Seis turnos adicionales de Sofi por WhatsApp quedan para conciliar antes de activar la escritura real.
 - **Siguiente paso.** Revisar el registro de operaciones de prueba con el consultorio y probar primero la creación de un turno. Ver [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) y la tarea 7 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **Avisos por WhatsApp al consultorio:** van en el mismo PR. Falta saber a qué celulares mandarlos (se cargan en Configuración).
 

@@ -2,7 +2,12 @@
 
 **Estado (18/11/2026). Smile Connect es la fuente de la verdad de Guerra–Mininni.** El consultorio trabaja solo en Smile Connect y no entra al panel de Turnia. Todo lo que cambia allá llega solo a Turnia: turnos, asistencia, cancelaciones, pacientes, horarios y bloqueos. Ver «Smile Connect, fuente de la verdad», abajo.
 
-La conexión sigue en «Escritura de prueba»: falta coordinar con el consultorio la escritura real. Para los bloqueos, falta sumar a la clave el permiso `events:read`; mientras tanto, Sofi los respeta igual porque verifica cada horario en vivo.
+**Escritura real activa:** `SMILE_CONNECT_WRITES=on` en Vercel y el modo «Crear turnos», según Axel el 18/11.
+- **Altas:** Sofi crea en Smile Connect cada turno que da y se lo confirma al paciente recién después de verificarlo allá. Ofrece solo horarios verificados en ese momento.
+- **Cambios, cancelaciones y visitas combinadas:** los coordina recepción. Para que también los haga Sofi, el modo es «Crear, mover y cancelar».
+- **Motivo del turno:** Turnia lo manda en cuanto detecta que la API acepta notas. Desde el 18/11 lo revisa cada 6 horas, no solo con la copia diaria.
+
+Para los bloqueos, falta sumar a la clave el permiso `events:read`. Mientras tanto, Sofi los respeta igual, porque verifica cada horario en vivo.
 
 **Del 16/11:** se cargó la clave, se verificó la lectura y se desactivó el userscript de Tampermonkey. El resumen de Sofi a las 10 y «¿este turno lo diste vos?» por WhatsApp cubren la prestación y el motivo de los turnos de Sofi. El cliente se comparó con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0).
 
