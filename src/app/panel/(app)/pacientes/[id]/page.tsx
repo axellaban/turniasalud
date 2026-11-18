@@ -74,7 +74,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
     sql`select 1 from patient_external_ids where clinic_id = ${clinic.id} and patient_id = ${p.id} and external_id like 'sc:%' limit 1`,
   ]);
   // Ficha de salud: solo en las clínicas que la usan.
-  const healthForm = healthFormSheet(clinic.id) ? { form: await latestHealthForm(p.id) } : null;
+  const healthForm = healthFormSheet(clinic) ? { form: await latestHealthForm(p.id) } : null;
   const tz = clinic.timezone;
 
   const age = ageOn(p.birth_date, localDateKey(new Date(), tz));

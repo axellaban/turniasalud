@@ -6,6 +6,7 @@ import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES } from "@/l
 import { Badge, Field, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
 import { ConfigHeader, loadConfigConflicts } from "../header";
+import { healthFormSheet, healthFormSheetText } from "@/lib/health-form";
 import { ProfileSaveForm } from "../profile-save";
 import { Section, wide } from "../section";
 
@@ -21,6 +22,7 @@ export default async function BookingRulesPage() {
   const agent = clinic.agent_name || "Sofi";
   const dental = isDentalClinic(clinic, await getCatalog(clinic.id));
   const active = clinic.dental_protocol && dental;
+  const sheet = healthFormSheet(clinic);
 
   return (
     <>
@@ -47,6 +49,10 @@ export default async function BookingRulesPage() {
           <label className={check}>
             <input type="checkbox" name="move_panel_only" defaultChecked={clinic.move_panel_only} className="mt-1" />
             <span>{agent} mueve también lo que da solo el consultorio<span className={hint}>Si el paciente ya tiene el turno. Las reglas de arriba siguen valiendo.</span></span>
+          </label>
+          <label className={check}>
+            <input type="checkbox" name="verify_appointment_access" defaultChecked={clinic.verify_appointment_access} className="mt-1" />
+            <span>Verificar la identidad para gestionar un turno desde otro número<span className={hint}>Si alguien escribe desde un número que no es el de la ficha, {agent} pide DNI, nombre y, si hace falta, la fecha de nacimiento, y solo deja mover o cancelar en esa charla. Ese número no queda unido a la ficha.</span></span>
           </label>
           <div className={wide}>
             <Field label="Otras condiciones" hint={`${agent} las explica cuando preguntan: tolerancia, seña, qué pasa si no avisa.`}>
@@ -79,6 +85,18 @@ export default async function BookingRulesPage() {
           <Field label="Liberar las horas de urgencia (horas antes)" hint="Si nadie las usó, desde cuántas horas antes se ofrecen para cualquier turno. Vacío: nunca.">
             <input name="urgent_release_hours" type="number" min={1} max={72} defaultValue={clinic.urgent_release_hours ?? ""} className={inputClass} />
           </Field>
+        </Section>
+
+        <Section id="ficha-salud" title="Ficha de salud" description={`Si la cargás, ${agent} le manda al paciente la ficha de salud para completar por WhatsApp cuando saca su primer turno, y en la Agenda se imprime con este encabezado. Vacía: el paciente la completa en el consultorio.`}>
+          <input type="hidden" name="health_form_field" value="1" />
+          <Field label="Iniciales del logo" hint="Hasta 3 letras, por ejemplo CG.">
+            <input name="health_form_monogram" maxLength={3} defaultValue={sheet?.monogram ?? ""} className={inputClass} />
+          </Field>
+          <div className={wide}>
+            <Field label="Profesionales del encabezado" hint="Uno por bloque: el nombre en la primera línea y debajo sus datos (título, matrícula, especialidad). Un renglón en blanco entre profesionales. Hasta 4.">
+              <textarea name="health_form_text" rows={6} defaultValue={healthFormSheetText(sheet)} placeholder={"DRA. ANA EJEMPLO\nODONTÓLOGA\nM. N. 00000"} className={inputClass} />
+            </Field>
+          </div>
         </Section>
 
         <Section id="fuera-de-horario" title="Fuera de horario y derivación">

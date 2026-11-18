@@ -54,4 +54,25 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect((await rules())[0]).toMatchObject({ reschedule_notice_hours: 12, move_panel_only: false, reschedule_max_minutes: 120 });
     await db`delete from clinics where id = ${mininni}`;
   }, 60000);
+
+  it("las opciones que estaban atadas a Guerra–Mininni en el código pasan a su ficha una sola vez", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    await db`insert into clinics (id, name) values (${mininni}, 'Guerra–Mininni ficticia')`;
+    await db`delete from data_migrations where name = '2026-11-18-opciones-guerra-mininni'`;
+    await db.unsafe(schema);
+    const options = async () => (await db`
+      select verify_appointment_access, summary_last_weekday, health_form from clinics where id = ${mininni}`)[0];
+    const set = await options();
+    expect(set).toMatchObject({ verify_appointment_access: true, summary_last_weekday: 4 });
+    expect(set.health_form).toMatchObject({ monogram: "CG", professionals: [expect.objectContaining({ name: "DR. CLAUDIO M. GUERRA" }), expect.objectContaining({ name: "DR. MARIANO MININNI" })] });
+    // Las demás clínicas quedan como estaban: sin permiso temporal, resumen de lunes a viernes, sin ficha.
+    expect((await db`select verify_appointment_access, summary_last_weekday, health_form from clinics where id = '00000000-0000-4000-8000-000000000001'`)[0])
+      .toEqual({ verify_appointment_access: false, summary_last_weekday: 5, health_form: null });
+    // Si después se cambia desde el panel, el próximo deploy no lo pisa.
+    await db`update clinics set summary_last_weekday = 5, health_form = null where id = ${mininni}`;
+    await db.unsafe(schema);
+    expect(await options()).toMatchObject({ summary_last_weekday: 5, health_form: null, verify_appointment_access: true });
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
 });

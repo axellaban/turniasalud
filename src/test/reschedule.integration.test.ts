@@ -39,8 +39,8 @@ describe.runIf(url)("agenda de Guerra–Mininni a través de las herramientas de
     ({ sql } = await import("@/lib/db"));
     ({ rescheduleClinicAppointment: panelMove } = await import("@/lib/agent/service"));
     ({ POST: handler } = await import("@/app/api/agent/tools/[name]/route"));
-    await sql`insert into clinics (id, name, reschedule_notice_hours, cancel_notice_hours, reschedule_max_minutes, keep_duration_on_reschedule, reception_only_terms, move_panel_only)
-      values (${clinicId}, 'Guerra–Mininni ficticia', 24, 24, 120, true, 'implante, implantación, exodoncia, extracción, regeneración', true)`;
+    await sql`insert into clinics (id, name, reschedule_notice_hours, cancel_notice_hours, reschedule_max_minutes, keep_duration_on_reschedule, reception_only_terms, move_panel_only, verify_appointment_access)
+      values (${clinicId}, 'Guerra–Mininni ficticia', 24, 24, 120, true, 'implante, implantación, exodoncia, extracción, regeneración', true, true)`;
     [{ id: pro }, { id: alternate }] = await sql`
       insert into professionals (clinic_id, full_name, specialty)
       values (${clinicId}, 'Odontóloga de prueba', 'Odontología'), (${clinicId}, 'Odontólogo de prueba', 'Odontología')

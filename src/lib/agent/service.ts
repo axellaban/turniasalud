@@ -12,7 +12,7 @@ import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
 import { getSmileApiConnection, isLiveSmileMode, smileBusy, writesEnabledOnServer } from "../smile-connect-link";
 import { confirmNewSmileAppointment, processSmileBookingLater } from "../smile-connect-push";
-import { appointmentAccessKey, expireAppointmentAccess, GUERRA_MININNI } from "./appointment-access";
+import { appointmentAccessEnabled, appointmentAccessKey, expireAppointmentAccess } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, SmileManagement, Task, TaskPriority, TaskType } from "../types";
 
 import { healthFormSheet, healthFormTemplate, type HealthFormInput } from "../health-form";
@@ -317,7 +317,7 @@ export async function findPatientByDni(
 ) {
   const phone = normalizePhone(ctx.patientPhone);
   if (!phone || phone === "desconocido") throw new ToolError("No tengo el teléfono del paciente para identificarlo.");
-  if (input.para_turno_existente && ctx.clinicId === GUERRA_MININNI && /^\d{10,15}$/.test(phone) && !appointmentAccessKey(ctx)) {
+  if (input.para_turno_existente && /^\d{10,15}$/.test(phone) && await appointmentAccessEnabled(ctx.clinicId) && !appointmentAccessKey(ctx, true)) {
     throw new ToolError("No pude verificar esta conversación para gestionar el turno. Ofrecé que recepción revise el pedido.");
   }
   await expireAppointmentAccess(ctx);
@@ -1071,7 +1071,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   const healthForm =
     byPanel
       ? null
-      : await healthFormOffer(clinic.id, patient, sourceFromChannel(ctx.channel, ctx.patientPhone), ctx.conversationId).catch((e) => {
+      : await healthFormOffer(clinic, patient, sourceFromChannel(ctx.channel, ctx.patientPhone), ctx.conversationId).catch((e) => {
           console.error("Ficha de salud: no se pudo preparar la oferta", e);
           return null;
         });
@@ -1662,7 +1662,7 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id: str
 // ---------------------------------------------------------------------------
 export async function saveHealthForm(ctx: ToolContext, input: HealthFormInput & { fecha_nacimiento?: string; email?: string }) {
   const clinic = await getClinic(ctx.clinicId);
-  if (!healthFormSheet(clinic.id)) {
+  if (!healthFormSheet(clinic)) {
     throw new ToolError("Esta clínica no usa la ficha de salud por chat: el paciente la completa en el consultorio.");
   }
   const patient = await ensurePatient(ctx);

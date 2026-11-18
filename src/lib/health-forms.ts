@@ -65,12 +65,12 @@ const CHAT_SOURCES: AppointmentSource[] = ["whatsapp", "web"];
  * Al mandar la plantilla queda anotado (invited_at).
  */
 export async function healthFormOffer(
-  clinicId: string,
+  clinic: { id: string; health_form?: unknown },
   patient: Patient,
   source: AppointmentSource,
   conversationId?: string,
 ): Promise<HealthFormOffer | null> {
-  if (!healthFormSheet(clinicId)) return null;
+  if (!healthFormSheet(clinic)) return null;
   if (!CHAT_SOURCES.includes(source) && source !== "telefono") return null;
   const latest = await latestHealthForm(patient.id);
   if (latest?.completed_at && ageDays(latest.completed_at) < HEALTH_FORM_VALID_DAYS) return null;
@@ -96,7 +96,7 @@ export async function healthFormOffer(
         where id = ${open.id} returning *`
     : await sql<HealthFormRow[]>`
         insert into patient_health_forms (clinic_id, patient_id, source, conversation_id, invited_at)
-        values (${clinicId}, ${patient.id}, ${source}, ${conversationId ?? null}, now()) returning *`;
+        values (${clinic.id}, ${patient.id}, ${source}, ${conversationId ?? null}, now()) returning *`;
   const intro = renewal
     ? "Pasó más de un año desde su última ficha de salud. Después de confirmar el turno, en el mismo mensaje, contale que puede adelantarse actualizando la ficha por acá y que, si no, la va a tener que completar en el consultorio antes de que lo atiendan."
     : "Después de confirmar el turno, en el mismo mensaje, contale que puede adelantarse completando la ficha de salud por acá y que, si no, la va a tener que completar en el consultorio antes de que lo atiendan.";

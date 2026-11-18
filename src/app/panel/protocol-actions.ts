@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { parseHealthFormSheet } from "@/lib/health-form";
 import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { applyDentalTemplate } from "@/lib/dental-template";
@@ -107,10 +108,16 @@ export async function saveBookingRules(_previous: FormState, form: FormData): Pr
   if (form.has("rules_form")) {
     fields.keep_duration_on_reschedule = form.get("keep_duration_on_reschedule") === "on";
     fields.move_panel_only = form.get("move_panel_only") === "on";
+    fields.verify_appointment_access = form.get("verify_appointment_access") === "on";
   }
   // Prender o apagar el protocolo odontológico es una decisión de Turnia.
   if (user.role === "admin" && form.has("dental_protocol_field")) fields.dental_protocol = form.get("dental_protocol") === "on";
   if (Object.keys(fields).length) await sql`update clinics set ${sql(fields)} where id = ${clinic.id}`;
+  // Ficha de salud: un profesional por bloque (nombre, después sus datos). Vacía: la clínica no la usa.
+  if (form.has("health_form_field")) {
+    const sheet = parseHealthFormSheet(text(form, "health_form_monogram"), text(form, "health_form_text"));
+    await sql`update clinics set health_form = ${sheet ? sql.json(sheet) : null} where id = ${clinic.id}`;
+  }
   await touchClinic(clinic.id, "Turnos y urgencias");
   revalidatePath("/panel/configuracion", "layout");
   return { ok: true, message: "Guardado. Sofi lo usa desde el próximo mensaje." };

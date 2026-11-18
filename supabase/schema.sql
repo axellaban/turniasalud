@@ -1801,3 +1801,29 @@ alter table clinics add column if not exists auto_pause_on_staff_reply boolean n
 -- por WhatsApp después de verificarlo en Smile Connect; mover y cancelar también se verifican allá. Empezó
 -- en Guerra–Mininni y es el flujo de toda clínica nueva. Con false, Sofi confirma dentro de la reserva.
 alter table smile_connect_connections add column if not exists api_deferred boolean not null default true;
+
+-- ---------------------------------------------------------------------------
+-- Opciones por clínica que antes estaban atadas a Guerra–Mininni en el código (18/11/2026), para poder
+-- ofrecerlas a otras clínicas desde Configuración. Guerra–Mininni queda igual (migración de una vez).
+-- ---------------------------------------------------------------------------
+-- Gestionar un turno desde otro número: con esto, Sofi verifica identidad (DNI, nombre y, si hace falta,
+-- nacimiento) y da un permiso temporal solo para esa charla, sin unir ese celular a la ficha.
+alter table clinics add column if not exists verify_appointment_access boolean not null default false;
+-- Hasta qué día de la semana sale el resumen de las 10 (1 = lunes … 6 = sábado). Siempre desde el lunes.
+alter table clinics add column if not exists summary_last_weekday smallint not null default 5;
+alter table clinics drop constraint if exists clinics_summary_last_weekday_check;
+alter table clinics add constraint clinics_summary_last_weekday_check check (summary_last_weekday between 1 and 6);
+-- Ficha de salud para completar por WhatsApp e imprimir: { monogram, professionals: [{ name, lines[] }] }.
+-- Vacía: la clínica no la usa.
+alter table clinics add column if not exists health_form jsonb;
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-18-opciones-guerra-mininni') then
+    update clinics set
+      verify_appointment_access = true,
+      summary_last_weekday = 4,
+      health_form = coalesce(health_form, '{"monogram":"CG","professionals":[{"name":"DR. CLAUDIO M. GUERRA","lines":["ODONTOLOGO","M. N. 13816","Especialista en Prótesis (M.S.P.)"]},{"name":"DR. MARIANO MININNI","lines":["ODONTOLOGO","M. N. 34543"]}]}'::jsonb)
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    insert into data_migrations (name) values ('2026-11-18-opciones-guerra-mininni');
+  end if;
+end $$;

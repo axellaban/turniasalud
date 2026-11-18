@@ -2,6 +2,15 @@
 
 Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Sin clínicas atadas al código — 18/11/2026
+
+Lo que solo tenía Guerra–Mininni ahora es una opción de cada clínica en el panel:
+- la verificación de identidad para gestionar un turno desde otro número (`verify_appointment_access`);
+- la ficha de salud (`health_form`, con el encabezado editable);
+- los días del resumen (`summary_last_weekday`).
+
+Una migración de una sola vez (`2026-11-18-opciones-guerra-mininni`) le cargó a Guerra–Mininni sus valores de siempre, y un cambio posterior desde el panel no se pisa. Ya no queda el id de ninguna clínica en el código.
+
 ## QA de Smile Connect: lista para otras clínicas — 18/11/2026
 
 QA de toda la integración contra un Smile Connect simulado (la Sofi de Guerra–Mininni está en producción). Ocho problemas encontrados y corregidos, con pruebas que fallan sin cada arreglo:

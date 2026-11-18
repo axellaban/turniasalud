@@ -5,7 +5,7 @@ import { displayPhone } from "@/lib/phone";
 import { formatDateTime } from "@/lib/time";
 import type { Clinic } from "@/lib/types";
 import { Badge, Card, Field, Notice, inputClass, smallButtonClass } from "@/components/ui";
-import { addNoticePhone, addTeamMember, removeTeamMember, setAutoPause, setNoticeEvents } from "../../notice-actions";
+import { addNoticePhone, addTeamMember, removeTeamMember, setAutoPause, setNoticeEvents, setSummaryDays } from "../../notice-actions";
 import { AUTO_PAUSE_HOURS } from "@/lib/waha-own";
 import { addStaffPhone, sendSummaryNowAction, toggleStaffSummary } from "../../protocol-actions";
 import { ActionForm } from "./action-form";
@@ -69,7 +69,7 @@ export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line 
       <p className="mt-1 text-sm text-brand-900/60">Los celulares del consultorio y lo que recibe cada uno:</p>
       <ul className="mt-2 space-y-1 text-xs text-brand-900/70">
         <li><span className="font-medium text-brand-950">Avisos:</span> el detalle de cada turno que {agent} da, mueve o cancela a pedido de un paciente. Lo que hace el equipo desde el panel no se avisa.</li>
-        <li><span className="font-medium text-brand-950">Resumen de las {SUMMARY_HOUR}:</span> de {summaryDaysLabel(clinic.id)}, lo que {agent} dio, movió y canceló, con los datos para pasarlo a la agenda del consultorio.</li>
+        <li><span className="font-medium text-brand-950">Resumen de las {SUMMARY_HOUR}:</span> de {summaryDaysLabel(clinic)}, lo que {agent} dio, movió y canceló, con los datos para pasarlo a la agenda del consultorio.</li>
         <li><span className="font-medium text-brand-950">Acceso total:</span> al escribirle a {agent}, ve la agenda y los pacientes, da, mueve y cancela turnos, bloquea la agenda y responde pedidos. Solo por WhatsApp: el número de una llamada se puede falsear.</li>
       </ul>
       {line.problem
@@ -146,6 +146,16 @@ export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line 
           </>}
         </fieldset>
       </ActionForm>
+
+      {/* Días del resumen de las 10: hasta qué día de la semana sale (siempre desde el lunes). */}
+      {staff.length > 0 && <form action={setSummaryDays} className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-900/5 pt-4 text-sm">
+        <input type="hidden" name="clinic_id" value={clinic.id} />
+        <label htmlFor="summary-days" className="font-medium text-brand-950">Días del resumen</label>
+        <select id="summary-days" name="summary_last_weekday" defaultValue={String(clinic.summary_last_weekday ?? 5)} className={`${inputClass} w-auto py-1.5`}>
+          {[[4, "Lunes a jueves"], [5, "Lunes a viernes"], [6, "Lunes a sábado"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <button className={smallButtonClass}>Guardar</button>
+      </form>}
 
       {/* Pausa automática: si el equipo contesta desde el celular, Sofi no responde en ese chat por un rato. */}
       <div className="mt-4 border-t border-brand-900/5 pt-4 text-sm">
