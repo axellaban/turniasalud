@@ -18,7 +18,8 @@
 - **Pacientes en la copia diaria y avisos a Axel** (18/11):
   - los pacientes nuevos se leen todos los días y la lista completa, dos veces por semana, para no comerse el cupo de lecturas;
   - los problemas de la integración le llegan a Axel por WhatsApp.
-- [ ] **La línea general de WhatsApp de Turnia figura pausada** (`/api/health`: `demo.canal = pausado`). Con la línea pausada no le llega ningún aviso a Axel: ni los de Smile Connect, ni el de Google al reconectar, ni el fusible de uso. Para recibirlos, hay que activar la línea general, o decidir otra vía.
+- [x] Avisos a Axel con la demo pausada (18/11): ya no dependen del selector de la demo pública (`demo.canal = pausado`). Si la línea general de WAHA no responde, van a n8n (`axel.aviso`).
+- [ ] **Pedirle a Smile Connect `updated_since`** (lo manda Mininni; texto en `SMILE_CONNECT_API.md` → «Pedido a Smile Connect»). Turnia ya está lista y lo usa sola en cuanto aparezca en el OpenAPI.
 - Ideas evaluadas el 18/11, sin pedir:
   - ventana cercana de 4 a 8 días («la semana que viene», casi al mismo costo);
   - copia hasta 180 días (controles semestrales);

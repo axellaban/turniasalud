@@ -267,6 +267,26 @@ describe.runIf(baseUrl)("límites de Sofi", () => {
     expect(mocks.notifyN8n).toHaveBeenCalledWith("clinica.fusible", expect.objectContaining({ clinic_id: CLINIC, tipo: "chat" }));
   });
 
+  it("los avisos a Axel salen aunque la demo pública esté pausada, y si el WhatsApp falla van a n8n", async () => {
+    const { notifyAxel } = await import("@/lib/chat-guard");
+    await sql`update messaging_settings set active_channel = 'pausado' where id`;
+    try {
+      const before = fake.texts(`${AXEL_WHATSAPP}@c.us`).length;
+      expect(await notifyAxel("aviso de prueba con la demo pausada")).toBe(true);
+      expect(fake.texts(`${AXEL_WHATSAPP}@c.us`).slice(before)).toEqual(["aviso de prueba con la demo pausada"]);
+      // Si WAHA no contesta, no se pierde: va a n8n.
+      vi.stubEnv("WAHA_URL", "http://127.0.0.1:9");
+      try {
+        expect(await notifyAxel("aviso sin WhatsApp")).toBe(false);
+      } finally {
+        vi.stubEnv("WAHA_URL", `${WAHA}/`);
+      }
+      expect(mocks.notifyN8n).toHaveBeenCalledWith("axel.aviso", expect.objectContaining({ texto: "aviso sin WhatsApp" }));
+    } finally {
+      await sql`update messaging_settings set active_channel = 'whatsapp' where id`;
+    }
+  });
+
   it("el agente propio de cada clínica corta las llamadas a los 8 minutos y tras 20 s de silencio; el general, que atiende chats, no", async () => {
     const { callLimits } = await import("@/lib/agent/setup");
     expect(callLimits(false)).toEqual({ conversation: { max_duration_seconds: 480 }, turn: { silence_end_call_timeout: 20 } });

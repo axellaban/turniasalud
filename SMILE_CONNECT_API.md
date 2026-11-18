@@ -164,10 +164,33 @@ Si el WhatsApp no sale, se reintenta una vez por hora. **Ojo:** salen por la lí
 | Respetar los límites (`Retry-After`, reintentos espaciados, cupo) | Sí, con reserva para confirmar turnos |
 | Frecuencia según cuánto cambia cada dato | Sí: turnos cercanos 30 min, lejanos 8 h, horarios 6 h, pacientes 2 veces por semana. Weave sincroniza la disponibilidad cada 15 a 20 minutos; Sofi la mira en vivo |
 | Conciliación periódica completa | Sí (copia diaria aplicada a Turnia) |
-| Medir la frescura y avisar | Sí, avisos a Axel. Pero con la línea general de Turnia pausada no llegan |
+| Medir la frescura y avisar | Sí, avisos a Axel por WhatsApp (y n8n de respaldo) |
 | Probar en sombra antes de escribir de verdad, con interruptor y freno automático | Sí («Escritura de prueba», `SMILE_CONNECT_WRITES`, freno con más de 15 cambios por hora) |
-| Traer solo lo que cambió (`updated_since` o webhooks, como NexHealth) | **No: la API no lo ofrece.** Es lo que más falta, y lo tiene que sumar Smile Connect |
-| Historial de corridas para diagnosticar | Parcial: el último resumen y los logs. No hay una tabla con cada corrida |
+| Traer solo lo que cambió (`updated_since` o webhooks, como NexHealth) | **Listo en Turnia; falta que Smile Connect lo sume a su API** (ver «Pedido a Smile Connect»). Turnia lo detecta solo en el OpenAPI y lo usa en cuanto aparece |
+| Historial de corridas para diagnosticar | Sí (`smile_connect_runs`): tipo, duración, lecturas y resultado de cada paso. En el panel, «Historial de sincronizaciones»; se borra a los 30 días |
+| Avisos que llegan aunque la demo pública esté pausada | Sí: los avisos internos a Axel ya no dependen del selector de la demo; si el WhatsApp falla, van a n8n (`axel.aviso`) |
+| Renovar las claves cada tanto | Sí: la clave es sin vencimiento para que no se corte sola, y a los 6 meses Axel recibe el recordatorio de renovarla |
+
+### Pedido a Smile Connect: traer solo lo que cambió
+
+Es lo único que falta para el 10/10, y depende de Smile Connect (lo gestiona Mininni, como los pedidos anteriores). Texto para mandarles:
+
+> Hola, equipo de Smile Connect. Gracias por sumar las notas, la prestación y los bloqueos a la API. Les queremos pedir una cosa más, que nos permitiría tener la agenda sincronizada casi al instante gastando una fracción del cupo diario:
+>
+> **Un parámetro `updated_since` (fecha y hora ISO 8601) en `GET /appointments` y en `GET /patients`.** Debería devolver los registros creados, modificados o cancelados (también los cambios de asistencia) desde ese momento, sin ventana de fechas. La paginación puede seguir con `after`, y también serviría un campo `updated_at` en cada registro.
+>
+> Si borran registros de verdad (no la cancelación), un campo `deleted_at` en la respuesta o un listado de borrados nos ayudaría a reflejarlo.
+>
+> Como alternativa, también nos sirve un webhook firmado (HMAC) que avise cada cambio de turno o paciente.
+>
+> ¡Gracias!
+
+**Qué hace Turnia cuando aparezca `updated_since`** (lo detecta solo en el OpenAPI, con la revisión diaria o al cargar la clave):
+- **Cambios:** cada 10 minutos de día y cada 30 de noche, trae solo lo que cambió, con páginas de 20 (el cupo cuenta el tamaño de página). Incluye la asistencia marcada tarde y los cambios de pacientes.
+- **Marca de agua:** avanza solo si todo se aplicó y se pide con 2 minutos de margen.
+- **Ventanas:** pasan a ser una conciliación (la cercana cada 3 horas, la lejana cada 12) y siguen siendo las que dan de baja lo borrado.
+- **Aviso de agenda atrasada:** a los 90 minutos sin cambios traídos.
+- **Si Smile elige otro nombre de parámetro o un webhook:** es un cambio chico en `scSupportsDelta` y `pullSmileChanges` (`src/lib/smile-connect-api.ts` y `src/lib/smile-connect-link.ts`).
 
 **Falta para Guerra–Mininni:** que el consultorio cree en Smile Connect una clave sin vencimiento con todos los permisos, incluidos `events:read` y `services:read`, y cargarla en Configuración → «Smile Connect por API». Hasta entonces, el panel muestra «Falta el permiso events:read» en «Bloqueos».
 

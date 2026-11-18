@@ -1,5 +1,5 @@
 import { sql } from "@/lib/db";
-import { READ_CAP, SMILE_MODE_LABEL, SMILE_MODES, WRITE_MODES, getSmileApiConnection, smileDirectory, writesEnabledOnServer } from "@/lib/smile-connect-link";
+import { READ_CAP, SMILE_MODE_LABEL, SMILE_MODES, WRITE_MODES, getSmileApiConnection, recentSmileRuns, smileDirectory, writesEnabledOnServer } from "@/lib/smile-connect-link";
 import { recentSmileChanges, smileReviewList } from "@/lib/smile-connect-push";
 import { formatDateTime } from "@/lib/time";
 import type { Clinic } from "@/lib/types";
@@ -22,18 +22,41 @@ const STATUS: Record<string, { label: string; tone: "green" | "yellow" | "red" |
 export async function loadSmileApiCard(clinicId: string, opts: { admin?: boolean } = {}) {
   const conn = await getSmileApiConnection(clinicId);
   const hasKey = Boolean(conn?.api_key_encrypted);
-  const [pros, changes, review, directory] = await Promise.all([
+  const [pros, changes, review, directory, runs] = await Promise.all([
     sql<Array<{ id: string; full_name: string; smile_professional_id: number | null; smile_box_id: number | null; active: boolean }>>`
       select id, full_name, smile_professional_id, smile_box_id, active from professionals where clinic_id = ${clinicId} order by active desc, full_name`,
     hasKey ? recentSmileChanges(clinicId) : [],
     hasKey ? smileReviewList(clinicId) : [],
     // Para vincular a mano (solo Turnia). Si Smile Connect no responde, la tarjeta se ve igual.
     hasKey && opts.admin ? smileDirectory(clinicId) : null,
+    hasKey ? recentSmileRuns(clinicId) : [],
   ]);
-  return { conn, pros: [...pros], changes, review, directory };
+  return { conn, pros: [...pros], changes, review, directory, runs: [...runs] };
 }
 
-export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, review, directory } }: { clinic: Clinic; admin: boolean; data: Awaited<ReturnType<typeof loadSmileApiCard>> }) {
+const RUN_LABEL: Record<string, string> = {
+  cerca: "Agenda cercana", lejos: "Agenda lejana", copia: "Copia diaria", espejo: "Copia aplicada a Turnia",
+  horarios: "Horarios", escritura: "Escritura", cambios: "Cambios", "manual: cerca": "Manual · agenda cercana",
+  "manual: lejos": "Manual · agenda lejana", "manual: horarios": "Manual · horarios",
+};
+
+/** Una línea legible del resumen de una corrida (solo los números que importan). */
+function runSummary(summary: Record<string, unknown> | null): string {
+  if (!summary) return "";
+  const n = (k: string) => (typeof summary[k] === "number" ? (summary[k] as number) : 0);
+  const parts = [
+    n("leidos") && `${n("leidos")} leídos`,
+    n("appointmentsCreated") && `${n("appointmentsCreated")} nuevos`,
+    n("appointmentsUpdated") && `${n("appointmentsUpdated")} con cambios`,
+    n("appointmentsCancelled") && `${n("appointmentsCancelled")} dados de baja`,
+    n("turnos") && `${n("turnos")} turnos`,
+    n("pacientes") && `${n("pacientes")} pacientes`,
+    Array.isArray(summary.cambiados) && summary.cambiados.length && `${summary.cambiados.length} horarios cambiados`,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, review, directory, runs } }: { clinic: Clinic; admin: boolean; data: Awaited<ReturnType<typeof loadSmileApiCard>> }) {
   const hasKey = Boolean(conn?.api_key_encrypted);
   const mode = conn?.api_mode ?? "apagada";
   const when = (iso: string | null | undefined) => (iso ? formatDateTime(iso, clinic.timezone) : "todavía no");
@@ -88,7 +111,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
         <div className="space-y-4">
           {hasKey && <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
             <dt className="text-brand-900/60">Clínica en Smile Connect</dt><dd className="text-brand-950">{conn?.api_clinic_name ?? "Sin nombre"} (#{conn?.api_clinic_id})</dd>
-            <dt className="text-brand-900/60">Clave</dt><dd className="text-brand-950">…{conn?.api_key_hint} · probada {when(conn?.api_checked_at)}</dd>
+            <dt className="text-brand-900/60">Clave</dt><dd className="text-brand-950">…{conn?.api_key_hint} · cargada {when(conn?.api_key_saved_at ?? conn?.api_checked_at)} (renovarla cada 6 meses)</dd>
             <dt className="text-brand-900/60">Agenda cercana</dt><dd className="text-brand-950">{when(conn?.api_near_pull_at)}</dd>
             <dt className="text-brand-900/60">Agenda lejana</dt><dd className="text-brand-950">{when(conn?.api_wide_pull_at)}</dd>
             <dt className="text-brand-900/60">Horarios de los profesionales</dt><dd className="text-brand-950">{when(conn?.api_hours_at)}</dd>
@@ -180,6 +203,18 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
           </li>)}
         </ul>
       </div>}
+
+      {runs.length > 0 && <details className="mt-5 border-t border-brand-900/5 pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-brand-950">Historial de sincronizaciones (últimas {runs.length})</summary>
+        <ul className="mt-2 space-y-1 text-xs">
+          {runs.map((r) => <li key={r.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <Badge tone={r.ok ? "green" : "red"}>{r.ok ? "Bien" : "Error"}</Badge>
+            <span className="font-medium text-brand-950">{RUN_LABEL[r.kind] ?? r.kind}</span>
+            <span className="text-brand-900/60">{formatDateTime(r.started_at, tz)} · {(r.duration_ms / 1000).toFixed(1)} s · {r.reads} lecturas</span>
+            {r.ok ? <span className="text-brand-900/70">{runSummary(r.summary)}</span> : <span className="text-red-700">{r.error}</span>}
+          </li>)}
+        </ul>
+      </details>}
 
       {changes.length > 0 && <div className="mt-5 border-t border-brand-900/5 pt-4">
         <h3 className="text-sm font-semibold text-brand-950">Registro de cambios en Smile Connect</h3>

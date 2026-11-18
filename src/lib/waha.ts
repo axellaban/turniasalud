@@ -168,9 +168,11 @@ async function waha(path: string, init: RequestInit = {}): Promise<Response> {
   return res;
 }
 
-export async function wahaSendText(chatId: string, text: string): Promise<{ id?: string }> {
+export async function wahaSendText(chatId: string, text: string, opts: { internal?: boolean } = {}): Promise<{ id?: string }> {
   if (!isWhatsappChatId(chatId)) throw new Error("El destinatario no es un chat de WhatsApp.");
-  await requireActiveWhatsapp();
+  // Un aviso interno a Axel desde la línea de Turnia sale aunque la demo pública esté pausada: ese selector
+  // apaga la demo, no los avisos del equipo. La línea de una clínica pausada no manda nada.
+  if (!opts.internal || currentWahaConnection()) await requireActiveWhatsapp();
   // Se anota antes de mandar: WAHA puede avisar el mensaje propio antes de que vuelva esta respuesta.
   await noteOutgoingText(chatId, text);
   const res = await waha("/api/sendText", {

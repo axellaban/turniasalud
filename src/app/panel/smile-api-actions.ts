@@ -9,6 +9,7 @@ import {
   linkSmileProfessional,
   pullSmileConnect,
   syncSmileHours,
+  trackSmileRun,
   recordSmileError,
   removeSmileApiKey,
   saveSmileApiKey,
@@ -78,10 +79,10 @@ export async function syncSmileNowAction(_previous: FormState, form: FormData): 
       return { ok: false, message: "Se sincronizó hace menos de 5 minutos. Probá en un rato." };
     }
     try {
-      const near = await pullSmileConnect(clinic.id, "cerca");
-      const far = await pullSmileConnect(clinic.id, "lejos");
+      const near = await trackSmileRun(clinic.id, "manual: cerca", () => pullSmileConnect(clinic.id, "cerca"));
+      const far = await trackSmileRun(clinic.id, "manual: lejos", () => pullSmileConnect(clinic.id, "lejos"));
       // También el horario de los profesionales (no gasta cupo). Si falla, queda para la vuelta automática.
-      const hours = await syncSmileHours(clinic.id).catch(() => null);
+      const hours = await trackSmileRun(clinic.id, "manual: horarios", () => syncSmileHours(clinic.id)).catch(() => null);
       await clearSmileRetryAfterSync(clinic.id, conn.api_retry_at);
       revalidatePath(PAGE);
       const n = (k: keyof typeof near) => near[k] + far[k];

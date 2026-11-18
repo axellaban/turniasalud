@@ -1935,3 +1935,29 @@ alter table patient_external_ids add column if not exists smile_data jsonb;
 alter table smile_connect_backups add column if not exists patients_full boolean not null default true;
 alter table smile_connect_connections add column if not exists api_patients_full_at timestamptz;
 alter table smile_connect_connections add column if not exists api_patients_last_id bigint;
+
+-- Historial de cada corrida de Smile Connect por API (18/11/2026), para diagnosticar: qué corrió, cuánto
+-- tardó, cuántas lecturas del cupo gastó y cómo terminó. Se borra a los 30 días.
+create table if not exists smile_connect_runs (
+  id bigserial primary key,
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  kind text not null,
+  started_at timestamptz not null default now(),
+  duration_ms integer not null default 0,
+  reads integer not null default 0,
+  ok boolean not null,
+  summary jsonb,
+  error text
+);
+create index if not exists smile_connect_runs_clinic_idx on smile_connect_runs (clinic_id, started_at desc);
+alter table smile_connect_runs enable row level security;
+-- Cuándo se cargó la clave actual: se recomienda renovarla cada 6 meses (aviso a Axel).
+alter table smile_connect_connections add column if not exists api_key_saved_at timestamptz;
+update smile_connect_connections set api_key_saved_at = coalesce(api_key_saved_at, api_checked_at, created_at)
+  where api_key_encrypted is not null and api_key_saved_at is null;
+
+-- Sincronización por cambios (18/11/2026), lista para cuando Smile Connect sume `updated_since` a los
+-- listados de turnos y pacientes (se le pidió). Turnia lo detecta solo en el OpenAPI. Con eso trae cada
+-- 10 minutos solo lo que cambió y las ventanas pasan a ser una conciliación cada 3 horas.
+alter table smile_connect_connections add column if not exists api_supports_delta boolean not null default false;
+alter table smile_connect_connections add column if not exists api_delta_at timestamptz;

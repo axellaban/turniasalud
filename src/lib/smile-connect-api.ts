@@ -213,6 +213,25 @@ export async function scCancelAppointment(c: SmileClient, id: number) {
 }
 
 /**
+ * ¿La API ya permite pedir solo lo que cambió? Se le pidió a Smile Connect un parámetro `updated_since`
+ * (fecha y hora) en el listado de turnos y en el de pacientes: devuelve lo creado, modificado o cancelado
+ * desde ese momento, sin ventana de fechas. Turnia lo revisa todos los días y lo usa en cuanto aparece.
+ */
+export async function scSupportsDelta(c: SmileClient): Promise<boolean> {
+  const spec = await c.request<{ paths?: Record<string, Record<string, { parameters?: Array<{ name?: string }> }>> }>("/openapi");
+  const has = (path: string) => (spec.paths?.[path]?.get?.parameters ?? []).some((p) => p.name === "updated_since");
+  return has("/appointments") && has("/patients");
+}
+
+/** Lo que cambió desde `since` (con el parámetro que se le pidió a Smile Connect). Página chica: casi siempre son pocos. */
+export function scAppointmentsChangedSince(c: SmileClient, since: Date, limit = 20): Promise<ScAppointment[]> {
+  return all<ScAppointment>(c, "/appointments", { updated_since: since.toISOString() }, { limit, sensitive: true });
+}
+export function scPatientsChangedSince(c: SmileClient, since: Date, limit = 20): Promise<ScPatient[]> {
+  return all<ScPatient>(c, "/patients", { updated_since: since.toISOString() }, { limit, sensitive: true });
+}
+
+/**
  * ¿La API ya acepta notas al crear y mover un turno? Hoy no (el esquema no las permite y rechaza
  * campos de más). Cuando Smile Connect las sume, Turnia empieza a mandar el motivo sin otro cambio.
  */
