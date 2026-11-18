@@ -2,6 +2,20 @@
 
 Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Pendientes de la auditoría, implementados — 18/11/2026
+
+- **Smile Connect en el resumen de las 10** ([#216](https://github.com/axellaban/turniasalud/pull/216)): cada turno dice si ya está cargado (o cancelado) en Smile Connect, si falta o si hay que revisarlo (`smile_sync`). Sin conexión no dice nada.
+- **Herramientas del equipo renombradas** (#216):
+  - `buscar_pacientes` → `equipo_buscar_pacientes`;
+  - `crear_paciente` → `equipo_crear_paciente`.
+
+  La ruta acepta los nombres anteriores (`TOOL_ALIASES`). El contexto del equipo, que va en cada charla, ya no nombra herramientas renombradas.
+- **Pausa por WhatsApp para el equipo** (#216): `pausar_chat` y `reactivar_chat`.
+- **Pausa automática** ([#217](https://github.com/axellaban/turniasalud/pull/217)): si el equipo le contesta a un paciente desde el WhatsApp del consultorio, Sofi deja de contestarle 4 horas.
+  - **Cómo distingue a Turnia del equipo:** Turnia anota lo que manda por WAHA antes de mandarlo (`src/lib/waha-sent.ts`); todo otro mensaje propio que avisa WAHA (`message.any`) es del equipo (`src/lib/waha-own.ts`).
+  - **Qué ignora:** los mensajes al equipo, a la propia línea y los automáticos de WhatsApp Business que salen hasta 15 segundos después del mensaje del paciente.
+  - **Cómo se activa:** está apagada por defecto y se prende en Configuración → Equipo por WhatsApp. Necesita sumar `message.any` en WAHA (tarea 8).
+
 ## Auditoría del panel y de Sofi, en seis fases — 18/11/2026
 
 Auditoría completa en local, con datos ficticios, como Turnia y como consultorio, en escritorio y en celular. Todo se hizo sin tocar el código de Smile Connect.

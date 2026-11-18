@@ -1791,3 +1791,8 @@ alter table clinic_daily_summaries enable row level security;
 -- ---------------------------------------------------------------------------
 alter table chat_mutes drop constraint if exists chat_mutes_reason_check;
 alter table chat_mutes add constraint chat_mutes_reason_check check (reason in ('bot', 'vendedor', 'exceso', 'equipo'));
+
+-- Pausa automática (18/11/2026): si el equipo le contesta a un paciente desde el WhatsApp del consultorio,
+-- Sofi deja de contestarle unas horas. Necesita que WAHA avise los mensajes propios (`message.any`).
+-- Apagada por defecto; cada clínica la prende en Configuración → Equipo por WhatsApp.
+alter table clinics add column if not exists auto_pause_on_staff_reply boolean not null default false;

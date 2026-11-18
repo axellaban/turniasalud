@@ -127,3 +127,11 @@ export async function removeTeamMember(form: FormData): Promise<void> {
   }
   revalidatePath("/panel/configuracion", "layout");
 }
+
+/** Equipo por WhatsApp → pausa automática: Sofi se pausa en un chat cuando el equipo contesta desde el celular. */
+export async function setAutoPause(form: FormData): Promise<void> {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  await sql`update clinics set auto_pause_on_staff_reply = ${form.get("on") === "1"} where id = ${clinic.id}`;
+  revalidatePath("/panel/configuracion", "layout");
+}
