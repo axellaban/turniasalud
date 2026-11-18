@@ -126,6 +126,13 @@ export async function recordSmileError(clinicId: string, e: unknown): Promise<st
 const clearSmileError = (clinicId: string) =>
   sql`update smile_connect_connections set api_error = null, api_error_at = null where clinic_id = ${clinicId} and api_error is not null`;
 
+/** La lectura manual completa comprobó que la API volvió a responder. Conservá cualquier espera nueva. */
+export async function clearSmileRetryAfterSync(clinicId: string, retryAt: string | null): Promise<void> {
+  if (!retryAt) return;
+  await sql`update smile_connect_connections set api_retry_at = null
+    where clinic_id = ${clinicId} and api_retry_at = ${retryAt}`;
+}
+
 // ── La clave ─────────────────────────────────────────────────────────────────
 
 export type SmileKeyCheck = {

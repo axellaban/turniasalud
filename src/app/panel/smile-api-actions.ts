@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { isUuid } from "@/lib/clinic";
 import { getPanelClinic, logClinicChange, requireAdmin } from "@/lib/panel-clinic";
 import {
+  clearSmileRetryAfterSync,
   getSmileApiConnection,
   linkSmileProfessional,
   pullSmileConnect,
@@ -78,6 +79,7 @@ export async function syncSmileNowAction(_previous: FormState, form: FormData): 
     try {
       const near = await pullSmileConnect(clinic.id, "cerca");
       const far = await pullSmileConnect(clinic.id, "lejos");
+      await clearSmileRetryAfterSync(clinic.id, conn.api_retry_at);
       revalidatePath(PAGE);
       const n = (k: keyof typeof near) => near[k] + far[k];
       return {
