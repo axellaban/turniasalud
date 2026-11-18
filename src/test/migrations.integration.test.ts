@@ -114,7 +114,7 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect(text).not.toContain("una limpieza por un control");
     expect(text).toContain("Por WhatsApp pedí en un solo mensaje todos los datos que falten");
     expect(text).toContain("Una molestia o sensibilidad no es una urgencia");
-    expect(text).toContain("nunca digas «limpieza»");
+    expect(text).toContain("nunca escribas la palabra «limpieza»");
     expect(text.startsWith("A QUIÉN DAR EL TURNO\n- Primera vez: con el Dr. Mininni.")).toBe(true);
     expect(row.context_revision).toBe(1);
     // Una sola vez: lo que editen después desde el panel no se pisa ni se repite.

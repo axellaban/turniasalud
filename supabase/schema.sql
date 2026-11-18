@@ -1867,7 +1867,7 @@ begin
         'Por WhatsApp pedí en un solo mensaje todos los datos que falten (por teléfono, de a uno o dos) y aprovechá lo que ya escribió o dijo.'),
         'Si habla de un caso urgente o de dolor, atendé ese pedido antes de volver a las preguntas administrativas y seguí el protocolo de urgencias.',
         'Si cuenta una urgencia (dolor fuerte que no se calma, la cara o la encía hinchada, un golpe), atendé ese pedido antes de volver a las preguntas administrativas y seguí el protocolo de urgencias. Una molestia o sensibilidad no es una urgencia: no le preguntes por síntomas que no mencionó.')
-        || E'\n- Al paciente nombrale siempre «mantenimiento periodontal», también donde figura como «Mantenimiento periodontal (limpieza)»: nunca digas «limpieza». Si el paciente dice «limpieza», es el mantenimiento periodontal.',
+        || E'\n- Al paciente nombrale siempre «mantenimiento periodontal», sin «(limpieza)»: nunca escribas la palabra «limpieza», tampoco entre paréntesis ni al confirmar, aunque figure en el catálogo. Si el paciente dice «limpieza», es el mantenimiento periodontal.',
       context_revision = context_revision + 1,
       updated_at = now()
     where id = '67c3954a-8df8-46c2-a604-f818832bee36' and agent_context is not null;
