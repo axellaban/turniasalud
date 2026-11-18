@@ -163,4 +163,25 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect((await db`select is_demo from clinics where id = ${mininni}`)[0].is_demo).toBe(true);
     await db`delete from clinics where id = ${mininni}`;
   }, 60000);
+
+  it("Guerra–Mininni pasa de «Crear turnos» a «Crear, mover y cancelar», una sola vez y sin tocar otros modos", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    await db`insert into clinics (id, name) values (${mininni}, 'Guerra–Mininni ficticia')`;
+    await db`insert into smile_connect_connections (clinic_id, token_hash, token_hint, encrypted_token, api_key_encrypted, api_mode)
+      values (${mininni}, 'hash-ficticio-completa', 'abcd', 'cifrado-ficticio', 'clave-cifrada-ficticia', 'crear')`;
+    await db`delete from data_migrations where name = '2026-11-18-smile-completa-guerra-mininni'`;
+    await db.unsafe(schema);
+    expect((await db`select api_mode from smile_connect_connections where clinic_id = ${mininni}`)[0].api_mode).toBe("completa");
+    // Una sola vez: si después la pasan a otro modo desde el panel, no se pisa.
+    await db`update smile_connect_connections set api_mode = 'crear' where clinic_id = ${mininni}`;
+    await db.unsafe(schema);
+    expect((await db`select api_mode from smile_connect_connections where clinic_id = ${mininni}`)[0].api_mode).toBe("crear");
+    // Si no estaba en «Crear turnos» (por ejemplo, apagada), no la prende.
+    await db`update smile_connect_connections set api_mode = 'apagada' where clinic_id = ${mininni}`;
+    await db`delete from data_migrations where name = '2026-11-18-smile-completa-guerra-mininni'`;
+    await db.unsafe(schema);
+    expect((await db`select api_mode from smile_connect_connections where clinic_id = ${mininni}`)[0].api_mode).toBe("apagada");
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
 });
