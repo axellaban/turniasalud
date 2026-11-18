@@ -4,6 +4,8 @@
 
 - Hecho y en producción (PR #223 a #227): primer turno del día, «molestia» no es urgencia (la guardia solo con mucho dolor, sangrado o hinchazón), no prometer días antes de mirar la agenda, datos juntos por WhatsApp, sin reglas internas ni «limpieza», radiografías en un párrafo aparte, y días que Smile Connect no confirmó a tiempo sin darlos por llenos. Prompt actualizado en los dos agentes de ElevenLabs.
 - **Falta, en el panel:** [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md), tarea 9. Copiar los horarios de Smile Connect (la fuente de verdad) a «Equipo y horarios», corregir el horario de atención y la línea de horarios de las instrucciones.
+- Hecho (tarea 9, por computer use): horarios de los tres profesionales iguales a Smile Connect, horario de atención y línea de horarios de las instrucciones.
+- **Guerra–Mininni es cliente** (migración `2026-11-18-guerra-mininni-cliente`): su ficha dejó de ser una demo conservada. Ahora Sofi avisa a la lista de espera cuando se libera un turno, la respuesta de recepción a un pedido le llega al paciente y vuelve a escribirle a quien no contestó los horarios. Las campañas salen solo si alguien las manda. El WhatsApp general de Turnia nunca toma una clínica con línea propia (`whatsappClinic`).
 - Idea, sin pedir todavía: que Turnia copie sola los horarios de cada profesional desde Smile Connect (`/professionals/{id}/hours`), para que no se vuelvan a desalinear.
 
 ## Costo de Neon en producción (18/11/2026)
@@ -159,7 +161,7 @@ Cuando el usuario elija reactivar WhatsApp desde Panel → Sistema (sin cambiar 
 
 Está en producción y probado con un recorrido de 31 comprobaciones: roles administrador/consultorio, códigos por clínica, guardado con avisos, borradores locales, historial de cambios y redirecciones de direcciones mal escritas. Lo que falta:
 
-- [ ] El consultorio Guerra–Mininni (demo conservada) tiene que entrar con su código y cargar sus reglas reales. El código lo crea el administrador en Panel → Configuración → «Acceso del consultorio» y se manda por WhatsApp desde ahí.
+- [ ] El consultorio Guerra–Mininni (cliente desde el 18/11) tiene que entrar con su código y cargar sus reglas reales. El código lo crea el administrador en Panel → Configuración → «Acceso del consultorio» y se manda por WhatsApp desde ahí.
 - [x] **Google Calendar** (24/10): credenciales en Vercel, reintentos en n8n y conexión probada en vivo por el usuario (demo «Marcos», el turno apareció en su calendario). Para clínicas reales falta publicar la app y pasar la verificación de Google. Ver [`GOOGLE_CALENDAR.md`](GOOGLE_CALENDAR.md).
 - [ ] **Avisar al paciente cuando la clínica cancela o mueve un turno.** Hoy el panel avisa que hay que hacerlo a mano. Se puede mandar por WhatsApp cuando el canal esté conectado. Desde el 4/11, si el profesional mueve o borra el turno en su Google Calendar, el equipo recibe una tarea.
 - [x] **Familias con un mismo celular** (02/11): cada persona tiene su ficha aunque compartan el celular. El agente sabe quiénes comparten el número, pregunta para quién es y pasa a la ficha del familiar con `buscar_paciente` (DNI y nombre); `registrar_paciente` con otro DNI y otro nombre crea la ficha del familiar en lugar de pisar la del dueño. El turno a mano pregunta para quién es. Detalle en `ESTADO_Y_PRIORIDADES.md`.

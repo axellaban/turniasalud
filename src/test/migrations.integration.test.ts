@@ -145,4 +145,22 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect((await db`select agent_context from clinics where id = ${mininni}`)[0].agent_context).toBe("Editado desde el panel");
     await db`delete from clinics where id = ${mininni}`;
   }, 60000);
+
+  it("Guerra–Mininni pasa de demo conservada a cliente una sola vez", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    await db`insert into clinics (id, name, is_demo) values (${mininni}, 'Guerra–Mininni ficticia', true)`;
+    await db`delete from data_migrations where name = '2026-11-18-guerra-mininni-cliente'`;
+    await db.unsafe(schema);
+    const [row] = await db`select is_demo, retained_at from clinics where id = ${mininni}`;
+    expect(row.is_demo).toBe(false);
+    expect(row.retained_at).not.toBeNull();
+    // Las demás clínicas no cambian.
+    expect((await db`select is_demo from clinics where id = '00000000-0000-4000-8000-000000000001'`)[0].is_demo).toBe(false);
+    // Una sola vez.
+    await db`update clinics set is_demo = true where id = ${mininni}`;
+    await db.unsafe(schema);
+    expect((await db`select is_demo from clinics where id = ${mininni}`)[0].is_demo).toBe(true);
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
 });
