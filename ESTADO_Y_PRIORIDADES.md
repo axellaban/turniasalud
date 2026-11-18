@@ -2,6 +2,13 @@
 
 Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Pendientes técnicos cerrados — 18/11/2026
+
+- **El equipo toma el chat mientras Sofi escribe:** si el chat se pausa (en el panel, con `pausar_chat` o porque el equipo contestó desde el celular) mientras Sofi prepara su respuesta, esa respuesta ya no se manda ni queda en la charla (`deliverReply` en `src/lib/channel.ts`, estado `paused`). Con esto queda cerrada «Atención humana por chat».
+- **Google pide reconectar:** la primera vez que Google rechaza el permiso de una clínica, a Axel le llega un WhatsApp desde la línea de Turnia (uno por caída, no por intento). El panel lo seguía mostrando igual que antes.
+- **Cuentas en `/api/metricas`:** las cuentas de los consultorios (clínicas conservadas con su código de acceso) cuentan como clínicas reales en `uso` y en `sofi`, con la misma definición de `scripts/embudo.mjs`.
+- `npm audit`: 0 en producción; lo de desarrollo solo se arregla bajando de versión ESLint o Vitest, así que queda como está.
+
 ## Sin clínicas atadas al código — 18/11/2026
 
 Lo que solo tenía Guerra–Mininni ahora es una opción de cada clínica en el panel:

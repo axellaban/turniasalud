@@ -125,6 +125,6 @@ Al 08/11, con «Hablaron con Sofi» ya con su definición nueva. Las etapas de c
 
 ## Pendiente para medir mejor
 
-- **Cuentas en las métricas de Chapa Labs.** `/api/metricas` (`src/lib/sales/metrics.ts`) cuenta clínicas y uso solo donde `is_demo` es falso. Pero las cuentas de los consultorios se crean como clínicas conservadas (`is_demo` = `true`, con `retained_at`): hoy ese tablero no las ve. Habría que contarlas como en `scripts/embudo.mjs`, por su código de acceso.
+- ~~**Cuentas en las métricas de Chapa Labs.**~~ Resuelto el 18/11: `/api/metricas` (`src/lib/sales/metrics.ts`) cuenta como clínica real a la que no es de una demo o tiene un código de «Acceso del consultorio» sin revocar, igual que `scripts/embudo.mjs`.
 - **Contar solo las cuentas de la prospección** con `sales_outreach.clinic_id` (existe desde el 4/11), para ver el embudo completo de cada odontólogo y por cohorte de semana de contacto. Ojo: la columna «Cuenta activa» de la planilla de Chapa Labs usa otro criterio (turnos en 30 días) y su embudo pone la cuenta después del cliente; conviene unificarlos con el de este archivo.
 - **Eventos de cuenta en PostHog** (`clinic_account_created`, y el primer turno que da Sofi en una cuenta), para que todo el embudo se vea en un solo tablero.

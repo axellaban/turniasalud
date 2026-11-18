@@ -142,6 +142,24 @@ describe.runIf(baseUrl)("límites de Sofi", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
+  it("si el equipo toma el chat mientras Sofi escribía, esa respuesta no se manda; al reactivarla, sigue", async () => {
+    const phone = "5491166600009";
+    const { muteNumber, unmuteNumber } = await import("@/lib/chat-guard");
+    expect(await send(text("t1", phone, "Hola, quiero un turno"))).toMatchObject({ ok: true, conversation_id: `conv_${phone}` });
+    // Recepción contesta desde el celular (o pausa en el panel) antes de que llegue la respuesta de Sofi.
+    await muteNumber(CLINIC, phone, "equipo", "Le contestó el equipo desde el WhatsApp del consultorio.", 4);
+    expect(await (await reply(replyRequest(`conv_${phone}`, ["t1"], "¡Hola! ¿Para qué día?"))).json()).toMatchObject({ status: "paused" });
+    expect(fake.texts(`${phone}@c.us`)).toEqual([]);
+    const [conv] = await sql`select transcript from channel_conversations where clinic_id = ${CLINIC} and phone = ${phone}`;
+    expect(JSON.stringify(conv.transcript)).not.toContain("¿Para qué día?");
+
+    // Reactivada, Sofi vuelve a contestar.
+    await unmuteNumber(CLINIC, phone);
+    expect(await send(text("t2", phone, "¿Sigue ahí?"))).toMatchObject({ ok: true, conversation_id: `conv_${phone}` });
+    expect(await (await reply(replyRequest(`conv_${phone}`, ["t2"], "Sí, acá estoy."))).json()).toMatchObject({ status: "sent" });
+    expect(fake.texts(`${phone}@c.us`)).toEqual(["Sí, acá estoy."]);
+  });
+
   it("el mismo mensaje largo por tercera vez también es un bot", async () => {
     const phone = "5491166600002";
     const promo = "Hola! Somos Insumos Dentales SA, tenemos ofertas en guantes y barbijos.";
