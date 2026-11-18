@@ -597,8 +597,9 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
         expect(none.mensaje).not.toContain("No hay turnos libres");
         // Con lugar en otro día, ofrece ese y avisa del que no pudo revisar.
         const some = await tool("consultar_disponibilidad", { ...args, desde: day(failing), hasta: day(free) });
-        expect(some.turnos.length).toBeGreaterThan(0);
-        for (const t of some.turnos) expect(t.inicio >= at(free, "00:00")).toBe(true);
+        const offered = some.turnos ?? [];
+        expect(offered.length).toBeGreaterThan(0);
+        for (const t of offered) expect(t.inicio >= at(free, "00:00")).toBe(true);
         expect(some).toMatchObject({ dias_sin_revisar: [day(failing)], aviso_agenda: expect.stringContaining(day(failing)) });
       } finally {
         fake.blocks.pop();
