@@ -72,4 +72,18 @@ describe.runIf(url)("editar la ficha del paciente", () => {
     expect(await actions.updatePatientDetails({}, form({ clinic_id: clinicId, id: otherClinicPatient, full_name: "Cambiada" }))).toMatchObject({ ok: false });
     expect(await sql`select full_name from patients where id = ${otherClinicPatient}`).toEqual([{ full_name: "De otra" }]);
   });
+
+  it("el equipo pausa a Sofi en un chat y la reactiva", async () => {
+    const { isMuted } = await import("@/lib/chat-guard");
+    await actions.pauseChatNumber(form({ clinic_id: clinicId, phone: "5491100006002", hours: "4" }));
+    expect(await isMuted(clinicId, "5491100006002")).toBe(true);
+    const [m] = await sql`select reason, detail, until > now() + interval '3 hours' and until < now() + interval '5 hours' as ok from chat_mutes where phone = '5491100006002'`;
+    expect(m).toMatchObject({ reason: "equipo", ok: true });
+    expect(m.detail).toContain("Turnia");
+    // Solo los tiempos ofrecidos.
+    await actions.pauseChatNumber(form({ clinic_id: clinicId, phone: "5491100006003", hours: "999" }));
+    expect(await isMuted(clinicId, "5491100006003")).toBe(false);
+    await actions.reactivateChatNumber(form({ clinic_id: clinicId, phone: "5491100006002" }));
+    expect(await isMuted(clinicId, "5491100006002")).toBe(false);
+  });
 });
