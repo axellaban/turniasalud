@@ -308,6 +308,51 @@ export async function reactivateChatNumber(form: FormData) {
   revalidatePath("/panel/conversaciones");
 }
 
+/**
+ * Ficha del paciente → «Editar datos». Cambia solo lo que escribe el equipo: la sincronización con
+ * Smile Connect completa campos vacíos y no pisa lo editado acá. El celular anterior queda asociado a
+ * la ficha (patient_phones), para que Sofi la siga reconociendo si escribe desde ese número.
+ */
+export async function updatePatientDetails(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireSession();
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "No encontré la ficha." };
+  const clinic = await getPanelClinic(form);
+  const [current] = await sql<{ phone: string | null }[]>`select phone from patients where id = ${id} and clinic_id = ${clinic.id}`;
+  if (!current) return { ok: false, message: "No encontré la ficha." };
+
+  const name = text(form, "full_name")?.slice(0, 120) ?? null;
+  if (!name) return { ok: false, message: "El nombre no puede quedar vacío." };
+  const rawPhone = text(form, "phone");
+  const phone = rawPhone ? normalizePhone(rawPhone) : null;
+  if (rawPhone && !/^\d{10,15}$/.test(phone ?? "")) return { ok: false, message: "Revisá el celular: con código de área, por ejemplo 11 5555-0100." };
+  const dni = text(form, "dni")?.replace(/\D/g, "") || null;
+  if (dni && (dni.length < 6 || dni.length > 10)) return { ok: false, message: "Revisá el DNI: solo números, entre 6 y 10." };
+  const birth = text(form, "birth_date");
+  if (birth && (!/^\d{4}-\d{2}-\d{2}$/.test(birth) || birth > localDateKey(new Date(), clinic.timezone))) return { ok: false, message: "Revisá la fecha de nacimiento." };
+  const email = text(form, "email")?.toLowerCase() ?? null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, message: "Revisá el mail." };
+  const sex = text(form, "sex");
+  const field = (key: string, max = 200) => text(form, key)?.slice(0, max) ?? null;
+
+  await sql.begin(async (tx) => {
+    await tx`
+      update patients set
+        full_name = ${name}, phone = ${phone}, dni = ${dni}, birth_date = ${birth}, email = ${email},
+        sex = ${sex === "femenino" || sex === "masculino" || sex === "otro" ? sex : null},
+        address = ${field("address")}, coverage = ${field("coverage", 80)}, coverage_plan = ${field("coverage_plan", 80)},
+        member_number = ${field("member_number", 40)}, preferences = ${field("preferences", 500)},
+        memory_summary = ${field("memory_summary", 2000)}, notes = ${field("notes", 2000)}
+      where id = ${id} and clinic_id = ${clinic.id}`;
+    if (current.phone && current.phone !== phone) {
+      await tx`insert into patient_phones (clinic_id, phone, patient_id) values (${clinic.id}, ${current.phone}, ${id}) on conflict (clinic_id, phone) do nothing`;
+    }
+  });
+  revalidatePath(`/panel/pacientes/${id}`);
+  revalidatePath("/panel/pacientes");
+  return { ok: true, message: "Datos guardados. Sofi los usa desde el próximo mensaje." };
+}
+
 export async function setContactOptOut(form: FormData) {
   await requireSession();
   const id = uuid(form, "id");

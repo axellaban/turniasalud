@@ -5,11 +5,12 @@ import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { formatDate, formatDateTime, localDateKey } from "@/lib/time";
 import { displayPhone } from "@/lib/phone";
-import { Card, CHANNEL_LABEL, Notice, PageHeader, StatusBadge, buttonClass, smallButtonClass } from "@/components/ui";
+import { Card, CHANNEL_LABEL, Notice, PageHeader, StatusBadge, buttonClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
 import { mergePatientDuplicates, setContactOptOut } from "../../../actions";
 import { duplicatesOf, householdOf } from "@/lib/patients";
 import { patientDocuments } from "@/lib/documents-panel";
 import { NextControl } from "./next-control";
+import { PatientEdit } from "./patient-edit";
 import { dentalHistory, healthFormSheet, missingForCompletion, positiveAnswers } from "@/lib/health-form";
 import { latestHealthForm, sheetPatient } from "@/lib/health-forms";
 import { DeletePatientButton } from "../delete-patients";
@@ -47,7 +48,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
   const canDelete = (await getPanelUser()).role === "admin";
   const [p] = isUuid(id) ? await sql<Patient[]>`select * from patients where id = ${id} and clinic_id = ${clinic.id}` : [];
   if (!p) notFound();
-  const [appointments, conversations, tasks, visits, duplicates, documents, household] = await Promise.all([
+  const [appointments, conversations, tasks, visits, duplicates, documents, household, smileLinks] = await Promise.all([
     sql<Array<{ id: string; starts_at: string; status: string; source: string; professional: string; type_name: string }>>`
       select a.id, a.starts_at, a.status, a.source, pr.full_name as professional, coalesce(a.title, t.name) as type_name
       from appointments a
@@ -69,6 +70,8 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
     patientDocuments(clinic.id, p.id),
     // Familia: otras fichas con el mismo celular.
     householdOf(sql, clinic.id, p.phone, p.id),
+    // ¿Viene de Smile Connect? Allá no se puede editar desde Turnia: se avisa al editar.
+    sql`select 1 from patient_external_ids where clinic_id = ${clinic.id} and patient_id = ${p.id} and external_id like 'sc:%' limit 1`,
   ]);
   // Ficha de salud: solo en las clínicas que la usan.
   const healthForm = healthFormSheet(clinic.id) ? { form: await latestHealthForm(p.id) } : null;
@@ -92,7 +95,17 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
       <Link href="/panel/pacientes" className="text-sm text-brand-700 hover:underline">
         ← Pacientes
       </Link>
-      <PageHeader title={p.full_name ?? "Paciente sin nombre"} />
+      <PageHeader
+        title={p.full_name ?? "Paciente sin nombre"}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/panel/agenda?paciente=${p.id}`} className={buttonClass}>Dar turno</Link>
+            {p.phone && /^\d{8,15}$/.test(p.phone) && (
+              <a href={`https://wa.me/${p.phone}`} target="_blank" rel="noreferrer" className={secondaryButtonClass}>Escribir por WhatsApp ↗</a>
+            )}
+          </div>
+        }
+      />
       {mergedCount > 0 && (
         <Notice tone="success" className="mb-4">
           {mergedCount === 1 ? "Se unificó 1 ficha repetida" : `Se unificaron ${mergedCount} fichas repetidas`} en esta: sus turnos,
@@ -168,6 +181,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
               </span>
               <button className={smallButtonClass}>{p.contact_opt_out ? "Volver a habilitar" : "Dar de baja"}</button>
             </form>
+            <PatientEdit patient={p} clinicId={clinic.id} linkedToSmile={smileLinks.length > 0} />
           </Card>
           {healthForm && <HealthFormCard patient={p} form={healthForm.form} tz={tz} />}
           <Card>
@@ -234,7 +248,7 @@ export default async function PatientDetail({ params, searchParams }: PageProps<
                   <Link href={`/panel/conversaciones/${c.id}`} className="flex items-center gap-3 rounded-xl p-2 hover:bg-brand-50">
                     <span className="w-36 shrink-0 text-xs text-brand-900/65">{formatDateTime(c.started_at, tz)}</span>
                     <span className="flex-1 truncate">
-                      {CHANNEL_LABEL[c.channel]} · {c.title || c.summary || "Sin resumen"}
+                      {CHANNEL_LABEL[c.channel]} · {c.title || c.summary || "Sin resumen todavía"}
                     </span>
                     <StatusBadge value={c.outcome} />
                   </Link>

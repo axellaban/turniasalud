@@ -1,7 +1,7 @@
 import { getPanelClinic } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { getCatalog, getScheduleBlocks } from "@/lib/clinic";
+import { getCatalog, getScheduleBlocks, isUuid } from "@/lib/clinic";
 import { professionalDoes } from "@/lib/booking-rules";
 import { googleBusy } from "@/lib/calendar/sync";
 import { bookedMinutes, visibleHours, type Span } from "@/lib/agenda-layout";
@@ -223,7 +223,13 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
   const step = view === "dia" ? 1 : 7;
   const isNow = view === "dia" ? dayKey === todayKey : week.includes(todayKey);
 
-  const wantsNew = one(params.nuevo) === "1";
+  // «Dar turno» desde la ficha del paciente: el formulario abre con sus datos.
+  const patientParam = one(params.paciente);
+  const [presetPatient] = patientParam && isUuid(patientParam)
+    ? await sql<{ id: string; phone: string | null; name: string | null; coverage: string | null }[]>`
+        select id, phone, full_name as name, coverage from patients where id = ${patientParam} and clinic_id = ${clinic.id}`
+    : [];
+  const wantsNew = one(params.nuevo) === "1" || Boolean(presetPatient);
   const newTime = one(params.hora);
   const newPro = one(params.profesional);
 
@@ -354,13 +360,14 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
                 .map((p) => ({ id: p.id, name: p.full_name }))}
             />
           )}
-          <ManualPanel defaultOpen={wantsNew} key={`${wantsNew}|${dayKey}|${newTime}|${newPro}`}>
+          <ManualPanel defaultOpen={wantsNew} key={`${wantsNew}|${dayKey}|${newTime}|${newPro}|${presetPatient?.id ?? ""}`}>
             <ManualAppointmentForm
               clinicId={clinic.id}
               defaultDate={dayKey}
               today={todayKey}
               initialProId={wantsNew ? (newPro ?? proFilter ?? undefined) : undefined}
               initialTime={wantsNew ? newTime : undefined}
+              initialPatient={presetPatient ? { ...presetPatient, phone: presetPatient.phone ? displayPhone(presetPatient.phone) : null } : undefined}
               professionals={catalog.professionals.map((p) => ({
                 id: p.id,
                 name: p.full_name,
