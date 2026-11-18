@@ -90,4 +90,37 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect(await cutoff(mininni)).toBe(18);
     await db`delete from clinics where id = ${mininni}`;
   }, 60000);
+
+  it("el feedback de Guerra–Mininni cambia solo esas frases de sus instrucciones, una sola vez", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    const before = [
+      "A QUIÉN DAR EL TURNO",
+      "- Primera vez: con el Dr. Mininni. Solo con la Dra. Coldeira si la solicita explícitamente para su primera consulta. Explicá la diferencia antes de ofrecer un horario.",
+      "- Si pide control, preguntá una vez si también quiere mantenimiento periodontal (limpieza), salvo que ya lo haya aclarado.",
+      "- El mantenimiento periodontal (limpieza) lo hace la Dra. María Emilia Coldeira.",
+      "- No sustituyas una limpieza por un control.",
+      "- Para un paciente nuevo, pedí nombre y DNI. Pedí de a uno o dos datos y aprovechá lo que ya escribió o dijo.",
+      "- Si habla de un caso urgente o de dolor, atendé ese pedido antes de volver a las preguntas administrativas y seguí el protocolo de urgencias.",
+    ].join("\n");
+    await db`insert into clinics (id, name, agent_context) values (${mininni}, 'Guerra–Mininni ficticia', ${before})`;
+    await db`delete from data_migrations where name = '2026-11-18-feedback-sofi-guerra-mininni'`;
+    await db.unsafe(schema);
+    const [row] = await db`select agent_context, context_revision from clinics where id = ${mininni}`;
+    const text = row.agent_context as string;
+    expect(text).not.toContain("Explicá la diferencia");
+    expect(text).toContain("Si no la nombró, no menciones a la Dra. Coldeira");
+    expect(text).not.toContain("mantenimiento periodontal (limpieza)");
+    expect(text).not.toContain("una limpieza por un control");
+    expect(text).toContain("Por WhatsApp pedí en un solo mensaje todos los datos que falten");
+    expect(text).toContain("Una molestia o sensibilidad no es una urgencia");
+    expect(text).toContain("nunca digas «limpieza»");
+    expect(text.startsWith("A QUIÉN DAR EL TURNO\n- Primera vez: con el Dr. Mininni.")).toBe(true);
+    expect(row.context_revision).toBe(1);
+    // Una sola vez: lo que editen después desde el panel no se pisa ni se repite.
+    await db`update clinics set agent_context = 'Editado desde el panel' where id = ${mininni}`;
+    await db.unsafe(schema);
+    expect((await db`select agent_context from clinics where id = ${mininni}`)[0].agent_context).toBe("Editado desde el panel");
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
 });
