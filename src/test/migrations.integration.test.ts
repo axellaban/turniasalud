@@ -75,4 +75,19 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect(await options()).toMatchObject({ summary_last_weekday: 5, health_form: null, verify_appointment_access: true });
     await db`delete from clinics where id = ${mininni}`;
   }, 60000);
+  it("el primer turno del día queda prendido para Guerra–Mininni una sola vez", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    await db`insert into clinics (id, name) values (${mininni}, 'Guerra–Mininni ficticia')`;
+    await db`delete from data_migrations where name = '2026-11-18-primer-turno-guerra-mininni'`;
+    await db.unsafe(schema);
+    const cutoff = async (id: string) => (await db`select first_slot_cutoff_hour from clinics where id = ${id}`)[0].first_slot_cutoff_hour;
+    expect(await cutoff(mininni)).toBe(0);
+    expect(await cutoff("00000000-0000-4000-8000-000000000001")).toBeNull();
+    // Si después lo cambian desde el panel, el próximo deploy no lo pisa.
+    await db`update clinics set first_slot_cutoff_hour = 18 where id = ${mininni}`;
+    await db.unsafe(schema);
+    expect(await cutoff(mininni)).toBe(18);
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
 });

@@ -2,6 +2,7 @@
 // horarios, qué mueve solo recepción y qué acepta cada cobertura. Son funciones puras: las usan las
 // herramientas del agente y el panel, y se testean sin base.
 
+import { addDaysKey, localDateKey, timeToMinutes, weekdayOfKey, zonedParts, zonedTimeToUtc } from "./time";
 import type { AppointmentType, CoverageRule, Professional, ProfessionalType, Schedule } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,52 @@ export function schedulesForTypes<S extends ScheduleRule>(schedules: S[], typeId
 export function agentSchedules<S extends ScheduleRule>(schedules: S[], typeIds: string[], opts: { urgent: boolean; released?: boolean }): S[] {
   const usable = schedulesForTypes(schedules, typeIds);
   return opts.urgent || opts.released ? usable : usable.filter((s) => !s.urgent_only);
+}
+
+// ---------------------------------------------------------------------------
+// Primer turno del día
+// ---------------------------------------------------------------------------
+
+type DaySchedule = Pick<Schedule, "professional_id" | "weekday" | "start_time">;
+
+/** Desde qué hora del día anterior se deja de dar el primer turno (las opciones del panel). 0: todo el día. */
+export const FIRST_SLOT_HOURS = [0, 12, 14, 16, 18, 20];
+
+/**
+ * ¿Sofi tiene que dejar pasar este horario porque es el primer turno del día y lo piden tarde? Así nadie
+ * se encuentra a la mañana con un turno que no vio. El primer turno es el que ocupa el arranque de la
+ * agenda de ese profesional ese día. Se deja de dar desde `cutoffHour` (0: todo el día) del último día
+ * anterior en que atiende el consultorio (el viernes, para el lunes) y, por supuesto, el mismo día.
+ * Sin `cutoffHour`, la regla está apagada. Al consultorio no se le aplica.
+ */
+export function firstSlotOfDayBlocked(q: {
+  start: Date;
+  durationMin: number;
+  professionalId: string;
+  /** Todos los horarios del consultorio (los de cada profesional, de cualquier prestación). */
+  schedules: DaySchedule[];
+  cutoffHour: number | null | undefined;
+  now: Date;
+  timeZone: string;
+}): boolean {
+  if (q.cutoffHour === null || q.cutoffHour === undefined) return false;
+  const dayKey = localDateKey(q.start, q.timeZone);
+  const weekday = weekdayOfKey(dayKey);
+  const opening = q.schedules
+    .filter((s) => s.professional_id === q.professionalId && s.weekday === weekday)
+    .map((s) => timeToMinutes(s.start_time))
+    .sort((a, b) => a - b)[0];
+  if (opening === undefined) return false;
+  const p = zonedParts(q.start, q.timeZone);
+  const minute = p.hour * 60 + p.minute;
+  // Ocupa el arranque de la agenda: empieza antes de que termine un turno que arrancara a la apertura.
+  if (minute < opening || minute >= opening + q.durationMin) return false;
+  // El último día anterior con atención (cualquier profesional). Si no hay, el mismo día de la semana anterior.
+  const open = new Set(q.schedules.map((s) => s.weekday));
+  let previous = addDaysKey(dayKey, -1);
+  for (let i = 0; i < 6 && !open.has(weekdayOfKey(previous)); i++) previous = addDaysKey(previous, -1);
+  const [y, m, d] = previous.split("-").map(Number);
+  return q.now.getTime() >= zonedTimeToUtc(y, m, d, q.cutoffHour, 0, q.timeZone).getTime();
 }
 
 // ---------------------------------------------------------------------------

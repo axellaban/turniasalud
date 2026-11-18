@@ -5,6 +5,7 @@ import { getCatalog, isDentalClinic } from "@/lib/clinic";
 import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES } from "@/lib/agent/modules/odontologia";
 import { Badge, Field, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
+import { FIRST_SLOT_HOURS } from "@/lib/booking-rules";
 import { ConfigHeader, loadConfigConflicts } from "../header";
 import { healthFormSheet, healthFormSheetText } from "@/lib/health-form";
 import { ProfileSaveForm } from "../profile-save";
@@ -29,6 +30,17 @@ export default async function BookingRulesPage() {
       <ConfigHeader clinic={clinic} current="/panel/configuracion/turnos" conflicts={await loadConfigConflicts(clinic)} />
       <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveBookingRules} scope="turnos" agentName={agent}>
         <input type="hidden" name="rules_form" value="1" />
+        <Section id="primer-turno" title="Primer turno del día" description={`Para que nadie se encuentre a la mañana con un turno que no vio. ${agent} no ofrece ni reserva el primer horario del día de cada profesional cuando se lo piden con poco aviso. El consultorio lo puede dar igual desde la Agenda. Para el lunes cuenta el último día de atención anterior (por ejemplo, el viernes).`}>
+          <Field label="Desde cuándo deja de darlo" hint="El mismo día, tampoco lo da.">
+            <select name="first_slot_cutoff_hour" defaultValue={clinic.first_slot_cutoff_hour === null ? "" : String(clinic.first_slot_cutoff_hour)} className={inputClass}>
+              <option value="">Lo da siempre (sin regla)</option>
+              {FIRST_SLOT_HOURS.map((h) => (
+                <option key={h} value={h}>{h === 0 ? "Desde el día anterior" : `Desde las ${h} del día anterior`}</option>
+              ))}
+            </select>
+          </Field>
+        </Section>
+
         <Section id="mover" title="Mover y cancelar turnos" description={`Si no se cumple una regla, ${agent} no toca el turno: crea una tarea para recepción y le dice al paciente que lo conserva.`}>
           <Field label="Aviso mínimo para mover (horas)" hint="Vacío: sin mínimo. Por ejemplo, 24.">
             <input name="reschedule_notice_hours" type="number" min={1} max={720} defaultValue={clinic.reschedule_notice_hours ?? ""} className={inputClass} />

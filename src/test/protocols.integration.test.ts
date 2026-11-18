@@ -245,6 +245,36 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     }
   });
 
+  it("primer turno del día: con poco aviso Sofi no lo ofrece ni lo reserva; el consultorio, sí", async () => {
+    const [{ id: temprano }] = await sql`insert into professionals (clinic_id, full_name, specialty) values (${clinicId}, 'Dra. Temprano', 'Odontología') returning id`;
+    await sql`
+      insert into schedules (professional_id, weekday, start_time, end_time)
+      select ${temprano}::uuid, d, '08:00', '12:00' from generate_series(0, 6) d`;
+    await sql`update clinics set first_slot_cutoff_hour = 0 where id = ${clinicId}`;
+    try {
+      const tomorrow = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, profesional_id: temprano, desde: day(1), hasta: day(1) });
+      expect(tomorrow.turnos.length).toBeGreaterThan(0);
+      expect(tomorrow.turnos.map((t) => localTime(t.inicio))).not.toContain("08:00");
+      expect(await tool("reservar_turno", { tipo_turno_id: consulta, profesional_id: temprano, inicio: at(1, "08:00") }))
+        .toMatchObject({ ok: false, error: expect.stringContaining("primero del día") });
+      // Para pasado mañana todavía se da.
+      const later = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, profesional_id: temprano, desde: day(2), hasta: day(2) });
+      expect(later.turnos.map((t) => localTime(t.inicio))).toContain("08:00");
+      // El consultorio lo da igual desde la Agenda.
+      const panel = await service.bookAppointment({ clinicId, patientPhone: plain, channel: "panel" }, { tipo_turno_id: consulta, profesional_id: temprano, inicio: at(1, "08:00") });
+      expect(panel.ok).toBe(true);
+      // Sin regla, Sofi lo ofrece.
+      await clearAppointments();
+      await sql`update clinics set first_slot_cutoff_hour = null where id = ${clinicId}`;
+      const off = await tool("consultar_disponibilidad", { tipo_turno_id: consulta, profesional_id: temprano, desde: day(1), hasta: day(1) });
+      expect(off.turnos.map((t) => localTime(t.inicio))).toContain("08:00");
+    } finally {
+      await sql`update clinics set first_slot_cutoff_hour = null where id = ${clinicId}`;
+      await sql`update professionals set active = false where id = ${temprano}`;
+      await clearAppointments();
+    }
+  });
+
   it("una prestación que pide otra antes: no la ofrece hasta que el paciente tiene esa otra", async () => {
     await sql`update appointment_types set requires_type_id = ${implantConsult} where id = ${colocacion}`;
     try {
@@ -387,18 +417,19 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     const actions = await import("@/app/panel/actions");
     // Turnos y urgencias.
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, reschedule_notice_hours: "0" }))).toMatchObject({ ok: false });
+    expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, first_slot_cutoff_hour: "7" }))).toMatchObject({ ok: false });
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, handoff_phone: "abc" })))
       .toMatchObject({ ok: false, message: expect.stringContaining("teléfono de recepción") });
     expect(await protocol.saveBookingRules({}, form({
       clinic_id: clinicId, rules_form: "1", reschedule_notice_hours: "24", cancel_notice_hours: "", reschedule_max_minutes: "120",
-      reception_only_terms: "extracción, implante", keep_duration_on_reschedule: "on", urgent_release_hours: "12",
+      reception_only_terms: "extracción, implante", keep_duration_on_reschedule: "on", urgent_release_hours: "12", first_slot_cutoff_hour: "18",
       policies: "Tolerancia de 15 minutos", followup_attempts: "2", followup_delay_hours: "3", urgency_instructions: "Llamar al 107",
       after_hours_instructions: "Guardia: 223 555-0199", handoff_phone: "+54 223 555-0100",
       dental_protocol_field: "1", dental_protocol: "on",
     }))).toMatchObject({ ok: true });
     expect(await clinic()).toMatchObject({
       reschedule_notice_hours: 24, cancel_notice_hours: null, reschedule_max_minutes: 120, reception_only_terms: "extracción, implante",
-      keep_duration_on_reschedule: true, move_panel_only: false, urgent_release_hours: 12, dental_protocol: true,
+      keep_duration_on_reschedule: true, move_panel_only: false, urgent_release_hours: 12, dental_protocol: true, first_slot_cutoff_hour: 18,
       policies: "Tolerancia de 15 minutos", followup_attempts: 2, followup_delay_hours: 3, urgency_instructions: "Llamar al 107",
       after_hours_instructions: "Guardia: 223 555-0199", handoff_phone: "+54 223 555-0100",
     });
@@ -415,7 +446,7 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     await expect(protocol.addStaffPhone({}, form({ clinic_id: clinicId, name: "Recepción", phone: "11 5555-0100" }))).rejects.toThrow("redirect:/panel");
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
     await sql`update clinics set dental_protocol = false, keep_duration_on_reschedule = false, reception_only_terms = null, reschedule_max_minutes = null, reschedule_notice_hours = null,
-      urgent_release_hours = null, policies = null, followup_attempts = 1, followup_delay_hours = 2, urgency_instructions = null, after_hours_instructions = null,
+      urgent_release_hours = null, first_slot_cutoff_hour = null, policies = null, followup_attempts = 1, followup_delay_hours = 2, urgency_instructions = null, after_hours_instructions = null,
       handoff_phone = null, faq = null where id = ${clinicId}`;
 
     // Coberturas del consultorio y de cada profesional, en un mismo formulario.

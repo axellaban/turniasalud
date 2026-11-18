@@ -62,6 +62,11 @@ export type Clinic = {
   dental_protocol: boolean;
   /** Horas antes del turno en que las horas reservadas para urgencias quedan libres para todo. */
   urgent_release_hours: number | null;
+  /**
+   * Primer turno del día: Sofi no lo da si lo piden desde esta hora del último día de atención anterior
+   * (0: todo ese día) o el mismo día. Null: sin regla (booking-rules.ts, firstSlotOfDayBlocked).
+   */
+  first_slot_cutoff_hour: number | null;
   created_at: string;
 };
 
