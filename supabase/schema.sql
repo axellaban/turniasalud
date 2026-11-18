@@ -1893,3 +1893,19 @@ begin
     insert into data_migrations (name) values ('2026-11-18-radiografias-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Guerra–Mininni es cliente (18/11/2026): su ficha deja de ser una demo conservada. Así Sofi le avisa a la
+-- lista de espera cuando se libera un turno, la respuesta de recepción a un pedido le llega al paciente,
+-- vuelve a escribirle a quien no contestó los horarios (pedido del Dr. Mininni) y no se la puede borrar
+-- desde Clínicas. Las campañas siguen saliendo solo si alguien las manda. El WhatsApp general de Turnia no
+-- la toma nunca: tiene su propia línea (channel.ts, whatsappClinic). Una sola vez.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-18-guerra-mininni-cliente') then
+    update clinics set is_demo = false, retained_at = coalesce(retained_at, now()), updated_at = now()
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    insert into data_migrations (name) values ('2026-11-18-guerra-mininni-cliente');
+  end if;
+end $$;

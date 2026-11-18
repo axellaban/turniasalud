@@ -497,6 +497,54 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     expect(fake.calls.filter((c) => c.url.endsWith("/api/sendText"))).toHaveLength(1);
   });
 
+  it("el WhatsApp general nunca atiende como una clínica con línea propia, aunque sea cliente y la más antigua", async () => {
+    await sql`
+      insert into clinics (id, name, is_demo, whatsapp_provider, created_at) values (${OWN_CLINIC}, 'Consultorio de prueba', false, 'waha', '2000-01-01')
+      on conflict (id) do update set is_demo = false, whatsapp_provider = 'waha', created_at = '2000-01-01'`;
+    await sql`update clinics set whatsapp_provider = 'waha' where id = ${CLINIC}`;
+    const { whatsappClinic } = await import("@/lib/channel");
+    try {
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+      expect((await whatsappClinic()).id).toBe(CLINIC);
+      // Pausada, sigue siendo su línea: el general tampoco la toma.
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([{ ...ownConnection, enabled: false }]));
+      expect((await whatsappClinic()).id).toBe(CLINIC);
+      // Sin línea propia sería la elegida (la más antigua con WAHA): por eso el filtro.
+      vi.stubEnv("WAHA_CONNECTIONS", "");
+      expect((await whatsappClinic()).id).toBe(OWN_CLINIC);
+      // Un mensaje al número general queda en la clínica general.
+      vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+      fake.nextConversation = "conv_general";
+      await inbound(wahaRequest(textMessage("gen1", "Hola", "5491155550077@c.us")));
+      const [conv] = await sql`select clinic_id from channel_conversations where elevenlabs_conversation_id = 'conv_general'`;
+      expect(conv.clinic_id).toBe(CLINIC);
+    } finally {
+      await sql`update clinics set is_demo = true, whatsapp_provider = 'meta', created_at = now() where id = ${OWN_CLINIC}`;
+    }
+  });
+
+  it("una clínica cliente con línea propia le escribe al paciente por su línea; como demo, no le escribe", async () => {
+    await sql`
+      insert into clinics (id, name, is_demo) values (${OWN_CLINIC}, 'Consultorio de prueba', false)
+      on conflict (id) do update set is_demo = false`;
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+    const { sendPatientMessage } = await import("@/lib/whatsapp");
+    const [clinic] = await sql<import("@/lib/types").Clinic[]>`select * from clinics where id = ${OWN_CLINIC}`;
+    const msg = { phone: "5491155550088", templateKey: "respuesta" as const, templateName: "respuesta", params: ["Ana", "Ya está lista tu receta"] as [string, string], context: "Respuesta del equipo." };
+    try {
+      await sendPatientMessage(clinic, msg);
+      const own = fake.calls.filter((c) => c.url === `${OWN_WAHA}/api/sendText`);
+      expect(own).toHaveLength(1);
+      expect((own[0].body as { chatId: string }).chatId).toBe("5491155550088@c.us");
+      expect(fake.sent("sendText")).toHaveLength(0);
+      await sql`update clinics set is_demo = true where id = ${OWN_CLINIC}`;
+      await expect(sendPatientMessage({ ...clinic, is_demo: true }, msg)).rejects.toThrow("Modo demo");
+      expect(fake.calls.filter((c) => c.url === `${OWN_WAHA}/api/sendText`)).toHaveLength(1);
+    } finally {
+      await sql`update clinics set is_demo = true where id = ${OWN_CLINIC}`;
+    }
+  });
+
   it("envía audio con la voz del consultorio solo para el mensaje que lo pidió, y usa texto si falla", async () => {
     await sql`
       insert into clinics (id, name, elevenlabs_voice_id) values (${OWN_CLINIC}, 'Consultorio de prueba', 'voz-propia')

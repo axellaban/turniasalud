@@ -11,7 +11,7 @@ import { announcePause, checkChatFuse, guardIncoming, isMuted } from "./chat-gua
 import { staffForPhone } from "./staff";
 import { chatIsActive, requireActiveWhatsapp, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
-import { currentWahaConnection, wahaConnectionById, withWahaConnection } from "./waha-connections";
+import { currentWahaConnection, wahaConnectionById, wahaConnections, withWahaConnection } from "./waha-connections";
 
 // Conversaciones de WhatsApp por WAHA + Custom Channel de ElevenLabs.
 // WAHA entrega cada mensaje suelto; acá decidimos a qué conversación del
@@ -50,10 +50,17 @@ export type ChannelConversation = {
   created_at: string;
 };
 
-/** Clínica que atiende el WhatsApp de WAHA (la primera con ese proveedor, o la de por defecto). */
+/**
+ * Clínica que atiende el WhatsApp general de WAHA (la primera con ese proveedor, o la de por defecto).
+ * Nunca una que tiene su propia línea (WAHA_CONNECTIONS), aunque esté pausada: esa clínica solo atiende
+ * por su número, y el general no puede contestar como si fuera ella.
+ */
 export async function whatsappClinic(): Promise<Clinic> {
+  const ownLines = [...new Set(wahaConnections().map((c) => c.clinicId))];
   const [clinic] = await sql<Clinic[]>`
-    select * from clinics where whatsapp_provider = 'waha' and not is_demo order by created_at limit 1`;
+    select * from clinics where whatsapp_provider = 'waha' and not is_demo
+      ${ownLines.length ? sql`and id <> all(${ownLines}::uuid[])` : sql``}
+    order by created_at limit 1`;
   return clinic ?? getClinic();
 }
 
