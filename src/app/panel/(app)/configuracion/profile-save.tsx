@@ -10,7 +10,7 @@ const LEAVE = "Tenés cambios sin guardar. ¿Salir igual y perderlos?";
 const DRAFT_EVENT = "turnia-borrador";
 const PREFIX = "turnia-borrador:";
 
-type Draft = { savedAt: string; values: Record<string, string> };
+type Draft = { savedAt: string; values: Record<string, string | string[]> };
 
 // El borrador vive en este navegador: sobrevive a una recarga, a un corte o a un
 // deploy en el medio. Está atado a la revisión de la ficha: si otra persona
@@ -75,15 +75,23 @@ export function ProfileSaveForm({ clinicId, revision, children, action: save = s
   const remember = () => {
     setDirtyAt(revision);
     if (!form.current) return;
-    const values: Record<string, string> = {};
+    const values: Draft["values"] = {};
     for (const [name, value] of new FormData(form.current)) if (typeof value === "string" && name !== "clinic_id") values[name] = value;
+    // Incluye también las casillas desmarcadas y conserva todos los valores de un mismo grupo.
+    for (const field of form.current.querySelectorAll<HTMLInputElement>('input[type="checkbox"][name]')) {
+      if (!Array.isArray(values[field.name])) values[field.name] = [];
+      if (field.checked) (values[field.name] as string[]).push(field.value);
+    }
     writeDraft(key, { savedAt: new Date().toISOString(), values });
   };
   const restore = () => {
     if (!form.current || !draft) return;
     for (const [name, value] of Object.entries(draft.values)) {
-      const field = form.current.elements.namedItem(name);
-      if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) field.value = value;
+      for (const field of Array.from(form.current.elements)) {
+        if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) || field.name !== name) continue;
+        if (field instanceof HTMLInputElement && field.type === "checkbox") field.checked = Array.isArray(value) ? value.includes(field.value) : value === field.value;
+        else if (typeof value === "string") field.value = value;
+      }
     }
     form.current.dispatchEvent(new Event("reset-chips", { bubbles: false }));
     setDirtyAt(revision);

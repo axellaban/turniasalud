@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentBookingDayAllowed,
   agentCanMove,
   agentSchedules,
   bestCoverageRule,
@@ -17,6 +18,17 @@ import { zonedTimeToUtc } from "./time";
 
 /** El formato de moneda usa un espacio no separable: se compara como espacio común. */
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value).replace(/\u00a0/g, " "));
+
+describe("días permitidos para Sofi", () => {
+  it("usa el día local de la clínica y conserva el valor por defecto", () => {
+    const tz = "America/Argentina/Buenos_Aires";
+    // En UTC ya es viernes; en Buenos Aires todavía es jueves.
+    expect(agentBookingDayAllowed([1,2,3,4], new Date("2026-11-20T01:00:00Z"), tz)).toBe(true);
+    expect(agentBookingDayAllowed([1,2,3,4], new Date("2026-11-20T15:00:00Z"), tz)).toBe(false);
+    expect(agentBookingDayAllowed(null, new Date("2026-11-20T15:00:00Z"), tz)).toBe(true);
+    expect(agentBookingDayAllowed([0], new Date("2026-11-22T15:00:00Z"), tz)).toBe(true);
+  });
+});
 
 const rule = (r: Partial<CoverageRule>): CoverageRule => ({
   id: r.id ?? Math.random().toString(36).slice(2),

@@ -1978,3 +1978,8 @@ begin
     insert into data_migrations (name) values ('2026-11-18-smile-completa-guerra-mininni');
   end if;
 end $$;
+
+-- Días para turnos de Sofi: política independiente de los horarios sincronizados (19/11/2026).
+-- Null conserva todos los días de la agenda. El equipo sigue pudiendo operar los demás días.
+alter table clinics add column if not exists booking_weekdays smallint[]
+  check (booking_weekdays <@ array[0,1,2,3,4,5,6]::smallint[] and cardinality(booking_weekdays) > 0 and array_position(booking_weekdays, null) is null);

@@ -130,3 +130,6 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
   - los `ERR_ABORTED` de los prefetch y de los audios al cerrar la página;
   - `/demo`, que pide ingresar al panel;
   - el 404 de `/p/<inexistente>`.
+## Días permitidos para turnos de Sofi — 19/11/2026
+
+Regresión con PostgreSQL descartable y pacientes ficticios: antes del cambio la herramienta ofrecía el viernes reservado al equipo; con la regla aplicada lo excluye de búsquedas por día y por rango, rechaza reservas por WhatsApp, teléfono y web y rechaza mover al viernes conservando el turno original. Se comprueba que el panel y el equipo siguen operando los viernes, que cancelar uno existente sigue permitido y que las clínicas sin restricción mantienen sus días. Una sincronización real contra el Smile Connect simulado conserva la política y la búsqueda no consume lecturas de disponibilidad para un día excluido. Caso unitario del día local de la clínica cuando en UTC ya es viernes. Suite completa: 696 pruebas en 84 archivos; ESLint y build de producción correctos. Contexto real de chat y voz comprobado con las instrucciones actualizadas, sin crear turnos ni mandar mensajes a pacientes.

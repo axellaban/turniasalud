@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { addDaysKey, localDateKey } from "@/lib/time";
+import { addDaysKey, localDateKey, weekdayOfKey } from "@/lib/time";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 // Reglas de turnos del panel que hacen cumplir las herramientas de Sofi (PLAN_PROTOCOLOS.md):
@@ -245,6 +245,51 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     }
   });
 
+  it("los días reservados al equipo no se ofrecen ni reservan ni son destino de una reprogramación", async () => {
+    let friday = 7;
+    while (weekdayOfKey(day(friday)) !== 5) friday++;
+    const monday = friday + 3;
+    await clearAppointments();
+    await sql`update clinics set booking_weekdays = array[1,2,3,4]::smallint[] where id = ${clinicId}`;
+    try {
+      // Los horarios reales siguen incluyendo viernes (igual que al copiarlos de Smile Connect).
+      expect((await sql`select count(*)::int as n from schedules where professional_id = ${ana} and weekday = 5`)[0].n).toBeGreaterThan(0);
+      const requested = { tipo_turno_id: consulta, profesional_id: ana, desde: day(friday), hasta: day(friday), hora_exacta: "11:00" };
+      expect(await tool("consultar_disponibilidad", requested)).toMatchObject({
+        ok: true, turnos: [], mensaje: expect.stringContaining("reservadas al equipo"),
+        hora_solicitada: { hora: "11:00", disponible: false },
+      });
+      const range = await tool("consultar_disponibilidad", { ...requested, hasta: day(monday) });
+      expect(range.turnos.length).toBeGreaterThan(0);
+      expect(range.turnos.every((s) => [1,2,3,4].includes(weekdayOfKey(localDay(s.inicio))))).toBe(true);
+      // Las llamadas y WhatsApp usan el mismo bloqueo aunque intenten reservar sin buscar.
+      for (const canal of ["whatsapp", "telefono", "web"]) {
+        expect(await tool("reservar_turno", { tipo_turno_id: consulta, profesional_id: ana, inicio: at(friday, "11:00") }, plain, canal))
+          .toMatchObject({ ok: false, error: expect.stringContaining("solo ofrece, reserva y reprograma") });
+      }
+      const original = await tool("reservar_turno", { tipo_turno_id: consulta, profesional_id: ana, inicio: at(monday, "11:00") });
+      expect(original.ok).toBe(true);
+      expect(await tool("reprogramar_turno", { turno_id: original.turno_id, nuevo_inicio: at(friday, "12:00") }))
+        .toMatchObject({ ok: false, error: expect.stringContaining("solo ofrece, reserva y reprograma") });
+      expect((await sql`select status, starts_at from appointments where id = ${original.turno_id!}`)[0])
+        .toMatchObject({ status: "confirmado", starts_at: at(monday, "11:00") });
+      // El consultorio puede dar sus turnos especiales; la política tampoco impide cancelar uno existente.
+      const manual = await service.bookAppointment({ clinicId, patientPhone: plain, channel: "panel" }, { tipo_turno_id: consulta, profesional_id: ana, inicio: at(friday, "11:00") });
+      expect(await tool("cancelar_turno", { turno_id: manual.turno_id })).toMatchObject({ ok: true });
+      // El equipo por WhatsApp conserva acceso a los viernes, sin cambiar los permisos del paciente.
+      const staff = await service.checkAvailability({ clinicId, patientPhone: plain, channel: "whatsapp", staff: { name: "Equipo de prueba" } }, requested);
+      expect(staff.turnos.length).toBeGreaterThan(0);
+      const text = clinicLib.clinicInfoText(await clinic());
+      expect(text).toContain("lunes, martes, miércoles, jueves");
+      expect(text).toContain("esto no significa que el consultorio esté cerrado");
+    } finally {
+      await sql`update clinics set booking_weekdays = null where id = ${clinicId}`;
+      await clearAppointments();
+    }
+    // Las otras clínicas conservan su comportamiento por defecto.
+    expect((await tool("consultar_disponibilidad", { tipo_turno_id: consulta, profesional_id: ana, desde: day(friday), hasta: day(friday) })).turnos.length).toBeGreaterThan(0);
+  });
+
   it("primer turno del día: con poco aviso Sofi no lo ofrece ni lo reserva; el consultorio, sí", async () => {
     const [{ id: temprano }] = await sql`insert into professionals (clinic_id, full_name, specialty) values (${clinicId}, 'Dra. Temprano', 'Odontología') returning id`;
     await sql`
@@ -418,6 +463,11 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     // Turnos y urgencias.
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, reschedule_notice_hours: "0" }))).toMatchObject({ ok: false });
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, first_slot_cutoff_hour: "7" }))).toMatchObject({ ok: false });
+    for (const days of [[], ["7"], [""], ["1", "x"]]) {
+      expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, booking_weekdays_field: "1", booking_weekday: days }))).toMatchObject({ ok: false });
+    }
+    expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, booking_weekdays_field: "1", booking_weekday: ["4", "1", "2", "3", "1"] }))).toMatchObject({ ok: true });
+    expect((await clinic()).booking_weekdays).toEqual([1,2,3,4]);
     expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, handoff_phone: "abc" })))
       .toMatchObject({ ok: false, message: expect.stringContaining("teléfono de recepción") });
     expect(await protocol.saveBookingRules({}, form({
@@ -428,7 +478,7 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
       dental_protocol_field: "1", dental_protocol: "on",
     }))).toMatchObject({ ok: true });
     expect(await clinic()).toMatchObject({
-      reschedule_notice_hours: 24, cancel_notice_hours: null, reschedule_max_minutes: 120, reception_only_terms: "extracción, implante",
+      booking_weekdays: [1,2,3,4], reschedule_notice_hours: 24, cancel_notice_hours: null, reschedule_max_minutes: 120, reception_only_terms: "extracción, implante",
       keep_duration_on_reschedule: true, move_panel_only: false, urgent_release_hours: 12, dental_protocol: true, first_slot_cutoff_hour: 18,
       policies: "Tolerancia de 15 minutos", followup_attempts: 2, followup_delay_hours: 3, urgency_instructions: "Llamar al 107",
       after_hours_instructions: "Guardia: 223 555-0199", handoff_phone: "+54 223 555-0100",
@@ -445,6 +495,8 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     // Dar un celular con acceso total es solo de Turnia.
     await expect(protocol.addStaffPhone({}, form({ clinic_id: clinicId, name: "Recepción", phone: "11 5555-0100" }))).rejects.toThrow("redirect:/panel");
     mocks.cookies.set("turnia_session", (await import("@/lib/session")).createSessionToken());
+    expect(await protocol.saveBookingRules({}, form({ clinic_id: clinicId, booking_weekdays_field: "1", booking_weekday: ["0","1","2","3","4","5","6"] }))).toMatchObject({ ok: true });
+    expect((await clinic()).booking_weekdays).toBeNull();
     await sql`update clinics set dental_protocol = false, keep_duration_on_reschedule = false, reception_only_terms = null, reschedule_max_minutes = null, reschedule_notice_hours = null,
       urgent_release_hours = null, first_slot_cutoff_hour = null, policies = null, followup_attempts = 1, followup_delay_hours = 2, urgency_instructions = null, after_hours_instructions = null,
       handoff_phone = null, faq = null where id = ${clinicId}`;

@@ -74,6 +74,14 @@ export async function saveBookingRules(_previous: FormState, form: FormData): Pr
   const clinic = await panelClinicOr(form);
   if (isFormState(clinic)) return clinic;
   const fields: Record<string, unknown> = {};
+  if (form.has("booking_weekdays_field")) {
+    const raw = form.getAll("booking_weekday");
+    if (!raw.length || raw.some((v) => typeof v !== "string" || !/^[0-6]$/.test(v))) {
+      return { ok: false, message: "Elegí al menos un día en que Sofi puede dar turnos." };
+    }
+    const days = [...new Set(raw.map(Number))].sort();
+    fields.booking_weekdays = days.length === 7 ? null : days;
+  }
   const numbers: Array<[string, number, number, string]> = [
     ["reschedule_notice_hours", 1, 720, "El aviso mínimo va en horas, de 1 a 720 (30 días)."],
     ["cancel_notice_hours", 1, 720, "El aviso mínimo va en horas, de 1 a 720 (30 días)."],
