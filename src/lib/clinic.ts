@@ -4,7 +4,7 @@ import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
 import { formatDate, formatDateTime } from "./time";
 import { householdOf, patientForPhone } from "./patients";
-import { agentCanMove, coverageRuleText, durationPhrase, parseTerms, receptionOnlyTerm } from "./booking-rules";
+import { agentCanMove, bookingDaysText, coverageRuleText, durationPhrase, parseTerms, receptionOnlyTerm } from "./booking-rules";
 import { DENTAL_PROTOCOL, isDentalSpecialty } from "./agent/modules/odontologia";
 import { wahaConnections } from "./waha-connections";
 import { staffContextText, staffForPhone } from "./staff";
@@ -136,6 +136,7 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean, opts: { dental
     clinic.payment_methods && `Formas de pago:\n${clinic.payment_methods}`,
     clinic.tone === "usted" && "Trato: de usted con todos los pacientes, en todos los mensajes y desde el primero.",
     clinic.tone === "vos" && "Trato: de vos.",
+    bookingDaysText(clinic.booking_weekdays),
     rescheduleRulesText(clinic),
     clinic.dental_protocol && dental && DENTAL_PROTOCOL,
     clinic.agent_context && `Instrucciones de esta clínica:\n${clinic.agent_context}`,

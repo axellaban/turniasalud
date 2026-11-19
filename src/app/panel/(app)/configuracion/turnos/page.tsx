@@ -5,7 +5,7 @@ import { getCatalog, isDentalClinic } from "@/lib/clinic";
 import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES } from "@/lib/agent/modules/odontologia";
 import { Badge, Field, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
-import { FIRST_SLOT_HOURS } from "@/lib/booking-rules";
+import { BOOKING_WEEKDAYS, FIRST_SLOT_HOURS } from "@/lib/booking-rules";
 import { ConfigHeader, loadConfigConflicts } from "../header";
 import { healthFormSheet, healthFormSheetText } from "@/lib/health-form";
 import { ProfileSaveForm } from "../profile-save";
@@ -30,6 +30,19 @@ export default async function BookingRulesPage() {
       <ConfigHeader clinic={clinic} current="/panel/configuracion/turnos" conflicts={await loadConfigConflicts(clinic)} />
       <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveBookingRules} scope="turnos" agentName={agent}>
         <input type="hidden" name="rules_form" value="1" />
+        <Section id="dias" title={`Días en que ${agent} da turnos`} description="Se aplica al ofrecer, reservar y elegir el nuevo día de una reprogramación. Los horarios de atención se conservan: el equipo puede seguir usando los otros días y la sincronización de la agenda no cambia esta regla.">
+          <input type="hidden" name="booking_weekdays_field" value="1" />
+          <fieldset className={wide}>
+            <legend className="mb-2 text-sm">Días permitidos para turnos con {agent}</legend>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {BOOKING_WEEKDAYS.map(([day, name]) => (
+                <label key={day} className="flex items-center gap-2 text-sm capitalize">
+                  <input type="checkbox" name="booking_weekday" value={day} defaultChecked={clinic.booking_weekdays == null || clinic.booking_weekdays.includes(day)} />{name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </Section>
         <Section id="primer-turno" title="Primer turno del día" description={`Para que nadie se encuentre a la mañana con un turno que no vio. ${agent} no ofrece ni reserva el primer horario del día de cada profesional cuando se lo piden con poco aviso. El consultorio lo puede dar igual desde la Agenda. Para el lunes cuenta el último día de atención anterior (por ejemplo, el viernes).`}>
           <Field label="Desde cuándo deja de darlo" hint="El mismo día, tampoco lo da.">
             <select name="first_slot_cutoff_hour" defaultValue={clinic.first_slot_cutoff_hour === null ? "" : String(clinic.first_slot_cutoff_hour)} className={inputClass}>

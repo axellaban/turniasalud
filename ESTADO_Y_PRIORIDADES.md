@@ -2,6 +2,10 @@
 
 Actualización: 19/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Días de reserva de Sofi — 19/11/2026
+
+El consultorio Guerra–Mininni reservó los viernes para cirugías y casos grandes de prótesis del equipo: Sofi ofrece, reserva y reprograma a lunes–jueves. Se agregó una opción por clínica en «Turnos y urgencias» (`booking_weekdays`), aplicada tanto al buscar como al ejecutar, independiente de los horarios que copia Smile Connect. El consultorio mantiene sus viernes operativos y los turnos previos. Los borradores de Configuración conservan también los grupos de casillas seleccionados.
+
 ## Precios: plan Consultorio y tres tarjetas — 19/11/2026
 
 - **Por qué:** en Mar del Plata y Miramar los interesados son odontólogos que atienden solos (de 2 a 5 días por semana, 4 o 5 turnos por día). Valoran que Sofi dé, mueva y cancele turnos, que ante una urgencia el paciente tenga el celular de la profesional, el resumen diario y las campañas a pacientes dormidos. No necesitan voz, que es lo que encarece.

@@ -67,6 +67,8 @@ export type Clinic = {
    * (0: todo ese día) o el mismo día. Null: sin regla (booking-rules.ts, firstSlotOfDayBlocked).
    */
   first_slot_cutoff_hour: number | null;
+  /** Días en que Sofi ofrece, reserva y mueve turnos (0 = domingo). Null: todos los de la agenda. */
+  booking_weekdays: number[] | null;
   created_at: string;
 };
 

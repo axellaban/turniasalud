@@ -3,7 +3,7 @@ import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock, type SlotQuery } from "../slots";
-import { agentCanMove, agentSchedules, checkCoverage, coverageKey, durationPhrase, firstSlotOfDayBlocked, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
+import { agentBookingDayAllowed, agentCanMove, agentSchedules, bookingDaysText, checkCoverage, coverageKey, durationPhrase, firstSlotOfDayBlocked, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
 import { env } from "../env";
 import { addDaysKey, formatDate, humanSlot, localDateKey, parseClockTime, parseDateKey, weekdayOfKey, zonedParts } from "../time";
 import { normalizePhone } from "../phone";
@@ -438,6 +438,17 @@ export async function checkAvailability(
   if (toKey < fromKey) toKey = addDaysKey(fromKey, span);
   if (toKey > addDaysKey(fromKey, 60)) toKey = addDaysKey(fromKey, 60);
 
+  const bookingDays = asClinic ? null : clinic.booking_weekdays;
+  const dayNotice = bookingDaysText(bookingDays);
+  let hasAllowedDay = false;
+  for (let key = fromKey; key <= toKey; key = addDaysKey(key, 1)) {
+    if (bookingDays == null || bookingDays.includes(weekdayOfKey(key))) { hasAllowedDay = true; break; }
+  }
+  if (!hasAllowedDay) return {
+    ok: true, turnos: [], mensaje: `${dayNotice} No es una falta de disponibilidad: las fechas pedidas están reservadas al equipo.${move ? " El turno original sigue reservado." : ""}`,
+    ...(exactTime && { hora_solicitada: { hora: exactTime, disponible: false } }),
+  };
+
   const proIds = professionals.map((p) => p.id);
   const rangeStart = `${addDaysKey(fromKey, -1)}T00:00:00Z`;
   const rangeEnd = `${addDaysKey(toKey, 1)}T23:59:59Z`;
@@ -447,7 +458,7 @@ export async function checkAvailability(
   const verifySmile = await usesDeferredSmile(clinic.id);
   // Los días que Smile Connect no llegó a confirmar: cuentan como ocupados, y Sofi lo sabe.
   const unchecked: string[] = [];
-  const workdays = [...new Set(catalog.schedules.filter((s) => checkedPros.includes(s.professional_id)).map((s) => s.weekday))];
+  const workdays = [...new Set(catalog.schedules.filter((s) => checkedPros.includes(s.professional_id) && (bookingDays == null || bookingDays.includes(s.weekday))).map((s) => s.weekday))];
   const [busy, blocks, calendar, patientAppointments] = await Promise.all([
     busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
     getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
@@ -468,7 +479,7 @@ export async function checkAvailability(
   // las usa un turno de urgencia, salvo que ya estén por empezar (se liberan cerca de la hora).
   const releaseUntil = clinic.urgent_release_hours ? now.getTime() + clinic.urgent_release_hours * 3600_000 : null;
   const usable = agentSchedules(
-    catalog.schedules.filter((s) => proIds.includes(s.professional_id)),
+    catalog.schedules.filter((s) => proIds.includes(s.professional_id) && (bookingDays == null || bookingDays.includes(s.weekday))),
     visit.map((t) => t.id),
     { urgent: urgent || asClinic, released: releaseUntil !== null },
   );
@@ -765,6 +776,9 @@ async function assertBookable(clinic: Clinic, professionalId: string, typeId: st
   if (!professionalDoes(pro, type, catalog.links)) throw new ToolError(`${pro.full_name} no hace ${type.name}.`);
   if (Number.isNaN(startsAt.getTime())) throw new ToolError("La fecha de inicio no es válida. Usá el campo 'inicio' de consultar_disponibilidad.");
   if (startsAt.getTime() < Date.now()) throw new ToolError("Ese horario ya pasó.");
+  if (!opts.byPanel && !agentBookingDayAllowed(clinic.booking_weekdays, startsAt, clinic.timezone)) {
+    throw new ToolError(`${bookingDaysText(clinic.booking_weekdays)} No reserves ni muevas el turno a ese día. El turno original, si existe, se conserva.`);
+  }
 
   let second = null as (typeof catalog.professionals)[number] | null;
   if (opts.secondProfessionalId) {

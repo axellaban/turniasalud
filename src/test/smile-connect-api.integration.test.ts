@@ -683,6 +683,28 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       }
     });
 
+    it("la política de días de Sofi se conserva al copiar horarios de Smile Connect y no consulta los excluidos", async () => {
+      let friday = 45;
+      while (new Date(`${day(friday)}T12:00:00Z`).getUTCDay() !== 5) friday++;
+      await sql`update clinics set booking_weekdays = array[1,2,3,4]::smallint[] where id = ${gm}`;
+      try {
+        // Smile mantiene los viernes en los horarios reales; no es una política del proveedor.
+        await link.syncSmileHours(gm);
+        expect((await sql`select booking_weekdays from clinics where id = ${gm}`)[0].booking_weekdays).toEqual([1,2,3,4]);
+        expect((await sql`select count(*)::int as n from schedules where professional_id = ${gmPro} and weekday = 5`)[0].n).toBeGreaterThan(0);
+        fake.calls.length = 0;
+        const r = await tool("consultar_disponibilidad", { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro, desde: day(friday), hasta: day(friday) });
+        expect(r).toMatchObject({ ok: true, turnos: [], mensaje: expect.stringContaining("reservadas al equipo") });
+        expect(fake.calls.filter((c) => c.path === "/availability")).toHaveLength(0);
+      } finally {
+        await sql`update clinics set booking_weekdays = null where id = ${gm}`;
+        // El resto de estos casos usa horario diario.
+        await sql`delete from schedules where professional_id = ${gmPro}`;
+        await sql`insert into schedules (professional_id, weekday, start_time, end_time)
+          select ${gmPro}::uuid, d, '09:00', '18:00' from generate_series(0,6) d`;
+      }
+    });
+
     it("a Smile Connect solo le pregunta por los días en que el profesional atiende", async () => {
       const offset = 45;
       const weekday = new Date(`${day(offset)}T12:00:00Z`).getUTCDay();

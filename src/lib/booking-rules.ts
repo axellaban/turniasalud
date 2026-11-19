@@ -51,6 +51,23 @@ type DaySchedule = Pick<Schedule, "professional_id" | "weekday" | "start_time">;
 /** Desde qué hora del día anterior se deja de dar el primer turno (las opciones del panel). 0: todo el día. */
 export const FIRST_SLOT_HOURS = [0, 12, 14, 16, 18, 20];
 
+export const BOOKING_WEEKDAYS = [
+  [1, "lunes"], [2, "martes"], [3, "miércoles"], [4, "jueves"],
+  [5, "viernes"], [6, "sábado"], [0, "domingo"],
+] as const;
+
+/** Es una política de Sofi, independiente de los horarios reales que sincroniza la clínica. */
+export function agentBookingDayAllowed(weekdays: number[] | null | undefined, date: Date, timeZone: string): boolean {
+  return weekdays == null || weekdays.includes(weekdayOfKey(localDateKey(date, timeZone)));
+}
+
+export function bookingDaysText(weekdays: number[] | null | undefined): string | null {
+  if (weekdays == null) return null;
+  const names = BOOKING_WEEKDAYS.filter(([d]) => weekdays.includes(d)).map(([, name]) => name);
+  return names.length ? `Sofi solo ofrece, reserva y reprograma turnos para estos días: ${names.join(", ")}. Los demás días los coordina el equipo; esto no significa que el consultorio esté cerrado. Ofrecé buscar en los días permitidos.`
+    : "Sofi no ofrece, reserva ni reprograma turnos: los coordina el equipo del consultorio.";
+}
+
 /**
  * ¿Sofi tiene que dejar pasar este horario porque es el primer turno del día y lo piden tarde? Así nadie
  * se encuentra a la mañana con un turno que no vio. El primer turno es el que ocupa el arranque de la
