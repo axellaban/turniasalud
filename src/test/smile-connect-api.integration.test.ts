@@ -76,6 +76,8 @@ const fake = {
   createStatus: 201,
   dropCreateReply: false,
   dropMoveReply: false,
+  rejectMoveSlot: false,
+  beforeMoveReject: undefined as (() => void) | undefined,
   rateLimitAfterMove: null as string | null,
   appointmentListRetryAfter: null as string | null,
   dropCancelReply: false,
@@ -224,6 +226,10 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     const a = fake.appointments.get(Number(m[1]));
     if (!a) return err(404, "not_found");
     if (method === "GET") return ok({ data: a });
+    if (fake.rejectMoveSlot) {
+      fake.beforeMoveReject?.();
+      return err(409, "slot_unavailable");
+    }
     Object.assign(a, { start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id] });
     fake.appointmentListRetryAfter = fake.rateLimitAfterMove;
     fake.rateLimitAfterMove = null;
@@ -803,6 +809,114 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(tasks.n).toBe(1);
       await send();
       expect(fake.whatsapps.at(-1)?.text).toContain("sigue pendiente");
+    });
+
+    it("no ofrece ni escribe un inicio que solo sirve para celdas de 5 minutos, pero no para el turno completo", async () => {
+      await link.setSmileMode(gm, "completa");
+      const booking = await book(55);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+      const before = await smileSync(booking.turno_id!);
+      const remoteId = Number(before.external_id.slice(3));
+      const query = { clinic_id: gm, turno_id: booking.turno_id, profesional_id: gmPro, desde: day(55), hasta: day(55) };
+      // Las celdas de 5 min cubren 14:15–14:45. Para 30 min el proveedor solo acepta 14:00 y 14:30.
+      expect(await tool("consultar_disponibilidad", { ...query, hora_exacta: "14:15" })).toMatchObject({
+        ok: true, hora_solicitada: { hora: "14:15", disponible: false },
+      });
+      expect(await tool("consultar_disponibilidad", { ...query, hora_exacta: "14:00" })).toMatchObject({
+        ok: true, hora_solicitada: { hora: "14:00", disponible: true },
+      });
+      // Aunque se intente directamente sin usar la oferta, no llega un PATCH inválido al proveedor.
+      fake.calls.length = 0;
+      expect(await tool("reprogramar_turno", { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(55, "14:15") }))
+        .toMatchObject({ pendiente_confirmacion: true });
+      await push.pushPendingSmile(gm, booking.turno_id);
+      expect(writes()).toEqual([]);
+      expect(fake.appointments.get(remoteId)?.start_date).toBe(at(55, "10:00"));
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok" });
+      await send();
+      expect(fake.whatsapps.at(-1)?.text).toContain("El turno original sigue reservado");
+      // Un inicio que sí devuelve el proveedor se aplica, y la baja posterior también.
+      await tool("reprogramar_turno", { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(55, "14:00") });
+      expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+      const [moved] = await sql`select id from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
+      expect(fake.appointments.get(remoteId)?.start_date).toBe(at(55, "14:00"));
+      await tool("cancelar_turno", { clinic_id: gm, turno_id: moved.id });
+      expect(await push.pushPendingSmile(gm, moved.id)).toMatchObject({ ok: 1 });
+      expect(fake.appointments.get(remoteId)?.cancelled).toBe(true);
+      // Los casos comparten clínica; estas escrituras ficticias no consumen el cupo del siguiente.
+      await sql`update smile_connect_changes set created_at = now() - interval '2 hours'
+        where appointment_id = any(${[booking.turno_id!, moved.id]}::uuid[])`;
+    });
+
+    it("consulta los inicios para los 45 minutos que conserva el turno, no para los 30 de su prestación", async () => {
+      const booking = await book(57);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      const before = await smileSync(booking.turno_id!);
+      const remote = fake.appointments.get(Number(before.external_id.slice(3)))!;
+      remote.end_date = at(57, "10:45");
+      await sql`update appointments set ends_at = ${remote.end_date} where id = ${booking.turno_id!}`;
+      await sql`update clinics set keep_duration_on_reschedule = true where id = ${gm}`;
+      const query = { clinic_id: gm, turno_id: booking.turno_id, desde: day(57), hasta: day(57) };
+      expect(await tool("consultar_disponibilidad", { ...query, hora_exacta: "14:00" })).toMatchObject({
+        ok: true, hora_solicitada: { disponible: false },
+      });
+      expect(await tool("consultar_disponibilidad", { ...query, hora_exacta: "14:15" })).toMatchObject({
+        ok: true, hora_solicitada: { disponible: true },
+      });
+      await tool("reprogramar_turno", { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(57, "14:15") });
+      expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+      expect(remote).toMatchObject({ start_date: at(57, "14:15"), end_date: at(57, "15:00") });
+      const [moved] = await sql`select id from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
+      await tool("cancelar_turno", { clinic_id: gm, turno_id: moved.id });
+      await push.pushPendingSmile(gm, moved.id);
+      await send();
+      await sql`update smile_connect_changes set created_at = now() - interval '2 hours'
+        where appointment_id = any(${[booking.turno_id!, moved.id]}::uuid[])`;
+    });
+
+    it("un 409 por destino ocupado vuelve a comprobar el original y permite buscar otro horario sin derivar a recepción", async () => {
+      const booking = await book(58);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+      await sql`update smile_connect_changes set created_at = now() - interval '2 hours'
+        where appointment_id = ${booking.turno_id!}`;
+      fake.whatsapps.length = 0;
+      const before = await smileSync(booking.turno_id!);
+      await tool("reprogramar_turno", { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(58, "14:00") });
+      fake.rejectMoveSlot = true;
+      try {
+        await push.pushPendingSmile(gm, booking.turno_id);
+      } finally { fake.rejectMoveSlot = false; }
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok" });
+      expect(fake.appointments.get(Number(before.external_id.slice(3)))?.start_date).toBe(at(58, "10:00"));
+      expect((await sql`select count(*)::int as n from tasks where clinic_id = ${gm} and details like ${`%${booking.turno_id}%`}`)[0].n).toBe(0);
+      await send();
+      expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("El turno original sigue reservado")]);
+      await tool("cancelar_turno", { clinic_id: gm, turno_id: booking.turno_id });
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+    });
+
+    it("si el original cambió mientras se rechazaba el destino, deriva a recepción sin prometer que sigue en el horario anterior", async () => {
+      const booking = await book(59);
+      await push.pushPendingSmile(gm, booking.turno_id);
+      await send();
+      fake.whatsapps.length = 0;
+      const before = await smileSync(booking.turno_id!);
+      const remote = fake.appointments.get(Number(before.external_id.slice(3)))!;
+      await tool("reprogramar_turno", { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(59, "14:00") });
+      fake.rejectMoveSlot = true;
+      fake.beforeMoveReject = () => Object.assign(remote, { start_date: at(59, "12:00"), end_date: at(59, "12:30") });
+      try {
+        expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ revisar: 1 });
+      } finally { fake.rejectMoveSlot = false; fake.beforeMoveReject = undefined; }
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "revisar" });
+      expect(remote.start_date).toBe(at(59, "12:00"));
+      expect((await sql`select count(*)::int as n from tasks where clinic_id = ${gm} and details like ${`%${booking.turno_id}%`}`)[0].n).toBe(1);
+      await send();
+      expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Recepción ya tiene tu pedido")]);
+      await sql`update smile_connect_changes set created_at = now() - interval '2 hours' where appointment_id = ${booking.turno_id!}`;
     });
 
     it("mueve el mismo turno y después lo cancela, verificando los dos cambios aun sin respuesta de escritura", async () => {
