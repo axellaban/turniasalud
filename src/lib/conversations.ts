@@ -87,7 +87,7 @@ export async function completeConversationSummary(data: PostCallPayload): Promis
   const transcript = (data.transcript ?? []).map((t) => ({ role: t.role, message: t.message, time_in_call_secs: t.time_in_call_secs }));
   const done = await sql`
     update conversations set
-      status = ${data.status ?? null},
+      status = case when analysis->'delivery'->>'error' is not null then 'failed' else ${data.status ?? null} end,
       duration_secs = coalesce(${data.metadata?.call_duration_secs ?? null}, duration_secs),
       title = ${data.analysis?.call_summary_title ?? null},
       summary = ${data.analysis?.transcript_summary ?? null},
@@ -95,8 +95,10 @@ export async function completeConversationSummary(data: PostCallPayload): Promis
       outcome = ${collected(data, "resultado")},
       call_successful = ${data.analysis?.call_successful ?? null},
       satisfaction = ${satisfactionScore(data)},
-      analysis = ${json(analysis)},
-      transcript = case when ${transcript.length} > 0 then ${json(transcript)} else transcript end
+      analysis = coalesce(analysis, '{}'::jsonb) || ${json(analysis)},
+      transcript = coalesce((select cc.transcript from channel_conversations cc
+        where cc.elevenlabs_conversation_id = conversations.elevenlabs_conversation_id and cc.clinic_id = conversations.clinic_id),
+        case when ${transcript.length} > 0 then ${json(transcript)} else transcript end)
     where elevenlabs_conversation_id = ${data.conversation_id} and summary is null and title is null
     returning id`;
   return done.length > 0;
@@ -168,10 +170,12 @@ export async function recordConversation(data: PostCallPayload, { quiet = false 
     on conflict (elevenlabs_conversation_id) do update set
       patient_id = excluded.patient_id, campaign_id = excluded.campaign_id, channel = excluded.channel,
       direction = excluded.direction, started_at = excluded.started_at, duration_secs = excluded.duration_secs,
-      status = excluded.status, title = excluded.title, summary = excluded.summary, intent = excluded.intent,
+      status = case when conversations.analysis->'delivery'->>'error' is not null then 'failed' else excluded.status end,
+      title = excluded.title, summary = excluded.summary, intent = excluded.intent,
       outcome = excluded.outcome, call_successful = excluded.call_successful, satisfaction = excluded.satisfaction,
-      transcript = excluded.transcript,
-      analysis = excluded.analysis`;
+      transcript = coalesce((select cc.transcript from channel_conversations cc
+        where cc.elevenlabs_conversation_id = excluded.elevenlabs_conversation_id and cc.clinic_id = excluded.clinic_id), excluded.transcript),
+      analysis = coalesce(conversations.analysis, '{}'::jsonb) || excluded.analysis`;
 
   if (quiet) return;
   if (campaignId && patient) await updateCampaignRecipient(campaignId, patient.id, data);

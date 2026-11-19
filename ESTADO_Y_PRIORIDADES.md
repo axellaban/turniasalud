@@ -2,6 +2,12 @@
 
 Actualización: 19/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Recuperación de Sofi por saldo de ElevenLabs — 19/11/2026
+
+Los errores de respuesta desde las 13:29 se debieron a créditos agotados en ElevenLabs. El usuario recargó y se verificó una respuesta real por WAHA; la sesión del consultorio siguió vinculada. Una reprogramación rechazada con 409 fue resuelta por el consultorio en Smile Connect: Turnia copió el estado actual y cerró la revisión. No se repitió esa operación sobre el paciente.
+
+El incidente también mostró un error de observabilidad: el webhook post-call podía reemplazar lo que se había entregado con texto que solo se generó en el proveedor. Se conserva ahora la transcripción real del canal, incluido el aviso de fallo; el panel lo identifica, la sesión fallida se cierra y la falta de créditos avisa a Axel. Se verificaron cinco historiales afectados contra WAHA antes de corregirlos.
+
 ## Días de reserva de Sofi — 19/11/2026
 
 El consultorio Guerra–Mininni reservó los viernes para cirugías y casos grandes de prótesis del equipo: Sofi ofrece, reserva y reprograma a lunes–jueves. Se agregó una opción por clínica en «Turnos y urgencias» (`booking_weekdays`), aplicada tanto al buscar como al ejecutar, independiente de los horarios que copia Smile Connect. El consultorio mantiene sus viernes operativos y los turnos previos. Los borradores de Configuración conservan también los grupos de casillas seleccionados.

@@ -1,5 +1,13 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Incidente de créditos y entrega — 19/11/2026
+
+- A las 13:29 ElevenLabs agotó los 158.603 créditos del workspace compartido. Los callbacks fallaron por saldo, aunque el proveedor había generado texto y su transcripción lo mostraba. WAHA y la base seguían operativos.
+- El usuario cargó 100.000 créditos. Se verificó el saldo y una respuesta real por la línea propia; no se confirmó el cambio de abono que se había preparado. Se cerraron cinco sesiones fallidas para evitar reutilizarlas.
+- Se corrigieron cinco historiales afectados contra los mensajes realmente enviados por WAHA, conservando una copia privada previa. La reprogramación que el proveedor rechazó quedó resuelta manualmente por el consultorio: se verificó en Smile Connect, se actualizó Turnia y se cerró la revisión, sin volver a modificar el turno.
+- Las transcripciones propias de WhatsApp prevalecen sobre texto generado que no se entregó. El panel muestra el fallo de entrega, las sesiones fallidas se cierran y una caída por saldo genera un aviso a Axel, como máximo uno por clínica y hora.
+- Las pruebas de carga usan proveedores simulados y PostgreSQL descartable. Los créditos de las pruebas reales se comparten con las clínicas; no repetir baterías de llamadas en producción sin revisar primero el saldo.
+
 ## Días para turnos de Sofi — 19/11/2026
 
 - Guerra–Mininni pidió que Sofi solo dé turnos de lunes a jueves. Los viernes quedan para cirugías y casos grandes de prótesis coordinados por el equipo. La regla también aplica al destino de una reprogramación, con todos los profesionales; no cambia los turnos existentes ni las reglas de cancelación.
