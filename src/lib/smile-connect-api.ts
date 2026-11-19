@@ -19,6 +19,7 @@ export class SmileApiError extends Error {
     readonly status: number,
     readonly code: string | null = null,
     readonly retryAfter: number | null = null,
+    readonly requestId: string | null = null,
   ) {
     super(message);
   }
@@ -34,7 +35,12 @@ export function smileErrorText(e: unknown): string {
   if (e.status === 401) return "Smile Connect rechazó la clave: venció o la revocaron. Generá una nueva en Smile Connect y cargala acá.";
   if (e.status === 403) return "La clave de Smile Connect no tiene permiso para esto. Revisá los permisos de la clave en Smile Connect.";
   if (e.status === 404) return "Smile Connect no encontró ese registro.";
-  if (e.status === 409) return "Smile Connect rechazó el cambio por un conflicto (por ejemplo, el turno cambió recién).";
+  if (e.status === 409) {
+    const code = e.code?.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 60);
+    const ref = e.requestId?.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 60);
+    const detail = e.message.replace(/sc_live_[^\s"'<>]+/g, "[clave]").replace(/Bearer\s+[a-zA-Z0-9_.-]+/gi, "Bearer [clave]").replace(/\s+/g, " ").slice(0, 120);
+    return `Smile Connect rechazó el cambio (409${code ? `, ${code}` : ""}${ref ? `; ref. ${ref}` : ""}). ${detail}`;
+  }
   if (e.status === 429) return "Smile Connect pidió esperar: se superó el límite de pedidos.";
   if (e.status === 0) return "No se pudo conectar con Smile Connect.";
   return `Smile Connect respondió ${e.status}${e.code ? ` (${e.code})` : ""}.`;
@@ -78,7 +84,7 @@ export function smileClient(apiKey: string, opts: { onReserve?: (n: number) => P
       } catch (e) {
         throw new SmileApiError(`Sin conexión con Smile Connect: ${e instanceof Error ? e.message : e}`, 0);
       }
-      const data = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+      const data = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string; request_id?: string } } | null;
       if (!res.ok) {
         const retryAfter = res.headers.get("retry-after");
         const retry = retryAfter && /^\d+$/.test(retryAfter)
@@ -89,6 +95,7 @@ export function smileClient(apiKey: string, opts: { onReserve?: (n: number) => P
           res.status,
           data?.error?.code ?? null,
           Number.isSafeInteger(retry) && retry >= 0 && retry <= 365 * 86_400 ? retry : null,
+          typeof data?.error?.request_id === "string" ? data.error.request_id : null,
         );
       }
       return data as T;

@@ -138,3 +138,6 @@ Regresión con PostgreSQL descartable y pacientes ficticios: antes del cambio la
 ## Incidente de entrega y créditos — 19/11/2026
 
 Caso ficticio con callback firmado de falta de créditos y una respuesta generada que dice que un turno se confirmó: se comprueba que ese texto nunca se entrega, se guarda el aviso realmente enviado, el estado queda fallido y la próxima entrada abre otra sesión. El webhook post-call y el backfill no pisan el historial real ni el diagnóstico. Dos fallos del mismo consultorio en la misma hora generan un único aviso operativo. Suite completa con PostgreSQL descartable: 698 pruebas en 84 archivos, ESLint y build correctos. En producción se verificaron el saldo recargado, una respuesta por la línea propia y la coincidencia de un turno resuelto manualmente por el consultorio; no se modificaron turnos de pacientes durante esa verificación.
+## Diagnóstico de conflictos de Smile Connect — 19/11/2026
+
+El cliente conserva el `request_id` junto al código y mensaje del rechazo 409. La regresión comprueba que los tres llegan al diagnóstico que se guarda, que cabe en 300 caracteres y que una clave accidentalmente incluida por el proveedor se oculta. 700 pruebas en 84 archivos con PostgreSQL descartable, ESLint y build correctos. Los turnos de pacientes no se usan como fixtures ni se reintentan para reproducir el error.

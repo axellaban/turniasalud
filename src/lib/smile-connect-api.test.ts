@@ -1,10 +1,31 @@
-import { describe, expect, it } from "vitest";
-import { busyFromFree, fitsFree, freeRanges, smileEmail, smileIdNumber, smilePhone, splitName } from "./smile-connect-api";
+import { describe, expect, it, vi } from "vitest";
+import { busyFromFree, fitsFree, freeRanges, smileClient, smileErrorText, SmileApiError, smileEmail, smileIdNumber, smilePhone, splitName } from "./smile-connect-api";
 
 // Conversiones puras de la API de Smile Connect: celdas libres → tramos, lo ocupado, nombres y teléfonos.
 
 const t = (hhmm: string) => Date.parse(`2026-12-02T${hhmm}:00Z`);
 const cell = (pro: number, a: string, b: string) => ({ start: `2026-12-02T${a}:00.000Z`, end: `2026-12-02T${b}:00.000Z`, professionalId: pro });
+
+describe("diagnóstico de un conflicto de Smile Connect", () => {
+  it("conserva el código, el motivo y la referencia del proveedor al rechazar un cambio", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "slot_conflict", message: "The selected room is not available", request_id: "req-ficticio-123" } }, { status: 409 })));
+    try {
+      await expect(smileClient("clave-ficticia").request("/appointments/42", { method: "PATCH", body: {} })).rejects.toMatchObject({ status: 409, code: "slot_conflict", requestId: "req-ficticio-123" });
+      const text = smileErrorText(new SmileApiError("The selected room is not available", 409, "slot_conflict", null, "req-ficticio-123"));
+      expect(text).toContain("slot_conflict");
+      expect(text).toContain("selected room is not available");
+      expect(text).toContain("req-ficticio-123");
+      expect(text.length).toBeLessThanOrEqual(300);
+      expect(text).not.toContain("turno cambió recién");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("no muestra una clave que el proveedor incluya accidentalmente en su mensaje", () => {
+    const text = smileErrorText(new SmileApiError("conflict sc_live_ficticia.secreto-ficticio Bearer secreto-ficticio", 409, "conflict"));
+    expect(text).not.toContain("secreto-ficticio");
+    expect(text).toContain("[clave]");
+  });
+});
 
 describe("disponibilidad de Smile Connect", () => {
   it("une las celdas de 5 minutos en tramos por profesional", () => {
