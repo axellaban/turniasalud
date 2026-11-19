@@ -13,7 +13,7 @@
   - las notas, la prestación y los bloqueos.
 
   La Agenda ya no pide marcar asistencia. Detalle en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md).
-- [ ] **Clave nueva de Smile Connect para Guerra–Mininni**, sin vencimiento, con todos los permisos, incluidos `events:read` (bloqueos) y `services:read` (prestaciones). Sin `events:read`, la Agenda de Turnia no muestra los bloqueos; Sofi igual los respeta. La crea el consultorio en Smile Connect y Turnia la carga en Configuración → «Smile Connect por API» (tarea 10 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md)).
+
 - [ ] Propuesta, sin pedir todavía (el 18/11 Axel dijo «por ahora no»): cuando recepción cancela un turno en Smile Connect, ofrecérselo a la lista de espera de Turnia. Hoy solo se ofrece lo que se cancela por Sofi o por el panel. Es un mensaje nuevo a pacientes en producción.
 - **Pacientes en la copia diaria y avisos a Axel** (18/11):
   - los pacientes nuevos se leen todos los días y la lista completa, dos veces por semana, para no comerse el cupo de lecturas;
@@ -33,7 +33,7 @@
 ## Smile Connect por API y avisos por WhatsApp (16/11/2026)
 
 - **Actualizado el 18/11:** la escritura real está activa (`SMILE_CONNECT_WRITES=on`). Por pedido de Axel, el modo pasó a «Crear, mover y cancelar»: Sofi crea, mueve y cancela en Smile Connect, y las visitas combinadas siguen yendo a recepción. Lo de abajo es el estado del 16/11.
-- [ ] Mirar los primeros cambios y cancelaciones de Sofi en Configuración → «Registro de cambios en Smile Connect» (y que el motivo llegue con «Lo dio Sofi (Turnia)»).
+- [ ] **Control en producción por computer use: tarea 10 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).** Revisa el modo, los bloqueos, el historial de sincronizaciones, el registro de cambios, un turno de Sofi en Smile Connect con su motivo, la Agenda y los avisos por WhatsApp. La clave la dio Mininni con todos los permisos que ofrece Smile Connect; la tarea solo pide una nueva si «Bloqueos» dice que falta `events:read`.
 - **Lectura verificada y «Escritura de prueba» en producción (16/11).** El consultorio cargó la clave y el userscript de Tampermonkey quedó desactivado. Los 39 turnos vigentes de Smile Connect para el 17 y 18 estaban en Turnia. Seis turnos adicionales de Sofi por WhatsApp quedan para conciliar antes de activar la escritura real.
 - **Siguiente paso.** Revisar el registro de operaciones de prueba con el consultorio y probar primero la creación de un turno. Ver [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) y la tarea 7 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **Avisos por WhatsApp al consultorio:** van en el mismo PR. Falta saber a qué celulares mandarlos (se cargan en Configuración).
