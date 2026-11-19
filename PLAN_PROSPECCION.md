@@ -312,10 +312,14 @@ Lo que se promete al terminar la demo («{Nombre}, escribime y en 15 minutos pro
    - 5 min: escanea el QR y le escribe a Sofi desde su celular, como un paciente («¿me das un turno para el jueves?», «¿atienden por OSDE?»). Ve que ofrece **sus** horarios y **sus** tratamientos, y el turno aparece en la Agenda del panel.
    - 3 min: la cuenta con sus números (cuánto vale un paciente nuevo y cuántos se pierden de noche).
    - 5 min: próximo paso. Programa Fundadores: queda operativa en 14 días (si no, se devuelve el setup); en el setup se conecta su WhatsApp y, si usa Google Calendar, su agenda. Oferta vigente: sin cotizar antes de la charla (`COMERCIAL_AGUSTIN.md`).
-   - **Si atiende solo** (19/11): plan Consultorio, US$ 69 por mes, solo WhatsApp. Mandale `turniasalud.app/pricing#consultorio`: baja a ese plan y lo deja elegido. A las clínicas, `/pricing`. Las cartas, en este orden:
-     1. El plan con su setup (US$ 290).
-     2. Si duda: «Por ser de los primeros de Mar del Plata y Miramar, el setup va bonificado si arrancamos antes del …», con un mínimo de 3 meses. La bonificación **no está en la web**: se da en la charla.
-     3. Si sigue dudando por plata: el pago anual, con dos meses gratis.
+   - **Si atiende solo** (19/11): plan Consultorio, **US$ 99 por mes** (anual US$ 83), solo WhatsApp. **No le mandes `/pricing` antes de la charla**, y el link de Consultorio (`turniasalud.app/pricing/consultorio`, que no figura en `/pricing`) solo al cierre. Un solo precio para todos: en un barrio los colegas se conocen. El guion, en este orden:
+     1. Diagnóstico: cuántos mensajes contesta entre paciente y paciente, cuántos le quedan sin respuesta de noche o el fin de semana, y la pregunta de permanencia: «si te funciona, ¿la idea es tenerlo a largo plazo?».
+     2. Core Access como referencia, en una frase: «Las clínicas de 2 o 3 sillones usan Core Access, a US$ 290, porque suman la atención por teléfono; para tu estructura hoy no se justifica».
+     3. Consultorio a US$ 99, recomendado por su estructura, no como «el plan barato».
+     4. Si duda: «Por ser de los primeros de Mar del Plata y Miramar, el setup va bonificado si arrancamos antes del …», con un mínimo de 3 meses.
+     5. Si sigue dudando por plata: el pago anual, US$ 83 por mes.
+     6. Al cierre, el link de Consultorio por WhatsApp. Ya muestra el setup bonificado y las dos garantías (14 y 30 días). La garantía de los 100 pacientes es solo de Revenue Growth.
+   - **Tipo de cambio:** siempre el **oficial del Banco Nación** del día, como dicen las dos páginas. No usar el MEP.
 
 | Te dice | Respondé |
 |---|---|

@@ -1,11 +1,12 @@
-// Precios del Programa Fundadores (/pricing). La página no está enlazada desde la web: se comparte por link.
+// Precios del Programa Fundadores. Ninguna de las dos páginas está enlazada desde la web: se comparten por link.
 // Montos en USD por mes salvo el setup, que es un pago único.
 //
-// Tres tarjetas (Consultorio, Core Access y Revenue Growth) y Enterprise / Red como franja «a medida»
-// debajo: en Mar del Plata y Miramar casi todos son consultorios de un profesional o clínicas chicas.
-// Consultorio es un solo profesional y solo WhatsApp; para llamadas o más profesionales se pasa a Core.
+// - /pricing: los tres planes para clínicas (Core Access, Revenue Growth y Enterprise / Red).
+// - /pricing/consultorio: el plan para un profesional que atiende solo. No figura en /pricing a propósito:
+//   en la charla se presenta primero Core Access como referencia, y el link de Consultorio se manda al cierre.
+//   Un solo precio para todos: en un barrio los colegas se conocen y comparan.
 
-export type PlanId = "consultorio" | "core" | "growth" | "enterprise";
+export type PlanId = "core" | "growth" | "enterprise";
 
 export type Plan = {
   id: PlanId;
@@ -23,41 +24,17 @@ export type Plan = {
   /** null = no incluido. */
   reactivacion: string | null;
   conversaciones: number;
-  /** 0 = sin llamadas por voz. */
   minutos: number;
-  /** null = no se suman sillones ni profesionales (se pasa al plan de arriba). */
-  sillonExtra: number | null;
-  /** USD por mes. null = se muestra `sePagaCon`. */
-  retorno: number | null;
-  sePagaCon?: string;
-  excedente: { minuto: string | null; conversacion: string };
+  sillonExtra: number;
+  retorno: number;
+  excedente: { minuto: string; conversacion: string };
 };
 
 export const PLANES: Plan[] = [
   {
-    id: "consultorio",
-    nombre: "Consultorio",
-    escala: "1 profesional · solo WhatsApp",
-    fundador: 69,
-    anual: 58,
-    lista: 99,
-    setupFundador: 290,
-    setupLista: 450,
-    atencion: "WhatsApp (texto y audios)",
-    turnos: "Agenda, recordatorios y urgencias a tu celular",
-    reactivacion: "1 campaña por mes (hasta 100 pacientes)",
-    conversaciones: 600,
-    minutos: 0,
-    sillonExtra: null,
-    retorno: null,
-    sePagaCon: "≈ 2 consultas por mes",
-    excedente: { minuto: null, conversacion: "0.10" },
-  },
-  {
     id: "core",
     nombre: "Core Access",
     escala: "1 a 3 sillones",
-    destacado: true,
     fundador: 290,
     anual: 242,
     lista: 390,
@@ -76,6 +53,7 @@ export const PLANES: Plan[] = [
     id: "growth",
     nombre: "Revenue Growth",
     escala: "4 a 6 sillones",
+    destacado: true,
     fundador: 490,
     anual: 408,
     lista: 690,
@@ -110,12 +88,10 @@ export const PLANES: Plan[] = [
   },
 ];
 
-export const plan = (id: PlanId): Plan => PLANES.find((p) => p.id === id)!;
+/** Lo que ahorra por año pagando el año por adelantado: los 2 meses gratis, en dólares. */
+export const ahorroAnual = (p: { fundador: number }) => p.fundador * 2;
 
-/** Las tres tarjetas. Enterprise / Red va aparte, como plan a medida. */
-export const PLANES_TARJETA = PLANES.filter((p) => p.id !== "enterprise");
-
-/** Lo que cuesta no tener a Turnia: la comparación del encabezado (contra Core Access, que tiene voz). */
+/** Lo que cuesta no tener a Turnia: la comparación del encabezado. */
 export const REFERENCIA = { recepcionista: 1335, horasRecepcionista: 8, implante: 800 };
 
 export const GARANTIAS = [
@@ -136,21 +112,70 @@ export const GARANTIAS = [
   },
 ];
 
-export const LETRA_CHICA = [
+/** Lo que pide el Programa Fundadores a cambio del precio congelado. Va arriba, en el bloque de Fundadores. */
+export const REQUISITO_FUNDADOR = ["Feedback cada 15 días", "Un caso de éxito", "2 colegas referidos"];
+
+const FACTURACION = {
+  titulo: "Facturación",
+  texto:
+    "En USD, por adelantado, mes a mes. Podés pagar en pesos al dólar oficial del Banco Nación del día. El setup se abona 100% antes de implementar y los excedentes al cierre de cada mes.",
+};
+const CAMPANAS = {
+  titulo: "Campañas",
+  texto: "La armamos con vos, aprobás el mensaje y Sofi la manda de a poco desde tu WhatsApp. Cada paciente recibe como mucho un mensaje por mes.",
+};
+
+export const LETRA_CHICA = [FACTURACION, CAMPANAS, { titulo: "Expansión", texto: "10% off en tu segunda sede y 15% off desde la tercera." }];
+
+// ---------------------------------------------------------------------------
+// Consultorio (/pricing/consultorio)
+
+export const CONSULTORIO = {
+  nombre: "Consultorio",
+  escala: "1 profesional · solo WhatsApp",
+  fundador: 99,
+  anual: 83,
+  lista: 129,
+  /** Bonificado para los consultorios fundadores, con permanencia mínima. */
+  setup: 290,
+  permanenciaMeses: 3,
+  conversaciones: 600,
+  excedenteConversacion: "0.10",
+  pacientesPorCampana: 100,
+  /** Con la consulta de Mar del Plata (unos $55.000) y el oficial a $1.575: US$ 99 son unos $156.000. */
+  sePagaCon: "≈ 3 consultas por mes",
+  incluye: [
+    "Sofi atiende tu WhatsApp las 24 horas, con texto y audios",
+    "Da, mueve y cancela turnos en tu agenda",
+    "Recordatorio y confirmación el día anterior",
+    "Urgencias que no pueden esperar: le pasa tu celular al paciente",
+    "Resumen de tu agenda por WhatsApp a la mañana",
+    "Si escribís vos en un chat, Sofi se corre",
+    "1 campaña por mes a pacientes dormidos (hasta 100)",
+    "600 conversaciones de WhatsApp por mes",
+  ],
+  noIncluye: ["Sin llamadas por voz", "Un solo profesional: para sumar otro, pasás a Core Access"],
+};
+
+export const GARANTIAS_CONSULTORIO = [
   {
-    titulo: "Facturación",
-    texto:
-      "En USD, por adelantado, mes a mes. Podés pagar en pesos al dólar oficial del Banco Nación del día. El setup se abona 100% antes de implementar y los excedentes al cierre de cada mes.",
+    plazo: "14 días",
+    titulo: "Andando en 14 días",
+    texto: "Si no queda 100% operativo en 14 días, el primer mes es gratis.",
   },
+  GARANTIAS[1],
+];
+
+export const LETRA_CHICA_CONSULTORIO = [
+  FACTURACION,
+  CAMPANAS,
   {
-    titulo: "Campañas",
-    texto: "La armamos con vos, aprobás el mensaje y Sofi la manda de a poco desde tu WhatsApp. Cada paciente recibe como mucho un mensaje por mes.",
+    titulo: "Setup",
+    texto: `Bonificado para los consultorios fundadores, con un mínimo de ${CONSULTORIO.permanenciaMeses} meses. Si te das de baja antes, se abona el setup ($${CONSULTORIO.setup} USD).`,
   },
-  {
-    titulo: "Expansión",
-    texto: "De Consultorio a Core Access te descontamos el setup que pagaste. 10% off en tu segunda sede y 15% off desde la tercera.",
-  },
-  { titulo: "Requisito fundador", texto: "Feedback quincenal, un caso de éxito y 2 colegas referidos (en Consultorio, uno)." },
+  { titulo: "Crecer", texto: "Si después querés llamadas por voz o sumar un profesional, pasás a Core Access." },
+  { titulo: "Requisito fundador", texto: "Feedback cada 15 días, un testimonio y un colega referido." },
+  { titulo: "Excedentes", texto: `$${CONSULTORIO.excedenteConversacion} USD por conversación, pasadas las ${CONSULTORIO.conversaciones} del mes.` },
 ];
 
 /** $1,335: el formato con coma de miles que usa la propuesta. */

@@ -161,7 +161,7 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `cta_clicked` | `cta_id`, `cta_location`, `cta_destination`, `cta_kind` (`conversion` o `navigation`) |
 | `demo_audio_played` | `audio_id` (el slug del audio), `with_audio` (falso = lectura animada sin audio). Primera vez que se reproduce en la visita |
 | `demo_audio_listened` | Cada vez que se corta. `listened_ms`, `max_pct`, `completed`, `end_reason` (`pause`, `ended`, `hidden`, `pagehide`) |
-| `lead_form_viewed` / `_started` / `_submitted` / `_error` | `origen` (la página del formulario; en `/pricing` suma el plan y si paga anual: `/pricing · Revenue Growth · anual`), `compacto` |
+| `lead_form_viewed` / `_started` / `_submitted` / `_error` | `origen` (la página del formulario; en `/pricing` suma el plan y si paga anual: `/pricing · Revenue Growth · anual`; en la página de Consultorio, `/pricing/consultorio · Consultorio · mensual`), `compacto` |
 | `lead_created` | `origen`. Pedido de demo guiada guardado. `first_lead_at` en la persona |
 
 **Llamados a la acción medidos (`cta_id`):**
@@ -174,7 +174,7 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `listen_samples` | — | `home_section` |
 | `retry_demo` | — | `demo_unavailable` |
 | `panel_login` | — | `header`, `header_mobile`. Navegación |
-| `pricing_plan` | `consultorio`, `core`, `growth` o `enterprise` | `pricing_card`: elige el plan (las tres tarjetas o la franja de Enterprise / Red) y baja al formulario. Un link con el plan en el ancla (`/pricing#consultorio`) lo deja elegido sin evento |
+| `pricing_plan` | `core`, `growth`, `enterprise` o `consultorio` | `pricing_card`: elige un plan de `/pricing` y baja al formulario. `pricing_consultorio`: «Quiero mi lugar» en `/pricing/consultorio` (página privada del plan Consultorio, misma superficie `pricing`) |
 | `pricing_join` | formulario de `/pricing` | `pricing_hero` |
 | `pricing_see_plans` | los planes | `pricing_hero`. Navegación |
 | `talk_axel` | `whatsapp` (abre el WhatsApp de Axel con el mensaje escrito; en `/p/<código>`, la línea que le escribió) | `cierre` (al terminar una charla con Sofi), `demo` (arriba de la demo, durante la charla), `pagina` (la página de su demo, `/p/<código>`). Si la demo es de una persona de la prospección, también queda en su ficha |

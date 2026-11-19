@@ -22,12 +22,13 @@ function Grupo({ titulo, items }: { titulo: string; items: EnlaceMenu[] }) {
   );
 }
 
-export function SiteFooter({ cta = true }: { cta?: boolean }) {
+/** `especialidades={false}`: sin la lista de especialidades médicas (en /pricing, que es solo para odontología). */
+export function SiteFooter({ cta = true, especialidades = true }: { cta?: boolean; especialidades?: boolean }) {
   return (
     <footer className="bg-navy text-white">
       {cta && <FooterCta />}
       <div className="mx-auto max-w-[1240px] border-t border-white/10 px-4 py-14 sm:px-6">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1.2fr_1.4fr_1fr]">
+        <div className={`grid gap-10 sm:grid-cols-2 ${especialidades ? "lg:grid-cols-[1.2fr_1fr_1.2fr_1.4fr_1fr]" : "lg:grid-cols-[1.4fr_1fr_1.2fr_1fr]"}`}>
           <div>
             <Logo light />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">
@@ -42,6 +43,7 @@ export function SiteFooter({ cta = true }: { cta?: boolean }) {
             <Grupo titulo="Casos de uso" items={SOLUCIONES_CASOS} />
             <Grupo titulo="Tipos de organización" items={SOLUCIONES_ORGANIZACIONES} />
           </div>
+          {especialidades && (
           <div>
             <p className="text-sm font-semibold text-white">Especialidades</p>
             <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 lg:grid-cols-1">
@@ -54,6 +56,7 @@ export function SiteFooter({ cta = true }: { cta?: boolean }) {
               ))}
             </ul>
           </div>
+          )}
           <div className="space-y-8">
             <Grupo titulo="Recursos" items={RECURSOS} />
             <Grupo titulo="Empresa" items={EMPRESA} />
