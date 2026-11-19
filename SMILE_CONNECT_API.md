@@ -198,7 +198,11 @@ Es lo único que falta para el 10/10, y depende de Smile Connect (lo gestiona Mi
 - **Aviso de agenda atrasada:** a los 90 minutos sin cambios traídos.
 - **Si Smile elige otro nombre de parámetro o un webhook:** es un cambio chico en `scSupportsDelta` y `pullSmileChanges` (`src/lib/smile-connect-api.ts` y `src/lib/smile-connect-link.ts`).
 
-**Falta para Guerra–Mininni:** que el consultorio cree en Smile Connect una clave sin vencimiento con todos los permisos, incluidos `events:read` y `services:read`, y cargarla en Configuración → «Smile Connect por API». Hasta entonces, el panel muestra «Falta el permiso events:read» en «Bloqueos».
+**Falta para Guerra–Mininni:**
+- el control en producción por computer use (tarea 10 de `TAREAS_COMPUTER_USE.md`);
+- el pedido de `updated_since` a Smile Connect.
+
+La clave la dio Mininni con todos los permisos que ofrece Smile Connect. Solo si la tarjeta muestra «Falta el permiso events:read» hay que cargar una nueva.
 
 Pruebas: `src/test/smile-connect-api.integration.test.ts`, bloque «Smile Connect como fuente de la verdad». Cada regla tiene una verificación de mutación: sin ella, su prueba falla.
 
