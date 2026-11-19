@@ -319,7 +319,7 @@ Lo que se promete al terminar la demo («{Nombre}, escribime y en 15 minutos pro
      4. Si duda: «Por ser de los primeros de Mar del Plata y Miramar, el setup va bonificado si arrancamos antes del …», con un mínimo de 3 meses.
      5. Si sigue dudando por plata: el pago anual, US$ 83 por mes.
      6. Al cierre, el link de Consultorio por WhatsApp. Ya muestra el setup bonificado y las dos garantías (14 y 30 días). La garantía de los 100 pacientes es solo de Revenue Growth.
-   - **Tipo de cambio:** siempre el **oficial del Banco Nación** del día, como dicen las dos páginas. No usar el MEP.
+   - **Tipo de cambio:** siempre el **dólar MEP** del día, como dicen las dos páginas.
 
 | Te dice | Respondé |
 |---|---|

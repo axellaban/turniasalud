@@ -15,7 +15,7 @@ El consultorio Guerra–Mininni reservó los viernes para cirugías y casos gran
 ## Precios: plan Consultorio y tres tarjetas — 19/11/2026
 
 - **Por qué:** en Mar del Plata y Miramar los interesados son odontólogos que atienden solos (de 2 a 5 días por semana, 4 o 5 turnos por día). Valoran que Sofi dé, mueva y cancele turnos, que ante una urgencia el paciente tenga el celular de la profesional, el resumen diario y las campañas a pacientes dormidos. No necesitan voz, que es lo que encarece.
-- **Plan Consultorio, en su propia página privada `/pricing/consultorio`** (PR #248; el #242 lo había puesto en `/pricing` a US$ 69). Un profesional y solo WhatsApp. **US$ 99 por mes** (lista US$ 129; anual US$ 83), un solo precio para todos, porque en un barrio los colegas se conocen y comparan. Setup de US$ 290 **bonificado** para fundadores, con un mínimo de 3 meses (si se da de baja antes, lo abona). Incluye 600 conversaciones y una campaña por mes de hasta 100 pacientes. Dice «se paga con ≈ 3 consultas por mes»: con la consulta de Mar del Plata (unos $55.000) y el oficial a $1.575, US$ 99 son unos $156.000. Garantías: andando en 14 días (si no, el primer mes es gratis) y la de 50 interacciones en 30 días. Una sola tarjeta, sin los planes de clínica al lado.
+- **Plan Consultorio, en su propia página privada `/pricing/consultorio`** (PR #248; el #242 lo había puesto en `/pricing` a US$ 69). Un profesional y solo WhatsApp. **US$ 99 por mes** (lista US$ 129; anual US$ 83), un solo precio para todos, porque en un barrio los colegas se conocen y comparan. Setup de US$ 290 **bonificado** para fundadores, con un mínimo de 3 meses (si se da de baja antes, lo abona). Incluye 600 conversaciones y una campaña por mes de hasta 100 pacientes. Dice «se paga con ≈ 3 consultas por mes»: con la consulta de Mar del Plata (unos $55.000) y el MEP a unos $1.575, US$ 99 son unos $156.000. Garantías: andando en 14 días (si no, el primer mes es gratis) y la de 50 interacciones en 30 días. Una sola tarjeta, sin los planes de clínica al lado.
 - **Por qué no está en `/pricing`:** en la charla se presenta primero Core Access como referencia, y el link de Consultorio se manda al cierre. Si el interesado ve primero el plan más barato, la conversación arranca ahí. El guion está en `PLAN_PROSPECCION.md`.
 - **`/pricing` volvió a Core Access, Revenue Growth (recomendado) y Enterprise / Red.** Además:
   - Con el pago anual, muestra el ahorro en dólares («ahorrás $980»).
@@ -23,7 +23,7 @@ El consultorio Guerra–Mininni reservó los viernes para cirugías y casos gran
   - El pie de las dos páginas ya no lista las especialidades médicas.
   - El setup de lista se ve aparte del precio fundador.
 - **Campañas en todos los planes:** Core Access tiene una campaña por mes de hasta 300 pacientes, y Revenue Growth, «sin tope de campañas». Core Access también suma «derivación a tu equipo». La garantía de los 100 pacientes sigue siendo solo de Revenue Growth.
-- **Tipo de cambio:** siempre el oficial del Banco Nación.
+- **Tipo de cambio:** siempre el dólar MEP del día (decisión de Axel, 19/11; reemplaza al oficial del Banco Nación).
 
 ## Control en producción, herramientas y pausa — 19/11/2026
 
