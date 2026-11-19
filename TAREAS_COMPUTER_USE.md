@@ -4,18 +4,18 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-**Estado al 19/11/2026:** todo el código está en producción. La **tarea 9** está hecha y la 7 quedó en su última etapa. Falta la **tarea 10** (primero: control de Smile Connect en producción) y la **tarea 8**. La 5 es opcional, para el QA automático, y la 1 es opcional porque hoy funciona.
+**Estado al 19/11/2026:** control de la **tarea 10** realizado y herramientas y pausa de la **tarea 8** configuradas y comprobadas técnicamente. Quedan el rechazo 403 de Smile Connect al leer bloqueos, la comprobación desde la app de WhatsApp del consultorio y la recepción de los avisos a Axel. Se conserva la clave vigente por pedido del usuario. La **tarea 9** está hecha y la 7 quedó en su última etapa. La 5 sigue postergada por el usuario.
 
 **Prompt para empezar** (copiar tal cual en la otra computadora):
 
-> Leé `TAREAS_COMPUTER_USE.md` del repositorio `axellaban/turniasalud` (rama `main`) y hacé la **tarea 10**: el control de la integración con Smile Connect de Guerra–Mininni en producción. Respetá sus reglas: solo mirar, sin tocar modo, clave ni turnos, y sin datos de pacientes. Contestá con una línea por paso y el resumen final.
+> Leé el control del 19/11 en `QA_TURNIA.md` y el principio de `PENDIENTES.md`. Continuá solo sus comprobaciones pendientes. El 403 de `/events` se confirmó con la clave vigente y el usuario pidió conservarla. No generar ni revocar claves por iniciativa propia. «Sincronizar ahora» permite volver a probar cuando Smile Connect revise ese rechazo.
 
 | Prioridad | Tarea | Estado (16/11) | Acción restante |
 | --- | --- | --- | --- |
-| **P0** | 10. Guerra–Mininni: control de la integración con Smile Connect en producción | Código en producción el 19/11: Smile Connect fuente de la verdad, «Crear, mover y cancelar», avisos e historial. | Revisar la tarjeta (modo, bloqueos, historial, registro de cambios), un turno de Sofi en Smile Connect y la Agenda. |
-| **P0** | 9. Guerra–Mininni: horarios de Smile Connect y verificación del feedback del 18/11 (hecha el 18/11) | Código y migraciones en producción el 18/11. Los horarios de Turnia no coinciden con Smile Connect. | Verificar lo que se cargó solo, copiar los horarios de Smile Connect a «Equipo y horarios», corregir el horario de atención y una línea de las instrucciones. |
+| **P0** | 10. Guerra–Mininni: control de la integración con Smile Connect en producción | Revisado el 19/11: escritura activa, sincronizaciones y copia correctas, alta preexistente cotejada. `/events` respondió 403 con la misma clave. | Revisar ese rechazo con Smile Connect y confirmar recepción de avisos a Axel. |
+| — | 9. Guerra–Mininni: horarios de Smile Connect y feedback del 18/11 | Hecha el 18/11. | Ninguna. |
 | — | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Etapa D activa desde el 18/11: «Crear, mover y cancelar», con `SMILE_CONNECT_WRITES=on`. Las visitas combinadas siguen yendo a recepción. | Ninguna: mirar los primeros cambios y cancelaciones en «Registro de cambios en Smile Connect». |
-| **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Código en producción el 18/11. Herramientas nuevas sin registrar en ElevenLabs; pausa automática apagada. | Parte A: «Actualizar a Sofi». Parte B, con el «sí» del usuario: sumar `message.any` al webhook de WAHA de Guerra–Mininni, prender la pausa y probarla. |
+| **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Configurada el 19/11: agentes actualizados, `message.any`, sesión `WORKING` y pausa prendida. Circuito técnico verificado y pausa ficticia retirada. | Comprobar una respuesta manual desde la app de WhatsApp del consultorio. |
 | **P1** | 5. Accesos para el QA automático | Pendiente. | Que el QA pueda revisar el panel en producción, PostHog y Vercel. Los valores los carga el usuario. |
 | **P3** | 1. Dominio nuevo: webhooks de WAHA (opcional) | Funciona: los dos webhooks apuntan al dominio anterior y llegan por su redirección 308, que se mantiene. | Solo si algún día se saca la redirección. |
 | — | 2. Certificado de `www.turniasalud.app` | Resuelta. | — |
@@ -32,6 +32,8 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 ---
 
 ## Tarea 10 (P0) · Guerra–Mininni: control de la integración con Smile Connect en producción
+
+**Control realizado el 19/11:** ver `QA_TURNIA.md`. No se cambió el modo ni la clave y no se gestionaron turnos para este control. La única sincronización manual fue a las 10:16; agenda y horarios correctos y lectura de bloqueos rechazada con 403. El usuario indicó que la clave ya tenía todos los permisos y pidió conservarla.
 
 **Contexto.** El consultorio trabaja solo en Smile Connect y nunca entra al panel de Turnia.
 - **De Smile Connect a Turnia:** lo que cambia allá llega solo (turnos, asistencia, cancelaciones, pacientes, horarios de los profesionales, notas y bloqueos).
@@ -55,8 +57,9 @@ Esta tarea controla que en producción ande todo como en las pruebas. Detalle t�
    - cualquier recuadro de aviso: «Último problema», «Smile Connect pidió esperar…», escritura frenada, el aviso de horarios o el de la clave sin permiso de bloqueos. Copiá el texto completo.
 2. **Bloqueos.**
    - Si dice **«Por la API»**, está bien.
-   - Si dice **«Sin probar»**, tocá «Sincronizar ahora» (la única vez) y volvé a mirar.
-   - Si dice **«Falta el permiso events:read»**, no hagas nada más con la clave: avisale al usuario. Seguramente la clave se creó antes de que Smile Connect sumara ese permiso, y hay que crear una nueva (ver «Si falta el permiso», abajo).
+   - Si dice **«Pendiente de verificar»**, tocá «Sincronizar ahora» (la única vez) y volvé a mirar.
+   - Si dice **«Lectura rechazada (403)»**, Smile Connect rechazó esa operación: revisar `events:read` con el proveedor. Si la clave ya tiene el permiso, que revisen por qué la rechazan. Conservar la clave actual por pedido del usuario.
+   - Si dice **«Ruta no disponible (404)»**, la ruta de bloqueos no estuvo disponible. Turnia la vuelve a probar cada hora y con «Sincronizar ahora». No atribuir ese estado a permisos ni renovar la clave por ese motivo.
 3. **Historial de sincronizaciones.** Abrí «Historial de sincronizaciones (últimas …)». Anotá:
    - cuántas dicen «Bien» y cuántas «Error»;
    - los tipos que aparecen (Agenda cercana, Agenda lejana, Horarios, Copia diaria, Copia aplicada a Turnia, Escritura);
@@ -76,7 +79,7 @@ Esta tarea controla que en producción ande todo como en las pruebas. Detalle t�
 8. **Avisos por WhatsApp.** Preguntale al usuario si le llegó algún WhatsApp de Turnia que empiece con «⚠️ Turnia · Smile Connect» o «ℹ️ Turnia · Smile Connect» y qué decía.
 9. **Al día siguiente, después de las 7:** «Copia diaria» tiene que tener fecha de ese día y decir «aplicada a Turnia». Si no, anotá qué dice «Último problema».
 
-**Si falta el permiso** (solo si en el paso 2 dice «Falta el permiso events:read» y el usuario está de acuerdo):
+**Solo si el usuario decide renovar la clave después de revisar el rechazo con Smile Connect** (no es el curso autorizado al 19/11):
 - **Crear la clave.** La crea el consultorio en Smile Connect, o el usuario con su sesión: «API pública» → clave **sin vencimiento** con todos los permisos (lectura: `clinic:read`, `professionals:read`, `boxes:read`, `availability:read`, `appointments:read`, `patients:read`, `events:read`, `services:read`; escritura: `patients:create`, `appointments:create`, `appointments:reschedule`, `appointments:cancel`). **La clave la copia y la pega el usuario; vos no la ves.**
 - **Cargarla en Turnia:** en la tarjeta, «Cambiar la clave». Revisá que siga el mismo nombre de clínica y los tres profesionales vinculados. El modo no se toca.
 - **Revocar la anterior:** recién después de verificar que «Bloqueos» dice «Por la API», el usuario revoca la clave anterior en Smile Connect.
@@ -226,6 +229,8 @@ Este modo sincroniza los movimientos y cancelaciones que recepción hace desde e
 ---
 
 ## Tarea 8 (P1) · Actualizar a Sofi y pausa automática (Guerra–Mininni)
+
+**Estado al 19/11:** partes A y B de configuración hechas. La línea quedó `WORKING`, el panel muestra «Pausa automática Prendida» y la prueba con eventos propios firmados pasó, incluida la reactivación. Falta comprobar una respuesta manual desde una sesión de WhatsApp del consultorio; no repetir la actualización de agentes ni reiniciar WAHA para eso. Detalle en `QA_TURNIA.md`.
 
 **Contexto.** El 18/11 se publicaron cuatro cambios:
 - dos herramientas del equipo renombradas (`equipo_buscar_pacientes`, `equipo_crear_paciente`);

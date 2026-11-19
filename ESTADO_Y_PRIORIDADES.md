@@ -1,6 +1,13 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 18/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 19/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Control en producción, herramientas y pausa — 19/11/2026
+
+- Smile Connect sigue en «Crear, mover y cancelar». Se verificaron el historial de sincronizaciones, la copia de hoy aplicada a Turnia y un turno preexistente de Sofi en la agenda de Smile Connect. El control no creó, movió ni canceló turnos.
+- «Actualizar a Sofi» terminó correctamente para WhatsApp y llamadas. Se activó la pausa automática y se agregó `message.any` en la instancia exclusiva; volvió a `WORKING` sin pedir QR. La prueba técnica de pausa, exclusión de la API, rechazo del entrante mientras está pausado y reactivación pasó. La prueba desde la app del consultorio y la entrega de avisos a Axel siguen pendientes de comprobación.
+- [PR #238](https://github.com/axellaban/turniasalud/pull/238), publicado y verificado: un 404 de `/events` ya no se diagnostica como permiso faltante. «Sincronizar ahora» vuelve a comprobarlo con la clave vigente, sin esperar 24 horas. La lectura real del 19/11 a las 10:16 confirmó un **403 de Smile Connect** para los bloqueos, mientras agenda y horarios se sincronizaron correctamente. Se conserva la clave por pedido del usuario; queda revisar ese rechazo con Smile Connect.
+- 687 pruebas con PostgreSQL descartable, TypeScript, ESLint y build correctos; CI y despliegue de producción en verde. Detalle de lo comprobado y sus límites en `QA_TURNIA.md`.
 
 ## Smile Connect, fuente de la verdad — 18/11/2026
 

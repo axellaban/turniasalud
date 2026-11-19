@@ -202,7 +202,7 @@ Es lo único que falta para el 10/10, y depende de Smile Connect (lo gestiona Mi
 - el control en producción por computer use (tarea 10 de `TAREAS_COMPUTER_USE.md`);
 - el pedido de `updated_since` a Smile Connect.
 
-La clave la dio Mininni con todos los permisos que ofrece Smile Connect. Solo si la tarjeta muestra «Falta el permiso events:read» hay que cargar una nueva.
+La clave la dio Mininni con todos los permisos que ofrece Smile Connect. El control del 19/11 confirmó un rechazo **403 al leer `/events`** con esa misma clave. El usuario pidió conservarla: hay que revisar la habilitación de esa operación con Smile Connect antes de decidir una renovación. Desde el PR #238, el panel distingue 403 de 404 y «Sincronizar ahora» vuelve a probar sin cambiar la clave; un 404 de la ruta no se diagnostica como falta de permisos.
 
 Pruebas: `src/test/smile-connect-api.integration.test.ts`, bloque «Smile Connect como fuente de la verdad». Cada regla tiene una verificación de mutación: sin ella, su prueba falla.
 

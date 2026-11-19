@@ -62,6 +62,18 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 
 ## Resultados
 
+### Verificación 2026-11-19 am (tareas 10 y 8 de computer use)
+
+- **Alcance:** control dirigido de Smile Connect en producción y configuración de herramientas y pausa de Sofi. No es una corrida completa de la web ni de PostHog.
+- **Despliegue:** [PR #238](https://github.com/axellaban/turniasalud/pull/238), commit `1ae151d`, producción Vercel en verde; `/api/health` con base y configuración correctas.
+- **Estado de Smile Connect:** «Crear, mover y cancelar», tres profesionales vinculados. Quince corridas visibles con resultado «Bien», sin errores de sincronización. La copia del día se aplicó a Turnia a las 03:15. La sincronización manual de las 10:16 actualizó agenda cercana, lejana y horarios.
+- **Cambios y Agenda:** se cotejó un alta preexistente de Sofi en Smile Connect por horario y profesional. La lista activa «Para revisar» estaba vacía; el registro mantiene un rechazo histórico de movimiento por cupo. La Agenda muestra «La asistencia se toma de Smile Connect» y registros pasados sin vínculo externo. Se conservaron. No se reservaron, movieron ni cancelaron turnos, ni se marcó asistencia.
+- **Error corregido:** un 404 de la ruta de bloqueos se confundía con permiso faltante y quedaba retenido 24 horas. Ahora se guarda el código HTTP, se distinguen 403 y 404 y la acción manual vuelve a probar con la misma clave. Dos regresiones fallaban antes del arreglo. La prueba real confirmó **403 en `/events`** con la clave vigente, que no se cambió. Queda revisar ese rechazo con Smile Connect.
+- **Equipo y pausa:** «Actualizar a Sofi» terminó correctamente para el agente general y el propio de llamadas. Se añadió `message.any` a la instancia exclusiva conservando imagen, URL y secretos; sesión `WORKING` tras el reinicio. Pausa automática prendida. Con un número ficticio y eventos firmados se comprobó firma inválida → 401, envío de API → sin pausa, envío de app simulado → pausa, entrante pausado → ignorado. «Reactivar» retiró la pausa de prueba. No se creó un paciente para esa prueba.
+- **WhatsApp real:** Sofi respondió desde la línea del consultorio a dos consultas del WhatsApp del usuario sobre los horarios, incluida una continuación después del primer mensaje propio de la API. No se escribieron datos de pacientes.
+- **Validación local:** 687 pruebas en 82 archivos con PostgreSQL descartable, TypeScript, ESLint y build correctos. CI y Vercel aprobados antes del merge.
+- **Pendiente:** probar la respuesta manual desde una sesión de WhatsApp del consultorio y confirmar recepción de los avisos de integración a Axel. Los bloqueos de la Agenda requieren resolver el rechazo 403 del proveedor; la disponibilidad de Sofi sigue verificada en vivo.
+
 ### QA 2026-11-16 pm
 
 - **Inicio y fin:** 19:14 a 19:40, hora de Argentina (a pedido, después de mergear Smile Connect por API, el resumen diario de Sofi y Next 16.4.6).
