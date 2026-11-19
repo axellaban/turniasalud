@@ -118,7 +118,7 @@ export const REQUISITO_FUNDADOR = ["Feedback cada 15 días", "Un caso de éxito"
 const FACTURACION = {
   titulo: "Facturación",
   texto:
-    "En USD, por adelantado, mes a mes. Podés pagar en pesos al dólar oficial del Banco Nación del día. El setup se abona 100% antes de implementar y los excedentes al cierre de cada mes.",
+    "En USD, por adelantado, mes a mes. Podés pagar en pesos al dólar MEP del día. El setup se abona 100% antes de implementar y los excedentes al cierre de cada mes.",
 };
 const CAMPANAS = {
   titulo: "Campañas",
@@ -142,7 +142,7 @@ export const CONSULTORIO = {
   conversaciones: 600,
   excedenteConversacion: "0.10",
   pacientesPorCampana: 100,
-  /** Con la consulta de Mar del Plata (unos $55.000) y el oficial a $1.575: US$ 99 son unos $156.000. */
+  /** Con la consulta de Mar del Plata (unos $55.000) y el MEP a unos $1.575: US$ 99 son unos $156.000. */
   sePagaCon: "≈ 3 consultas por mes",
   incluye: [
     "Sofi atiende tu WhatsApp las 24 horas, con texto y audios",
