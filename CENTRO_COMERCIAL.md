@@ -95,6 +95,10 @@ La bandeja de quienes escribieron último, para contestar en cualquier orden. Tu
 - **Perdidos:** los cerrados en ese paso (no le interesa, sin canal o baja).
 - **Cambios desde Chapa:** solo la situación. La etapa sale de lo que hizo cada persona.
 
+### «Leads» en Chapa (19/11/2026)
+
+Pestaña de Follow-up en Chapa, igual que la de habita.: cuántos consultorios hay en cada etapa, en qué estado de la cola está cada uno (lista, programada, bloqueada, mensaje enviado…), por qué no sale, cuántos días lleva así y la última regla que le salió. Avisa cuando una regla activa con consultorios esperándola no sale hace más de 3 días, y cuando hay tareas listas que nadie mandó en 2 días. La arma `src/lib/sales/followup-leads.ts` y va en el snapshot como `leads` (una regla por etapa, como el resto de Turnia).
+
 ## Qué sigue, en orden
 
 1. **Tanda real de 10** desde Chapa (Hoy → Turnia), en horario. Comprobar que la otra persona ve «Lo tiene…» y que el contacto aparece en Panel → Prospección.
