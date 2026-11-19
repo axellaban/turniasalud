@@ -166,8 +166,8 @@ export const scProfessionals = (c: SmileClient) => all<ScProfessional>(c, "/prof
 export const scBoxes = (c: SmileClient) => all<ScBox>(c, "/boxes", {}, { limit: 100, sensitive: false });
 
 /** Lo libre de un día (fecha local), en celdas de `duration` minutos. Sin profesional: todos. */
-export async function scAvailability(c: SmileClient, date: string, duration = 5, professionalId?: number): Promise<ScSlot[]> {
-  const r = await c.request<{ data: { slots: ScSlot[] } }>("/availability", { query: { date, duration_minutes: duration, professional_id: professionalId } });
+export async function scAvailability(c: SmileClient, date: string, duration = 5, professionalId?: number, boxId?: number): Promise<ScSlot[]> {
+  const r = await c.request<{ data: { slots: ScSlot[] } }>("/availability", { query: { date, duration_minutes: duration, professional_id: professionalId, box_id: boxId } });
   return r.data.slots ?? [];
 }
 

@@ -141,3 +141,9 @@ Caso ficticio con callback firmado de falta de créditos y una respuesta generad
 ## Diagnóstico de conflictos de Smile Connect — 19/11/2026
 
 El cliente conserva el `request_id` junto al código y mensaje del rechazo 409. La regresión comprueba que los tres llegan al diagnóstico que se guarda, que cabe en 300 caracteres y que una clave accidentalmente incluida por el proveedor se oculta. 700 pruebas en 84 archivos con PostgreSQL descartable, ESLint y build correctos. Los turnos de pacientes no se usan como fixtures ni se reintentan para reproducir el error.
+
+## Inicios válidos para la duración completa — 19/11/2026
+
+Control dirigido con un paciente explícitamente ficticio, sin teléfono real y dado de baja de campañas, y un turno a un año. Creación comprobada en Smile Connect. La reprogramación a 14:15–14:45 devolvió `409 slot_unavailable` pese a pasar el chequeo antiguo; mover ese mismo turno a 14:00–14:30 funcionó y se verificó en la agenda nativa. No se usaron conversaciones de ElevenLabs ni turnos reales para reproducirlo.
+
+La consulta de Sofi usa ahora la duración real (incluidos los minutos que se conservan al reprogramar), y filtra por los inicios exactos del proveedor. La comprobación antes de escribir usa también duración y consultorio. Un rechazo `slot_unavailable` posterior a la consulta comprueba otra vez el original: si sigue intacto, pide otro horario; si cambió, conserva la derivación a recepción. Las regresiones cubren 30 y 45 minutos, el intento directo de un inicio inválido, mover y cancelar válidos, y los dos resultados de la carrera con recepción. La regresión principal fallaba antes del arreglo. 704 pruebas en 84 archivos con PostgreSQL descartable, ESLint y build correctos. Falta repetir el control y cancelar el turno ficticio después del despliegue.

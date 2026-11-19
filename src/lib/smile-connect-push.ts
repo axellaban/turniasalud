@@ -185,7 +185,16 @@ async function precheck(tx: TransactionSql, client: SmileClient, row: Row, scId:
 /** ¿Sigue libre en Smile Connect? Al mover, el lugar que ocupa hoy el mismo turno cuenta como libre. */
 async function assertFreeInSmile(client: SmileClient, row: Row, own?: ScAppointment) {
   const day = localDateKey(new Date(row.starts_at), row.timezone);
-  const slots = await scAvailability(client, day, 5, row.smile_professional_id!);
+  const duration = (Date.parse(row.ends_at) - Date.parse(row.starts_at)) / 60_000;
+  const slots = await scAvailability(client, day, duration, row.smile_professional_id!, row.smile_box_id ?? undefined);
+  // Unir celdas de 5 min no demuestra que el proveedor acepte ese inicio para un turno de 30 min.
+  if (slots.some((s) => s.professionalId === row.smile_professional_id
+    && sameInstant(s.start, row.starts_at) && sameInstant(s.end, row.ends_at))) return;
+  // La consulta de disponibilidad incluye el propio turno como ocupado. Se conserva la posibilidad
+  // de mover dentro de ese mismo tramo, pero nunca se inventan inicios en otro hueco del día.
+  const overlapsOwn = own && !own.cancelled && own.professional_ids[0] === row.smile_professional_id
+    && Date.parse(row.starts_at) < Date.parse(own.end_date) && Date.parse(row.ends_at) > Date.parse(own.start_date);
+  if (!overlapsOwn) throw new SlotUnavailable("Smile Connect no admite ese horario de inicio para la duración del turno. El turno original se conserva.");
   if (own && !own.cancelled && own.professional_ids[0] === row.smile_professional_id) {
     slots.push({ start: own.start_date, end: own.end_date, professionalId: row.smile_professional_id! });
   }
@@ -556,7 +565,22 @@ async function processSmileManagement(tx: TransactionSql, client: SmileClient, r
   if (!matchesNewAppointment(remote, target, remote.patient_id)) {
     if (!stillOriginal) throw new Review("Smile Connect muestra un cambio distinto del pedido. Recepción debe revisarlo.");
     await assertFreeInSmile(client, target, remote);
-    await scRescheduleAppointment(client, id, payload);
+    try {
+      await scRescheduleAppointment(client, id, payload);
+    } catch (e) {
+      // Otro turno puede ocupar el hueco entre la lectura y la escritura. Solo se ofrece buscar
+      // otra opción si una nueva lectura comprueba que el turno original sigue intacto.
+      if (e instanceof SmileApiError && e.status === 409 && e.code === "slot_unavailable") {
+        const latest = await scAppointment(client, id);
+        if (!cancelledInSmile(latest) && latest.patient_id === remote.patient_id
+          && latest.box_id === remote.box_id && latest.professional_ids.length === 1
+          && latest.professional_ids[0] === remote.professional_ids[0]
+          && sameInstant(latest.start_date, remote.start_date) && sameInstant(latest.end_date, remote.end_date)) {
+          throw new SlotUnavailable(smileErrorText(e));
+        }
+      }
+      throw e;
+    }
   }
   await verifyNewAppointment(tx, client, target, id, remote.patient_id, false);
   await tx`

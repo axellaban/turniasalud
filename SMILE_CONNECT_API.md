@@ -5,6 +5,7 @@
 **Escritura real activa:** `SMILE_CONNECT_WRITES=on` en Vercel y, desde el 18/11, el modo «Crear, mover y cancelar» (migración `2026-11-18-smile-completa-guerra-mininni`, pedido de Axel).
 - **Altas:** Sofi crea en Smile Connect cada turno que da y se lo confirma al paciente recién después de verificarlo allá. Ofrece solo horarios verificados en ese momento.
 - **Cambios y cancelaciones:** también los hace Sofi. Mueve el mismo turno de Smile Connect (nunca cancela y crea otro), lo verifica allá y recién después le confirma al paciente por WhatsApp.
+- **Inicios y duración (19/11):** Sofi consulta la disponibilidad con la duración completa y ofrece solo los inicios exactos que devuelve Smile Connect. Las celdas de 5 minutos sirven para representar cobertura, pero unirlas no autoriza cualquier inicio de un turno más largo. Antes de escribir se vuelve a comprobar duración y consultorio. Si el proveedor rechaza un destino ocupado, se comprueba que el original siga intacto antes de ofrecer buscar otra opción.
 - **Visitas combinadas** (dos prácticas seguidas) **y turnos con dos profesionales:** al darlos, moverlos o cancelarlos, siguen yendo a recepción, con una tarea.
 - **Motivo del turno:** Turnia lo manda en cuanto detecta que la API acepta notas. Desde el 18/11 lo revisa cada 6 horas, no solo con la copia diaria.
 
@@ -70,7 +71,7 @@ Panel → Configuración → Calendario → **Smile Connect por API**. Solo Turn
 | Solo lectura | Trae la agenda y Sofi ofrece y reserva solo lo libre en Smile Connect (con bloqueos y feriados). No escribe nada. |
 | Escritura de prueba | Además anota qué escribiría, con la verificación previa, pero sin escribir. |
 | Crear turnos | Sofi confirma altas simples después de crearlas y verificarlas en Smile Connect. Recepción coordina cambios, cancelaciones y visitas combinadas. |
-| Crear, mover y cancelar | También sincroniza los cambios y cancelaciones del panel. Sofi deriva esos pedidos a recepción. |
+| Crear, mover y cancelar | Sofi y el panel crean, mueven y cancelan turnos simples después de verificarlos en Smile Connect. Las visitas combinadas y las restricciones del consultorio van a recepción. |
 
 La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Sin esa variable, «Crear turnos» y «Crear, mover y cancelar» funcionan como «Escritura de prueba».
 

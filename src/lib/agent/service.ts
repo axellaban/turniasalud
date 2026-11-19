@@ -67,7 +67,7 @@ async function usesLiveSmile(clinicId: string, tx?: TransactionSql): Promise<boo
  * Lo ocupado fuera de Turnia: el Google Calendar de cada profesional y la agenda de Smile Connect.
  * Si Smile Connect falla, no frena la agenda: quedan los turnos que Turnia ya trajo de ahí.
  */
-async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; verified?: { from: string; to: string; weekdays?: number[]; unchecked?: string[] }; deferSmile?: boolean; timeZone: string }): Promise<BusyInterval[]> {
+async function externalBusy(clinicId: string, ids: string[], from: Date, to: Date, opts: { fresh?: boolean; verified?: { from: string; to: string; weekdays?: number[]; unchecked?: string[] }; deferSmile?: boolean; timeZone: string; durationMin?: number; starts?: Map<string, Set<number>> }): Promise<BusyInterval[]> {
   const [google, smile] = await Promise.all([
     googleBusy(clinicId, ids, from, to, opts),
     (opts.deferSmile ? Promise.resolve([] as BusyInterval[]) : smileBusy(clinicId, ids, from, to, opts)).catch((e) => {
@@ -459,17 +459,18 @@ export async function checkAvailability(
   // Los días que Smile Connect no llegó a confirmar: cuentan como ocupados, y Sofi lo sabe.
   const unchecked: string[] = [];
   const workdays = [...new Set(catalog.schedules.filter((s) => checkedPros.includes(s.professional_id) && (bookingDays == null || bookingDays.includes(s.weekday))).map((s) => s.weekday))];
-  const [busy, blocks, calendar, patientAppointments] = await Promise.all([
-    busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
-    getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
-    // Lo ocupado en el Google Calendar de cada profesional y en Smile Connect (si la clínica los conectó).
-    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone, ...(verifySmile && { verified: { from: fromKey, to: toKey, weekdays: workdays, unchecked } }) }),
-    move ? upcomingOf(move.patient.id) : [],
-  ]);
   const preserve = clinic.keep_duration_on_reschedule && !!move;
   const firstDuration = (move && keptDuration(move.appt, preserve)) || type.duration_min;
   const nextDuration = (move?.follower && keptDuration(move.follower, preserve)) || next?.duration_min || 0;
   const duration = firstDuration + nextDuration;
+  const smileStarts = new Map<string, Set<number>>();
+  const [busy, blocks, calendar, patientAppointments] = await Promise.all([
+    busyOf(checkedPros, rangeStart, rangeEnd, movingIds),
+    getScheduleBlocks(clinic.id, rangeStart, rangeEnd),
+    // Lo ocupado en el Google Calendar de cada profesional y en Smile Connect (si la clínica los conectó).
+    externalBusy(clinic.id, checkedPros, new Date(rangeStart), new Date(rangeEnd), { timeZone: clinic.timezone, ...(verifySmile && { verified: { from: fromKey, to: toKey, weekdays: workdays, unchecked }, durationMin: duration, starts: smileStarts }) }),
+    move ? upcomingOf(move.patient.id) : [],
+  ]);
   const blocked = expandBlocks(blocks, checkedPros);
   const otherSchedules = catalog.schedules.filter((s) => s.professional_id === otherPro);
   const otherBusy = [...busy, ...calendar, ...blocked].filter((b) => b.professional_id === otherPro);
@@ -496,6 +497,7 @@ export async function checkAvailability(
     durationMin: duration,
     stepMin: move ? 15 : type.duration_min,
     accepts: (start, end, block) =>
+      (!verifySmile || smileStarts.get(block.professional_id)?.has(start.getTime()) === true) &&
       releasedOk(start, block) &&
       firstSlotOk(start, block) &&
       (!move ||
