@@ -3,10 +3,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { FormularioDemo } from "@/components/site/formulario-demo";
 import { cta } from "@/lib/analytics-shared";
-import { PLANES, PLANES_TARJETA, plan as planDe, usd, type Plan, type PlanId } from "@/content/precios";
+import { CONSULTORIO, PLANES, ahorroAnual, usd, type Plan, type PlanId } from "@/content/precios";
 
-// Lo interactivo de /pricing: mensual o anual, y el plan que eligió (llega al formulario del final).
-// Un link con el plan en el ancla (/pricing#consultorio) baja a esa tarjeta y lo deja elegido.
+// Lo interactivo de /pricing y /pricing/consultorio: mensual o anual, y el plan que eligió (llega al formulario
+// del final). En /pricing, un link con el plan en el ancla (/pricing#core) baja a esa tarjeta y lo deja elegido.
 
 type Periodo = "mensual" | "anual";
 type Estado = { periodo: Periodo; setPeriodo: (p: Periodo) => void; plan: PlanId; setPlan: (p: PlanId) => void };
@@ -20,7 +20,7 @@ const useEstado = () => {
 
 export function PreciosProvider({ children }: { children: ReactNode }) {
   const [periodo, setPeriodo] = useState<Periodo>("mensual");
-  const [plan, setPlan] = useState<PlanId>("core");
+  const [plan, setPlan] = useState<PlanId>("growth");
   useEffect(() => {
     const desdeAncla = () => {
       const id = window.location.hash.slice(1);
@@ -33,13 +33,13 @@ export function PreciosProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={{ periodo, setPeriodo, plan, setPlan }}>{children}</Ctx.Provider>;
 }
 
-function Check({ off = false }: { off?: boolean }) {
+function Check({ off = false, claro = false }: { off?: boolean; claro?: boolean }) {
   return off ? (
-    <svg viewBox="0 0 20 20" className="mt-0.5 h-5 w-5 shrink-0 text-brand-950/25" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <svg viewBox="0 0 20 20" className={`mt-0.5 h-5 w-5 shrink-0 ${claro ? "text-white/30" : "text-brand-950/25"}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <path d="M6 10h8" strokeLinecap="round" />
     </svg>
   ) : (
-    <svg viewBox="0 0 20 20" className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <svg viewBox="0 0 20 20" className={`mt-0.5 h-5 w-5 shrink-0 ${claro ? "text-aqua" : "text-brand-600"}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <path d="M5 10.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -74,6 +74,25 @@ export function SelectorPeriodo() {
   );
 }
 
+/** Debajo del precio: el de lista, o lo que se paga por año y lo que ahorra en dólares. */
+function LineaPrecio({ p, clase }: { p: { fundador: number; lista: number }; clase: string }) {
+  const { periodo } = useEstado();
+  return (
+    <p className={`mt-2 text-sm ${clase}`}>
+      {periodo === "anual" ? (
+        <>
+          {usd(p.fundador * 10)} al año · <span className="line-through decoration-1">{usd(p.fundador * 12)}</span> ·{" "}
+          <strong className="font-semibold">ahorrás {usd(ahorroAnual(p))}</strong>
+        </>
+      ) : (
+        <>
+          Precio de lista <span className="line-through decoration-1">{usd(p.lista)}</span>
+        </>
+      )}
+    </p>
+  );
+}
+
 function Tarjeta({ p }: { p: Plan }) {
   const { periodo, setPlan } = useEstado();
   const precio = periodo === "anual" ? p.anual : p.fundador;
@@ -81,13 +100,7 @@ function Tarjeta({ p }: { p: Plan }) {
   const sub = oscuro ? "text-white/65" : "text-tinta";
   const fila = (texto: ReactNode, off = false) => (
     <li className={`flex gap-3 text-sm leading-snug ${off ? (oscuro ? "text-white/40" : "text-brand-950/40") : oscuro ? "text-white/90" : "text-brand-950"}`}>
-      {oscuro && !off ? (
-        <svg viewBox="0 0 20 20" className="mt-0.5 h-5 w-5 shrink-0 text-aqua" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-          <path d="M5 10.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : (
-        <Check off={off} />
-      )}
+      <Check off={off} claro={oscuro} />
       <span>{texto}</span>
     </li>
   );
@@ -116,31 +129,21 @@ function Tarjeta({ p }: { p: Plan }) {
         <span className="text-[52px] font-medium leading-none tracking-tight tabular-nums">{usd(precio)}</span>
         <span className={`pb-1.5 text-sm ${sub}`}>USD/mes</span>
       </div>
-      <p className={`mt-2 h-5 text-sm ${sub}`}>
-        {periodo === "anual" ? (
-          <>
-            {usd(p.fundador * 10)} al año · <span className="line-through decoration-1">{usd(p.fundador * 12)}</span>
-          </>
-        ) : (
-          <>
-            Precio de lista <span className="line-through decoration-1">{usd(p.lista)}</span>
-          </>
-        )}
-      </p>
+      <LineaPrecio p={p} clase={sub} />
 
       <div className={`mt-5 rounded-xl px-4 py-3 text-sm ${oscuro ? "bg-white/[0.06] ring-1 ring-white/10" : "bg-brand-50/70 ring-1 ring-brand-950/5"}`}>
         <div className="flex items-baseline justify-between gap-3">
           <span className={sub}>Setup único</span>
-          <span>
-            <span className={`mr-2 line-through decoration-1 ${oscuro ? "text-white/40" : "text-brand-950/40"}`}>{usd(p.setupLista)}</span>
+          <span className="text-right">
             <span className="font-semibold tabular-nums">{usd(p.setupFundador)} USD</span>
+            <span className={`ml-2 text-xs ${oscuro ? "text-white/45" : "text-brand-950/45"}`}>
+              lista <span className="line-through decoration-1">{usd(p.setupLista)}</span>
+            </span>
           </span>
         </div>
         <div className="mt-1.5 flex items-baseline justify-between gap-3">
-          <span className={sub}>{p.retorno == null ? "Se paga con" : "Retorno estimado"}</span>
-          <span className={`font-semibold tabular-nums ${oscuro ? "text-aqua" : "text-emerald-700"}`}>
-            {p.retorno == null ? p.sePagaCon : `+${usd(p.retorno)} USD/mes`}
-          </span>
+          <span className={sub}>Retorno estimado</span>
+          <span className={`font-semibold tabular-nums ${oscuro ? "text-aqua" : "text-emerald-700"}`}>+{usd(p.retorno)} USD/mes</span>
         </div>
       </div>
 
@@ -160,17 +163,11 @@ function Tarjeta({ p }: { p: Plan }) {
         {fila(p.turnos)}
         {fila(p.reactivacion ? <>Reactivación IA: {p.reactivacion}</> : "Reactivación IA no incluida", !p.reactivacion)}
         {fila(<><strong className="font-semibold tabular-nums">{p.conversaciones.toLocaleString("en-US")}</strong> conversaciones de WhatsApp por mes</>)}
-        {p.minutos > 0
-          ? fila(<><strong className="font-semibold tabular-nums">{p.minutos.toLocaleString("en-US")}</strong> minutos de voz IA por mes</>)
-          : fila("Llamadas por voz no incluidas", true)}
-        {p.sillonExtra != null
-          ? fila(<>Sillón extra: {usd(p.sillonExtra)} USD/mes</>)
-          : fila("Un solo profesional: para sumar otro, pasás a Core Access", true)}
+        {fila(<><strong className="font-semibold tabular-nums">{p.minutos.toLocaleString("en-US")}</strong> minutos de voz IA por mes</>)}
+        {fila(<>Sillón extra: {usd(p.sillonExtra)} USD/mes</>)}
       </ul>
       <p className={`mt-auto pt-6 text-xs leading-relaxed ${oscuro ? "text-white/50" : "text-brand-950/50"}`}>
-        {p.excedente.minuto
-          ? `Excedentes: $${p.excedente.minuto} USD por minuto y $${p.excedente.conversacion} USD por conversación.`
-          : `Excedentes: $${p.excedente.conversacion} USD por conversación.`}
+        Excedentes: ${p.excedente.minuto} USD por minuto y ${p.excedente.conversacion} USD por conversación.
       </p>
     </article>
   );
@@ -179,58 +176,21 @@ function Tarjeta({ p }: { p: Plan }) {
 export function TarjetasPlanes() {
   return (
     <div className="grid items-stretch gap-6 lg:grid-cols-3 lg:gap-5">
-      {PLANES_TARJETA.map((p) => (
+      {PLANES.map((p) => (
         <Tarjeta key={p.id} p={p} />
       ))}
     </div>
   );
 }
 
-/** Enterprise / Red: pocas clínicas de la zona lo necesitan, así que va como plan a medida y no como tarjeta. */
-export function FranjaRed() {
-  const { periodo, setPlan } = useEstado();
-  const p = planDe("enterprise");
-  return (
-    <article
-      id={p.id}
-      aria-labelledby={`plan-${p.id}`}
-      className="mt-6 grid scroll-mt-24 gap-5 rounded-3xl bg-white p-7 shadow-[0_8px_30px_rgb(8_24_63/0.06)] ring-1 ring-brand-950/8 sm:p-8 lg:mt-8 lg:grid-cols-[1.1fr_1.6fr_auto] lg:items-center lg:gap-10"
-    >
-      <div>
-        <h3 id={`plan-${p.id}`} className="text-lg font-semibold tracking-tight text-brand-950">
-          {p.nombre} <span className="font-normal text-tinta">· a medida</span>
-        </h3>
-        <p className="mt-1 text-sm text-tinta">{p.escala}</p>
-        <p className="mt-3 text-brand-950">
-          <span className="text-sm text-tinta">Desde </span>
-          <span className="text-2xl font-medium tracking-tight tabular-nums">{usd(periodo === "anual" ? p.anual : p.fundador)}</span>
-          <span className="text-sm text-tinta"> USD/mes · setup desde {usd(p.setupFundador)}</span>
-        </p>
-      </div>
-      <p className="text-sm leading-relaxed text-tinta">
-        {p.atencion}, {p.turnos.toLowerCase()} y {p.reactivacion?.toLowerCase()}. Desde {p.conversaciones.toLocaleString("en-US")} conversaciones de
-        WhatsApp y {p.minutos.toLocaleString("en-US")} minutos de voz IA por mes.
-      </p>
-      <a
-        href="#sumate"
-        onClick={() => setPlan(p.id)}
-        className="rounded-lg bg-white px-5 py-3 text-center text-sm font-medium text-brand-950 ring-1 ring-brand-950/15 transition hover:ring-brand-950/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-        {...cta("pricing_plan", "pricing_card", p.id)}
-      >
-        Armemos tu plan
-      </a>
-    </article>
-  );
-}
-
 export function FormularioFundador() {
-  const { periodo, plan, setPlan, setPeriodo } = useEstado();
-  const elegido = planDe(plan);
+  const { periodo, plan, setPlan } = useEstado();
+  const elegido = PLANES.find((p) => p.id === plan)!;
   return (
     <div>
       <fieldset>
         <legend className="text-sm font-medium text-white/70">Plan que te interesa</legend>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {PLANES.map((p) => (
             <label
               key={p.id}
@@ -247,21 +207,115 @@ export function FormularioFundador() {
           ))}
         </div>
       </fieldset>
-      <label className="mt-4 inline-flex cursor-pointer items-center gap-2.5 text-sm text-white/80">
-        <input
-          type="checkbox"
-          checked={periodo === "anual"}
-          onChange={(e) => setPeriodo(e.target.checked ? "anual" : "mensual")}
-          className="h-4 w-4 rounded accent-aqua"
-        />
-        Pago anual por adelantado (2 meses gratis)
-      </label>
+      <CasillaAnual />
       <div className="mt-6">
         <FormularioDemo
           compacto
           origen={`/pricing · ${elegido.nombre} · ${periodo}`}
           titulo={`Reservá tu lugar en ${elegido.nombre}`}
-          boton={plan === "consultorio" ? "Quiero ser consultorio fundador" : "Quiero ser clínica fundadora"}
+          boton="Quiero ser clínica fundadora"
+          gracias="Te escribimos para coordinar los próximos pasos."
+        />
+      </div>
+    </div>
+  );
+}
+
+function CasillaAnual() {
+  const { periodo, setPeriodo } = useEstado();
+  return (
+    <label className="mt-4 inline-flex cursor-pointer items-center gap-2.5 text-sm text-white/80">
+      <input
+        type="checkbox"
+        checked={periodo === "anual"}
+        onChange={(e) => setPeriodo(e.target.checked ? "anual" : "mensual")}
+        className="h-4 w-4 rounded accent-aqua"
+      />
+      Pago anual por adelantado (2 meses gratis)
+    </label>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// /pricing/consultorio: una sola tarjeta, sin los planes de clínica al lado.
+
+export function TarjetaConsultorio() {
+  const { periodo } = useEstado();
+  const c = CONSULTORIO;
+  return (
+    <article
+      aria-labelledby="plan-consultorio"
+      className="grid gap-10 rounded-3xl bg-navy p-7 text-white shadow-[0_30px_70px_rgb(8_24_63/0.35)] ring-1 ring-white/10 sm:p-10 lg:grid-cols-[1fr_1.15fr] lg:gap-14"
+    >
+      <div className="flex flex-col">
+        <h2 id="plan-consultorio" className="text-xl font-semibold tracking-tight">
+          {c.nombre}
+        </h2>
+        <p className="mt-1 text-sm text-white/65">{c.escala}</p>
+        <div className="mt-6 flex items-end gap-2">
+          <span className="text-[56px] font-medium leading-none tracking-tight tabular-nums">{usd(periodo === "anual" ? c.anual : c.fundador)}</span>
+          <span className="pb-1.5 text-sm text-white/65">USD/mes</span>
+        </div>
+        <LineaPrecio p={c} clase="text-white/65" />
+
+        <div className="mt-6 rounded-xl bg-white/[0.06] px-4 py-3 text-sm ring-1 ring-white/10">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-white/65">Setup único</span>
+            <span className="text-right">
+              <span className="font-semibold text-aqua">Bonificado</span>
+              <span className="ml-2 text-xs text-white/45">
+                <span className="line-through decoration-1">{usd(c.setup)} USD</span>
+              </span>
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-white/50">Para consultorios fundadores, con un mínimo de {c.permanenciaMeses} meses.</p>
+          <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-white/10 pt-3">
+            <span className="text-white/65">Se paga con</span>
+            <span className="font-semibold text-aqua">{c.sePagaCon}</span>
+          </div>
+        </div>
+
+        <a
+          href="#sumate"
+          className="mt-6 rounded-lg bg-white px-5 py-3 text-center text-sm font-medium text-navy transition hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          {...cta("pricing_plan", "pricing_consultorio", "consultorio")}
+        >
+          Quiero mi lugar
+        </a>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-aqua">Qué hace Sofi por vos</p>
+        <ul className="mt-5 space-y-3.5">
+          {c.incluye.map((t) => (
+            <li key={t} className="flex gap-3 text-[15px] leading-snug text-white/90">
+              <Check claro />
+              <span>{t}</span>
+            </li>
+          ))}
+          {c.noIncluye.map((t) => (
+            <li key={t} className="flex gap-3 text-[15px] leading-snug text-white/40">
+              <Check off claro />
+              <span>{t}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </article>
+  );
+}
+
+export function FormularioConsultorio() {
+  const { periodo } = useEstado();
+  return (
+    <div>
+      <CasillaAnual />
+      <div className="mt-6">
+        <FormularioDemo
+          compacto
+          origen={`/pricing/consultorio · ${CONSULTORIO.nombre} · ${periodo}`}
+          titulo={`Reservá tu lugar en ${CONSULTORIO.nombre}`}
+          boton="Quiero ser consultorio fundador"
           gracias="Te escribimos para coordinar los próximos pasos."
         />
       </div>

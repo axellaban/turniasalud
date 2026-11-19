@@ -19,7 +19,7 @@
 
 ## Plan Consultorio (19/11/2026)
 
-Hecho: el plan figura en `/pricing` (ver `ESTADO_Y_PRIORIDADES.md`). Lo que promete se cumple en el setup de cada consultorio:
+Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver `ESTADO_Y_PRIORIDADES.md`; el guion de venta, en `PLAN_PROSPECCION.md`). Lo que promete se cumple en el setup de cada consultorio:
 
 - [ ] **Urgencias al celular de la profesional:** cargar su celular como teléfono de derivación y una instrucción del consultorio: «ante dolor fuerte, sangrado o hinchazón que no puede esperar al día siguiente, pasale el celular de la Dra. …». Hoy, sin esa instrucción, Sofi crea una tarea urgente y avisa al equipo. Si se repite en varios consultorios, convertirlo en una opción de «Turnos y urgencias».
 - [ ] **Pausa automática** cuando la profesional escribe en el chat: Sofi y ella comparten el mismo WhatsApp. Se configura igual que en Guerra–Mininni (`message.any` en su instancia de WAHA y la opción en Equipo por WhatsApp).

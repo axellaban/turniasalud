@@ -1,35 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { PLANES, PLANES_TARJETA, plan } from "./precios";
+import { CONSULTORIO, GARANTIAS_CONSULTORIO, PLANES, ahorroAnual } from "./precios";
 
-// Lo que la página de precios promete y tiene que cerrar entre sí.
+// Lo que las páginas de precios prometen y tiene que cerrar entre sí.
 describe("planes del Programa Fundadores", () => {
-  it("el pago anual son 10 meses repartidos en 12 (2 meses gratis)", () => {
-    for (const p of PLANES) expect(p.anual, p.id).toBe(Math.round((p.fundador * 10) / 12));
-  });
+  const todos = [CONSULTORIO, ...PLANES];
 
-  it("la escalera sube de a un plan: precio, setup y conversaciones", () => {
-    for (let i = 1; i < PLANES.length; i++) {
-      const [antes, ahora] = [PLANES[i - 1], PLANES[i]];
-      expect(ahora.fundador, ahora.id).toBeGreaterThan(antes.fundador);
-      expect(ahora.setupFundador, ahora.id).toBeGreaterThan(antes.setupFundador);
-      expect(ahora.conversaciones, ahora.id).toBeGreaterThan(antes.conversaciones);
-      expect(ahora.lista, ahora.id).toBeGreaterThan(ahora.fundador);
-      expect(ahora.setupLista, ahora.id).toBeGreaterThan(ahora.setupFundador);
+  it("el pago anual son 10 meses repartidos en 12 (2 meses gratis)", () => {
+    for (const p of todos) {
+      expect(p.anual, p.nombre).toBe(Math.round((p.fundador * 10) / 12));
+      expect(ahorroAnual(p), p.nombre).toBe(p.fundador * 12 - p.fundador * 10);
     }
   });
 
-  it("Consultorio: un profesional, solo WhatsApp, con campañas y sin retorno inventado", () => {
-    const c = plan("consultorio");
-    expect(c.minutos).toBe(0);
-    expect(c.sillonExtra).toBeNull();
-    expect(c.excedente.minuto).toBeNull();
-    expect(c.reactivacion).toMatch(/campaña/);
-    expect(c.retorno).toBeNull();
-    expect(c.sePagaCon).toBeTruthy();
+  it("la escalera sube de a un plan: precio y conversaciones; la lista siempre está arriba del precio fundador", () => {
+    for (let i = 1; i < todos.length; i++) {
+      expect(todos[i].fundador, todos[i].nombre).toBeGreaterThan(todos[i - 1].fundador);
+      expect(todos[i].conversaciones, todos[i].nombre).toBeGreaterThan(todos[i - 1].conversaciones);
+    }
+    for (const p of todos) expect(p.lista, p.nombre).toBeGreaterThan(p.fundador);
+    for (const p of PLANES) expect(p.setupLista, p.nombre).toBeGreaterThan(p.setupFundador);
   });
 
-  it("tres tarjetas, Enterprise / Red aparte y Core Access como recomendado", () => {
-    expect(PLANES_TARJETA.map((p) => p.id)).toEqual(["consultorio", "core", "growth"]);
-    expect(PLANES.filter((p) => p.destacado).map((p) => p.id)).toEqual(["core"]);
+  it("/pricing: Core Access, Revenue Growth recomendado y Enterprise / Red", () => {
+    expect(PLANES.map((p) => p.id)).toEqual(["core", "growth", "enterprise"]);
+    expect(PLANES.filter((p) => p.destacado).map((p) => p.id)).toEqual(["growth"]);
+  });
+
+  it("Consultorio: un solo precio, sin voz, con una campaña por mes y sin la garantía de reactivación", () => {
+    expect(CONSULTORIO.fundador).toBe(99);
+    expect(CONSULTORIO.incluye.join(" ")).toMatch(/campaña/);
+    expect(CONSULTORIO.noIncluye.join(" ")).toMatch(/voz/i);
+    expect(GARANTIAS_CONSULTORIO.map((g) => g.plazo)).toEqual(["14 días", "30 días"]);
+  });
+
+  it("Core Access no tiene menos campaña que Consultorio", () => {
+    const pacientesCore = Number(PLANES[0].reactivacion?.match(/hasta (\d+)/)?.[1]);
+    expect(pacientesCore).toBeGreaterThan(CONSULTORIO.pacientesPorCampana);
   });
 });

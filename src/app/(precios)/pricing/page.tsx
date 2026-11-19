@@ -2,22 +2,20 @@ import type { Metadata } from "next";
 import { Fragment, type ReactNode } from "react";
 import { Icono } from "@/components/site/iconos";
 import { cta } from "@/lib/analytics-shared";
-import { GARANTIAS, LETRA_CHICA, PLANES, REFERENCIA, plan, usd, type Plan } from "@/content/precios";
-import { FormularioFundador, FranjaRed, PreciosProvider, SelectorPeriodo, TarjetasPlanes } from "./planes";
+import { GARANTIAS, LETRA_CHICA, PLANES, REFERENCIA, REQUISITO_FUNDADOR, usd, type Plan } from "@/content/precios";
+import { Garantias, LetraChica, RequisitoFundador } from "./bloques";
+import { FormularioFundador, PreciosProvider, SelectorPeriodo, TarjetasPlanes } from "./planes";
 
-// Precios del Programa Fundadores. A propósito no está en el menú, el footer ni el sitemap, y no se
-// indexa: solo la ve quien recibe el link.
+// Precios del Programa Fundadores para clínicas. A propósito no está en el menú, el footer ni el sitemap, y
+// no se indexa: solo la ve quien recibe el link. El plan Consultorio tiene su propia página (consultorio/).
 export const metadata: Metadata = {
   title: "Precios · Programa Fundadores",
   description: "Tu recepción atendiendo por voz y WhatsApp 24/7, por una fracción de un sueldo. Primeras 10 clínicas odontológicas.",
   robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
-// El encabezado compara la recepcionista con Core Access: es el primer plan con voz, como la recepción.
-const core = plan("core");
-const growth = plan("growth");
-const consultorio = plan("consultorio");
-const excedentes = `Sin descuento fundador: $${consultorio.excedente.conversacion} USD/conv en Consultorio; $${core.excedente.minuto} USD/min y $${core.excedente.conversacion} USD/conv en Core Access; $${growth.excedente.minuto} USD/min y $${growth.excedente.conversacion} USD/conv en los planes superiores.`;
+const [core, growth] = PLANES;
+const excedentes = `Sin descuento fundador: $${core.excedente.minuto} USD/min y $${core.excedente.conversacion} USD/conv en Core Access; $${growth.excedente.minuto} USD/min y $${growth.excedente.conversacion} USD/conv en los planes superiores.`;
 
 /** Recepcionista contra Turnia, en barras a escala: lo que se entiende en 15 segundos. */
 function Comparacion() {
@@ -87,12 +85,9 @@ const GRUPOS: Array<{ titulo: string; filas: Fila[] }> = [
     titulo: "Cupos",
     filas: [
       { label: "WhatsApp", valor: (p) => `${p.conversaciones.toLocaleString("en-US")} conv/mes` },
-      { label: "Voz IA", valor: (p) => (p.minutos > 0 ? `${p.minutos.toLocaleString("en-US")} min/mes` : <span className="text-brand-950/40">No incluida</span>) },
-      { label: "Sillón extra", valor: (p) => (p.sillonExtra != null ? `${usd(p.sillonExtra)} USD/mes` : <span className="text-brand-950/40">1 profesional</span>) },
-      {
-        label: "Excedentes",
-        valor: (p) => (p.excedente.minuto ? `$${p.excedente.minuto}/min · $${p.excedente.conversacion}/conv` : `$${p.excedente.conversacion}/conv`),
-      },
+      { label: "Voz IA", valor: (p) => `${p.minutos.toLocaleString("en-US")} min/mes` },
+      { label: "Sillón extra", valor: (p) => `${usd(p.sillonExtra)} USD/mes` },
+      { label: "Excedentes", valor: (p) => `$${p.excedente.minuto}/min · $${p.excedente.conversacion}/conv` },
     ],
   },
   {
@@ -101,7 +96,7 @@ const GRUPOS: Array<{ titulo: string; filas: Fila[] }> = [
       {
         label: "ROI estimado",
         valor: (p) => (
-          <strong className="font-semibold text-emerald-700">{p.retorno == null ? `Se paga con ${p.sePagaCon}` : `+${usd(p.retorno)} USD/mes`}</strong>
+          <strong className="font-semibold text-emerald-700">+{usd(p.retorno)} USD/mes</strong>
         ),
       },
     ],
@@ -112,7 +107,7 @@ function Tabla() {
   const destacado = (p: Plan) => (p.destacado ? "bg-brand-50/70" : "");
   return (
     <div className="overflow-x-auto rounded-3xl bg-white shadow-[0_8px_30px_rgb(8_24_63/0.05)] ring-1 ring-brand-950/8">
-      <table className="w-full min-w-[880px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[720px] border-collapse text-left text-sm">
         <caption className="sr-only">Comparación de planes del Programa Fundadores</caption>
         <thead>
           <tr>
@@ -199,7 +194,7 @@ export default function PricingPage() {
       <section id="planes" className="scroll-mt-24 pb-20">
         <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-[32px] font-medium leading-[1.12] tracking-tight text-brand-950 sm:text-[44px]">Elegí según tu consultorio</h2>
+            <h2 className="text-[32px] font-medium leading-[1.12] tracking-tight text-brand-950 sm:text-[44px]">Elegí según tus sillones</h2>
             <p className="mx-auto mt-4 text-[17px] leading-relaxed text-tinta">
               <strong className="font-semibold text-brand-950">Tarifa congelada para siempre</strong> mientras mantengas tu suscripción activa. Pagando el año por adelantado, 2 meses son gratis.
             </p>
@@ -209,7 +204,6 @@ export default function PricingPage() {
           </div>
           <div className="mt-14">
             <TarjetasPlanes />
-            <FranjaRed />
           </div>
         </div>
       </section>
@@ -223,29 +217,14 @@ export default function PricingPage() {
       </section>
 
       {/* Garantías */}
-      <section className="bg-[#f5f7fd] py-24">
-        <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-white text-brand-600 shadow-sm ring-1 ring-brand-950/5">
-              <Icono nombre="escudo" className="h-6 w-6" />
-            </span>
-            <h2 className="mt-5 text-[32px] font-medium leading-[1.12] tracking-tight text-brand-950 sm:text-[44px]">
-              Triple garantía, <span className="text-brand-600">por contrato</span>
-            </h2>
-            <p className="mt-4 text-[17px] leading-relaxed text-tinta">Si no cumplimos, lo pagamos nosotros.</p>
-          </div>
-          <ol className="mt-14 grid gap-5 md:grid-cols-3">
-            {GARANTIAS.map((g, i) => (
-              <li key={g.titulo} className="rounded-3xl bg-white p-7 shadow-[0_6px_24px_rgb(8_24_63/0.05)] ring-1 ring-brand-950/8 sm:p-8">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-950/40">Garantía {i + 1}</span>
-                <p className="mt-3 text-[34px] font-medium leading-none tracking-tight text-brand-600 tabular-nums">{g.plazo}</p>
-                <h3 className="mt-5 font-semibold text-brand-950">{g.titulo}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-tinta">{g.texto}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
+      <Garantias
+        titulo={
+          <>
+            Triple garantía, <span className="text-brand-600">por contrato</span>
+          </>
+        }
+        items={GARANTIAS}
+      />
 
       {/* Cierre: sumarse */}
       <section id="sumate" className="scroll-mt-20 bg-navy py-24 text-white">
@@ -256,25 +235,13 @@ export default function PricingPage() {
             <p className="mt-5 max-w-lg text-[17px] leading-relaxed text-white/70">
               Precio fundador congelado mientras sigas con nosotros, setup con descuento y la triple garantía. Dejanos tus datos y armamos juntos la puesta en marcha.
             </p>
+            <RequisitoFundador items={REQUISITO_FUNDADOR} />
           </div>
           <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
             <FormularioFundador />
           </div>
           <div>
-            <dl className="space-y-6 border-t border-white/10 pt-8 lg:mt-10">
-              {LETRA_CHICA.map((l) => (
-                <div key={l.titulo} className="grid gap-1 sm:grid-cols-[10rem_1fr] sm:gap-6">
-                  <dt className="text-sm font-semibold text-white">{l.titulo}</dt>
-                  <dd className="text-sm leading-relaxed text-white/60">{l.texto}</dd>
-                </div>
-              ))}
-              <div className="grid gap-1 sm:grid-cols-[10rem_1fr] sm:gap-6">
-                <dt className="text-sm font-semibold text-white">Excedentes</dt>
-                <dd className="text-sm leading-relaxed text-white/60">
-                  {excedentes}
-                </dd>
-              </div>
-            </dl>
+            <LetraChica items={[...LETRA_CHICA, { titulo: "Excedentes", texto: excedentes }]} />
           </div>
         </div>
       </section>
