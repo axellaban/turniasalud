@@ -18,6 +18,7 @@ import {
 import { commercialChart, type ChartPeriod } from "./followup-chart";
 import { capFirstContacts, executionDays, funnelCohorts, messageExecutions, queueDayState, weeklyByType, type MessageEvent, type QueueDayRow } from "./followup-results";
 import { FOLLOWUP_STAGES, isStageKey, stageInfo, versionFor, versionStats, type FollowupExecution, type StageKey } from "./followup-stages";
+import { leadsView } from "./followup-leads";
 import { TURNIA_COMMERCIAL, commercialCatalog, createCommercialStage, saveCommercialSituation, deleteCommercialSituation, toggleCommercialSituation, ruleControls, saveRuleControl, type RuleControl } from "./followup-catalog";
 import {
   CLAIM_SECONDS,
@@ -426,6 +427,15 @@ export async function followupSnapshot(now = new Date(), period: ChartPeriod = {
       const own = b.vs.filter((v) => v.stage === s.key);
       const stats = versionStats(own, b.ex.filter((e) => e.stage === s.key), b.stepNow);
       return { key: s.key, title: s.title, goal: s.goal, waiting: all.filter((q) => q.stage === s.key).length, versions: own.map((v, i) => ({ ...v, stats: stats[i] })) };
+    }),
+    // «Leads» de Chapa (igual que habita.): cada consultorio con su estado en la cola, y las reglas que dejaron de salir.
+    leads: leadsView({
+      items: all,
+      executions: confirmed,
+      rules: FOLLOWUP_STAGES.map((s) => ({ key: s.key, stage: s.key, name: controlByStage.get(s.key)?.name || actionLabel(s.key), enabled: controlByStage.get(s.key)?.enabled !== false })),
+      queueDays: days,
+      stages: FOLLOWUP_STAGES.map((s) => ({ key: s.key, title: s.title, goal: s.goal })),
+      now,
     }),
     rules: FOLLOWUP_STAGES.map((s) => ({
       key: s.key,
