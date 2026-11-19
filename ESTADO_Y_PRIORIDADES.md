@@ -2,6 +2,14 @@
 
 Actualización: 19/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Precios: plan Consultorio y tres tarjetas — 19/11/2026
+
+- **Por qué:** en Mar del Plata y Miramar los interesados son odontólogos que atienden solos (de 2 a 5 días por semana, 4 o 5 turnos por día). Valoran que Sofi dé, mueva y cancele turnos, que ante una urgencia el paciente tenga el celular de la profesional, el resumen diario y las campañas a pacientes dormidos. No necesitan voz, que es lo que encarece.
+- **Plan Consultorio** (`src/content/precios.ts`): un profesional y solo WhatsApp. US$ 69 por mes como precio fundador (lista US$ 99; anual US$ 58), setup US$ 290 (lista US$ 450), 600 conversaciones y una campaña por mes de hasta 100 pacientes. En vez de un retorno estimado dice «se paga con ≈ 2 consultas por mes»: con el arancel de Mar del Plata y el oficial a $1.575, US$ 69 son unos $108.000.
+- **Cómo queda /pricing:** tres tarjetas (Consultorio, Core Access recomendado y Revenue Growth). Enterprise / Red pasa a una franja «a medida» debajo, porque casi ninguna clínica de la zona lo necesita. La tabla compara los cuatro. El encabezado compara la recepcionista con Core Access, que tiene voz; el «desde $290» ya no era cierto. `/pricing#consultorio` baja a la tarjeta y la deja elegida en el formulario.
+- **Cambios en los otros planes:** Core Access suma una campaña por mes de hasta 300 pacientes y «derivación a tu equipo», para que la escalera cierre: no puede tener menos que Consultorio. Revenue Growth: «sin tope de campañas». Letra chica: pago en pesos al oficial del Banco Nación, cómo se arma una campaña, el setup de Consultorio se descuenta al pasar a Core, y en Consultorio se pide un colega referido en vez de dos.
+- **El setup bonificado no figura en la web.** Para los primeros de Mar del Plata y Miramar, se bonifica en la charla, con fecha y con un mínimo de 3 meses. Ver `PLAN_PROSPECCION.md`.
+
 ## Control en producción, herramientas y pausa — 19/11/2026
 
 - Smile Connect sigue en «Crear, mover y cancelar». Se verificaron el historial de sincronizaciones, la copia de hoy aplicada a Turnia y un turno preexistente de Sofi en la agenda de Smile Connect. El control no creó, movió ni canceló turnos.

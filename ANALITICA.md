@@ -174,7 +174,7 @@ La llamada web de la demo de WhatsApp (`/probar-demo/llamada/…`) usa `demo_con
 | `listen_samples` | — | `home_section` |
 | `retry_demo` | — | `demo_unavailable` |
 | `panel_login` | — | `header`, `header_mobile`. Navegación |
-| `pricing_plan` | `core`, `growth` o `enterprise` | `pricing_card`: elige el plan y baja al formulario |
+| `pricing_plan` | `consultorio`, `core`, `growth` o `enterprise` | `pricing_card`: elige el plan (las tres tarjetas o la franja de Enterprise / Red) y baja al formulario. Un link con el plan en el ancla (`/pricing#consultorio`) lo deja elegido sin evento |
 | `pricing_join` | formulario de `/pricing` | `pricing_hero` |
 | `pricing_see_plans` | los planes | `pricing_hero`. Navegación |
 | `talk_axel` | `whatsapp` (abre el WhatsApp de Axel con el mensaje escrito; en `/p/<código>`, la línea que le escribió) | `cierre` (al terminar una charla con Sofi), `demo` (arriba de la demo, durante la charla), `pagina` (la página de su demo, `/p/<código>`). Si la demo es de una persona de la prospección, también queda en su ficha |
