@@ -1925,6 +1925,9 @@ alter table smile_connect_connections add column if not exists api_hours_at time
 alter table smile_connect_connections add column if not exists api_hours_note text;
 alter table smile_connect_connections add column if not exists api_events_ok boolean;
 alter table smile_connect_connections add column if not exists api_events_checked_at timestamptz;
+-- Distinguir permiso rechazado (403) de ruta aún no disponible (404). El próximo pase vuelve a probar
+-- los rechazos históricos que no guardaban el código, sin cambiar la clave de la clínica.
+alter table smile_connect_connections add column if not exists api_events_status integer;
 alter table smile_connect_connections add column if not exists api_mirror_at timestamptz;
 alter table smile_connect_connections add column if not exists api_mirror_summary jsonb;
 alter table patient_external_ids add column if not exists smile_data jsonb;

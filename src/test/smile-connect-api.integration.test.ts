@@ -83,8 +83,9 @@ const fake = {
   /** Horario semanal por profesional (si no está, todos los días de 9 a 18). */
   hours: new Map<number, Record<string, string[]>>(),
   events: [] as Ev[],
-  /** Como la clave real de hoy: sin el permiso events:read. */
+  /** Simula un rechazo de permisos al leer los bloqueos. */
   eventsScope: false,
+  eventsStatus: 200,
   /** La API con `updated_since` (todavía no existe en la real) y cuándo cambió cada turno y paciente. */
   delta: false,
   changedAt: new Map<number, number>(),
@@ -144,6 +145,7 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     return ok({ data: { professional_id: id, timezone: TZ, interval_minutes: 30, hours: fake.hours.get(id) ?? allWeek() } });
   }
   if (path === "/events") {
+    if (fake.eventsStatus !== 200) return err(fake.eventsStatus, "events_unavailable");
     if (!fake.eventsScope) return err(403, "insufficient_scope");
     const s = Date.parse(u.searchParams.get("start")!);
     const e = Date.parse(u.searchParams.get("end")!);
@@ -933,9 +935,16 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       } finally {
         fake.status = 200;
       }
-      const synced = await actions.syncSmileNowAction({}, f);
-      expect(synced, synced.message).toMatchObject({ ok: true });
-      expect(await link.getSmileApiConnection(gm)).toMatchObject({ api_retry_at: null });
+      // La misma sincronización puede volver a probar bloqueos con la clave vigente: no exige renovarla.
+      await sql`update smile_connect_connections set api_events_ok = false, api_events_status = 403, api_events_checked_at = now() where clinic_id = ${gm}`;
+      fake.eventsScope = true;
+      try {
+        const synced = await actions.syncSmileNowAction({}, f);
+        expect(synced, synced.message).toMatchObject({ ok: true });
+        expect(await link.getSmileApiConnection(gm)).toMatchObject({ api_retry_at: null, api_events_ok: true, api_events_status: 200 });
+      } finally {
+        fake.eventsScope = false;
+      }
 
       const later = new Date(Date.now() + 2 * 60 * 60_000).toISOString();
       await sql`update smile_connect_connections set api_retry_at = ${later} where clinic_id = ${gm}`;
@@ -1015,6 +1024,37 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect((await link.getSmileApiConnection(T))!.api_events_ok).toBe(true);
       fake.eventsScope = false;
       fake.events = [];
+    });
+
+    it("un 404 de la ruta de bloqueos no se diagnostica como falta de permisos ni borra bloqueos", async () => {
+      const before = await sql`select external_id from schedule_blocks where clinic_id = ${T} order by external_id`;
+      fake.eventsStatus = 404;
+      fake.eventsScope = true;
+      await sql`update smile_connect_connections set api_events_ok = null, api_events_checked_at = null where clinic_id = ${T}`;
+      try {
+        await link.pullSmileConnect(T, "cerca");
+        expect(await link.getSmileApiConnection(T)).toMatchObject({ api_events_ok: null, api_events_status: 404 });
+        expect(await sql`select external_id from schedule_blocks where clinic_id = ${T} order by external_id`).toEqual(before);
+      } finally {
+        fake.eventsStatus = 200;
+        fake.eventsScope = false;
+        await sql`update smile_connect_connections set api_events_ok = null, api_events_checked_at = null where clinic_id = ${T}`;
+      }
+    });
+
+    it("puede volver a verificar bloqueos con la misma clave aunque el rechazo anterior sea reciente", async () => {
+      const before = (await link.getSmileApiConnection(T))!.api_key_hint;
+      await sql`update smile_connect_connections set api_events_ok = false, api_events_status = 403, api_events_checked_at = now() where clinic_id = ${T}`;
+      fake.eventsScope = true;
+      fake.calls.length = 0;
+      try {
+        await link.pullSmileConnect(T, "cerca", new Date(), { recheckEvents: true });
+        expect(fake.calls.some((c) => c.path === "/events")).toBe(true);
+        expect(await link.getSmileApiConnection(T)).toMatchObject({ api_events_ok: true, api_events_status: 200, api_key_hint: before });
+      } finally {
+        fake.eventsScope = false;
+        await sql`update smile_connect_connections set api_events_ok = null, api_events_checked_at = null where clinic_id = ${T}`;
+      }
     });
 
     it("las notas y la prestación de Smile Connect llegan al turno de Turnia", async () => {

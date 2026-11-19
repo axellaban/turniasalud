@@ -93,6 +93,8 @@ export type SmileApiConnection = {
   /** Bloqueos por la API: null sin probar, false si la clave no tiene `events:read`. */
   api_events_ok: boolean | null;
   api_events_checked_at: string | null;
+  /** Última respuesta de /events. Un 404 de la ruta no demuestra que falte un permiso. */
+  api_events_status: number | null;
   /** Última vez que la copia diaria se aplicó a Turnia, con su resumen. */
   api_mirror_at: string | null;
   api_mirror_summary: Record<string, unknown> | null;
@@ -116,7 +118,7 @@ export async function getSmileApiConnection(clinicId: string, tx?: TransactionSq
     select clinic_id, api_key_encrypted, api_key_hint, api_clinic_id, api_clinic_name, api_mode, api_error, api_error_at,
            api_checked_at, api_near_pull_at, api_near_count, api_wide_pull_at, api_backup_at, api_reads_day::text as api_reads_day,
            api_reads, api_supports_notes, api_writes_paused, api_retry_at, api_deferred,
-           api_hours_at, api_hours_note, api_events_ok, api_events_checked_at, api_mirror_at, api_mirror_summary,
+           api_hours_at, api_hours_note, api_events_ok, api_events_checked_at, api_events_status, api_mirror_at, api_mirror_summary,
            api_patients_full_at, api_patients_last_id::int as api_patients_last_id, api_key_saved_at,
            api_supports_delta, api_delta_at
     from smile_connect_connections where clinic_id = ${clinicId}`;
@@ -243,7 +245,7 @@ export async function saveSmileApiKey(clinicId: string, rawKey: string): Promise
       api_checked_at = now(), api_error = null, api_error_at = null, api_retry_at = null,
       api_supports_notes = ${supportsNotes}, updated_at = now(),
       -- Una clave nueva puede traer permisos nuevos: los bloqueos se vuelven a probar en la vuelta siguiente.
-      api_key_saved_at = now(), api_events_ok = null, api_events_checked_at = null,
+      api_key_saved_at = now(), api_events_ok = null, api_events_checked_at = null, api_events_status = null,
       api_supports_delta = ${supportsDelta}
     where clinic_id = ${clinicId}`;
   const professionals = await mapProfessionals(clinicId, client);
@@ -391,24 +393,28 @@ async function scEventsRange(client: SmileClient, from: Date, to: Date): Promise
  * pudieron leer y los de Turnia no se tocan. Sin el permiso no es un error de la clave (no se avisa
  * al consultorio): se anota y se vuelve a probar una vez por día.
  */
-async function readEvents(conn: SmileApiConnection, client: SmileClient, from: Date, to: Date): Promise<ScEvent[] | null> {
-  if (conn.api_events_ok === false && minutesSince(conn.api_events_checked_at) < 24 * 60) return null;
+async function readEvents(conn: SmileApiConnection, client: SmileClient, from: Date, to: Date, recheck = false): Promise<ScEvent[] | null> {
+  // Un rechazo viejo puede haber sido un 404: las versiones anteriores lo confundían con falta de
+  // permisos. Sin respuesta registrada se prueba otra vez, y la lectura manual también fuerza la prueba.
+  const cooldown = conn.api_events_status === 403 ? 24 * 60 : conn.api_events_status === 404 ? 60 : 0;
+  if (!recheck && conn.api_events_ok !== true && conn.api_events_status != null && minutesSince(conn.api_events_checked_at) < cooldown) return null;
   try {
     const events = await scEventsRange(client, from, to);
-    if (conn.api_events_ok !== true) {
-      await sql`update smile_connect_connections set api_events_ok = true, api_events_checked_at = now() where clinic_id = ${conn.clinic_id}`;
+    if (conn.api_events_ok !== true || conn.api_events_status !== 200) {
+      await sql`update smile_connect_connections set api_events_ok = true, api_events_status = 200, api_events_checked_at = now() where clinic_id = ${conn.clinic_id}`;
       conn.api_events_ok = true;
+      conn.api_events_status = 200;
     }
     return events;
   } catch (e) {
-    if (e instanceof SmileApiError && (e.status === 403 || e.status === 404)) {
-      await sql`update smile_connect_connections set api_events_ok = false, api_events_checked_at = now() where clinic_id = ${conn.clinic_id}`;
-      conn.api_events_ok = false;
-      conn.api_events_checked_at = new Date().toISOString();
-      return null;
-    }
+    const status = e instanceof SmileApiError ? e.status : 0;
+    const ok = status === 403 ? false : null;
+    await sql`update smile_connect_connections set api_events_ok = ${ok}, api_events_status = ${status}, api_events_checked_at = now() where clinic_id = ${conn.clinic_id}`;
+    conn.api_events_ok = ok;
+    conn.api_events_status = status;
+    conn.api_events_checked_at = new Date().toISOString();
     // Una falla pasajera con los bloqueos no frena la sincronización de los turnos.
-    console.error("Smile Connect: no se pudieron leer los bloqueos", e instanceof Error ? e.message : e);
+    if (status !== 403 && status !== 404) console.error("Smile Connect: no se pudieron leer los bloqueos", e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -464,7 +470,7 @@ async function stillInSmile(client: SmileClient, externalIds: string[]): Promise
  * Trae de Smile Connect los turnos de una ventana y los sincroniza, con sus notas y, si la clave tiene
  * el permiso, los bloqueos de agenda. Los pacientes que Turnia no conoce se leen de a uno.
  */
-export async function pullSmileConnect(clinicId: string, which: "cerca" | "lejos", now = new Date()): Promise<PullResult> {
+export async function pullSmileConnect(clinicId: string, which: "cerca" | "lejos", now = new Date(), opts: { recheckEvents?: boolean } = {}): Promise<PullResult> {
   const conn = await getSmileApiConnection(clinicId);
   if (!conn?.api_key_encrypted || conn.api_mode === "apagada") throw new Error("La conexión con Smile Connect está apagada.");
   const clinic = await getClinic(clinicId);
@@ -510,7 +516,7 @@ export async function pullSmileConnect(clinicId: string, which: "cerca" | "lejos
     const complete = usable.length === appts.length;
     const services = await serviceNames(client, usable);
     // Sin la ventana completa tampoco se dan de baja bloqueos: se sincronizan en la vuelta siguiente.
-    const events = complete ? await readEvents(conn, client, from, to) : null;
+    const events = complete ? await readEvents(conn, client, from, to, opts.recheckEvents) : null;
     const payload = {
       ...(complete && { from: from.toISOString(), to: to.toISOString() }),
       metadata,

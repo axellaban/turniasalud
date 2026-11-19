@@ -94,10 +94,18 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
           <button className={smallButtonClass}>Reanudar la escritura</button>
         </form>}
       </Notice>}
-      {hasKey && conn?.api_events_ok === false && <Notice tone="warning" className="mt-3">
-        La clave no tiene el permiso para leer los bloqueos de agenda (<code>events:read</code>). Sofi igual los respeta, porque verifica cada
-        horario en Smile Connect, pero la Agenda de Turnia no los muestra. Pedile al consultorio que sume ese permiso a la clave (o que cree
-        una nueva con todos los permisos) y cargala acá.
+      {hasKey && conn?.api_events_status === 403 && <Notice tone="warning" className="mt-3">
+        Smile Connect rechazó la lectura de los bloqueos de agenda (403). Revisá el permiso <code>events:read</code> en Smile Connect.
+        Si la clave ya lo tiene, pedile a Smile Connect que revise ese rechazo. Sofi verifica cada horario en vivo; los bloqueos todavía no
+        se pueden mostrar en la Agenda de Turnia. «Sincronizar ahora» vuelve a comprobarlo con la misma clave.
+      </Notice>}
+      {hasKey && conn?.api_events_status === 404 && <Notice tone="warning" className="mt-3">
+        La ruta de bloqueos de Smile Connect respondió 404. Turnia volverá a probarla automáticamente. Sofi verifica cada horario en vivo;
+        los bloqueos todavía no se pueden mostrar en la Agenda de Turnia. «Sincronizar ahora» permite volver a comprobarlo con la misma clave.
+      </Notice>}
+      {hasKey && conn?.api_events_status != null && ![200, 403, 404].includes(conn.api_events_status) && <Notice tone="warning" className="mt-3">
+        No se pudo actualizar la lectura de bloqueos de Smile Connect ({conn.api_events_status ? `respuesta ${conn.api_events_status}` : "sin conexión"}).
+        Los bloqueos ya guardados se conservan y Turnia vuelve a intentarlo en la próxima sincronización.
       </Notice>}
       {hasKey && conn?.api_hours_note && <Notice tone={conn.api_hours_note.split("\n").some((l) => !l.startsWith("Horarios copiados")) ? "warning" : "info"} className="mt-3 whitespace-pre-line">
         {conn.api_hours_note}
@@ -115,7 +123,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
             <dt className="text-brand-900/60">Agenda cercana</dt><dd className="text-brand-950">{when(conn?.api_near_pull_at)}</dd>
             <dt className="text-brand-900/60">Agenda lejana</dt><dd className="text-brand-950">{when(conn?.api_wide_pull_at)}</dd>
             <dt className="text-brand-900/60">Horarios de los profesionales</dt><dd className="text-brand-950">{when(conn?.api_hours_at)}</dd>
-            <dt className="text-brand-900/60">Bloqueos</dt><dd className="text-brand-950">{conn?.api_events_ok ? "Por la API" : conn?.api_events_ok === false ? "Falta el permiso events:read" : "Sin probar"}</dd>
+            <dt className="text-brand-900/60">Bloqueos</dt><dd className="text-brand-950">{conn?.api_events_ok ? "Por la API" : conn?.api_events_status === 403 ? "Lectura rechazada (403)" : conn?.api_events_status === 404 ? "Ruta no disponible (404)" : conn?.api_events_status != null ? "Último intento sin completar" : "Pendiente de verificar"}</dd>
             <dt className="text-brand-900/60">Copia diaria</dt><dd className="text-brand-950">{when(conn?.api_backup_at)}{conn?.api_mirror_at ? ` · aplicada a Turnia ${when(conn.api_mirror_at)}` : ""}</dd>
             <dt className="text-brand-900/60">Lecturas de hoy</dt><dd className="text-brand-950">{readsToday.toLocaleString("es-AR")} de {READ_CAP.toLocaleString("es-AR")}</dd>
           </dl>}
