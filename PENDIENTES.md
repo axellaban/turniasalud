@@ -5,6 +5,7 @@
 - Guerra–Mininni pidió que Sofi solo dé turnos de lunes a jueves. Los viernes quedan para cirugías y casos grandes de prótesis coordinados por el equipo. La regla también aplica al destino de una reprogramación, con todos los profesionales; no cambia los turnos existentes ni las reglas de cancelación.
 - Configuración → Turnos y urgencias → «Días en que Sofi da turnos»: política independiente de los horarios reales. Smile Connect conserva su agenda de viernes y sus sincronizaciones no pisan esta selección. Las otras clínicas mantienen todos los días por defecto; el equipo puede operar los días reservados.
 - Las instrucciones de la clínica se actualizaron en producción antes del despliegue de esta validación. La conversación de horarios de las 10:15 fue una prueba nuestra.
+- La lista de espera también respeta los días permitidos: cancelar o mover un turno de viernes no ofrece ese lugar automáticamente. Las entradas siguen activas para un día válido.
 
 ## Plan Consultorio (19/11/2026)
 

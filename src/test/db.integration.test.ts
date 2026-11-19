@@ -246,6 +246,33 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(resolved.status).toBe("resuelta");
   });
 
+  it("la lista de espera no ofrece un día reservado al equipo aunque se cancele un turno existente", async () => {
+    await sql`update clinics set whatsapp_phone_number_id = 'wa_test', elevenlabs_agent_id = 'agent_test', booking_weekdays = array[1,2,3,4]::smallint[] where id = ${CLINIC}`;
+    const waiting = ctx("5491100007729");
+    await service.registerPatient(waiting, { nombre_completo: "Paciente ficticio en espera" });
+    await service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ });
+    const [{ id: holder }] = await sql`insert into patients (clinic_id, full_name, phone) values (${CLINIC}, 'Paciente ficticio que cancela', '5491100007730') returning id`;
+    let friday = new Date(Date.now() + 30 * 86400_000);
+    while (friday.getUTCDay() !== 5) friday = new Date(friday.getTime() + 86400_000);
+    const start = `${friday.toISOString().slice(0,10)}T14:00:00.000Z`;
+    const [appt] = await sql<import("@/lib/types").Appointment[]>`insert into appointments
+      (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+      values (${CLINIC}, ${holder}, ${RUIZ}, ${LIMPIEZA}, ${start}, ${new Date(Date.parse(start) + 45 * 60000).toISOString()}, 'cancelado', 'panel') returning *`;
+    try {
+      expect(await service.offerFreedSlot(await clinicLib.getClinic(CLINIC), appt)).toBe(0);
+      expect(mocks.sendWhatsAppTemplate).not.toHaveBeenCalled();
+      expect((await sql`select status from waitlist where patient_id = (select id from patients where clinic_id = ${CLINIC} and phone = ${waiting.patientPhone})`)[0].status).toBe("activa");
+      // El mismo lugar sí se ofrecería con la política anterior: es un candidato real y enviable.
+      await sql`update clinics set booking_weekdays = null where id = ${CLINIC}`;
+      expect(await service.offerFreedSlot(await clinicLib.getClinic(CLINIC), appt)).toBe(1);
+      expect(mocks.sendWhatsAppTemplate).toHaveBeenCalledOnce();
+    } finally {
+      await sql`update clinics set booking_weekdays = null where id = ${CLINIC}`;
+      await sql`delete from appointments where id = ${appt.id}`;
+      await sql`delete from patients where clinic_id = ${CLINIC} and phone = any(${[waiting.patientPhone, "5491100007730"]})`;
+    }
+  });
+
   it("arma las audiencias de las campañas y registra los envíos", async () => {
     const { computeAudience, createCampaign, sendCampaign } = await import("@/lib/campaigns");
     const clinic = await clinicLib.getClinic();
