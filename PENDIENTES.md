@@ -1,5 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Control de producción y configuración de Sofi (19/11/2026)
+
+- [x] **Tarea 10 revisada:** modo «Crear, mover y cancelar», tres profesionales vinculados, sincronizaciones automáticas y copia de esta mañana aplicada a Turnia. Un turno ya creado por Sofi se comprobó en Smile Connect, con el mismo horario y profesional. La lista activa «Para revisar en Smile Connect» estaba vacía. El registro conserva un movimiento histórico con rechazo por cupo y la Agenda señala turnos pasados sin vínculo externo; no se modificaron para este control.
+- [x] **Herramientas de Sofi actualizadas** desde «Equipo por WhatsApp», para el agente general de WhatsApp y el propio de llamadas.
+- [x] **Pausa automática configurada y comprobada técnicamente:** `message,message.any` en la instancia exclusiva de Guerra–Mininni, sesión `WORKING` y opción prendida en Turnia. Se comprobó un evento propio de app simulado y firmado: crea la pausa, el entrante queda ignorado y «Reactivar» la retira. Los mensajes de la API no pausan. Se retiró la pausa del número ficticio; no se mandaron mensajes a pacientes.
+- [ ] **Prueba de recepción desde la app de WhatsApp del consultorio:** requiere una sesión del 3765. Las dos sesiones de WhatsApp Web disponibles al revisar correspondían al WhatsApp del usuario que termina en 5483. Desde ese chat se comprobaron respuestas reales de Sofi sobre los horarios.
+- [ ] **Bloqueos: rechazo real 403 de Smile Connect.** Después del [PR #238](https://github.com/axellaban/turniasalud/pull/238) se ejecutó una única sincronización manual a las 10:16 con la misma clave vigente: turnos y horarios correctos, pero `/events` devuelve 403. El usuario indicó que esa clave ya tenía todos los permisos y pidió conservarla. Revisar con Smile Connect la habilitación de `events:read` para esa clave; no generar otra ni revocarla por iniciativa propia. El arreglo distingue 403 de 404 y permite volver a probar desde «Sincronizar ahora» sin cambiar la clave. Sofi sigue verificando la disponibilidad en vivo.
+- [ ] Confirmar recepción de los avisos de integración en el WhatsApp de Axel; no se envió un aviso nuevo ni se verificó esa bandeja en este control.
+
 ## Feedback de Guerra–Mininni sobre Sofi (18/11/2026)
 
 - Hecho y en producción (PR #223 a #227): primer turno del día, «molestia» no es urgencia (la guardia solo con mucho dolor, sangrado o hinchazón), no prometer días antes de mirar la agenda, datos juntos por WhatsApp, sin reglas internas ni «limpieza», radiografías en un párrafo aparte, y días que Smile Connect no confirmó a tiempo sin darlos por llenos. Prompt actualizado en los dos agentes de ElevenLabs.
@@ -33,7 +42,7 @@
 ## Smile Connect por API y avisos por WhatsApp (16/11/2026)
 
 - **Actualizado el 18/11:** la escritura real está activa (`SMILE_CONNECT_WRITES=on`). Por pedido de Axel, el modo pasó a «Crear, mover y cancelar»: Sofi crea, mueve y cancela en Smile Connect, y las visitas combinadas siguen yendo a recepción. Lo de abajo es el estado del 16/11.
-- [ ] **Control en producción por computer use: tarea 10 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).** Revisa el modo, los bloqueos, el historial de sincronizaciones, el registro de cambios, un turno de Sofi en Smile Connect con su motivo, la Agenda y los avisos por WhatsApp. La clave la dio Mininni con todos los permisos que ofrece Smile Connect; la tarea solo pide una nueva si «Bloqueos» dice que falta `events:read`.
+- [x] **Control en producción por computer use: tarea 10 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).** Revisado el 19/11; los faltantes concretos están al principio de este archivo. Se conserva la clave actual por indicación del usuario.
 - **Lectura verificada y «Escritura de prueba» en producción (16/11).** El consultorio cargó la clave y el userscript de Tampermonkey quedó desactivado. Los 39 turnos vigentes de Smile Connect para el 17 y 18 estaban en Turnia. Seis turnos adicionales de Sofi por WhatsApp quedan para conciliar antes de activar la escritura real.
 - **Siguiente paso.** Revisar el registro de operaciones de prueba con el consultorio y probar primero la creación de un turno. Ver [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) y la tarea 7 de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md).
 - **Avisos por WhatsApp al consultorio:** van en el mismo PR. Falta saber a qué celulares mandarlos (se cargan en Configuración).
@@ -55,8 +64,8 @@
 
 Las seis fases de la auditoría están hechas (PR #210 a #215) y, después, lo pendiente (PR #216 y #217; ver `ESTADO_Y_PRIORIDADES.md`). Lo que falta es configuración, en la **tarea 8** de [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md):
 
-- [ ] **«Actualizar a Sofi»**, para que el agente tome las herramientas renombradas (`equipo_buscar_pacientes`, `equipo_crear_paciente`) y las nuevas (`pausar_chat`, `reactivar_chat`). Hasta entonces todo sigue andando: la ruta acepta los nombres anteriores.
-- [ ] **Pausa automática en Guerra–Mininni:** sumar `message.any` al webhook de WAHA (con el «sí» del usuario), prenderla en Configuración → Equipo por WhatsApp y probarla.
+- [x] **«Actualizar a Sofi»** ejecutado el 19/11: herramientas renombradas (`equipo_buscar_pacientes`, `equipo_crear_paciente`) y nuevas (`pausar_chat`, `reactivar_chat`) en WhatsApp y llamadas.
+- [x] **Pausa automática en Guerra–Mininni:** `message.any` agregado, opción prendida y circuito comprobado con un evento firmado de prueba el 19/11. La prueba desde la app del consultorio queda identificada arriba.
 - [x] Pausa de Sofi por WhatsApp para el equipo (`pausar_chat`, `reactivar_chat`).
 - [x] Pausa automática cuando recepción contesta desde el celular: Turnia anota lo que manda y lo distingue de lo que escribe el equipo. Ignora los automáticos de WhatsApp Business. Apagada por defecto.
 - [x] Renombrar las herramientas parecidas, con alias de los nombres anteriores.
