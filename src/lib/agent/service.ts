@@ -1351,6 +1351,7 @@ export async function cancelClinicAppointment(clinicId: string, appointmentId: s
 
 /** Cuando se libera un turno, se lo ofrecemos por WhatsApp a quienes esperan (flujo "Activa"). */
 export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise<number> {
+  if (!agentBookingDayAllowed(clinic.booking_weekdays, new Date(appt.starts_at), clinic.timezone)) return 0;
   if (new Date(appt.starts_at).getTime() < Date.now() + 2 * 3600_000) return 0;
   const template = clinic.templates?.lista_espera ?? (clinic.whatsapp_provider === "waha" ? "lista_espera" : null);
   if (!template || whatsappReadiness(clinic)) return 0;
