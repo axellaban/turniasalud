@@ -1,5 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Plan Consultorio (19/11/2026)
+
+Hecho: el plan figura en `/pricing` (ver `ESTADO_Y_PRIORIDADES.md`). Lo que promete se cumple en el setup de cada consultorio:
+
+- [ ] **Urgencias al celular de la profesional:** cargar su celular como teléfono de derivación y una instrucción del consultorio: «ante dolor fuerte, sangrado o hinchazón que no puede esperar al día siguiente, pasale el celular de la Dra. …». Hoy, sin esa instrucción, Sofi crea una tarea urgente y avisa al equipo. Si se repite en varios consultorios, convertirlo en una opción de «Turnos y urgencias».
+- [ ] **Pausa automática** cuando la profesional escribe en el chat: Sofi y ella comparten el mismo WhatsApp. Se configura igual que en Guerra–Mininni (`message.any` en su instancia de WAHA y la opción en Equipo por WhatsApp).
+- [ ] **Campañas:** importar su lista de pacientes en el setup (Excel, planilla o exportación de su sistema). Mandar la campaña en tandas chicas, en varios días: es WhatsApp no oficial, desde su número.
+- [ ] **Costo real:** después del primer mes del primer consultorio, anotar el costo de IA, transcripción de audios y WAHA. La estimación es de US$ 10 a 18 por mes.
+
 ## Control de producción y configuración de Sofi (19/11/2026)
 
 - [x] **Tarea 10 revisada:** modo «Crear, mover y cancelar», tres profesionales vinculados, sincronizaciones automáticas y copia de esta mañana aplicada a Turnia. Un turno ya creado por Sofi se comprobó en Smile Connect, con el mismo horario y profesional. La lista activa «Para revisar en Smile Connect» estaba vacía. El registro conserva un movimiento histórico con rechazo por cupo y la Agenda señala turnos pasados sin vínculo externo; no se modificaron para este control.

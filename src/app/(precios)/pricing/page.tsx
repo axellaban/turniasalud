@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Fragment, type ReactNode } from "react";
 import { Icono } from "@/components/site/iconos";
 import { cta } from "@/lib/analytics-shared";
-import { GARANTIAS, LETRA_CHICA, PLANES, REFERENCIA, usd, type Plan } from "@/content/precios";
-import { FormularioFundador, PreciosProvider, SelectorPeriodo, TarjetasPlanes } from "./planes";
+import { GARANTIAS, LETRA_CHICA, PLANES, REFERENCIA, plan, usd, type Plan } from "@/content/precios";
+import { FormularioFundador, FranjaRed, PreciosProvider, SelectorPeriodo, TarjetasPlanes } from "./planes";
 
 // Precios del Programa Fundadores. A propósito no está en el menú, el footer ni el sitemap, y no se
 // indexa: solo la ve quien recibe el link.
@@ -13,9 +13,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
-const desde = PLANES[0];
-const [core, growth] = PLANES;
-const excedentes = `Sin descuento fundador: $${core.excedente.minuto} USD/min y $${core.excedente.conversacion} USD/conv en Core Access; $${growth.excedente.minuto} USD/min y $${growth.excedente.conversacion} USD/conv en los planes superiores.`;
+// El encabezado compara la recepcionista con Core Access: es el primer plan con voz, como la recepción.
+const core = plan("core");
+const growth = plan("growth");
+const consultorio = plan("consultorio");
+const excedentes = `Sin descuento fundador: $${consultorio.excedente.conversacion} USD/conv en Consultorio; $${core.excedente.minuto} USD/min y $${core.excedente.conversacion} USD/conv en Core Access; $${growth.excedente.minuto} USD/min y $${growth.excedente.conversacion} USD/conv en los planes superiores.`;
 
 /** Recepcionista contra Turnia, en barras a escala: lo que se entiende en 15 segundos. */
 function Comparacion() {
@@ -38,11 +40,11 @@ function Comparacion() {
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-950/50">Lo que cuesta por mes, en USD</p>
       <div className="mt-5 space-y-5">
         {barra("Recepcionista por convenio", `${REFERENCIA.horasRecepcionista} h por día`, REFERENCIA.recepcionista, "bg-brand-950/15", "text-brand-950")}
-        {barra("Turnia, desde", "24 h, 7 días", desde.fundador, "bg-brand-600", "text-white")}
+        {barra(`Turnia ${core.nombre}`, "24 h, 7 días", core.fundador, "bg-brand-600", "text-white")}
       </div>
       <div className="mt-6 grid grid-cols-2 gap-3 border-t border-brand-950/8 pt-5">
         <p>
-          <span className="block text-2xl font-medium tracking-tight text-brand-950 tabular-nums">{Math.round((desde.fundador / REFERENCIA.recepcionista) * 100)}%</span>
+          <span className="block text-2xl font-medium tracking-tight text-brand-950 tabular-nums">{Math.round((core.fundador / REFERENCIA.recepcionista) * 100)}%</span>
           <span className="mt-0.5 block text-sm text-tinta">de un sueldo</span>
         </p>
         <p>
@@ -85,14 +87,24 @@ const GRUPOS: Array<{ titulo: string; filas: Fila[] }> = [
     titulo: "Cupos",
     filas: [
       { label: "WhatsApp", valor: (p) => `${p.conversaciones.toLocaleString("en-US")} conv/mes` },
-      { label: "Voz IA", valor: (p) => `${p.minutos.toLocaleString("en-US")} min/mes` },
-      { label: "Sillón extra", valor: (p) => `${usd(p.sillonExtra)} USD/mes` },
-      { label: "Excedentes", valor: (p) => `$${p.excedente.minuto}/min · $${p.excedente.conversacion}/conv` },
+      { label: "Voz IA", valor: (p) => (p.minutos > 0 ? `${p.minutos.toLocaleString("en-US")} min/mes` : <span className="text-brand-950/40">No incluida</span>) },
+      { label: "Sillón extra", valor: (p) => (p.sillonExtra != null ? `${usd(p.sillonExtra)} USD/mes` : <span className="text-brand-950/40">1 profesional</span>) },
+      {
+        label: "Excedentes",
+        valor: (p) => (p.excedente.minuto ? `$${p.excedente.minuto}/min · $${p.excedente.conversacion}/conv` : `$${p.excedente.conversacion}/conv`),
+      },
     ],
   },
   {
     titulo: "Retorno",
-    filas: [{ label: "ROI estimado", valor: (p) => <strong className="font-semibold text-emerald-700">+{usd(p.retorno)} USD/mes</strong> }],
+    filas: [
+      {
+        label: "ROI estimado",
+        valor: (p) => (
+          <strong className="font-semibold text-emerald-700">{p.retorno == null ? `Se paga con ${p.sePagaCon}` : `+${usd(p.retorno)} USD/mes`}</strong>
+        ),
+      },
+    ],
   },
 ];
 
@@ -100,7 +112,7 @@ function Tabla() {
   const destacado = (p: Plan) => (p.destacado ? "bg-brand-50/70" : "");
   return (
     <div className="overflow-x-auto rounded-3xl bg-white shadow-[0_8px_30px_rgb(8_24_63/0.05)] ring-1 ring-brand-950/8">
-      <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[880px] border-collapse text-left text-sm">
         <caption className="sr-only">Comparación de planes del Programa Fundadores</caption>
         <thead>
           <tr>
@@ -187,7 +199,7 @@ export default function PricingPage() {
       <section id="planes" className="scroll-mt-24 pb-20">
         <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-[32px] font-medium leading-[1.12] tracking-tight text-brand-950 sm:text-[44px]">Elegí según tus sillones</h2>
+            <h2 className="text-[32px] font-medium leading-[1.12] tracking-tight text-brand-950 sm:text-[44px]">Elegí según tu consultorio</h2>
             <p className="mx-auto mt-4 text-[17px] leading-relaxed text-tinta">
               <strong className="font-semibold text-brand-950">Tarifa congelada para siempre</strong> mientras mantengas tu suscripción activa. Pagando el año por adelantado, 2 meses son gratis.
             </p>
@@ -197,6 +209,7 @@ export default function PricingPage() {
           </div>
           <div className="mt-14">
             <TarjetasPlanes />
+            <FranjaRed />
           </div>
         </div>
       </section>

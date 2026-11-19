@@ -1,11 +1,12 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { FormularioDemo } from "@/components/site/formulario-demo";
 import { cta } from "@/lib/analytics-shared";
-import { PLANES, usd, type Plan, type PlanId } from "@/content/precios";
+import { PLANES, PLANES_TARJETA, plan as planDe, usd, type Plan, type PlanId } from "@/content/precios";
 
 // Lo interactivo de /pricing: mensual o anual, y el plan que eligió (llega al formulario del final).
+// Un link con el plan en el ancla (/pricing#consultorio) baja a esa tarjeta y lo deja elegido.
 
 type Periodo = "mensual" | "anual";
 type Estado = { periodo: Periodo; setPeriodo: (p: Periodo) => void; plan: PlanId; setPlan: (p: PlanId) => void };
@@ -19,7 +20,16 @@ const useEstado = () => {
 
 export function PreciosProvider({ children }: { children: ReactNode }) {
   const [periodo, setPeriodo] = useState<Periodo>("mensual");
-  const [plan, setPlan] = useState<PlanId>("growth");
+  const [plan, setPlan] = useState<PlanId>("core");
+  useEffect(() => {
+    const desdeAncla = () => {
+      const id = window.location.hash.slice(1);
+      if (PLANES.some((p) => p.id === id)) setPlan(id as PlanId);
+    };
+    desdeAncla();
+    window.addEventListener("hashchange", desdeAncla);
+    return () => window.removeEventListener("hashchange", desdeAncla);
+  }, []);
   return <Ctx.Provider value={{ periodo, setPeriodo, plan, setPlan }}>{children}</Ctx.Provider>;
 }
 
@@ -84,8 +94,9 @@ function Tarjeta({ p }: { p: Plan }) {
 
   return (
     <article
+      id={p.id}
       aria-labelledby={`plan-${p.id}`}
-      className={`relative flex flex-col rounded-3xl p-7 sm:p-8 ${
+      className={`relative flex scroll-mt-24 flex-col rounded-3xl p-7 sm:p-8 ${
         oscuro
           ? "bg-navy text-white shadow-[0_30px_70px_rgb(8_24_63/0.35)] ring-1 ring-white/10 lg:-my-4 lg:py-12"
           : "bg-white shadow-[0_8px_30px_rgb(8_24_63/0.06)] ring-1 ring-brand-950/8"
@@ -126,8 +137,10 @@ function Tarjeta({ p }: { p: Plan }) {
           </span>
         </div>
         <div className="mt-1.5 flex items-baseline justify-between gap-3">
-          <span className={sub}>Retorno estimado</span>
-          <span className={`font-semibold tabular-nums ${oscuro ? "text-aqua" : "text-emerald-700"}`}>+{usd(p.retorno)} USD/mes</span>
+          <span className={sub}>{p.retorno == null ? "Se paga con" : "Retorno estimado"}</span>
+          <span className={`font-semibold tabular-nums ${oscuro ? "text-aqua" : "text-emerald-700"}`}>
+            {p.retorno == null ? p.sePagaCon : `+${usd(p.retorno)} USD/mes`}
+          </span>
         </div>
       </div>
 
@@ -147,11 +160,17 @@ function Tarjeta({ p }: { p: Plan }) {
         {fila(p.turnos)}
         {fila(p.reactivacion ? <>Reactivación IA: {p.reactivacion}</> : "Reactivación IA no incluida", !p.reactivacion)}
         {fila(<><strong className="font-semibold tabular-nums">{p.conversaciones.toLocaleString("en-US")}</strong> conversaciones de WhatsApp por mes</>)}
-        {fila(<><strong className="font-semibold tabular-nums">{p.minutos.toLocaleString("en-US")}</strong> minutos de voz IA por mes</>)}
-        {fila(<>Sillón extra: {usd(p.sillonExtra)} USD/mes</>)}
+        {p.minutos > 0
+          ? fila(<><strong className="font-semibold tabular-nums">{p.minutos.toLocaleString("en-US")}</strong> minutos de voz IA por mes</>)
+          : fila("Llamadas por voz no incluidas", true)}
+        {p.sillonExtra != null
+          ? fila(<>Sillón extra: {usd(p.sillonExtra)} USD/mes</>)
+          : fila("Un solo profesional: para sumar otro, pasás a Core Access", true)}
       </ul>
       <p className={`mt-auto pt-6 text-xs leading-relaxed ${oscuro ? "text-white/50" : "text-brand-950/50"}`}>
-        Excedentes: ${p.excedente.minuto} USD por minuto y ${p.excedente.conversacion} USD por conversación.
+        {p.excedente.minuto
+          ? `Excedentes: $${p.excedente.minuto} USD por minuto y $${p.excedente.conversacion} USD por conversación.`
+          : `Excedentes: $${p.excedente.conversacion} USD por conversación.`}
       </p>
     </article>
   );
@@ -160,21 +179,58 @@ function Tarjeta({ p }: { p: Plan }) {
 export function TarjetasPlanes() {
   return (
     <div className="grid items-stretch gap-6 lg:grid-cols-3 lg:gap-5">
-      {PLANES.map((p) => (
+      {PLANES_TARJETA.map((p) => (
         <Tarjeta key={p.id} p={p} />
       ))}
     </div>
   );
 }
 
+/** Enterprise / Red: pocas clínicas de la zona lo necesitan, así que va como plan a medida y no como tarjeta. */
+export function FranjaRed() {
+  const { periodo, setPlan } = useEstado();
+  const p = planDe("enterprise");
+  return (
+    <article
+      id={p.id}
+      aria-labelledby={`plan-${p.id}`}
+      className="mt-6 grid scroll-mt-24 gap-5 rounded-3xl bg-white p-7 shadow-[0_8px_30px_rgb(8_24_63/0.06)] ring-1 ring-brand-950/8 sm:p-8 lg:mt-8 lg:grid-cols-[1.1fr_1.6fr_auto] lg:items-center lg:gap-10"
+    >
+      <div>
+        <h3 id={`plan-${p.id}`} className="text-lg font-semibold tracking-tight text-brand-950">
+          {p.nombre} <span className="font-normal text-tinta">· a medida</span>
+        </h3>
+        <p className="mt-1 text-sm text-tinta">{p.escala}</p>
+        <p className="mt-3 text-brand-950">
+          <span className="text-sm text-tinta">Desde </span>
+          <span className="text-2xl font-medium tracking-tight tabular-nums">{usd(periodo === "anual" ? p.anual : p.fundador)}</span>
+          <span className="text-sm text-tinta"> USD/mes · setup desde {usd(p.setupFundador)}</span>
+        </p>
+      </div>
+      <p className="text-sm leading-relaxed text-tinta">
+        {p.atencion}, {p.turnos.toLowerCase()} y {p.reactivacion?.toLowerCase()}. Desde {p.conversaciones.toLocaleString("en-US")} conversaciones de
+        WhatsApp y {p.minutos.toLocaleString("en-US")} minutos de voz IA por mes.
+      </p>
+      <a
+        href="#sumate"
+        onClick={() => setPlan(p.id)}
+        className="rounded-lg bg-white px-5 py-3 text-center text-sm font-medium text-brand-950 ring-1 ring-brand-950/15 transition hover:ring-brand-950/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+        {...cta("pricing_plan", "pricing_card", p.id)}
+      >
+        Armemos tu plan
+      </a>
+    </article>
+  );
+}
+
 export function FormularioFundador() {
   const { periodo, plan, setPlan, setPeriodo } = useEstado();
-  const elegido = PLANES.find((p) => p.id === plan)!;
+  const elegido = planDe(plan);
   return (
     <div>
       <fieldset>
         <legend className="text-sm font-medium text-white/70">Plan que te interesa</legend>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {PLANES.map((p) => (
             <label
               key={p.id}
@@ -205,7 +261,7 @@ export function FormularioFundador() {
           compacto
           origen={`/pricing · ${elegido.nombre} · ${periodo}`}
           titulo={`Reservá tu lugar en ${elegido.nombre}`}
-          boton="Quiero ser clínica fundadora"
+          boton={plan === "consultorio" ? "Quiero ser consultorio fundador" : "Quiero ser clínica fundadora"}
           gracias="Te escribimos para coordinar los próximos pasos."
         />
       </div>

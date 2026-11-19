@@ -312,6 +312,10 @@ Lo que se promete al terminar la demo («{Nombre}, escribime y en 15 minutos pro
    - 5 min: escanea el QR y le escribe a Sofi desde su celular, como un paciente («¿me das un turno para el jueves?», «¿atienden por OSDE?»). Ve que ofrece **sus** horarios y **sus** tratamientos, y el turno aparece en la Agenda del panel.
    - 3 min: la cuenta con sus números (cuánto vale un paciente nuevo y cuántos se pierden de noche).
    - 5 min: próximo paso. Programa Fundadores: queda operativa en 14 días (si no, se devuelve el setup); en el setup se conecta su WhatsApp y, si usa Google Calendar, su agenda. Oferta vigente: sin cotizar antes de la charla (`COMERCIAL_AGUSTIN.md`).
+   - **Si atiende solo** (19/11): plan Consultorio, US$ 69 por mes, solo WhatsApp. Mandale `turniasalud.app/pricing#consultorio`: baja a ese plan y lo deja elegido. A las clínicas, `/pricing`. Las cartas, en este orden:
+     1. El plan con su setup (US$ 290).
+     2. Si duda: «Por ser de los primeros de Mar del Plata y Miramar, el setup va bonificado si arrancamos antes del …», con un mínimo de 3 meses. La bonificación **no está en la web**: se da en la charla.
+     3. Si sigue dudando por plata: el pago anual, con dos meses gratis.
 
 | Te dice | Respondé |
 |---|---|
