@@ -79,7 +79,7 @@ export async function syncSmileNowAction(_previous: FormState, form: FormData): 
       return { ok: false, message: "Se sincronizó hace menos de 5 minutos. Probá en un rato." };
     }
     try {
-      const near = await trackSmileRun(clinic.id, "manual: cerca", () => pullSmileConnect(clinic.id, "cerca"));
+      const near = await trackSmileRun(clinic.id, "manual: cerca", () => pullSmileConnect(clinic.id, "cerca", new Date(), { recheckEvents: true }));
       const far = await trackSmileRun(clinic.id, "manual: lejos", () => pullSmileConnect(clinic.id, "lejos"));
       // También el horario de los profesionales (no gasta cupo). Si falla, queda para la vuelta automática.
       const hours = await trackSmileRun(clinic.id, "manual: horarios", () => syncSmileHours(clinic.id)).catch(() => null);
