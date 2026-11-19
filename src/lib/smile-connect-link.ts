@@ -1256,6 +1256,30 @@ async function recordAndAlert(clinicId: string, e: unknown): Promise<string> {
   return recordSmileError(clinicId, e);
 }
 
+/** Margen antes de abrir y después de cerrar: recepción carga cambios un rato antes y después de atender. */
+const ATTENTION_MARGIN_MIN = 60;
+
+/**
+ * Si ahora es horario de atención del consultorio (con una hora de margen): ahí recepción trabaja en Smile
+ * Connect y conviene sincronizar cada 30 minutos. Fuera de ese horario, y los días que no atiende nadie, cada
+ * 2 horas: se ahorra cupo justo donde no hay cambios. Sale de los horarios de los profesionales activos
+ * (que se copian de Smile Connect). Sin horarios cargados, el criterio de antes: de 7 a 22.
+ */
+export async function inAttentionHours(clinicId: string, now: Date, timeZone: string): Promise<boolean> {
+  const p = zonedParts(now, timeZone);
+  const minute = p.hour * 60 + p.minute;
+  const rows = await sql<Array<{ weekday: number; open: string; close: string }>>`
+    select s.weekday, min(s.start_time)::text as open, max(s.end_time)::text as close
+    from schedules s join professionals pr on pr.id = s.professional_id
+    where pr.clinic_id = ${clinicId} and pr.active
+    group by s.weekday`;
+  if (!rows.length) return p.hour >= 7 && p.hour < 22;
+  const today = rows.find((r) => r.weekday === p.weekday);
+  if (!today) return false;
+  const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  return minute >= mins(today.open) - ATTENTION_MARGIN_MIN && minute < mins(today.close) + ATTENTION_MARGIN_MIN;
+}
+
 /**
  * Corre cada 10 minutos (/api/automations/calendario) para cada clínica con la conexión prendida:
  * lo pendiente de escribir, la sincronización cercana (cada 30 minutos de 7 a 22, cada 2 horas de
@@ -1306,7 +1330,7 @@ export async function runSmileConnect(now = new Date()): Promise<Record<string, 
       }
     }
     try {
-      const base = c.api_supports_delta ? 180 : hour >= 7 && hour < 22 ? 30 : 120;
+      const base = c.api_supports_delta ? 180 : (await inAttentionHours(c.clinic_id, now, c.timezone)) ? 30 : 120;
       const every = nearPullEvery(base, nearPullCost(c.api_near_count), await readsAvailable(c.clinic_id, now), minutesLeft);
       if (every === null) result.cupo = "No alcanza el cupo de lecturas de hoy: la sincronización sigue cuando se renueva.";
       else if (minutesSince(c.api_near_pull_at) >= every) result.cerca = await trackSmileRun(c.clinic_id, "cerca", () => pullSmileConnect(c.clinic_id, "cerca", now));

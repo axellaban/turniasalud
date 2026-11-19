@@ -8,7 +8,7 @@
 - **Visitas combinadas** (dos prácticas seguidas) **y turnos con dos profesionales:** al darlos, moverlos o cancelarlos, siguen yendo a recepción, con una tarea.
 - **Motivo del turno:** Turnia lo manda en cuanto detecta que la API acepta notas. Desde el 18/11 lo revisa cada 6 horas, no solo con la copia diaria.
 
-Para los bloqueos, falta sumar a la clave el permiso `events:read`. Mientras tanto, Sofi los respeta igual, porque verifica cada horario en vivo.
+**Bloqueos:** la clave de la sesión de QA no tiene el permiso `events:read`, pero puede no ser la misma que está cargada en Turnia. Turnia lo prueba sola en cada sincronización. Si en la tarjeta «Bloqueos» dice «Por la API», ya llegan y la tarea 10 no hace falta. Si dice «Falta el permiso events:read», hay que cargar una clave nueva. Mientras tanto, Sofi los respeta igual, porque verifica cada horario en vivo.
 
 **Del 16/11:** se cargó la clave, se verificó la lectura y se desactivó el userscript de Tampermonkey. El resumen de Sofi a las 10 y «¿este turno lo diste vos?» por WhatsApp cubren la prestación y el motivo de los turnos de Sofi. El cliente se comparó con el OpenAPI vigente (`/api/v1/openapi`, v1.0.0).
 
@@ -76,7 +76,7 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 
 **Lectura** (`src/lib/smile-connect-link.ts`):
 - **Sincronización dosificada para el cupo diario** (con la automatización de cada 10 minutos, `/api/automations/calendario`):
-  - de ayer a 4 días: cada 30 minutos de 7 a 22, y cada 2 horas de noche;
+  - de ayer a 4 días: cada 30 minutos en el horario de atención, con una hora de margen (desde el 18/11; antes, de 7 a 22), y cada 2 horas fuera de él;
   - de 4 a 60 días: cada 8 horas.
 - **Usa el mismo sincronizador que el userscript** (`syncSmileConnect`). Los bloqueos llegan por `/events` si la clave tiene `events:read`; sin ese permiso va con `skipBlocks`, para no borrar los que ya están en Turnia.
 - **Pacientes nuevos:** se leen de a 30 por vuelta.
@@ -113,7 +113,7 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
 
 | Qué cambia en Smile Connect | Cómo llega a Turnia | Cada cuánto |
 | --- | --- | --- |
-| Turnos nuevos, movidos o cancelados, y la asistencia (de ayer a 4 días) | Sincronización cercana | 30 minutos de 7 a 22; 2 horas de noche |
+| Turnos nuevos, movidos o cancelados, y la asistencia (de ayer a 4 días) | Sincronización cercana | 30 minutos en el horario de atención (según los horarios de los profesionales, con una hora de margen); 2 horas fuera de él y los días que no atiende nadie |
 | Turnos de 4 a 61 días | Sincronización lejana | 8 horas |
 | Asistencia, cancelaciones o cambios cargados tarde (hasta 30 días atrás) y turnos de 61 a 120 días | Copia diaria aplicada a Turnia (`mirrorSmileBackup`) | Una vez por día, después de la copia (de 3 a 6) |
 | Pacientes nuevos (aunque no tengan turno) | Copia diaria, leyendo solo desde el último id (la API pagina por id) | Una vez por día |

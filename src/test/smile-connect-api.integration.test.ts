@@ -1237,5 +1237,20 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await link.getSmileApiConnection(T)).toMatchObject({ api_events_ok: null, api_events_checked_at: null });
       await link.setSmileMode(T, "lectura");
     });
+
+    it("sincroniza cada 30 minutos solo en el horario de atención (con una hora de margen); fuera de él, cada 2 horas", async () => {
+      const local = (y: number, m: number, d: number, h: number, min = 0) => zonedTimeToUtc(y, m, d, h, min, TZ);
+      // El lunes Emilia atiende de 10 a 17:30: de 9 a 18:30 cuenta como horario de atención.
+      expect(await link.inAttentionHours(T, local(2026, 11, 23, 11), TZ)).toBe(true);
+      expect(await link.inAttentionHours(T, local(2026, 11, 23, 9, 30), TZ)).toBe(true);
+      expect(await link.inAttentionHours(T, local(2026, 11, 23, 20), TZ)).toBe(false);
+      // El sábado no atiende nadie.
+      expect(await link.inAttentionHours(T, local(2026, 11, 21, 11), TZ)).toBe(false);
+      // Sin horarios cargados, el criterio de antes (de 7 a 22).
+      const [{ id: empty }] = await sql`insert into clinics (name, specialty) values ('Sin horarios', 'Odontología') returning id`;
+      expect(await link.inAttentionHours(empty, local(2026, 11, 21, 12), TZ)).toBe(true);
+      expect(await link.inAttentionHours(empty, local(2026, 11, 21, 23), TZ)).toBe(false);
+      await sql`delete from clinics where id = ${empty}`;
+    });
   });
 });

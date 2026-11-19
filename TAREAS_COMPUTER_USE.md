@@ -37,7 +37,7 @@ Para las etapas C y D, seguí las verificaciones de esta tarea.
 
 **Contexto.** El consultorio trabaja solo en Smile Connect y no entra al panel de Turnia. Desde el 18/11, todo lo que cambia en Smile Connect llega solo a Turnia: turnos, asistencia, cancelaciones, pacientes, el horario de cada profesional, notas y bloqueos. Detalle en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md) → «Smile Connect, fuente de la verdad».
 
-Para traer los bloqueos de agenda, la clave necesita el permiso `events:read`, y la del 16/11 no lo tiene. Sofi igual respeta los bloqueos, porque verifica cada horario en Smile Connect, pero la Agenda de Turnia no los muestra.
+Para traer los bloqueos de agenda, la clave necesita el permiso `events:read`. **Antes de crear una clave nueva, mirá la tarjeta «Smile Connect por API».** Si «Bloqueos» dice «Por la API», la clave ya lo tiene: hacé solo los pasos 4 a 6. Si dice «Falta el permiso events:read», seguí desde el paso 1. Sin el permiso, Sofi igual respeta los bloqueos, porque verifica cada horario en Smile Connect, pero la Agenda de Turnia no los muestra.
 
 **Dónde:** Smile Connect (`https://app.smileconnect.pro`), solo si el usuario tiene la sesión iniciada y está de acuerdo, y el panel de Turnia (`https://turniasalud.app/panel`) con la clínica **Guerra–Mininni** elegida arriba.
 
