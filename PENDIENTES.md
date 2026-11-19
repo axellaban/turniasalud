@@ -2,6 +2,8 @@
 
 ## Incidente de créditos y entrega — 19/11/2026
 
+- **Diagnóstico de rechazos de Smile Connect (19/11):** un 409 conserva ahora el código, el motivo y el `request_id` del proveedor, dentro de los 300 caracteres que guarda el registro. La versión anterior lo reemplazaba por una frase genérica y perdía el motivo. La causa específica del rechazo histórico de esa reprogramación no se puede deducir de esa frase. Se prepara un control con datos ficticios a futuro; el turno real que resolvió el consultorio se conserva.
+
 - A las 13:29 ElevenLabs agotó los 158.603 créditos del workspace compartido. Los callbacks fallaron por saldo, aunque el proveedor había generado texto y su transcripción lo mostraba. WAHA y la base seguían operativos.
 - El usuario cargó 100.000 créditos. Se verificó el saldo y una respuesta real por la línea propia; no se confirmó el cambio de abono que se había preparado. Se cerraron cinco sesiones fallidas para evitar reutilizarlas.
 - Se corrigieron cinco historiales afectados contra los mensajes realmente enviados por WAHA, conservando una copia privada previa. La reprogramación que el proveedor rechazó quedó resuelta manualmente por el consultorio: se verificó en Smile Connect, se actualizó Turnia y se cerró la revisión, sin volver a modificar el turno.
