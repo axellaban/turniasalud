@@ -4,15 +4,15 @@ Tareas de configuración que no se arreglan desde el código: se hacen en panele
 
 Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0** es lo primero.
 
-**Estado al 19/11/2026:** control de la **tarea 10** realizado y herramientas y pausa de la **tarea 8** configuradas y comprobadas técnicamente. Quedan el rechazo 403 de Smile Connect al leer bloqueos, la comprobación desde la app de WhatsApp del consultorio y la recepción de los avisos a Axel. Se conserva la clave vigente por pedido del usuario. La **tarea 9** está hecha y la 7 quedó en su última etapa. La 5 sigue postergada por el usuario.
+**Estado al 19/11/2026:** control de la **tarea 10** realizado y herramientas y pausa de la **tarea 8** configuradas y comprobadas técnicamente. Axel confirmó haber recibido un aviso de integración en su WhatsApp personal. Quedan el rechazo 403 de Smile Connect al leer bloqueos y la prueba manual desde el WhatsApp del consultorio; el usuario confirmó que por ahora solo tiene acceso al 5483. Se conserva la clave vigente por pedido del usuario. La **tarea 9** está hecha y la 7 quedó en su última etapa. La 5 sigue postergada por el usuario.
 
 **Prompt para empezar** (copiar tal cual en la otra computadora):
 
 > Leé el control del 19/11 en `QA_TURNIA.md` y el principio de `PENDIENTES.md`. Continuá solo sus comprobaciones pendientes. El 403 de `/events` se confirmó con la clave vigente y el usuario pidió conservarla. No generar ni revocar claves por iniciativa propia. «Sincronizar ahora» permite volver a probar cuando Smile Connect revise ese rechazo.
 
-| Prioridad | Tarea | Estado (16/11) | Acción restante |
+| Prioridad | Tarea | Estado (19/11) | Acción restante |
 | --- | --- | --- | --- |
-| **P0** | 10. Guerra–Mininni: control de la integración con Smile Connect en producción | Revisado el 19/11: escritura activa, sincronizaciones y copia correctas, alta preexistente cotejada. `/events` respondió 403 con la misma clave. | Revisar ese rechazo con Smile Connect y confirmar recepción de avisos a Axel. |
+| **P0** | 10. Guerra–Mininni: control de la integración con Smile Connect en producción | Revisado el 19/11: escritura activa, sincronizaciones y copia correctas, alta preexistente cotejada. Axel confirmó recepción de un aviso. `/events` respondió 403 con la misma clave. | Revisar ese rechazo con Smile Connect. |
 | — | 9. Guerra–Mininni: horarios de Smile Connect y feedback del 18/11 | Hecha el 18/11. | Ninguna. |
 | — | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Etapa D activa desde el 18/11: «Crear, mover y cancelar», con `SMILE_CONNECT_WRITES=on`. Las visitas combinadas siguen yendo a recepción. | Ninguna: mirar los primeros cambios y cancelaciones en «Registro de cambios en Smile Connect». |
 | **P1** | 8. Actualizar a Sofi y pausa automática (Guerra–Mininni) | Configurada el 19/11: agentes actualizados, `message.any`, sesión `WORKING` y pausa prendida. Circuito técnico verificado y pausa ficticia retirada. | Comprobar una respuesta manual desde la app de WhatsApp del consultorio. |

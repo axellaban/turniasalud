@@ -72,7 +72,8 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 - **Equipo y pausa:** «Actualizar a Sofi» terminó correctamente para el agente general y el propio de llamadas. Se añadió `message.any` a la instancia exclusiva conservando imagen, URL y secretos; sesión `WORKING` tras el reinicio. Pausa automática prendida. Con un número ficticio y eventos firmados se comprobó firma inválida → 401, envío de API → sin pausa, envío de app simulado → pausa, entrante pausado → ignorado. «Reactivar» retiró la pausa de prueba. No se creó un paciente para esa prueba.
 - **WhatsApp real:** Sofi respondió desde la línea del consultorio a dos consultas del WhatsApp del usuario sobre los horarios, incluida una continuación después del primer mensaje propio de la API. No se escribieron datos de pacientes.
 - **Validación local:** 687 pruebas en 82 archivos con PostgreSQL descartable, TypeScript, ESLint y build correctos. CI y Vercel aprobados antes del merge.
-- **Pendiente:** probar la respuesta manual desde una sesión de WhatsApp del consultorio y confirmar recepción de los avisos de integración a Axel. Los bloqueos de la Agenda requieren resolver el rechazo 403 del proveedor; la disponibilidad de Sofi sigue verificada en vivo.
+- **Confirmación del usuario:** el 19/11 Axel confirmó haber recibido un aviso de «Turnia · Smile Connect» en su WhatsApp personal. No se revisó el contenido ni se disparó otro envío. También confirmó que por ahora solo tiene acceso al WhatsApp que termina en 5483.
+- **Pendiente:** probar la respuesta manual desde una sesión de WhatsApp del consultorio. Los bloqueos de la Agenda requieren resolver el rechazo 403 del proveedor; la disponibilidad de Sofi sigue verificada en vivo.
 
 ### QA 2026-11-16 pm
 
