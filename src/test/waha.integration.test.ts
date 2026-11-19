@@ -690,6 +690,41 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     }
   });
 
+  it("sin créditos guarda lo entregado, avisa una vez y la próxima entrada no reutiliza la charla fallida", async () => {
+    const phone = "5491100007499";
+    fake.nextConversation = "conv_nocredit";
+    await inbound(wahaRequest(textMessage("credit-in-1", "Hola", `${phone}@c.us`)));
+    const bad = { ...agentSays("conv_nocredit", ["credit-in-1"], "Su turno quedó confirmado."), status: "failed", error: "You have 0 credits remaining, while 15 credits are required" };
+    expect((await reply(replyRequest(bad))).status).toBe(200);
+    const sent = fake.sent("sendText").filter(c => (c.body as { chatId?: string }).chatId === `${phone}@c.us`);
+    expect(sent).toHaveLength(1);
+    expect((sent[0].body as { text: string }).text).not.toContain("turno quedó confirmado");
+    const [channel] = await sql`select transcript,closed_at from channel_conversations where elevenlabs_conversation_id='conv_nocredit'`;
+    expect(channel.closed_at).not.toBeNull();
+    expect(channel.transcript.at(-1).message).toBe((sent[0].body as { text: string }).text);
+    const [row] = await sql`select status,transcript,analysis from conversations where elevenlabs_conversation_id='conv_nocredit'`;
+    expect(row.status).toBe("failed");
+    expect(row.analysis.delivery.error).toContain("agotó los créditos");
+    expect(row.transcript.map((x: { role: string; message: string }) => ({ role: x.role, message: x.message })))
+      .toEqual(channel.transcript.map((x: { role: string; message: string }) => ({ role: x.role, message: x.message })));
+    // El webhook post-call y el backfill incluyen texto generado que no llegó al teléfono.
+    const provider = { agent_id: "agent_test", conversation_id: "conv_nocredit", status: "done", transcript: [{ role: "user", message: "Hola" }, { role: "agent", message: "Su turno quedó confirmado." }], analysis: { transcript_summary: "Texto generado sin entrega" }, conversation_initiation_client_data: { dynamic_variables: { clinic_id: CLINIC, patient_phone: phone } } };
+    const { completeConversationSummary, recordConversation } = await import("@/lib/conversations");
+    expect(await completeConversationSummary(provider)).toBe(true);
+    await recordConversation(provider, { quiet: true });
+    const [after] = await sql`select status,transcript,analysis from conversations where elevenlabs_conversation_id='conv_nocredit'`;
+    expect(after.status).toBe("failed");
+    expect(after.transcript).toEqual(channel.transcript);
+    expect(after.analysis.delivery.error).toContain("agotó los créditos");
+    fake.nextConversation = "conv_nocredit_again";
+    await inbound(wahaRequest(textMessage("credit-in-again", "Hola", `${phone}@c.us`)));
+    await reply(replyRequest({ ...bad, conversation_id: "conv_nocredit_again", user_message_ids: ["credit-in-again"] }));
+    expect(fake.sent("sendText").filter(c => String((c.body as { text: string }).text).startsWith("⚠️ Turnia"))).toHaveLength(1);
+    fake.nextConversation = "conv_recovered";
+    await inbound(wahaRequest(textMessage("credit-in-2", "Hola de nuevo", `${phone}@c.us`)));
+    expect((fake.sent("channel").at(-1)!.body as { conversation_id?: string }).conversation_id).toBeUndefined();
+  });
+
   it("Sistema muestra el proveedor y qué variables faltan, sin mostrar valores", async () => {
     const actions = await import("@/app/panel/actions");
     const page = (await import("@/app/panel/(app)/sistema/page")).default;

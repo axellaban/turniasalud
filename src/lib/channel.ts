@@ -7,7 +7,7 @@ import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
 import { isHealthFormText, splitHealthFormMessage } from "./health-form";
 import { wahaSendText, wahaSendVoice } from "./waha";
-import { announcePause, checkChatFuse, guardIncoming, isMuted } from "./chat-guard";
+import { announcePause, checkChatFuse, guardIncoming, isMuted, notifyAxel } from "./chat-guard";
 import { staffForPhone } from "./staff";
 import { chatIsActive, requireActiveWhatsapp, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
@@ -303,8 +303,12 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
   if (!(await claimEvent(key))) return { status: "duplicate" };
 
   const failed = reply.status === "failed";
+  const noCredits = failed && /(?:0 credits remaining|insufficient.{0,20}credits|exceeds your quota)/i.test(String(reply.error ?? ""));
   if (failed) console.error("Custom Channel: el agente no pudo responder", reply.conversation_id, reply.error);
-  const text = failed ? FAILED_REPLY : toWhatsAppText(agentText);
+  const clinic = noCredits ? await getClinic(conv.clinic_id) : null;
+  const text = noCredits && clinic?.handoff_phone
+    ? `No pude completar la respuesta en este momento. Puede comunicarse con recepción al ${clinic.handoff_phone}. Si pidió un turno o un cambio, espere la confirmación antes de darlo por realizado.`
+    : failed ? FAILED_REPLY : toWhatsAppText(agentText);
 
   if (text) {
     try {
@@ -324,12 +328,21 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
 
   const [updated] = await sql<ChannelConversation[]>`
     update channel_conversations set
-      transcript = transcript || ${json(text && !failed ? [line("agent", text)] : [])},
+      transcript = transcript || ${json(text ? [line("agent", text)] : [])},
       last_activity_at = now(),
-      closed_at = case when ${ended} then now() else closed_at end
+      closed_at = case when ${ended || failed} then now() else closed_at end
     where id = ${conv.id}
     returning *`;
   await savePanelConversation(updated, ended);
+  if (failed) {
+    const error = noCredits ? "ElevenLabs agotó los créditos: la respuesta del agente no se envió." : "El proveedor falló: la respuesta del agente no se envió.";
+    await sql`update conversations set status = 'failed',
+      analysis = coalesce(analysis, '{}'::jsonb) || ${json({ delivery: { error, at: new Date().toISOString() } })}
+      where elevenlabs_conversation_id = ${reply.conversation_id} and clinic_id = ${conv.clinic_id}`;
+    if (noCredits && await claimEvent(`provider-credit-alert:${conv.clinic_id}:${new Date().toISOString().slice(0, 13)}`)) {
+      await notifyAxel(`⚠️ Turnia · ${clinic?.name ?? "Sofi"}: ElevenLabs agotó los créditos y no puede entregar respuestas. Revisá el saldo en ElevenLabs y probá una respuesta por WhatsApp después de cargarlo.`).catch(() => {});
+    }
+  }
   return { status: text ? "sent" : "empty", ended };
 }
 
@@ -417,9 +430,8 @@ async function savePanelConversation(conv: ChannelConversation, ended: boolean):
     on conflict (elevenlabs_conversation_id) do update set
       patient_id = case when ${Boolean(temporaryAccess)} then null else coalesce(conversations.patient_id, excluded.patient_id) end,
       campaign_id = case when ${Boolean(temporaryAccess)} then null else conversations.campaign_id end,
-      status = excluded.status,
-      transcript = excluded.transcript
-    where conversations.summary is null`;
+      status = case when conversations.status = 'failed' or conversations.summary is not null then conversations.status else excluded.status end,
+      transcript = excluded.transcript`;
 
   if (patient) await sql`update patients set last_contact_at = now() where id = ${patient.id}`;
   if (conv.campaign_id && patient) {

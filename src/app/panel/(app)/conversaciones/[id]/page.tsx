@@ -7,7 +7,7 @@ import { formatDateTime, localDateKey } from "@/lib/time";
 import { PAUSE_HOURS } from "@/lib/chat-guard";
 import { pauseChatNumber, reactivateChatNumber } from "../../../actions";
 import { displayPhone } from "@/lib/phone";
-import { Badge, Card, CHANNEL_LABEL, inputClass, intentLabel, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
+import { Badge, Card, CHANNEL_LABEL, inputClass, intentLabel, Notice, PageHeader, StatusBadge, smallButtonClass } from "@/components/ui";
 import type { Conversation } from "@/lib/types";
 import type { Metadata } from "next";
 
@@ -53,6 +53,7 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
         order by a.starts_at limit 5`
     : [];
   const agent = clinic.agent_name || "Sofi";
+  const delivery = c.analysis?.delivery as { error?: string } | undefined;
 
   return (
     <>
@@ -63,6 +64,7 @@ export default async function ConversationDetail({ params }: PageProps<"/panel/c
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card>
           <h2 className="mb-4 font-semibold text-brand-950">Transcripción</h2>
+          {delivery?.error && <Notice tone="warning" className="mb-4">{delivery.error} La transcripción muestra los mensajes entregados por WhatsApp, incluido el aviso de error.</Notice>}
           <div className="space-y-2 rounded-xl bg-[#efeae2] p-4 text-sm">
             {(c.transcript ?? [])
               .filter((t) => t.message)

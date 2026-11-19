@@ -27,6 +27,7 @@ type Row = {
   summary: string | null;
   intent: string | null;
   outcome: string | null;
+  delivery_error: string | null;
   patient: string | null;
 };
 
@@ -45,7 +46,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
   const channel = typeof canal === "string" && canal ? canal : null;
   const rows = await sql<Row[]>`
     select c.id, c.started_at, c.channel, c.direction, c.duration_secs, c.title, c.summary, c.intent, c.outcome,
-           p.full_name as patient, ${conversationPreviewColumns()}
+           p.full_name as patient, c.analysis->'delivery'->>'error' as delivery_error, ${conversationPreviewColumns()}
     from conversations c left join patients p on p.id = c.patient_id
     where c.clinic_id = ${clinic.id} ${channel ? sql`and c.channel = ${channel}` : sql``}
     order by c.started_at desc
@@ -89,6 +90,7 @@ export default async function ConversationsPage({ searchParams }: PageProps<"/pa
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
+                    {c.delivery_error && <Badge tone="red">Error de entrega</Badge>}
                     {c.intent && <Badge>{intentLabel(c.intent)}</Badge>}
                     <StatusBadge value={c.outcome} />
                   </div>
