@@ -6,7 +6,8 @@ import { agentVoiceId, sendChannelMessage, textToSpeech } from "./elevenlabs";
 import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
 import { isHealthFormText, splitHealthFormMessage } from "./health-form";
-import { wahaSendText, wahaSendVoice } from "./waha";
+import { wahaSendBubbles, wahaSendText, wahaSendVoice, wahaTyping } from "./waha";
+import { splitBubbles, toWhatsAppText } from "./whatsapp-style";
 import { announcePause, checkChatFuse, guardIncoming, isMuted, notifyAxel } from "./chat-guard";
 import { staffForPhone } from "./staff";
 import { chatIsActive, requireActiveWhatsapp, ChannelPausedError } from "./messaging-settings";
@@ -131,6 +132,26 @@ export async function registerOutbound(
  * ElevenLabs corta la conversación). `context` y `replyWithVoice` valen para
  * una conversación nueva (la demo del lead magnet).
  */
+/** Una charla del mismo día que se cerró por inactividad: si el paciente vuelve, se sigue, no se empieza. */
+const RESUME_HOURS = 12;
+
+/** Lo último que se habló por este chat en las últimas horas, si la charla abierta ya venció. */
+async function recentConversation(db: TransactionSql, clinicId: string, phone: string) {
+  const [conv] = await db<Array<{ transcript: TranscriptLine[]; minutes: number }>>`
+    select transcript, extract(epoch from now() - last_activity_at)::int / 60 as minutes from channel_conversations
+    where clinic_id = ${clinicId} and phone = ${phone}
+      and waha_connection_id is not distinct from ${currentWahaConnection()?.id ?? null}::text
+      and last_activity_at > now() - make_interval(hours => ${RESUME_HOURS}) and jsonb_array_length(transcript) > 0
+    order by last_activity_at desc limit 1`;
+  return conv && conv.transcript.some((l) => l.role === "agent") ? conv : null;
+}
+
+/** Para que Sofi siga la charla en vez de saludar y presentarse otra vez. */
+export function resumeContext(minutes: number, transcript: TranscriptLine[]): string {
+  const ago = minutes < 60 ? `hace ${Math.max(1, minutes)} minutos` : `hace ${Math.round(minutes / 60)} horas`;
+  return ` Ya venían hablando por este chat (el último mensaje fue ${ago}): es la misma charla, no una nueva. No saludes ni te presentes otra vez: respondé directo a lo que escribe ahora. Lo último que se habló: ${recapTranscript(transcript)}`;
+}
+
 export async function forwardToAgent(
   clinic: Clinic,
   input: { messageId: string; chatId: string; phone: string; text: string },
@@ -166,6 +187,9 @@ export async function forwardToAgent(
         and waha_connection_id is not distinct from ${currentWahaConnection()?.id ?? null}::text`;
 
     vars.conversation_context = open?.context ?? opts.context ?? INBOUND_CONTEXT;
+    // La charla abierta venció (15 minutos sin mensajes) pero es del mismo día: Sofi la retoma.
+    const previous = open ? null : await recentConversation(tx, clinic.id, input.phone);
+    if (previous) vars.conversation_context += resumeContext(previous.minutes, previous.transcript);
     if (stale && open?.transcript.length) vars.conversation_context += ` La información de la clínica o tus herramientas se actualizaron durante esta charla: usá las de ahora, aunque antes hayas dicho que no podías hacer algo. Lo último que se habló: ${recapTranscript(open.transcript)}`;
     vars.campaign_id = open?.campaign_id ?? "ninguna";
     // El webhook decide: un audio del paciente, o un pedido de audio en una línea propia con voz.
@@ -211,6 +235,8 @@ export async function forwardToAgent(
     }
     return { conversation_id: res.conversation_id, continued: Boolean(open?.elevenlabs_conversation_id) && !stale };
   });
+  // Mientras Sofi piensa, el paciente ve «escribiendo…», como con una persona.
+  if (!result.blocked && result.conversation_id) await wahaTyping(input.chatId);
   if (result.blocked === "exceso") await announcePause(clinic, input.phone, input.chatId, wahaSendText);
   if (!result.blocked) await checkChatFuse(clinic).catch((e) => console.error("Fusible de chat: no se pudo revisar", e instanceof Error ? e.message : e));
   return result;
@@ -251,19 +277,12 @@ export function summarizeReply(reply: ChannelReply): { text: string; ended: bool
   return { text: texts.join("\n\n"), ended, responseIds };
 }
 
-/** WhatsApp usa *negrita* y no entiende los links de Markdown. */
-export function toWhatsAppText(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "*$1*")
-    .replace(/__(.+?)__/g, "_$1_")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
-    .replace(/^#{1,6}\s+/gm, "");
-}
+export { toWhatsAppText };
 
-export const AUDIO_FAILED_REPLY = "Perdón, no pude escuchar tu audio. ¿Me lo escribís?";
+export const AUDIO_FAILED_REPLY = "Perdón, no pude escuchar el audio. Me lo escribís?";
 export const MEDIA_ONLY_REPLY =
-  "No pude ver esa foto o archivo. ¿Me contás por escrito qué necesitás? Si es la credencial o una orden médica, probá mandar otra foto con buena luz, o traela el día del turno.";
-export const FAILED_REPLY = "Perdón, tuve un problema para responderte. ¿Me lo escribís de nuevo en un ratito?";
+  "No pude ver esa foto o archivo. Me contás por escrito qué necesitás? Si es la credencial o una orden médica, probá mandar otra foto con buena luz, o traela el día del turno.";
+export const FAILED_REPLY = "Perdón, tuve un problema para responderte. Me lo escribís de nuevo en un ratito?";
 
 export type ReplyOutcome =
   | { status: "unknown_conversation" }
@@ -308,27 +327,37 @@ async function deliverReply(reply: ChannelReply, conv: ChannelConversation): Pro
   const clinic = noCredits ? await getClinic(conv.clinic_id) : null;
   const text = noCredits && clinic?.handoff_phone
     ? `No pude completar la respuesta en este momento. Puede comunicarse con recepción al ${clinic.handoff_phone}. Si pidió un turno o un cambio, espere la confirmación antes de darlo por realizado.`
-    : failed ? FAILED_REPLY : toWhatsAppText(agentText);
+    : failed ? FAILED_REPLY : agentText;
+  // La plantilla de la ficha de salud va en un mensaje aparte y tal cual, para copiarla sola. Lo demás,
+  // como lo escribiría una persona: sin negritas ni «¿», en burbujas cortas.
+  const parts = (failed ? [text] : splitHealthFormMessage(text))
+    .map((part) => (isHealthFormText(part) ? part : toWhatsAppText(part)))
+    .filter(Boolean);
+  const delivered = parts.join("\n\n");
 
-  if (text) {
+  if (parts.length) {
+    const requestedVoice = conv.transcript.some((t) => t.voiceReplyFor && ids.includes(t.voiceReplyFor));
+    const [first, ...rest] = parts;
+    const voice = !failed && (conv.reply_with_voice || requestedVoice) && !isHealthFormText(first);
+    const [opening, ...more] = voice || isHealthFormText(first) ? [first] : splitBubbles(first);
     try {
-      const requestedVoice = conv.transcript.some((t) => t.voiceReplyFor && ids.includes(t.voiceReplyFor));
-      // La plantilla de la ficha de salud va en un mensaje aparte (y siempre escrita), para copiarla sola.
-      const [first, ...rest] = failed ? [text] : splitHealthFormMessage(text);
-      const voice = !failed && (conv.reply_with_voice || requestedVoice) && !isHealthFormText(first);
-      if (voice) await sendVoiceReply(conv, first, requestedVoice);
-      else await wahaSendText(conv.chat_id, first);
-      for (const part of rest) await wahaSendText(conv.chat_id, part);
+      if (voice) await sendVoiceReply(conv, opening, requestedVoice);
+      else await wahaSendText(conv.chat_id, opening);
     } catch (e) {
       if (e instanceof ChannelPausedError) return { status: "inactive" };
       await releaseEvent(key);
       return { status: "send_failed", error: e instanceof Error ? e.message : String(e) };
     }
+    // Ya salió la primera: si falla una de las siguientes, no se reintenta todo (duplicaría la primera).
+    if (more.length || rest.length) {
+      await wahaSendBubbles(conv.chat_id, [...more, ...rest], { continuing: true })
+        .catch((e) => console.error("Canal: no se pudo mandar una burbuja", e instanceof Error ? e.message : e));
+    }
   }
 
   const [updated] = await sql<ChannelConversation[]>`
     update channel_conversations set
-      transcript = transcript || ${json(text ? [line("agent", text)] : [])},
+      transcript = transcript || ${json(delivered ? [line("agent", delivered)] : [])},
       last_activity_at = now(),
       closed_at = case when ${ended || failed} then now() else closed_at end
     where id = ${conv.id}

@@ -944,7 +944,7 @@ function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id
     mensaje: review
       ? "El pedido sigue pendiente y ya está en recepción. No crees otra tarea ni confirmes el turno."
       : appointment.smile_reply_phone
-        ? "Pedido recibido. Decile al paciente que le avisaremos por WhatsApp cuando quede confirmado. El turno sigue pendiente. No crees una tarea ni repitas la reserva."
+        ? "Pedido recibido. Decile al paciente, en una línea, que le avisás por acá apenas quede confirmado. El turno sigue pendiente. No crees una tarea ni repitas la reserva."
         : "Pedido recibido. El turno sigue pendiente de verificación en la agenda. No lo confirmes todavía ni repitas la reserva.",
   };
 }
@@ -1274,7 +1274,7 @@ async function requestSmileManagement(appt: Appointment, request: SmileManagemen
     ok: false, pendiente_confirmacion: true, turno_id: appt.id, segundo_turno_id: undefined,
     aviso: undefined, avisados_lista_espera: 0,
     mensaje: request.replyPhone
-      ? "Pedido recibido. Decile al paciente que le avisaremos por WhatsApp cuando el cambio esté verificado. Sigue pendiente. No repitas el pedido."
+      ? "Pedido recibido. Decile al paciente, en una línea, que le avisás por acá apenas quede hecho el cambio y que hasta entonces sigue el turno de antes. No repitas el pedido."
       : "Pedido recibido. El cambio sigue pendiente de verificación en la agenda. No lo confirmes todavía ni repitas el pedido.",
   };
 }

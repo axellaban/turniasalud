@@ -242,7 +242,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
 
     const res = await reply(agentReply(`conv_demo_${fake.conversation}`, "¡Hola! Tengo el lunes a las **10:00**."));
     expect(res.status).toBe(200);
-    expect(fake.texts()).toEqual(["¡Hola! Tengo el lunes a las *10:00*."]);
+    expect(fake.texts()).toEqual(["Hola! Tengo el lunes a las 10:00."]);
   });
 
   it("en modo audio contesta con notas de voz y MENU vuelve a las opciones", async () => {
@@ -256,7 +256,7 @@ describe.runIf(baseUrl)("Demo del lead magnet por WhatsApp", () => {
     expect((await reply(agentReply(`conv_demo_${fake.conversation}`, "Dale, **¿a nombre de quién?**"))).status).toBe(200);
     const tts = fake.calls.find((c) => c.url.includes("/v1/text-to-speech/"))!;
     expect(tts.url).toContain("output_format=opus_48000_64");
-    expect((tts.body as { text: string }).text).toBe("Dale, ¿a nombre de quién?");
+    expect((tts.body as { text: string }).text).toBe("Dale, a nombre de quién?");
     const voice = fake.calls.find((c) => c.url === `${WAHA}/api/sendVoice`)!;
     expect(voice.body).toMatchObject({ chatId: CHAT, convert: true, file: { mimetype: "audio/ogg; codecs=opus", data: "T2dnUw==" } });
     expect(fake.texts()).toEqual([]);

@@ -100,7 +100,7 @@ describe("respuestas del Custom Channel", () => {
 
   it("pasa el Markdown al formato de WhatsApp", () => {
     expect(toWhatsAppText("Tu turno es el **martes 11/11** a las 10.\n## Dirección\n[Mapa](https://maps.example/x)")).toBe(
-      "Tu turno es el *martes 11/11* a las 10.\nDirección\nMapa: https://maps.example/x",
+      "Tu turno es el martes 11/11 a las 10.\nDirección\nMapa: https://maps.example/x",
     );
   });
 });

@@ -898,9 +898,12 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await smileSync(a.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:/) });
       expect(writes().filter((w) => w.path === "/appointments")).toHaveLength(1);
       await Promise.all([send(), send()]);
-      expect(fake.whatsapps).toEqual([expect.objectContaining({
-        chatId: `${patientPhone}@c.us`, text: expect.stringContaining("Turno confirmado"),
-      })]);
+      // La confirmación llega una sola vez, en burbujas cortas: la confirmación primero y el cierre al final.
+      const texts = fake.whatsapps.map((w) => w.text);
+      expect(new Set(fake.whatsapps.map((w) => w.chatId))).toEqual(new Set([`${patientPhone}@c.us`]));
+      expect(texts[0]).toMatch(/^Listo, quedó confirmado el turno de .+ para el \S+ \d+\/\d+ a las \d{2}:\d{2} con .+\.$/);
+      expect(texts.at(-1)).toMatch(/^Nos vemos el \S+ 🙂$/);
+      expect(texts.filter((t) => t.includes("quedó confirmado"))).toHaveLength(1);
     });
 
     it("si recepción se adelanta, libera el pedido local y avisa que puede buscar otro horario", async () => {
