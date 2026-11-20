@@ -1668,6 +1668,9 @@ alter table appointments add column if not exists smile_sync text;
 alter table appointments add column if not exists smile_deferred boolean not null default false;
 alter table appointments add column if not exists smile_reply_phone text;
 alter table appointments add column if not exists smile_management jsonb;
+-- La ficha de salud cambió después de crear el turno: hay que sumarla a la nota en Smile Connect.
+alter table appointments add column if not exists smile_notes_refresh boolean not null default false;
+create index if not exists appointments_smile_notes_refresh_idx on appointments (clinic_id) where smile_notes_refresh;
 alter table appointments drop constraint if exists appointments_smile_sync_check;
 alter table appointments add constraint appointments_smile_sync_check
   check (smile_sync is null or smile_sync in ('pendiente', 'ok', 'error', 'revisar'));
@@ -1702,7 +1705,7 @@ create table if not exists smile_connect_changes (
 );
 alter table smile_connect_changes drop constraint if exists smile_connect_changes_action_check;
 alter table smile_connect_changes add constraint smile_connect_changes_action_check
-  check (action in ('crear_paciente', 'crear', 'mover', 'cancelar'));
+  check (action in ('crear_paciente', 'crear', 'mover', 'cancelar', 'notas'));
 alter table smile_connect_changes drop constraint if exists smile_connect_changes_status_check;
 alter table smile_connect_changes add constraint smile_connect_changes_status_check
   check (status in ('hecho', 'sombra', 'error', 'revisar'));
@@ -1963,6 +1966,8 @@ update smile_connect_connections set api_key_saved_at = coalesce(api_key_saved_a
 -- listados de turnos y pacientes (se le pidió). Turnia lo detecta solo en el OpenAPI. Con eso trae cada
 -- 10 minutos solo lo que cambió y las ventanas pasan a ser una conciliación cada 3 horas.
 alter table smile_connect_connections add column if not exists api_supports_delta boolean not null default false;
+-- Prestaciones de Smile Connect, para mandar la del turno cuando se llama igual que la de Turnia.
+alter table smile_connect_connections add column if not exists api_services jsonb;
 alter table smile_connect_connections add column if not exists api_delta_at timestamptz;
 
 -- ---------------------------------------------------------------------------

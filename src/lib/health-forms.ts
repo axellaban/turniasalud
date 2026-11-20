@@ -11,6 +11,7 @@ import {
   type HealthFormInput,
   type HealthFormPatient,
 } from "./health-form";
+import { healthNoteLine } from "./smile-connect-note";
 import type { AppointmentSource, Patient } from "./types";
 
 // Fichas de salud guardadas: cuándo ofrecerla, guardar lo que responde y leerla para el panel.
@@ -117,7 +118,7 @@ export async function saveHealthFormAnswers(
   patient: Patient,
   input: HealthFormInput,
   meta: SaveHealthFormMeta,
-): Promise<{ form: HealthFormRow; patient: Patient; missing: string[]; wasComplete: boolean }> {
+): Promise<{ form: HealthFormRow; patient: Patient; missing: string[]; wasComplete: boolean; smileNotes: boolean }> {
   return sql.begin(async (tx) => {
     const [latest] = await tx<HealthFormRow[]>`
       select * from patient_health_forms where patient_id = ${patient.id} order by created_at desc limit 1 for update`;
@@ -147,7 +148,19 @@ export async function saveHealthFormAnswers(
           insert into patient_health_forms (clinic_id, patient_id, data, source, conversation_id, completed_at)
           values (${patient.clinic_id}, ${patient.id}, ${json(data)}, ${meta.source}, ${meta.conversationId ?? null}, ${complete ? new Date().toISOString() : null})
           returning *`;
-    return { form, patient: updatedPatient, missing, wasComplete: Boolean(editable?.completed_at) };
+    // Si cambió lo que va en la nota del turno, los próximos turnos que ya están en Smile Connect la suman.
+    const before = healthNoteLine(latest?.data ? { data: latest.data, completed: Boolean(latest.completed_at) } : null);
+    const after = healthNoteLine({ data: form.data, completed: Boolean(form.completed_at) });
+    const marked = after && after !== before
+      ? await tx`
+          update appointments set smile_notes_refresh = true
+          where patient_id = ${patient.id} and source <> 'smile_connect'
+            -- También los que se están creando: si ya salieron con la ficha, no se toca nada.
+            and (external_id ~ '^sc:[0-9]+$' or smile_sync in ('pendiente', 'error'))
+            and status in ('confirmado', 'pendiente') and starts_at > now()
+          returning id`
+      : [];
+    return { form, patient: updatedPatient, missing, wasComplete: Boolean(editable?.completed_at), smileNotes: marked.length > 0 };
   });
 }
 

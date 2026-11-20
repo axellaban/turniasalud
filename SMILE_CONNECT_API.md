@@ -8,6 +8,7 @@
 - **Inicios y duración (19/11):** Sofi consulta la disponibilidad con la duración completa y ofrece solo los inicios exactos que devuelve Smile Connect. Las celdas de 5 minutos sirven para representar cobertura, pero unirlas no autoriza cualquier inicio de un turno más largo. Antes de escribir se vuelve a comprobar duración y consultorio. Si el proveedor rechaza un destino ocupado, se comprueba que el original siga intacto antes de ofrecer buscar otra opción.
 - **Visitas combinadas** (dos prácticas seguidas) **y turnos con dos profesionales:** al darlos, moverlos o cancelarlos, siguen yendo a recepción, con una tarea.
 - **Motivo del turno:** Turnia lo manda en cuanto detecta que la API acepta notas. Desde el 18/11 lo revisa cada 6 horas, no solo con la copia diaria.
+- **Nota completa del turno (20/11, pedido de Axel):** cada turno que da Sofi lleva en las notas de Smile Connect la prestación, la obra social con plan y afiliado, el motivo y lo importante de la ficha de salud. Si el paciente completa la ficha después, se suma sola a la nota. Ver «Qué va en la nota del turno», abajo.
 
 **Bloqueos:** la clave de la sesión de QA no tiene el permiso `events:read`, pero puede no ser la misma que está cargada en Turnia. Turnia lo prueba sola en cada sincronización. Si en la tarjeta «Bloqueos» dice «Por la API», ya llegan y la tarea 10 no hace falta. Si dice «Falta el permiso events:read», hay que cargar una clave nueva. Mientras tanto, Sofi los respeta igual, porque verifica cada horario en vivo.
 
@@ -58,8 +59,37 @@ Smile Connect sumó las tres cosas que se le pidieron:
 3. los bloqueos.
 
 Turnia ya usa las tres:
-- **Al escribir:** manda el motivo (prestación, nombre propio del turno, notas del paciente y «Lo dio Sofi (Turnia)»). Lo detecta solo con la revisión diaria del OpenAPI.
+- **Al escribir:** manda la nota completa del turno (ver «Qué va en la nota del turno») y la prestación de Smile Connect cuando se llama igual que la de Turnia. Lo detecta solo con la revisión del OpenAPI (cada 6 horas y en la copia diaria).
 - **Al leer:** trae las notas y la prestación de cada turno, y los bloqueos.
+
+## Qué va en la nota del turno
+
+La ficha del paciente de Smile Connect no tiene obra social ni plan: la API solo acepta nombre, apellido, DNI, mail y celular. Por eso esos datos van en las notas del turno, que aceptan hasta 2.000 caracteres (`src/lib/smile-connect-note.ts`). Ejemplo:
+
+```
+Consulta de implantes · Lo dio Sofi (Turnia)
+Obra social: OSDE · Plan: 310 · Afiliado: 61234567801
+Motivo: se me movió un implante de abajo
+Ficha de salud: Alergias a drogas o medicamentos; Toma anticoagulantes; Otros: hipotiroidismo
+```
+
+- **Prestación:** el nombre propio del turno («Consulta de implantes») o la prestación. Si el turno lo cargó el equipo desde el panel, dice «Lo cargó el consultorio en Turnia».
+- **Obra social:** la del turno o, si no tiene, la de la ficha. El plan y el afiliado salen de la ficha del paciente, solo si es la misma cobertura.
+  - Lo que falta se dice («Plan: no lo dio», «Afiliado: no lo dio», «Obra social: no la dio»), para que recepción lo pida.
+  - Particular: «Obra social: Particular».
+  - Si la cobertura ya trae el plan («OSDE 210»), no se pide aparte.
+- **Motivo:** lo que anotó Sofi al reservar. Si no entra todo, se acorta el motivo; la obra social y la ficha van enteras.
+- **Ficha de salud:** lo que marcó con SI y lo que contó aparte. Si todavía no la terminó, dice «Ficha de salud (incompleta)». Si no marcó nada: «no marcó ninguna enfermedad ni medicación». Sin ficha en Turnia, no se menciona: puede tener la de papel en el consultorio.
+- **Prestación de Smile Connect (`service_id`):** se manda si el OpenAPI la acepta y hay una sola prestación de Smile Connect con el mismo nombre (sin importar mayúsculas ni acentos). Las prestaciones se guardan en la conexión (`api_services`), así que confirmar un turno no suma pedidos a Smile Connect.
+
+**La ficha se completa casi siempre después de dar el turno** (Sofi la ofrece al confirmarlo). Cuando cambia lo que va en la nota, los próximos turnos que dio Turnia quedan marcados (`appointments.smile_notes_refresh`) y la escritura les suma la línea:
+- solo en el modo «Crear, mover y cancelar», con notas en la API, dentro del freno de cambios por hora;
+- de a un turno, leyéndolo antes en Smile Connect: si recepción lo movió, espera a que la sincronización lo traiga; si lo canceló, no toca nada;
+- sin borrar nada de lo que escribió recepción: reemplaza solo la línea de la ficha que había escrito Turnia; si recepción la cambió, agrega la nueva abajo;
+- queda en el registro como «Sumar ficha de salud», con cómo estaba la nota antes;
+- si no se puede (otro paciente, dos profesionales, la nota está llena), avisa a los celulares del consultorio con la línea para copiarla a mano.
+
+**Mover no reescribe la nota** (ni en el flujo de Guerra–Mininni ni en el otro): puede tener lo que sumó recepción.
 
 ## Cómo funciona en Turnia
 
