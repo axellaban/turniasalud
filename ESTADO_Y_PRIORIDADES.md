@@ -1,6 +1,14 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 19/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 20/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Smile Connect: obra social, plan, afiliado y ficha de salud en la nota del turno — 20/11/2026
+
+- **Pedido (Axel):** cuando Sofi agenda en Smile Connect, el turno tiene que llevar la obra social, el plan, la ficha y cualquier observación importante.
+- **Antes:** la nota llevaba solo la prestación, el motivo y «Lo dio Sofi (Turnia)», cortada en 500 caracteres. La obra social, el plan, el afiliado y la ficha de salud quedaban solo en Turnia. El turno ya se asociaba a la ficha correcta del paciente en Smile Connect (por DNI, o por celular y nombre).
+- **Ahora:** la nota va en líneas, hasta 2.000 caracteres: prestación, obra social con plan y afiliado (o qué falta), motivo y lo importante de la ficha de salud. También se manda la prestación de Smile Connect cuando se llama igual. La ficha que el paciente completa después del turno se suma sola a la nota, sin borrar lo que escribió recepción. Mover un turno ya no reescribe la nota. Detalle en [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md), «Qué va en la nota del turno».
+- **Probado** contra un Smile Connect simulado (nunca contra el real): `src/lib/smile-connect-note.test.ts` y `src/test/smile-connect-api.integration.test.ts`. Suite completa: 721 pruebas.
+- **Para mirar en el primer turno real de Guerra–Mininni:** que la nota se vea bien en Smile Connect y si la prestación quedó cargada (depende de que los nombres coincidan).
 
 ## Recuperación de Sofi por saldo de ElevenLabs — 19/11/2026
 

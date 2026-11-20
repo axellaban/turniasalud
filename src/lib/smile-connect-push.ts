@@ -25,6 +25,7 @@ import {
   type SmileClient,
 } from "./smile-connect-api";
 import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, SmilePatientReview, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
+import { healthLineOf, healthNoteLine, matchSmileService, smileAppointmentNote, withHealthLine, type SmileNoteHealth } from "./smile-connect-note";
 import { humanSlot, localDateKey } from "./time";
 import type { Appointment, Patient, SmileManagement } from "./types";
 
@@ -68,6 +69,12 @@ type Row = {
   smile_reply_phone: string | null;
   smile_management: SmileManagement | null;
   type_name: string;
+  /** La prestación tal cual (type_name es el nombre propio del turno, si tiene). */
+  base_type_name: string;
+  patient_coverage: string | null;
+  coverage_plan: string | null;
+  member_number: string | null;
+  smile_notes_refresh: boolean;
   smile_professional_id: number | null;
   smile_box_id: number | null;
   professional: string;
@@ -94,7 +101,7 @@ class VerificationPending extends Error {}
 async function logChange(
   tx: TransactionSql,
   row: Pick<Row, "clinic_id" | "id">,
-  action: "crear_paciente" | "crear" | "mover" | "cancelar",
+  action: "crear_paciente" | "crear" | "mover" | "cancelar" | "notas",
   status: "hecho" | "sombra" | "error" | "revisar",
   data: { request?: unknown; before?: unknown; result?: unknown; error?: string },
 ) {
@@ -104,12 +111,46 @@ async function logChange(
       ${data.before === undefined ? null : json(data.before)}, ${data.result === undefined ? null : json(data.result)}, ${data.error ?? null})`;
 }
 
-/** El motivo del turno, si la API ya acepta notas. */
-function notesFor(row: Row, conn: SmileApiConnection): { notes?: string } {
-  if (!conn.api_supports_notes) return {};
-  const title = row.title && row.title.toLowerCase() !== row.type_name.toLowerCase() ? ` (${row.title})` : "";
-  const text = [`${row.type_name}${title}`, row.notes, `Lo dio ${row.agent_name || "Sofi"} (Turnia)`].filter(Boolean).join(" · ");
-  return { notes: text.slice(0, 500) };
+/** La ficha de salud más reciente del paciente, para la nota del turno. */
+async function latestHealth(tx: TransactionSql, patientId: string): Promise<SmileNoteHealth | null> {
+  const [form] = await tx<Array<{ data: SmileNoteHealth["data"] | null; completed_at: string | null }>>`
+    select data, completed_at from patient_health_forms where patient_id = ${patientId} order by created_at desc limit 1`;
+  return form?.data ? { data: form.data, completed: Boolean(form.completed_at) } : null;
+}
+
+/**
+ * Lo que va con el turno nuevo, si la API lo acepta: la nota (prestación, obra social, plan y
+ * afiliado, motivo y ficha de salud) y la prestación de Smile Connect que se llama igual.
+ */
+async function noteFields(tx: TransactionSql, row: Row, conn: SmileApiConnection): Promise<{ notes?: string; service_id?: number }> {
+  const serviceId = matchSmileService(conn.api_services, [row.title, row.base_type_name]);
+  const service = serviceId ? { service_id: serviceId } : {};
+  if (!conn.api_supports_notes) return service;
+  const notes = smileAppointmentNote({
+    prestacion: row.type_name,
+    source: row.source,
+    agentName: row.agent_name,
+    coverage: row.coverage,
+    patient: { coverage: row.patient_coverage, coverage_plan: row.coverage_plan, member_number: row.member_number },
+    motivo: row.notes,
+    health: await latestHealth(tx, row.patient_id),
+  });
+  return { notes, ...service };
+}
+
+/**
+ * Crea el turno en Smile Connect. Si rechaza la prestación, lo crea sin ella (igual va escrita en la
+ * nota): la prestación nunca deja a un paciente sin turno. Devuelve también lo que se mandó.
+ */
+async function createInSmile(client: SmileClient, request: Parameters<typeof scCreateAppointment>[1], key: string) {
+  try {
+    return { result: await scCreateAppointment(client, request, key), sent: request };
+  } catch (e) {
+    if (request.service_id == null || !(e instanceof SmileApiError) || ![400, 422].includes(e.status)) throw e;
+    const sent = { ...request };
+    delete sent.service_id;
+    return { result: await scCreateAppointment(client, sent, `${key}-sin-prestacion`), sent };
+  }
 }
 
 /** Paciente de Smile Connect para este paciente de Turnia: vinculado, buscado por DNI o celular, o nuevo. */
@@ -272,7 +313,8 @@ async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: 
     const sameTimes = sameInstant(before.start_date, row.starts_at) && sameInstant(before.end_date, row.ends_at) && before.professional_ids[0] === row.smile_professional_id;
     if (!sameTimes) {
       await assertFreeInSmile(client, row, before);
-      const request = { ...times(row), ...notesFor(row, conn) };
+      // Mover no reescribe la nota: puede tener lo que sumó recepción.
+      const request = times(row);
       if (!real) {
         await logChange(tx, row, "mover", "sombra", { request: { appointment_id: moving, ...request }, before });
         return { status: "sombra" };
@@ -291,17 +333,17 @@ async function processRow(tx: TransactionSql, conn: SmileApiConnection, client: 
   // Turno nuevo.
   const patientId = await smilePatientId(tx, client, row, real);
   await assertFreeInSmile(client, row);
-  const request = { patient_id: patientId ?? 0, ...times(row), ...notesFor(row, conn) };
+  const request = { patient_id: patientId ?? 0, ...times(row), ...(await noteFields(tx, row, conn)) };
   if (!real || !patientId) {
     await logChange(tx, row, "crear", "sombra", { request });
     return { status: "sombra" };
   }
-  const result = await scCreateAppointment(client, { ...request, patient_id: patientId }, `turnia-turno-${row.id}`);
+  const { result, sent } = await createInSmile(client, { ...request, patient_id: patientId }, `turnia-turno-${row.id}`);
   if (!Number.isSafeInteger(result?.appointment_id) || result.appointment_id <= 0) {
     throw new Review("Smile Connect no devolvió un número de turno válido.");
   }
   await tx`update appointments set external_id = ${`sc:${result.appointment_id}`} where id = ${row.id}`;
-  await logChange(tx, row, "crear", "hecho", { request, result });
+  await logChange(tx, row, "crear", "hecho", { request: sent, result });
   if (verifyCreation) await verifyNewAppointment(tx, client, row, result.appointment_id, patientId);
   return { status: "ok" };
 }
@@ -345,15 +387,15 @@ async function processDeferredBooking(tx: TransactionSql, client: SmileClient, c
     if (!id) {
       const request = {
         patient_id: patientId, professional_id: row.smile_professional_id!, box_id: row.smile_box_id!,
-        start_date: new Date(row.starts_at).toISOString(), end_date: new Date(row.ends_at).toISOString(), ...notesFor(row, conn),
+        start_date: new Date(row.starts_at).toISOString(), end_date: new Date(row.ends_at).toISOString(), ...(await noteFields(tx, row, conn)),
       };
-      const result = await scCreateAppointment(client, request, `turnia-turno-${row.id}`);
+      const { result, sent } = await createInSmile(client, request, `turnia-turno-${row.id}`);
       if (!Number.isSafeInteger(result?.appointment_id) || result.appointment_id <= 0) {
         throw new Review("Smile Connect no devolvió un número de turno válido.");
       }
       id = result.appointment_id;
       createdByTurnia = true;
-      await logChange(tx, row, "crear", "hecho", { request, result });
+      await logChange(tx, row, "crear", "hecho", { request: sent, result });
       await tx`update appointments set external_id = ${`sc:${id}`} where id = ${row.id}`;
     }
   }
@@ -399,17 +441,19 @@ async function noticeReview(tx: TransactionSql, row: Row, message: string) {
   await tx`insert into clinic_notices ${tx(phones.map((x) => ({ clinic_id: row.clinic_id, phone: x.phone, kind: "smile", appointment_id: row.id, body })))}`;
 }
 
-async function pendingRow(tx: TransactionSql, id: string, skipLocked = false) {
+async function pendingRow(tx: TransactionSql, id: string, skipLocked = false, notesRefresh = false) {
   const [row] = await tx<Row[]>`
     select a.id, a.clinic_id, a.patient_id, a.appointment_type_id, a.coverage, a.professional_id, a.second_professional_id, a.starts_at, a.ends_at, a.status, a.source,
            a.notes, a.title, a.external_id, a.external_status, a.replaced_by, a.smile_attempts,
            a.smile_deferred, a.smile_reply_phone, a.smile_management, coalesce(a.title, t.name) as type_name, t.instructions,
+           t.name as base_type_name, pt.coverage as patient_coverage, pt.coverage_plan, pt.member_number, a.smile_notes_refresh,
            p.smile_professional_id, p.smile_box_id, p.full_name as professional, c.timezone, c.agent_name, c.address
     from appointments a
       join appointment_types t on t.id = a.appointment_type_id
       join professionals p on p.id = a.professional_id
       join clinics c on c.id = a.clinic_id
-    where a.id = ${id} and a.smile_sync in ('pendiente', 'error')
+      left join patients pt on pt.id = a.patient_id
+    where a.id = ${id} and ${notesRefresh ? tx`a.smile_notes_refresh and a.smile_sync = 'ok'` : tx`a.smile_sync in ('pendiente', 'error')`}
     for update of a ${skipLocked ? tx`skip locked` : tx``}`;
   return row;
 }
@@ -729,7 +773,129 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
     if (outcome.status === "error") result.error++;
   }
   if (pauseReason) result.frenado = pauseReason;
+  else if (!appointmentId) {
+    const waiting = await refreshHealthNotes(clinicId, result);
+    if (waiting) return { ...result, reintentar_en: waiting.retryAt };
+  }
   return result;
+}
+
+/** La línea de la ficha de salud que Turnia mandó por última vez en la nota de ese turno. */
+async function lastSentHealthLine(tx: TransactionSql, appointmentId: string): Promise<string | null> {
+  const sent = await tx<Array<{ notes: string | null }>>`
+    select request->>'notes' as notes from smile_connect_changes
+    where appointment_id = ${appointmentId} and action in ('crear', 'notas') and status = 'hecho' and request ? 'notes'
+    order by created_at desc limit 5`;
+  for (const { notes } of sent) {
+    const line = healthLineOf(notes);
+    if (line) return line;
+  }
+  return null;
+}
+
+/**
+ * La ficha de salud se completa casi siempre después de dar el turno (Sofi la ofrece al confirmarlo).
+ * En los próximos turnos que dio Turnia y ya están en Smile Connect, se suma esa línea a la nota:
+ * de a uno, verificando antes que el turno siga igual, y sin borrar nada de lo que escribió recepción.
+ */
+async function refreshHealthNotes(
+  clinicId: string,
+  result: { ok: number; sombra: number; revisar: number; error: number },
+): Promise<RateLimited | null> {
+  const pending = await sql<Array<{ id: string }>>`
+    select id from appointments
+    where clinic_id = ${clinicId} and smile_notes_refresh and smile_sync = 'ok' and source <> 'smile_connect'
+      and external_id ~ '^sc:[0-9]+$' and status in ('confirmado', 'pendiente') and starts_at > now()
+    order by starts_at limit 10`;
+  for (const { id } of pending) {
+    const outcome = await sql.begin(async (tx): Promise<Outcome | RateLimited | null> => {
+      await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
+      const conn = await getSmileApiConnection(clinicId, tx);
+      // Sumar a la nota es cambiar un turno: solo en el modo que mueve y cancela, y con notas en la API.
+      if (!conn?.api_key_encrypted || conn.api_mode !== "completa" || !conn.api_supports_notes || conn.api_writes_paused) return null;
+      if (conn.api_retry_at && Date.parse(conn.api_retry_at) > Date.now()) return { status: "espera", retryAt: conn.api_retry_at };
+      const [{ n }] = await tx<Array<{ n: number }>>`
+        select count(*)::int as n from smile_connect_changes
+        where clinic_id = ${clinicId} and status = 'hecho' and created_at > now() - interval '1 hour'`;
+      if (n >= MAX_WRITES_PER_HOUR) return null;
+      await tx`select set_config('turnia.smile_quiet', 'on', true)`;
+      const row = await pendingRow(tx, id, true, true);
+      if (!row) return null;
+      const done = () => tx`update appointments set smile_notes_refresh = false where id = ${row.id}`;
+      const scId = scIdOf(row.external_id);
+      const line = healthNoteLine(await latestHealth(tx, row.patient_id));
+      if (!scId || !line) {
+        await done();
+        return { status: "nada" };
+      }
+      const client = clientFor(conn, undefined, tx, { forWrites: true });
+      try {
+        let sc: ScAppointment;
+        try {
+          sc = await scAppointment(client, scId);
+        } catch (e) {
+          if (e instanceof SmileApiError && e.status === 404) {
+            await done();
+            return { status: "nada" };
+          }
+          throw e;
+        }
+        if (cancelledInSmile(sc)) {
+          await done();
+          return { status: "nada" };
+        }
+        // Si recepción lo movió, se espera a que la sincronización lo traiga a Turnia.
+        if (!sameInstant(sc.start_date, row.starts_at) || !sameInstant(sc.end_date, row.ends_at)) return null;
+        if (!(await belongsToPatient(tx, row, sc))) throw new Review("En Smile Connect ese turno figura a nombre de otro paciente. No se tocó.");
+        if (sc.professional_ids.length !== 1) throw new Review("En Smile Connect ese turno tiene dos profesionales: la nota no se tocó.");
+        const boxId = sc.box_id ?? row.smile_box_id;
+        if (!boxId) throw new Review("El turno no tiene consultorio en Smile Connect: la nota no se tocó.");
+        if ((sc.notes ?? "").split("\n").some((l) => l.trim() === line)) {
+          await done();
+          return { status: "nada" };
+        }
+        const notes = withHealthLine(sc.notes ?? null, line, await lastSentHealthLine(tx, row.id));
+        if (notes === null) throw new Review("La nota del turno en Smile Connect no tiene lugar para la ficha de salud.");
+        const body = {
+          professional_id: sc.professional_ids[0], box_id: boxId, start_date: sc.start_date, end_date: sc.end_date, notes,
+          ...(sc.service_id != null && { service_id: sc.service_id }),
+        };
+        const request = { appointment_id: scId, ...body };
+        if (!writesEnabledOnServer()) {
+          await logChange(tx, row, "notas", "sombra", { request, before: sc });
+          await done();
+          return { status: "sombra" };
+        }
+        const changed = await scRescheduleAppointment(client, scId, body);
+        await logChange(tx, row, "notas", "hecho", { request, before: sc, result: changed });
+        await done();
+        return { status: "ok" };
+      } catch (e) {
+        if ((e instanceof SmileApiError && e.status === 429) || e instanceof SmileBudgetError) {
+          const retryAt = new Date();
+          if (e instanceof SmileBudgetError) retryAt.setUTCHours(24, 0, 0, 0);
+          else retryAt.setTime(retryAt.getTime() + Math.max(1, e.retryAfter ?? SMILE_RATE_LIMIT_WAIT_SECONDS) * 1_000);
+          const until = retryAt.toISOString();
+          await tx`update smile_connect_connections set api_retry_at = ${until} where clinic_id = ${clinicId}`;
+          return { status: "espera", retryAt: until };
+        }
+        // Una falla pasajera se reintenta en la próxima vuelta; lo demás queda para recepción.
+        if (!(e instanceof Review) && !(e instanceof SmileApiError && !e.transient)) return { status: "error", message: smileErrorText(e) };
+        const message = (e instanceof Review ? e.message : smileErrorText(e)).slice(0, 300);
+        await logChange(tx, row, "notas", "revisar", { error: message });
+        await done();
+        await noticeReview(tx, row, `No se pudo sumar la ficha de salud al turno del ${describe(row)}. ${message}\nSumala a mano: ${line}`);
+        return { status: "revisar", message };
+      }
+    });
+    if (!outcome) continue;
+    if (outcome.status === "espera") return outcome;
+    if (outcome.status === "ok") result.ok++;
+    if (outcome.status === "sombra") result.sombra++;
+    if (outcome.status === "revisar") result.revisar++;
+    if (outcome.status === "error") result.error++;
+  }
+  return null;
 }
 
 /** El pedido ya está en Postgres. Si la ejecución se corta, lo recoge el próximo cron. */
@@ -748,6 +914,18 @@ export function processSmileBookingLater(clinicId: string, appointmentId: string
     });
   } catch {
     // Fuera de una petición, se procesa con la automatización de calendario.
+  }
+}
+
+/** Después de guardar la ficha de salud: la suma a las notas en Smile Connect sin esperar la automatización. */
+export function processSmileNotesLater(clinicId: string): void {
+  try {
+    after(async () => {
+      await pushPendingSmile(clinicId);
+      await sendPendingNotices(clinicId);
+    });
+  } catch {
+    // Fuera de una petición, lo hace la automatización de cada 10 minutos.
   }
 }
 

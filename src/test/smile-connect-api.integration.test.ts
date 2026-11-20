@@ -72,6 +72,10 @@ const fake = {
   /** Días (YYYY-MM-DD) en que /availability falla, como si Smile Connect tardara de más. */
   failDates: new Set<string>(),
   notes: false,
+  /** El OpenAPI acepta la prestación (service_id) al crear un turno. */
+  serviceIds: false,
+  /** Smile Connect rechaza la prestación al crear el turno. */
+  rejectService: false,
   beforeCreate: undefined as (() => void) | undefined,
   createStatus: 201,
   dropCreateReply: false,
@@ -153,13 +157,14 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     const e = Date.parse(u.searchParams.get("end")!);
     return page(fake.events.filter((x) => Date.parse(x.start_date) >= s && Date.parse(x.start_date) < e));
   }
-  if (path === "/services") return page([{ service_id: 12, name: "Limpieza", prices: [] }]);
+  if (path === "/services") return page([{ service_id: 12, name: "Limpieza", prices: [] }, { service_id: 13, name: "Consulta", prices: [] }]);
   if (path === "/boxes") return page([{ box_id: 189, name: "Consultorio 1" }, { box_id: 190, name: "Consultorio 2" }]);
   if (path === "/openapi") {
     const notesBody = { requestBody: { content: { "application/json": { schema: { properties: { notes: {} } } } } } };
+    const postBody = { requestBody: { content: { "application/json": { schema: { properties: { ...(fake.notes && { notes: {} }), ...(fake.serviceIds && { service_id: {} }) } } } } } };
     const deltaGet = { get: { parameters: [{ name: "limit" }, { name: "after" }, { name: "updated_since" }] } };
     return ok({ paths: {
-      "/appointments": { ...(fake.notes && { post: notesBody }), ...(fake.delta && deltaGet) },
+      "/appointments": { ...((fake.notes || fake.serviceIds) && { post: postBody }), ...(fake.delta && deltaGet) },
       "/appointments/{id}": { ...(fake.notes && { patch: notesBody }) },
       "/patients": { ...(fake.delta && deltaGet) },
     } });
@@ -213,7 +218,9 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     fake.beforeCreate?.();
     if (fake.createStatus !== 201) return err(fake.createStatus, "alta_simulada");
     if (!fake.patients.has(body.patient_id)) return err(400, "invalid_request");
-    const a: Appt = { appointment_id: fake.nextAppt++, patient_id: body.patient_id, start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id], attendance: null, cancelled: false };
+    if (fake.rejectService && "service_id" in body) return err(422, "invalid_service");
+    const a: Appt = { appointment_id: fake.nextAppt++, patient_id: body.patient_id, start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id], attendance: null, cancelled: false,
+      ...("notes" in body && { notes: body.notes }), ...("service_id" in body && { service_id: body.service_id }) };
     fake.appointments.set(a.appointment_id, a);
     fake.idem.set(`${method}${path}${idem}`, { appointment_id: a.appointment_id });
     if (fake.dropCreateReply) {
@@ -230,7 +237,8 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
       fake.beforeMoveReject?.();
       return err(409, "slot_unavailable");
     }
-    Object.assign(a, { start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id] });
+    Object.assign(a, { start_date: body.start_date, end_date: body.end_date, box_id: body.box_id, professional_ids: [body.professional_id],
+      ...("notes" in body && { notes: body.notes }), ...("service_id" in body && { service_id: body.service_id }) });
     fake.appointmentListRetryAfter = fake.rateLimitAfterMove;
     fake.rateLimitAfterMove = null;
     if (fake.dropMoveReply) {
@@ -614,8 +622,121 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       fake.calls.length = 0;
       await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(8, "10:00"), notas: "Control de ortodoncia" });
       await push.pushPendingSmile(clinicId);
-      expect(writes()[0].body).toMatchObject({ notes: expect.stringContaining("Consulta · Control de ortodoncia") });
+      expect(writes()[0].body).toMatchObject({ notes: expect.stringContaining("Consulta · Lo dio Sofi (Turnia)\nObra social: Particular\nMotivo: Control de ortodoncia") });
+      // La prestación de Smile Connect va solo si el OpenAPI la acepta.
+      expect(writes()[0].body).not.toHaveProperty("service_id");
       fake.notes = false;
+    });
+
+    describe("obra social, plan, afiliado y ficha de salud en la nota del turno", () => {
+      const phone = "5491100006077";
+      const sheet = { monogram: "", professionals: [{ name: "Dr. Mariano Prueba", lines: [] }] };
+      beforeAll(async () => {
+        fake.notes = true;
+        fake.serviceIds = true;
+        await link.saveSmileApiKey(clinicId, KEY);
+        await link.setSmileMode(clinicId, "completa");
+        await sql`update clinics set health_form = ${sql.json(sheet)} where id = ${clinicId}`;
+        await tool("registrar_paciente", { nombre_completo: "Carla Prueba Cobertura", dni: "30555666", cobertura: "OSDE", plan: "310", numero_afiliado: "61234567801" }, phone);
+      });
+      // Que el freno de cambios por hora de las pruebas anteriores no las deje sin probar.
+      beforeEach(async () => {
+        await sql`delete from smile_connect_changes where clinic_id = ${clinicId}`;
+      });
+      afterAll(async () => {
+        fake.notes = false;
+        fake.serviceIds = false;
+        await sql`update clinics set health_form = null where id = ${clinicId}`;
+        await link.saveSmileApiKey(clinicId, KEY);
+      });
+
+      it("el turno nuevo lleva todo en la nota y la prestación de Smile Connect que se llama igual", async () => {
+        expect((await link.getSmileApiConnection(clinicId))!.api_services).toEqual([{ service_id: 12, name: "Limpieza" }, { service_id: 13, name: "Consulta" }]);
+        fake.calls.length = 0;
+        const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(9, "10:00"), notas: "Se le movió un implante" }, phone);
+        expect(booked.ok).toBe(true);
+        await push.pushPendingSmile(clinicId);
+        const created = writes().find((w) => w.method === "POST" && w.path === "/appointments")!;
+        expect(created.body).toMatchObject({
+          service_id: 13,
+          notes: "Consulta · Lo dio Sofi (Turnia)\nObra social: OSDE · Plan: 310 · Afiliado: 61234567801\nMotivo: Se le movió un implante",
+        });
+      });
+
+      it("si Smile Connect rechaza la prestación, el turno se crea igual, sin ella", async () => {
+        fake.rejectService = true;
+        fake.calls.length = 0;
+        const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(10, "10:00") }, phone);
+        expect(booked.ok).toBe(true);
+        await push.pushPendingSmile(clinicId);
+        fake.rejectService = false;
+        const posts = writes().filter((w) => w.method === "POST" && w.path === "/appointments");
+        expect(posts).toHaveLength(2);
+        expect(posts[0].body).toHaveProperty("service_id", 13);
+        expect(posts[1].body).not.toHaveProperty("service_id");
+        expect(posts[1].body).toMatchObject({ notes: expect.stringContaining("Obra social: OSDE · Plan: 310") });
+        expect(await smileSync(booked.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:\d+$/) });
+        await sql`update appointments set status = 'cancelado', cancelled_at = now() where id = ${booked.turno_id!}`;
+        await push.pushPendingSmile(clinicId);
+      });
+
+      it("la ficha de salud que completa después se suma a la nota, sin borrar lo que escribió recepción", async () => {
+        const [appt] = await sql`
+          select a.id, a.external_id from appointments a join patients p on p.id = a.patient_id
+          where p.dni = '30555666' and a.clinic_id = ${clinicId} and a.status = 'confirmado'`;
+        const remote = fake.appointments.get(Number(appt.external_id.slice(3)))!;
+        remote.notes = `${remote.notes}\nTraer la radiografía`;
+        const created = remote.notes;
+
+        // Responde en partes: primero lo importante.
+        fake.calls.length = 0;
+        await tool("guardar_ficha_salud", { anticoagulantes: "si", alergia_medicamentos: "si", otros: "toma levotiroxina" }, phone);
+        expect((await sql`select smile_notes_refresh from appointments where id = ${appt.id}`)[0].smile_notes_refresh).toBe(true);
+        expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
+        const incomplete = "Ficha de salud (incompleta): Alergias a drogas o medicamentos; Toma anticoagulantes; Otros: toma levotiroxina";
+        expect(writes()).toEqual([expect.objectContaining({ method: "PATCH", path: `/appointments/${remote.appointment_id}` })]);
+        expect(writes()[0].body).toMatchObject({ start_date: remote.start_date, end_date: remote.end_date, professional_id: 334, box_id: 189, service_id: 13 });
+        expect(remote.notes).toBe(`${created}\n${incomplete}`);
+        expect((await sql`select smile_notes_refresh from appointments where id = ${appt.id}`)[0].smile_notes_refresh).toBe(false);
+
+        // La completa: se reemplaza la línea que había escrito Turnia, no se agrega otra.
+        fake.calls.length = 0;
+        await tool("guardar_ficha_salud", { resto_no: true, calle: "Calle Falsa", numero: "123", localidad: "Mar del Plata" }, phone);
+        expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
+        expect(remote.notes).toBe(`${created}\nFicha de salud: Alergias a drogas o medicamentos; Toma anticoagulantes; Otros: toma levotiroxina`);
+        const [change] = await sql`select before from smile_connect_changes where action = 'notas' and status = 'hecho' order by created_at desc limit 1`;
+        expect(change.before).toMatchObject({ appointment_id: remote.appointment_id, notes: `${created}\n${incomplete}` });
+
+        // Sin cambios en la ficha, no vuelve a escribir.
+        fake.calls.length = 0;
+        await tool("guardar_ficha_salud", { bioseguridad: "no" }, phone);
+        expect((await sql`select smile_notes_refresh from appointments where id = ${appt.id}`)[0].smile_notes_refresh).toBe(false);
+        await push.pushPendingSmile(clinicId);
+        expect(writes()).toEqual([]);
+      });
+
+      it("si recepción movió el turno, espera a que llegue a Turnia; si lo canceló, no toca nada", async () => {
+        const [appt] = await sql`
+          select a.id, a.external_id from appointments a join patients p on p.id = a.patient_id
+          where p.dni = '30555666' and a.clinic_id = ${clinicId} and a.status = 'confirmado'`;
+        const remote = fake.appointments.get(Number(appt.external_id.slice(3)))!;
+        const original = { start_date: remote.start_date, end_date: remote.end_date };
+        await sql`delete from patient_health_forms where patient_id = (select patient_id from appointments where id = ${appt.id})`;
+        await tool("guardar_ficha_salud", { asma: "si" }, phone);
+        expect((await sql`select smile_notes_refresh from appointments where id = ${appt.id}`)[0].smile_notes_refresh).toBe(true);
+        Object.assign(remote, { start_date: at(9, "11:00"), end_date: at(9, "11:30") });
+        fake.calls.length = 0;
+        await push.pushPendingSmile(clinicId);
+        // Lo leyó, vio otro horario y no escribió.
+        expect(fake.calls.map((c) => `${c.method} ${c.path}`)).toContain(`GET /appointments/${remote.appointment_id}`);
+        expect(writes()).toEqual([]);
+        expect((await sql`select smile_notes_refresh from appointments where id = ${appt.id}`)[0].smile_notes_refresh).toBe(true);
+        Object.assign(remote, original, { cancelled: true });
+        await push.pushPendingSmile(clinicId);
+        expect(writes()).toEqual([]);
+        expect((await sql`select smile_notes_refresh from appointments where id = ${appt.id}`)[0].smile_notes_refresh).toBe(false);
+        remote.cancelled = false;
+      });
     });
   });
 

@@ -11,7 +11,7 @@ import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
 import { getSmileApiConnection, isLiveSmileMode, smileBusy, writesEnabledOnServer } from "../smile-connect-link";
-import { confirmNewSmileAppointment, processSmileBookingLater } from "../smile-connect-push";
+import { confirmNewSmileAppointment, processSmileBookingLater, processSmileNotesLater } from "../smile-connect-push";
 import { appointmentAccessEnabled, appointmentAccessKey, expireAppointmentAccess } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, SmileManagement, Task, TaskPriority, TaskType } from "../types";
 
@@ -1775,6 +1775,7 @@ export async function saveHealthForm(ctx: ToolContext, input: HealthFormInput & 
     fechaNacimiento: birthDate,
     email: email?.trim() || null,
   });
+  if (saved.smileNotes) processSmileNotesLater(clinic.id);
   if (!saved.missing.length) {
     const biosafety = saved.form.data.bioseguridad === "si"
       ? " Pidió conocer las normas de bioseguridad del consultorio: si la información de la clínica las menciona, contáselas; si no, decile que se las cuentan en el consultorio."

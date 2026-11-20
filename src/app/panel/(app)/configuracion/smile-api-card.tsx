@@ -7,7 +7,7 @@ import { Badge, Card, Field, Notice, inputClass, smallButtonClass } from "@/comp
 import { dismissSmileReviewAction, linkSmileProfessionalAction, removeSmileApiKeyAction, resumeSmileWritesAction, saveSmileApiKeyAction, setSmileModeAction, syncSmileNowAction } from "../../smile-api-actions";
 import { ActionForm } from "./action-form";
 
-const ACTION: Record<string, string> = { crear_paciente: "Crear paciente", crear: "Crear turno", mover: "Mover turno", cancelar: "Cancelar turno" };
+const ACTION: Record<string, string> = { crear_paciente: "Crear paciente", crear: "Crear turno", mover: "Mover turno", cancelar: "Cancelar turno", notas: "Sumar ficha de salud" };
 const STATUS: Record<string, { label: string; tone: "green" | "yellow" | "red" | "gray" | "blue" }> = {
   hecho: { label: "Hecho", tone: "green" },
   sombra: { label: "Prueba (no se escribió)", tone: "blue" },

@@ -21,6 +21,7 @@ import {
   scServices,
   scSearchPatients,
   scSupportsNotes,
+  scServicesForWrites,
   scSupportsDelta,
   scAppointmentsChangedSince,
   scPatientsChangedSince,
@@ -83,6 +84,8 @@ export type SmileApiConnection = {
   api_reads_day: string | null;
   api_reads: number;
   api_supports_notes: boolean;
+  /** Prestaciones de Smile Connect, si la API acepta la prestación al crear un turno (null: no se manda). */
+  api_services: Array<{ service_id: number; name: string }> | null;
   api_writes_paused: string | null;
   api_retry_at: string | null;
   /** Confirmación diferida y cambios verificados en Smile Connect (por defecto). */
@@ -117,7 +120,7 @@ export async function getSmileApiConnection(clinicId: string, tx?: TransactionSq
   const [row] = await (tx ?? sql)<SmileApiConnection[]>`
     select clinic_id, api_key_encrypted, api_key_hint, api_clinic_id, api_clinic_name, api_mode, api_error, api_error_at,
            api_checked_at, api_near_pull_at, api_near_count, api_wide_pull_at, api_backup_at, api_reads_day::text as api_reads_day,
-           api_reads, api_supports_notes, api_writes_paused, api_retry_at, api_deferred,
+           api_reads, api_supports_notes, api_services, api_writes_paused, api_retry_at, api_deferred,
            api_hours_at, api_hours_note, api_events_ok, api_events_checked_at, api_events_status, api_mirror_at, api_mirror_summary,
            api_patients_full_at, api_patients_last_id::int as api_patients_last_id, api_key_saved_at,
            api_supports_delta, api_delta_at
@@ -237,6 +240,7 @@ export async function saveSmileApiKey(clinicId: string, rawKey: string): Promise
   }
   const supportsNotes = await scSupportsNotes(client).catch(() => false);
   const supportsDelta = await scSupportsDelta(client).catch(() => false);
+  const services = await scServicesForWrites(client).catch(() => null);
   await ensureSmileConnectToken(clinicId);
   await sql`
     update smile_connect_connections set
@@ -246,7 +250,7 @@ export async function saveSmileApiKey(clinicId: string, rawKey: string): Promise
       api_supports_notes = ${supportsNotes}, updated_at = now(),
       -- Una clave nueva puede traer permisos nuevos: los bloqueos se vuelven a probar en la vuelta siguiente.
       api_key_saved_at = now(), api_events_ok = null, api_events_checked_at = null, api_events_status = null,
-      api_supports_delta = ${supportsDelta}
+      api_supports_delta = ${supportsDelta}, api_services = ${services ? json(services) : null}
     where clinic_id = ${clinicId}`;
   const professionals = await mapProfessionals(clinicId, client);
   const turniaTz = (await getClinic(clinicId)).timezone;
@@ -828,13 +832,16 @@ export async function syncSmileHours(clinicId: string): Promise<{ cambiados: str
   const note = [lastChange, ...revisar].filter(Boolean).join("\n") || null;
   // Lo que la API ya permite (mandar el motivo del turno, pedir solo lo que cambió) se revisa también acá, cada
   // 6 horas: si dependiera solo de la copia diaria, un día sin cupo para la copia lo atrasaría.
-  const [supportsNotes, supportsDelta] = await Promise.all([
+  const [supportsNotes, supportsDelta, services] = await Promise.all([
     scSupportsNotes(client).catch(() => conn.api_supports_notes),
     scSupportsDelta(client).catch(() => conn.api_supports_delta),
+    // Las prestaciones (para mandar la del turno): si no se pudieron leer, quedan las de antes.
+    scServicesForWrites(client).catch(() => conn.api_services),
   ]);
   await sql`
     update smile_connect_connections set api_hours_at = now(), api_hours_note = ${note},
-      api_supports_notes = ${supportsNotes}, api_supports_delta = ${supportsDelta}
+      api_supports_notes = ${supportsNotes}, api_supports_delta = ${supportsDelta},
+      api_services = ${services ? json(services) : null}
     where clinic_id = ${clinicId}`;
   return { cambiados, revisar };
 }

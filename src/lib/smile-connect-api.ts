@@ -204,7 +204,7 @@ export type ScNewPatient = {
   phone_number?: string;
   professional_ids?: number[];
 };
-export type ScAppointmentTimes = { professional_id: number; box_id: number; start_date: string; end_date: string; notes?: string };
+export type ScAppointmentTimes = { professional_id: number; box_id: number; start_date: string; end_date: string; notes?: string; service_id?: number };
 
 export async function scCreatePatient(c: SmileClient, body: ScNewPatient, idempotencyKey: string) {
   return (await c.request<{ data: { patient_id: number }; replayed?: boolean }>("/patients", { method: "POST", body, idempotencyKey })).data;
@@ -243,9 +243,25 @@ export function scPatientsChangedSince(c: SmileClient, since: Date, limit = 20):
  * campos de más). Cuando Smile Connect las sume, Turnia empieza a mandar el motivo sin otro cambio.
  */
 export async function scSupportsNotes(c: SmileClient): Promise<boolean> {
+  const props = await appointmentWriteFields(c);
+  return "notes" in props.post && "notes" in props.patch;
+}
+
+/** Los campos que aceptan crear y mover un turno, según el OpenAPI vigente. */
+async function appointmentWriteFields(c: SmileClient) {
   const spec = await c.request<{ paths?: Record<string, Record<string, { requestBody?: { content?: Record<string, { schema?: { properties?: Record<string, unknown> } }> } }>> }>("/openapi");
   const props = (path: string, method: string) => spec.paths?.[path]?.[method]?.requestBody?.content?.["application/json"]?.schema?.properties ?? {};
-  return "notes" in props("/appointments", "post") && "notes" in props("/appointments/{id}", "patch");
+  return { post: props("/appointments", "post"), patch: props("/appointments/{id}", "patch") };
+}
+
+/**
+ * Las prestaciones de Smile Connect, si la API acepta la prestación al crear un turno (y la clave
+ * puede leerlas). null: no se manda la prestación, que igual va escrita en la nota.
+ */
+export async function scServicesForWrites(c: SmileClient): Promise<Array<{ service_id: number; name: string }> | null> {
+  const props = await appointmentWriteFields(c);
+  if (!("service_id" in props.post)) return null;
+  return (await scServices(c)).map((s) => ({ service_id: s.service_id, name: s.name }));
 }
 
 // ── Conversiones ─────────────────────────────────────────────────────────────
