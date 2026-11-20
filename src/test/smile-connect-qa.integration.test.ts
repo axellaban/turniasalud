@@ -216,7 +216,7 @@ describe.runIf(url)("QA de Smile Connect: lista para otras clínicas", () => {
     expect(created).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:\d+$/) });
     expect(fake.appointments.get(Number(created.external_id.slice(3)))).toMatchObject({ patient_id: 8001, box_id: 77, professional_ids: [501] });
     const [confirmation] = await sql`select phone, kind, body from clinic_notices where appointment_id = ${booked.turno_id!} and kind = 'smile_confirmado'`;
-    expect(confirmation).toMatchObject({ phone, body: expect.stringContaining("Turno confirmado") });
+    expect(confirmation).toMatchObject({ phone, body: expect.stringContaining("Listo, quedó confirmado el turno") });
 
     // Mover: se pide, se verifica en Smile Connect y recién ahí queda hecho (el mismo turno de allá).
     const scId = Number(created.external_id.slice(3));

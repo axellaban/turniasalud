@@ -4,7 +4,8 @@ import { getClinic } from "./clinic";
 import { sql } from "./db";
 import { displayPhone, normalizePhone } from "./phone";
 import type { Clinic } from "./types";
-import { chatIdForPhone, wahaSendText } from "./waha";
+import { chatIdForPhone, wahaSendBubbles, wahaSendText } from "./waha";
+import { splitBubbles } from "./whatsapp-style";
 import { wahaConnectionForClinic, withWahaConnection } from "./waha-connections";
 import { whatsappReadiness } from "./whatsapp";
 
@@ -277,7 +278,10 @@ async function sendOne(clinic: Clinic, row: NoticeRow): Promise<"enviado" | "err
       }
     }
     if (own && normalizePhone(own.phone) === row.phone) throw new Error("Es el mismo número de la línea de WhatsApp: cargá otro celular.");
-    const send = () => wahaSendText(chatIdForPhone(row.phone), row.body);
+    // Al paciente, en burbujas cortas como las de una persona; al equipo, un solo aviso.
+    const send = () => patientNotice
+      ? wahaSendBubbles(chatIdForPhone(row.phone), splitBubbles(row.body, 4))
+      : wahaSendText(chatIdForPhone(row.phone), row.body);
     await (own ? withWahaConnection(own, send) : send());
     await sql`update clinic_notices set status = 'enviado', sent_at = now(), error = null where id = ${row.id}`;
     return "enviado";

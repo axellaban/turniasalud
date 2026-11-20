@@ -84,6 +84,7 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     if (headers["x-api-key"] !== API_KEY) return json({ error: "unauthorized" }, 401);
     if (url === `${WAHA}/api/sendText`) return fake.failSendText ? json({ error: "session stopped" }, 500) : json({ id: "true_x@c.us_OUT" }, 201);
     if (url === `${WAHA}/api/sendVoice`) return json({ id: "true_x@c.us_VOICE" }, 201);
+    if (url === `${WAHA}/api/startTyping`) return json({}, 201);
     if (url.startsWith(`${WAHA}/api/default/lids/`)) return json({ lid: "x@lid", pn: fake.lidPhone });
     if (url.startsWith(`${WAHA}/api/files/`) && url.endsWith(".jpeg")) return new Response(new Uint8Array(fake.photo!), { headers: { "Content-Type": "image/jpeg" } });
     if (url.startsWith(`${WAHA}/api/files/`)) return new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "Content-Type": "audio/ogg" } });
@@ -242,7 +243,8 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const res = await reply(replyRequest(agentSays("conv_wa_1", ["m2"], "Tengo el **martes 10:00** con la Dra. Ruiz. ¿Te sirve?")));
     expect(res.status).toBe(200);
     const [sent] = fake.sent("sendText");
-    expect(sent.body).toEqual({ session: "default", chatId: "5491155550001@c.us", text: "Tengo el *martes 10:00* con la Dra. Ruiz. ¿Te sirve?" });
+    // Como lo escribe una persona: sin negritas ni signos de apertura.
+    expect(sent.body).toEqual({ session: "default", chatId: "5491155550001@c.us", text: "Tengo el martes 10:00 con la Dra. Ruiz. Te sirve?" });
     expect(sent.headers["x-api-key"]).toBe(API_KEY);
 
     // ElevenLabs reintenta: no se duplica el mensaje al paciente.
@@ -304,7 +306,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const noMedia = textMessage("m8", "", "5491155550003@c.us", { hasMedia: true, media: { url: null, mimetype: "audio/ogg" } });
     await inbound(wahaRequest(noMedia));
     expect(fake.sent("channel")).toHaveLength(0);
-    expect((fake.sent("sendText")[0].body as { text: string }).text).toContain("no pude escuchar tu audio");
+    expect((fake.sent("sendText")[0].body as { text: string }).text).toContain("no pude escuchar el audio");
 
     fake.reset();
     const photo = textMessage("m9", "", "5491155550003@c.us", { hasMedia: true, media: { url: null, mimetype: "image/jpeg" } });
@@ -334,7 +336,52 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     await inbound(wahaRequest(textMessage("v2", "Gracias", "5491155550004@c.us")));
     await reply(replyRequest(agentSays("conv_voz", ["v2"], "¡De nada!")));
     expect(fake.sent("sendVoice")).toHaveLength(0);
-    expect((fake.sent("sendText")[0].body as { text: string }).text).toBe("¡De nada!");
+    expect((fake.sent("sendText")[0].body as { text: string }).text).toBe("De nada!");
+  });
+
+  it("la respuesta llega en burbujas cortas, con «escribiendo…» entre una y otra", async () => {
+    fake.nextConversation = "conv_burbujas";
+    await inbound(wahaRequest(textMessage("b1", "Quiero un turno", "5491155550031@c.us")));
+    const typingBefore = fake.calls.filter((c) => c.url === `${WAHA}/api/startTyping`).length;
+    // Mientras piensa, el paciente ve «escribiendo…».
+    expect(typingBefore).toBe(1);
+    const res = await reply(replyRequest(agentSays("conv_burbujas", ["b1"],
+      "Listo, quedó **confirmado** para el jueves 5/12 a las 15:30 con el Dr. Mininni.\n\n📍 San Martín 357\n\n¡Te esperamos!\n\nCualquier cosa, escribime.")));
+    expect(res.status).toBe(200);
+    expect(fake.sent("sendText").map((c) => (c.body as { text: string }).text)).toEqual([
+      "Listo, quedó confirmado para el jueves 5/12 a las 15:30 con el Dr. Mininni.",
+      "📍 San Martín 357",
+      "Te esperamos!\n\nCualquier cosa, escribime.",
+    ]);
+    expect(fake.calls.filter((c) => c.url === `${WAHA}/api/startTyping`)).toHaveLength(typingBefore + 2);
+    // En el panel queda lo que le llegó.
+    const [conv] = await sql<Array<{ transcript: Array<{ role: string; message: string }> }>>`
+      select transcript from channel_conversations where elevenlabs_conversation_id = 'conv_burbujas'`;
+    expect(conv.transcript.at(-1)!.message).toBe("Listo, quedó confirmado para el jueves 5/12 a las 15:30 con el Dr. Mininni.\n\n📍 San Martín 357\n\nTe esperamos!\n\nCualquier cosa, escribime.");
+  });
+
+  it("si vuelve a escribir después de un rato, Sofi sigue la charla en vez de presentarse otra vez", async () => {
+    fake.nextConversation = "conv_retoma_1";
+    await inbound(wahaRequest(textMessage("r1", "Hola, quiero un turno", "5491155550032@c.us")));
+    await reply(replyRequest(agentSays("conv_retoma_1", ["r1"], "Hola! Soy Sofi. Para qué tipo de turno?")));
+    // Pasaron 40 minutos: la charla abierta venció.
+    await sql`update channel_conversations set last_activity_at = now() - interval '40 minutes' where elevenlabs_conversation_id = 'conv_retoma_1'`;
+    fake.calls.length = 0;
+    fake.nextConversation = "conv_retoma_2";
+    await inbound(wahaRequest(textMessage("r2", "Para una limpieza", "5491155550032@c.us")));
+    const body = fake.sent("channel")[0].body as { conversation_id?: string; dynamic_variables: Record<string, string> };
+    expect(body.conversation_id).toBeUndefined();
+    expect(body.dynamic_variables.conversation_context).toContain("Ya venían hablando por este chat (el último mensaje fue hace 40 minutos)");
+    expect(body.dynamic_variables.conversation_context).toContain("No saludes ni te presentes otra vez");
+    expect(body.dynamic_variables.conversation_context).toContain("Agente: Hola! Soy Sofi. Para qué tipo de turno?");
+
+    // Al día siguiente es una charla nueva: puede saludar.
+    await sql`update channel_conversations set last_activity_at = now() - interval '20 hours' where phone = '5491155550032'`;
+    fake.calls.length = 0;
+    fake.nextConversation = "conv_retoma_3";
+    await inbound(wahaRequest(textMessage("r3", "Hola de nuevo", "5491155550032@c.us")));
+    const next = fake.sent("channel")[0].body as { dynamic_variables: Record<string, string> };
+    expect(next.dynamic_variables.conversation_context).not.toContain("Ya venían hablando");
   });
 
   it("la plantilla de la ficha de salud llega en un mensaje aparte, para copiarla sola", async () => {
@@ -344,7 +391,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const res = await reply(replyRequest(agentSays("conv_ficha", ["f1"], `Listo: tu consulta quedó **confirmada**.\nPodés adelantarte completando la ficha por acá.\n\n${plantilla}`)));
     expect(res.status).toBe(200);
     expect(fake.sent("sendText").map((c) => (c.body as { text: string }).text)).toEqual([
-      "Listo: tu consulta quedó *confirmada*.\nPodés adelantarte completando la ficha por acá.",
+      "Listo: tu consulta quedó confirmada.\nPodés adelantarte completando la ficha por acá.",
       plantilla,
     ]);
   });
@@ -400,7 +447,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     expect(body.data.user_identifier).toBe("5491155550002");
     expect(body.dynamic_variables.patient_name).toBe("Jorge Pérez");
     await reply(replyRequest(agentSays("conv_lid", ["m10"], "¡Hola Jorge!")));
-    expect(fake.sent("sendText")[0].body).toMatchObject({ chatId: "987654321@lid", text: "¡Hola Jorge!" });
+    expect(fake.sent("sendText")[0].body).toMatchObject({ chatId: "987654321@lid", text: "Hola Jorge!" });
 
     fake.reset();
     fake.lidPhone = null;

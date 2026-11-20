@@ -27,6 +27,7 @@ import {
 import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, SmilePatientReview, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
 import { healthLineOf, healthNoteLine, matchSmileService, smileAppointmentNote, withHealthLine, type SmileNoteHealth } from "./smile-connect-note";
 import { humanSlot, localDateKey } from "./time";
+import { confirmationBubbles } from "./whatsapp-style";
 import type { Appointment, Patient, SmileManagement } from "./types";
 
 // Escritura en Smile Connect de lo que hace Turnia (Sofi o el panel) con los turnos. Es la data
@@ -523,8 +524,12 @@ async function finishDeferredBooking(tx: TransactionSql, row: Row, resolution: "
         ${`Pedido ${row.id} para ${when} con ${row.professional}. ${reason ?? ""}`})`;
   }
   if (!row.smile_reply_phone) return;
+  // Cada párrafo llega en su burbuja (ver clinic-notices.ts): la confirmación, la dirección, las indicaciones y el cierre.
   const body = confirmed
-    ? [`Turno confirmado para ${when} con ${row.professional}. ${row.type_name}.`, row.address, row.instructions].filter(Boolean).join("\n\n")
+    ? confirmationBubbles({
+        startsAt: new Date(row.starts_at), timeZone: row.timezone, professional: row.professional, typeName: row.type_name,
+        address: row.address, instructions: row.instructions,
+      }).join("\n\n")
     : resolution === "occupied"
       ? `El horario del ${when} con ${row.professional} ya no está disponible. Si querés, respondé este mensaje y te busco otro horario.`
       : `Tu pedido para ${when} con ${row.professional} sigue pendiente. Lo dejamos a recepción para que pueda revisarlo.`;

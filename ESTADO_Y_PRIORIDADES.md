@@ -2,6 +2,22 @@
 
 Actualización: 20/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Sofi más humana en WhatsApp — 20/11/2026
+
+- **Pedido (Axel):** que Sofi suene como una persona de recepción, como otro bot que se comparó: frases cortas, burbujas separadas, sin «¿» ni «¡», sin negritas, sin repetir el nombre del paciente ni presentarse varias veces, y sin ser informal (nada de «che»).
+- **Lo que se veía en charlas reales:** se volvía a presentar en medio de la charla («Hola, María! Soy Sofia…»), ponía el nombre en cada mensaje, negritas (**miércoles 2/12**) y cierres de manual («Que tenga un lindo día!»).
+- **Código** (`src/lib/whatsapp-style.ts`, `channel.ts`, `waha.ts`):
+  - la respuesta se manda en burbujas (cada párrafo, hasta tres) con «escribiendo…» y una pausa según el largo entre una y otra;
+  - mientras Sofi piensa, el paciente ve «escribiendo…»;
+  - se sacan las negritas, los títulos, las viñetas y los signos de apertura (la plantilla de la ficha de salud va tal cual);
+  - **se presentaba de nuevo** porque, después de 15 minutos sin mensajes, Turnia abría otra conversación en ElevenLabs sin lo que se había hablado. Ahora, si hubo charla en las últimas 12 horas, Sofi recibe un resumen y la indicación de no saludar ni presentarse otra vez;
+  - la confirmación del turno verificado en Smile Connect llega en burbujas: «Listo, quedó confirmado el turno de… con el Dr. …», la dirección con 📍, las indicaciones y «Nos vemos el jueves 🙂»;
+  - los mensajes de «pedido pendiente» de las herramientas piden una sola línea («le aviso por acá apenas quede confirmado»).
+- **Prompt** (`src/lib/agent/prompt.ts`, «Estilo por WhatsApp y chat»): una idea por párrafo, horarios en una oración, presentarse una sola vez, el nombre como mucho una vez, cordial pero no informal, sin frases de manual ni cierres de fórmula, una pregunta por respuesta y un ejemplo de charla.
+- **Cómo se probó:** un agente de prueba en ElevenLabs con el mismo modelo, los datos del consultorio de Guerra–Mininni, pacientes inventados y las herramientas simuladas (no toca agendas ni pacientes). Se corrieron simulaciones de paciente nuevo, dolor y precio, reprogramación, charla retomada, preguntas sueltas y saludo, en cuatro vueltas, hasta que dejaron de aparecer los problemas. En ese rato se gastaron unos 15.000 créditos de ElevenLabs (incluye lo que usó Sofi en producción). El agente y las herramientas de prueba se borraron al terminar.
+- **Publicación:** el prompt nuevo se cargó en el agente general (el que atiende WhatsApp) después del deploy. Las charlas abiertas toman el prompt nuevo cuando vencen (15 minutos). El agente de llamadas de Guerra–Mininni lo toma con el próximo «Actualizar agente»; para la voz no cambia nada.
+- **Pruebas:** `src/lib/whatsapp-style.test.ts` y `src/test/waha.integration.test.ts` (burbujas con «escribiendo…», charla retomada). Suite completa: 730 pruebas.
+
 ## Smile Connect: obra social, plan, afiliado y ficha de salud en la nota del turno — 20/11/2026
 
 - **Pedido (Axel):** cuando Sofi agenda en Smile Connect, el turno tiene que llevar la obra social, el plan, la ficha y cualquier observación importante.

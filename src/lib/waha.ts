@@ -5,6 +5,7 @@ import { env } from "./env";
 import { requireActiveWhatsapp } from "./messaging-settings";
 import { currentWahaConnection } from "./waha-connections";
 import { noteOutgoingId, noteOutgoingText, noteOutgoingVoice, type OwnMessage } from "./waha-sent";
+import { typingMs } from "./whatsapp-style";
 
 // WAHA (WhatsApp HTTP API): WhatsApp Web con un chip común, en el VPS del
 // dueño. Es una API no oficial: el número puede quedar bloqueado si se mandan
@@ -184,6 +185,36 @@ export async function wahaSendText(chatId: string, text: string, opts: { interna
   const id = typeof body.id === "string" ? body.id : body.id?._serialized;
   await noteOutgoingId(id);
   return { id };
+}
+
+/** «Escribiendo…» en el chat del paciente. Es solo cortesía: si falla, no frena nada. */
+export async function wahaTyping(chatId: string): Promise<void> {
+  if (!isWhatsappChatId(chatId)) return;
+  try {
+    await waha("/api/startTyping", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: currentWahaConnection()?.session ?? env.wahaSession(), chatId }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // Sin «escribiendo…» el mensaje llega igual.
+  }
+}
+
+/**
+ * Un mensaje en burbujas, como lo manda una persona: entre una y otra, «escribiendo…» y una pausa
+ * según el largo de la que sigue. En las pruebas no hay pausa.
+ */
+export async function wahaSendBubbles(chatId: string, bubbles: string[], { continuing = false }: { continuing?: boolean } = {}): Promise<void> {
+  for (const [i, bubble] of bubbles.entries()) {
+    // continuing: la primera burbuja ya salió, así que todas llevan su pausa.
+    if (i > 0 || continuing) {
+      await wahaTyping(chatId);
+      if (!process.env.VITEST) await new Promise((resolve) => setTimeout(resolve, typingMs(bubble)));
+    }
+    await wahaSendText(chatId, bubble);
+  }
 }
 
 /** Busca el teléfono de un chat @lid (WhatsApp oculta el número en algunos chats). */
