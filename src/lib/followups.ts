@@ -9,6 +9,7 @@ import { zonedParts } from "./time";
 import { wahaSendText } from "./waha";
 import { wahaConnectionForClinic, withWahaConnection } from "./waha-connections";
 import { whatsappReadiness } from "./whatsapp";
+import { withArticle } from "./whatsapp-style";
 
 // Seguimiento de turnos ofrecidos (pedido del Dr. Mininni, 03/11): el agente le pasó horarios al
 // paciente por WhatsApp y no contestó. Se le vuelve a escribir una o dos veces (lo elige la clínica)
@@ -40,19 +41,29 @@ export type FollowupSlot = { cuando: string; profesional?: string };
 /** «Limpieza dental» → «limpieza dental»; «PAMI» queda igual. */
 const lowerFirst = (s: string) => (/^\p{Lu}\p{Ll}/u.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 
+/** «Limpieza dental» se nombra; «Consulta de implantes, blanqueamiento, funda/corona» suena a sistema. */
+const plainName = (name: string) => name.length <= 40 && !/[,/]/.test(name);
+
 /**
- * El mensaje de seguimiento. Sirve igual para las clínicas que tutean y las que tratan de usted
- * («¿Reservamos alguno?»). Puro.
+ * El mensaje de seguimiento, como lo escribiría recepción: sin «¿», con el profesional de cada horario
+ * y el día una sola vez si los dos son el mismo día. Sirve igual para las clínicas que tutean y las que
+ * tratan de usted («Reservamos alguno?»). Puro.
  */
 export function followupText(input: { name: string | null; typeName: string; slots: FollowupSlot[]; attempt: number }): string {
   const first = input.name?.trim().split(/\s+/)[0];
   const hello = first ? `Hola ${first.charAt(0).toUpperCase()}${first.slice(1).toLowerCase()}` : "Hola";
-  const opening = input.attempt > 1 ? `${hello}, retomo lo del turno de ${lowerFirst(input.typeName)}` : `${hello}, sobre el turno de ${lowerFirst(input.typeName)}`;
-  const slot = (s: FollowupSlot) => `el ${s.cuando}${s.profesional ? ` con ${s.profesional}` : ""}`;
+  const subject = plainName(input.typeName) ? `el turno de ${lowerFirst(input.typeName)}` : "el turno que estábamos viendo";
+  const opening = input.attempt > 1 ? `${hello}, retomo lo ${subject.replace(/^el /, "del ")}` : `${hello}, sobre ${subject}`;
+  const who = (s: FollowupSlot) => (s.profesional ? ` con ${withArticle(s.profesional)}` : "");
   const [a, b] = input.slots;
-  if (!a) return `${opening}: los horarios que vimos ya se ocuparon. ¿Buscamos otros días?`;
-  if (!b) return `${opening}: todavía hay lugar ${slot(a)}. ¿Lo reservamos?`;
-  return `${opening}: todavía hay lugar ${slot(a)} o ${slot(b)}. ¿Reservamos alguno?`;
+  if (!a) return `${opening}: los horarios que vimos ya se ocuparon. Buscamos otros días?`;
+  if (!b) return `${opening}: todavía hay lugar el ${a.cuando}${who(a)}. Lo reservamos?`;
+  const [dayA, timeA] = a.cuando.split(" a las ");
+  const [dayB, timeB] = b.cuando.split(" a las ");
+  const both = dayA === dayB && timeB && (a.profesional ?? "") === (b.profesional ?? "")
+    ? `el ${dayA} a las ${timeA} o a las ${timeB}${who(a)}`
+    : `el ${a.cuando}${who(a)} o el ${b.cuando}${who(b)}`;
+  return `${opening}: todavía hay lugar ${both}. Reservamos alguno?`;
 }
 
 /** ¿Ya toca escribirle? Puro. */
@@ -135,8 +146,8 @@ async function followUp(offer: OpenOffer, now: Date): Promise<"enviado" | "cerra
   }
   const patient = await findPatientByPhone(clinic.id, offer.patient_phone);
   if (patient?.contact_opt_out) return closed(offer);
-  const pros = new Set(availability.turnos.map((t) => t.profesional));
-  const slots = availability.turnos.slice(0, 2).map((t) => ({ cuando: t.cuando, ...(pros.size > 1 && t.profesional && { profesional: t.profesional }) }));
+  // Siempre con el profesional: si cambió desde la charla, el paciente tiene que saberlo.
+  const slots = availability.turnos.slice(0, 2).map((t) => ({ cuando: t.cuando, ...(t.profesional && { profesional: t.profesional }) }));
   const attempt = offer.followups_sent + 1;
   const text = followupText({ name: patient?.full_name ?? null, typeName: offer.type_name, slots, attempt });
 

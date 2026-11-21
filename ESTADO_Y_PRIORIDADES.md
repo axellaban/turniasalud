@@ -2,6 +2,17 @@
 
 Actualización: 20/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
 
+## Seguimiento de horarios ofrecidos: no ofrecer lo que Sofi descartó — 21/11/2026
+
+- **Qué pasó (charla de prueba de Axel con Guerra–Mininni):**
+  - Para el martes, la búsqueda devolvió horarios de la Dra. Coldeira. Sofi volvió a buscar con el Dr. Mininni, no había lugar y le dijo eso.
+  - El seguimiento automático guardaba la última búsqueda **con** horarios, que era la de Coldeira. A la mañana siguiente escribió «todavía hay lugar el martes 24/11 a las 11:30…», sin decir con quién, contradiciendo a Sofi.
+- **Arreglo** (`src/lib/agent/service.ts`, `src/lib/followups.ts`):
+  - una búsqueda sin lugar cierra el seguimiento abierto;
+  - el mensaje nombra siempre al profesional, no repite el día si los dos horarios son el mismo, no lleva «¿», y si la prestación tiene un nombre de catálogo largo dice «el turno que estábamos viendo».
+- **Dónde se configura:** Panel → Configuración → Turnos y urgencias → «Si el paciente no contesta» (no, 1 o 2 veces; el primero después de 1 a 24 horas; solo de 9 a 20). Corre con la automatización de cada 10 minutos.
+- **Pruebas:** `src/lib/followups.test.ts` y `src/test/waha.integration.test.ts`. Suite completa: 731 pruebas.
+
 ## Sofi más humana en WhatsApp — 20/11/2026
 
 - **Pedido (Axel):** que Sofi suene como una persona de recepción, como otro bot que se comparó: frases cortas, burbujas separadas, sin «¿» ni «¡», sin negritas, sin repetir el nombre del paciente ni presentarse varias veces, y sin ser informal (nada de «che»).
