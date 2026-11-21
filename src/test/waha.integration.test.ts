@@ -703,7 +703,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
       expect(await sendOfferFollowups(noon(1))).toMatchObject({ enviados: 1 });
       const [first] = fake.sent("sendText");
       expect(first.body).toMatchObject({ chatId: "5491155550077@c.us" });
-      expect((first.body as { text: string }).text).toMatch(/^Hola Paula, sobre el turno de limpieza dental: todavía hay lugar el .+ a las \d{2}:\d{2}( o el .+)?\. ¿(Reservamos alguno|Lo reservamos)\?$/);
+      expect((first.body as { text: string }).text).toMatch(/^Hola Paula, sobre el turno de limpieza dental: todavía hay lugar el .+ a las \d{2}:\d{2}.* con (el|la) .+\. (Reservamos alguno|Lo reservamos)\?$/);
       // Otra corrida en el mismo momento no lo repite.
       expect(await sendOfferFollowups(noon(1))).toMatchObject({ enviados: 0 });
       // Al otro día, el segundo y último.
@@ -724,6 +724,16 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
       // Quien contestó algo después de los horarios (aunque sea «lo pienso») no recibe seguimiento.
       await offer("5491155550078", "conv_lo_pienso", "seg3");
       await inbound(wahaRequest(textMessage("seg4", "Lo pienso y te aviso", "5491155550078@c.us")));
+      // Si después buscó otro día (u otro profesional) y no había lugar, el seguimiento no ofrece lo de antes.
+      const other = await offer("5491155550080", "conv_otro_dia", "seg6");
+      expect(await sql`select 1 from agent_offers where patient_phone = '5491155550080' and closed_at is null`).toHaveLength(1);
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+      const sunday = new Date(`${today}T12:00:00Z`);
+      sunday.setUTCDate(sunday.getUTCDate() + (7 - sunday.getUTCDay()));
+      const day = sunday.toISOString().slice(0, 10);
+      expect((await service.checkAvailability(other, { tipo_turno_id: LIMPIEZA, desde: day, hasta: day })).turnos).toEqual([]);
+      expect(await sql`select 1 from agent_offers where patient_phone = '5491155550080' and closed_at is null`).toHaveLength(0);
+
       // Con 0 intentos elegidos en el panel, tampoco.
       await sql`update clinics set followup_attempts = 0 where id = ${CLINIC}`;
       await offer("5491155550079", "conv_sin_seguimiento", "seg5");

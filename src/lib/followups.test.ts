@@ -10,17 +10,26 @@ describe("seguimiento de turnos ofrecidos", () => {
   it("arma el mensaje con los horarios que siguen libres, sin tutear ni tratar de usted", () => {
     const slots = [{ cuando: "martes 10/11 a las 11:00" }, { cuando: "miércoles 11/11 a las 15:30" }];
     expect(followupText({ name: "MARÍA gonzález", typeName: "Limpieza dental", slots, attempt: 1 })).toBe(
-      "Hola María, sobre el turno de limpieza dental: todavía hay lugar el martes 10/11 a las 11:00 o el miércoles 11/11 a las 15:30. ¿Reservamos alguno?",
+      "Hola María, sobre el turno de limpieza dental: todavía hay lugar el martes 10/11 a las 11:00 o el miércoles 11/11 a las 15:30. Reservamos alguno?",
     );
     expect(followupText({ name: null, typeName: "Consulta", slots: slots.slice(0, 1), attempt: 2 })).toBe(
-      "Hola, retomo lo del turno de consulta: todavía hay lugar el martes 10/11 a las 11:00. ¿Lo reservamos?",
+      "Hola, retomo lo del turno de consulta: todavía hay lugar el martes 10/11 a las 11:00. Lo reservamos?",
     );
     expect(followupText({ name: "Jorge", typeName: "PAMI control", slots: [], attempt: 1 })).toBe(
-      "Hola Jorge, sobre el turno de PAMI control: los horarios que vimos ya se ocuparon. ¿Buscamos otros días?",
+      "Hola Jorge, sobre el turno de PAMI control: los horarios que vimos ya se ocuparon. Buscamos otros días?",
     );
-    expect(followupText({ name: "Jorge", typeName: "Control", slots: [{ cuando: "lunes 9/11 a las 12:00", profesional: "Dra. Ruiz" }], attempt: 1 })).toContain(
-      "el lunes 9/11 a las 12:00 con Dra. Ruiz",
-    );
+  });
+
+  it("nombra siempre al profesional y no repite el día si los dos horarios son el mismo día", () => {
+    const coldeira = "Dra. María Emilia Coldeira";
+    expect(followupText({
+      name: "Axel", typeName: "Consulta de implantes, blanqueamiento, funda/corona", attempt: 1,
+      slots: [{ cuando: "martes 24/11 a las 11:30", profesional: coldeira }, { cuando: "martes 24/11 a las 12:30", profesional: coldeira }],
+    })).toBe("Hola Axel, sobre el turno que estábamos viendo: todavía hay lugar el martes 24/11 a las 11:30 o a las 12:30 con la Dra. María Emilia Coldeira. Reservamos alguno?");
+    expect(followupText({
+      name: "Jorge", typeName: "Control", attempt: 1,
+      slots: [{ cuando: "lunes 9/11 a las 12:00", profesional: "Dra. Ruiz" }, { cuando: "martes 10/11 a las 10:00", profesional: "Dr. Mininni" }],
+    })).toBe("Hola Jorge, sobre el turno de control: todavía hay lugar el lunes 9/11 a las 12:00 con la Dra. Ruiz o el martes 10/11 a las 10:00 con el Dr. Mininni. Reservamos alguno?");
   });
 
   it("espera las horas elegidas, escribe solo de 9 a 20 y el segundo va al día siguiente", () => {

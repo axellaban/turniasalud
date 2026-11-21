@@ -523,6 +523,7 @@ export async function checkAvailability(
   // Días que la agenda del consultorio no confirmó a tiempo: no se dan por llenos ante el paciente.
   const notChecked = unchecked.length ? { dias_sin_revisar: unchecked } : {};
   const uncheckedText = unchecked.length === 1 ? `el ${unchecked[0]}` : `${unchecked.length} días entre el ${unchecked[0]} y el ${unchecked.at(-1)}`;
+  if (!slots.length && !move) await recordOffer(ctx, input, "");
   if (!slots.length && unchecked.length) {
     return {
       ok: true,
@@ -637,6 +638,13 @@ async function assertPrerequisites(catalog: Catalog, patient: Patient | null, vi
  */
 async function recordOffer(ctx: ToolContext, query: Record<string, unknown>, typeName: string): Promise<void> {
   if (!ctx.conversationId || ctx.channel === "panel" || !ctx.patientPhone) return;
+  if (!typeName) {
+    // Una búsqueda sin lugar reemplaza a la anterior: el seguimiento no puede ofrecer lo que el
+    // agente descartó después (por ejemplo, otro profesional que el paciente no eligió).
+    await sql`update agent_offers set closed_at = now() where clinic_id = ${ctx.clinicId} and patient_phone = ${ctx.patientPhone} and closed_at is null`
+      .catch((e) => console.error("No se pudo cerrar el turno ofrecido", e instanceof Error ? e.message : e));
+    return;
+  }
   try {
     await sql.begin(async (tx) => {
       await tx`update agent_offers set closed_at = now() where clinic_id = ${ctx.clinicId} and patient_phone = ${ctx.patientPhone} and closed_at is null`;
