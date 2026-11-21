@@ -734,6 +734,19 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
       expect((await service.checkAvailability(other, { tipo_turno_id: LIMPIEZA, desde: day, hasta: day })).turnos).toEqual([]);
       expect(await sql`select 1 from agent_offers where patient_phone = '5491155550080' and closed_at is null`).toHaveLength(0);
 
+      // Si recepción le dio turno en otra ficha con su DNI (y otro teléfono), tampoco le escribe.
+      const dni = await offer("5491155550081", "conv_otra_ficha", "seg7");
+      await service.registerPatient(dni, { nombre_completo: "Rita Repetida", dni: "28111999" });
+      const { turnos: free } = await service.checkAvailability(dni, { tipo_turno_id: LIMPIEZA });
+      const [twin] = await sql`insert into patients (clinic_id, full_name, phone, dni) values (${CLINIC}, 'Rita Repetida', '5492230001111', '28111999') returning id`;
+      await sql`
+        insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+        values (${CLINIC}, ${twin.id}, ${free[0].profesional_id}, ${LIMPIEZA}, ${free[0].inicio}, ${new Date(Date.parse(free[0].inicio) + 30 * 60_000).toISOString()}, 'confirmado', 'panel')`;
+      fake.calls = [];
+      await sendOfferFollowups(noon(1));
+      expect(fake.sent("sendText").filter((c) => (c.body as { chatId: string }).chatId === "5491155550081@c.us")).toHaveLength(0);
+      expect(await sql`select 1 from agent_offers where patient_phone = '5491155550081' and closed_at is null`).toHaveLength(0);
+
       // Con 0 intentos elegidos en el panel, tampoco.
       await sql`update clinics set followup_attempts = 0 where id = ${CLINIC}`;
       await offer("5491155550079", "conv_sin_seguimiento", "seg5");
