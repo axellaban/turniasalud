@@ -11,7 +11,12 @@ Actualización: 20/11/2026 (Argentina). Este registro prevalece sobre los pendie
   - una búsqueda sin lugar cierra el seguimiento abierto;
   - el mensaje nombra siempre al profesional, no repite el día si los dos horarios son el mismo, no lleva «¿», y si la prestación tiene un nombre de catálogo largo dice «el turno que estábamos viendo».
 - **Dónde se configura:** Panel → Configuración → Turnos y urgencias → «Si el paciente no contesta» (no, 1 o 2 veces; el primero después de 1 a 24 horas; solo de 9 a 20). Corre con la automatización de cada 10 minutos.
-- **Pruebas:** `src/lib/followups.test.ts` y `src/test/waha.integration.test.ts`. Suite completa: 731 pruebas.
+- **Si reservó por otro canal (21/11, pregunta de Axel):**
+  - **Antes:** solo se miraban los turnos nuevos en Turnia de una ficha con ese mismo celular. Turnia trae de Smile Connect los turnos lejanos (más de 4 días) cada 8 horas, así que un turno que daba recepción por teléfono para la semana siguiente podía no estar todavía, o estar en otra ficha con otro teléfono.
+  - **Ahora:** se reconoce al paciente por su celular, por su DNI (otras fichas de Turnia) y por sus vínculos con Smile Connect.
+  - **Lectura en vivo:** si la clínica tiene Smile Connect, antes de escribirle se leen las fechas que se habían buscado y se buscan sus fichas allá por DNI y celular. Si tiene un turno nuevo, no se escribe. Cuando los días cercanos ya se leyeron después de la oferta, alcanza con Turnia y no se gasta cupo.
+  - **Si Smile Connect no responde** o no queda cupo, se espera a la próxima vuelta: mejor tarde que escribirle a quien ya tiene turno.
+- **Pruebas:** `src/lib/followups.test.ts`, `src/test/waha.integration.test.ts` (también otra ficha con el mismo DNI) y `src/test/smile-connect-api.integration.test.ts` (turno cargado por recepción en otra ficha de Smile Connect, y Smile Connect sin responder), con verificación de mutación. Suite completa: 732 pruebas.
 
 ## Sofi más humana en WhatsApp — 20/11/2026
 

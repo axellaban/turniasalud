@@ -1180,6 +1180,63 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(fake.whatsapps.at(-1)?.text).toContain("El turno original sigue reservado");
     });
 
+    it("el seguimiento no le escribe a quien ya sacó turno con recepción en Smile Connect", async () => {
+      const { sendOfferFollowups } = await import("@/lib/followups");
+      const conv = `conv-${patientPhone}`;
+      // La oferta es de ahora (después de los turnos de las pruebas anteriores) y el seguimiento corre
+      // mañana al mediodía del consultorio (se escribe de 9 a 20).
+      const [y, m, d] = day(1).split("-").map(Number);
+      const noon = zonedTimeToUtc(y, m, d, 12, 0, TZ);
+      const offered = new Date(Date.now() - 5 * 60_000);
+      await sql`update clinics set followup_attempts = 1, followup_delay_hours = 1 where id = ${gm}`;
+      const offer = async () => {
+        expect(await tool("consultar_disponibilidad", { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro, desde: day(10), hasta: day(10) }))
+          .toMatchObject({ ok: true, turnos: expect.arrayContaining([expect.anything()]) });
+      };
+      const open = async () => (await sql`select 1 from agent_offers where clinic_id = ${gm} and patient_phone = ${patientPhone} and closed_at is null`).length;
+      await sql`
+        insert into channel_conversations (clinic_id, waha_connection_id, phone, chat_id, elevenlabs_conversation_id, transcript, last_activity_at, closed_at)
+        values (${gm}, 'guerra-mininni', ${patientPhone}, ${`${patientPhone}@c.us`}, ${conv},
+          ${sql.json([{ role: "user", message: "Quiero un turno", at: new Date(offered.getTime() - 60_000).toISOString() },
+            { role: "agent", message: "Tengo estos horarios…", at: offered.toISOString() }])}, ${offered}, ${offered})
+        on conflict (elevenlabs_conversation_id) do update set clinic_id = excluded.clinic_id, waha_connection_id = excluded.waha_connection_id,
+          chat_id = excluded.chat_id, transcript = excluded.transcript, created_at = ${offered}`;
+      // Recepción la cargó en otra ficha de Smile Connect (con su DNI) y Turnia todavía no lo trajo.
+      fake.patients.set(5097, { patient_id: 5097, name: "Juana", surname: "Ficticia", id_number: "30111222", email: null, phone_country_code: "AR", phone_number: "2234000000" });
+      fake.appointments.set(80970, scAppt(80970, 5097, 10, "15:00", "15:30"));
+      try {
+        await offer();
+        fake.whatsapps.length = 0;
+        expect(await sendOfferFollowups(noon)).toMatchObject({ enviados: 0 });
+        expect(fake.whatsapps).toEqual([]);
+        expect(await open()).toBe(0);
+
+        // Si Smile Connect no responde, se espera: no se escribe ni se da por cerrado.
+        fake.appointments.delete(80970);
+        await offer();
+        fake.status = 503;
+        try {
+          expect(await sendOfferFollowups(noon)).toMatchObject({ enviados: 0 });
+        } finally {
+          fake.status = 200;
+        }
+        expect(fake.whatsapps).toEqual([]);
+        expect(await open()).toBe(1);
+
+        // Sin turno en ningún lado, le escribe, nombrando al profesional y sin «¿».
+        expect(await sendOfferFollowups(noon)).toMatchObject({ enviados: 1 });
+        expect(fake.whatsapps).toEqual([expect.objectContaining({
+          chatId: `${patientPhone}@c.us`,
+          text: expect.stringMatching(/^Hola Juana, sobre el turno de control: todavía hay lugar el .+ con el Dr\. Mariano Prueba\. (Reservamos alguno|Lo reservamos)\?$/),
+        })]);
+      } finally {
+        fake.patients.delete(5097);
+        fake.appointments.delete(80970);
+        await sql`update agent_offers set closed_at = now() where clinic_id = ${gm} and closed_at is null`;
+        await sql`update clinics set followup_attempts = 0 where id = ${gm}`;
+      }
+    });
+
     it("retoma la automatización después de una sincronización manual exitosa", async () => {
       const actions = await import("@/app/panel/smile-api-actions");
       mocks.cookies.set("turnia_clinic", gm);

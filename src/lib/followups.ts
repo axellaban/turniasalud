@@ -3,9 +3,11 @@ import { isWhatsappChatId } from "./phone";
 import { sql } from "./db";
 import { findPatientByPhone, getClinic } from "./clinic";
 import { checkAvailability, ToolError } from "./agent/service";
+import { scAppointments, scSearchPatients, SmileApiError } from "./smile-connect-api";
+import { clientFor, getSmileApiConnection, SmileBudgetError } from "./smile-connect-link";
 import { recapTranscript, registerOutbound, type ChannelConversation } from "./channel";
 import { chatIsActive, requireActiveWhatsapp } from "./messaging-settings";
-import { zonedParts } from "./time";
+import { addDaysKey, zonedParts, zonedTimeToUtc } from "./time";
 import { wahaSendText } from "./waha";
 import { wahaConnectionForClinic, withWahaConnection } from "./waha-connections";
 import { whatsappReadiness } from "./whatsapp";
@@ -122,12 +124,17 @@ async function followUp(offer: OpenOffer, now: Date): Promise<"enviado" | "cerra
   // Contestó algo después de que le ofrecieron los horarios (sí, no, otro día): ya no es un silencio.
   const offeredAt = new Date(offer.created_at).getTime();
   if (convs.some((c) => c.transcript.some((l) => l.role === "user" && new Date(l.at).getTime() > offeredAt))) return closed(offer);
-  // Sacó turno por otro lado (llamó, o se lo dio recepción).
+  // Sacó turno por otro lado (llamó, o se lo dio recepción): en Turnia, o en Smile Connect aunque
+  // todavía no haya llegado a Turnia.
+  const person = await personOf(clinic.id, offer.patient_phone);
   const [booked] = await sql`
-    select 1 from appointments a join patients p on p.id = a.patient_id
-    where a.clinic_id = ${clinic.id} and p.phone = ${offer.patient_phone} and a.created_at > ${offer.created_at}
+    select 1 from appointments
+    where clinic_id = ${clinic.id} and patient_id = any(${person.patientIds}::uuid[]) and created_at > ${offer.created_at}
     limit 1`;
   if (booked) return closed(offer);
+  const inSmile = await bookedInSmile(clinic, offer, person, now);
+  if (inSmile === "esperar") return "esperar";
+  if (inSmile) return closed(offer);
 
   // Se escribe desde la misma línea por la que habló: la propia del consultorio o la general.
   const own = wahaConnectionForClinic(clinic.id);
@@ -175,6 +182,86 @@ async function followUp(offer: OpenOffer, now: Date): Promise<"enviado" | "cerra
   };
   await (own ? withWahaConnection(own, send) : send());
   return "enviado";
+}
+
+type Person = { patientIds: string[]; dnis: string[]; smileIds: number[] };
+
+/**
+ * Las fichas de esta persona: las de su celular y las que tienen su DNI (recepción pudo cargarla con
+ * otro teléfono), con sus vínculos de Smile Connect.
+ */
+async function personOf(clinicId: string, phone: string): Promise<Person> {
+  const rows = await sql<Array<{ id: string; dni: string | null; ext: string[] }>>`
+    with own as (select id, dni from patients where clinic_id = ${clinicId} and phone = ${phone})
+    select p.id, p.dni,
+      coalesce((select array_agg(e.external_id) from patient_external_ids e where e.patient_id = p.id and e.external_id ~ '^sc:[0-9]+$'), '{}') as ext
+    from patients p
+    where p.clinic_id = ${clinicId}
+      and (p.id in (select id from own) or (p.dni is not null and p.dni in (select dni from own where dni is not null)))`;
+  return {
+    patientIds: rows.map((r) => r.id),
+    dnis: [...new Set(rows.map((r) => r.dni).filter((d): d is string => Boolean(d)))],
+    smileIds: [...new Set(rows.flatMap((r) => r.ext.map((e) => Number(e.slice(3)))))],
+  };
+}
+
+/** Lo que Turnia ya lee de Smile Connect cada media hora: hoy y los próximos días. */
+const NEAR_DAYS = 4;
+/** Las fechas que se miran en vivo: las que se habían buscado, o las dos semanas siguientes. */
+const DEFAULT_WINDOW_DAYS = 14;
+
+/**
+ * ¿Recepción le dio un turno en Smile Connect después de la oferta? Turnia trae los turnos lejanos solo
+ * cada 8 horas, así que antes de escribirle se miran en vivo las fechas que se habían buscado (si los
+ * días cercanos ya se leyeron después de la oferta, alcanza con Turnia). Si Smile Connect no responde o
+ * no queda cupo de lecturas, se espera: mejor tarde que escribirle a quien ya tiene turno.
+ */
+async function bookedInSmile(clinic: { id: string; timezone: string }, offer: OpenOffer, person: Person, now: Date): Promise<boolean | "esperar"> {
+  const clinicId = clinic.id;
+  const conn = await getSmileApiConnection(clinicId);
+  if (!conn?.api_key_encrypted || conn.api_mode === "apagada") return false;
+  if (conn.api_retry_at && Date.parse(conn.api_retry_at) > now.getTime()) return "esperar";
+  const query = offer.query as { desde?: string; hasta?: string };
+  // Medianoche de un día (AAAA-MM-DD) en la zona del consultorio.
+  const midnight = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return zonedTimeToUtc(y, m, d, 0, 0, clinic.timezone).getTime();
+  };
+  const dateKey = /^\d{4}-\d{2}-\d{2}$/;
+  const from = new Date(Math.max(now.getTime(), query.desde && dateKey.test(query.desde) ? midnight(query.desde) : 0));
+  const until = query.hasta && dateKey.test(query.hasta) ? midnight(addDaysKey(query.hasta, 1)) : now.getTime() + DEFAULT_WINDOW_DAYS * 86_400_000;
+  const to = new Date(Math.min(until, from.getTime() + 31 * 86_400_000));
+  if (to <= from) return false;
+  const nearFresh = conn.api_near_pull_at && Date.parse(conn.api_near_pull_at) > Date.parse(offer.created_at);
+  if (nearFresh && to.getTime() <= now.getTime() + NEAR_DAYS * 86_400_000) return false;
+  try {
+    const client = clientFor(conn);
+    const ids = new Set(person.smileIds);
+    const digits = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
+    // Otra ficha de Smile Connect con su DNI o su celular (aunque no esté vinculada en Turnia).
+    for (const dni of person.dnis) {
+      for (const p of await scSearchPatients(client, digits(dni))) if (digits(p.id_number) === digits(dni)) ids.add(p.patient_id);
+    }
+    const phone = digits(offer.patient_phone);
+    const national = /^549\d{10}$/.test(phone) ? phone.slice(3) : null;
+    if (national) {
+      for (const p of await scSearchPatients(client, national)) if (digits(p.phone_number).endsWith(national.slice(-8))) ids.add(p.patient_id);
+    }
+    if (!ids.size) return false;
+    const known = new Set((await sql<Array<{ external_id: string }>>`
+      select external_id from appointments where clinic_id = ${clinicId} and external_id ~ '^sc:[0-9]+$'
+        and created_at <= ${offer.created_at} and starts_at >= ${from} and starts_at < ${to}`)
+      .map((r) => Number(r.external_id.slice(3))));
+    return (await scAppointments(client, from, to)).some((a) =>
+      ids.has(a.patient_id) && !a.cancelled && a.attendance !== "Canceled with Notice" && !known.has(a.appointment_id)
+      && Date.parse(a.start_date) > now.getTime());
+  } catch (e) {
+    if (e instanceof SmileBudgetError || e instanceof SmileApiError) {
+      console.error("Seguimiento: no se pudo revisar Smile Connect, se espera", e.message);
+      return "esperar";
+    }
+    throw e;
+  }
 }
 
 async function closed(offer: OpenOffer): Promise<"cerrado"> {
