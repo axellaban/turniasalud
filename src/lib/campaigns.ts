@@ -746,7 +746,10 @@ export async function setRecipientIncluded(clinicId: string, recipientId: string
 export async function markManualSent(clinicId: string, recipientId: string): Promise<string | null> {
   const [row] = await sql<Array<{ campaign_id: string; type: CampaignType; context: string | null }>>`
     update campaign_recipients r set status = 'enviado', manual = true, sent_at = now(), error = null,
-      messages_sent = 1, last_message_at = now(), next_step_at = null
+      messages_sent = 1, last_message_at = now(),
+      -- Con seguimiento, el próximo también sale desde el WhatsApp de la clínica (aparece en el lote).
+      next_step_at = (select now() + make_interval(days => s.delay_days) from campaign_steps s
+                      where s.campaign_id = c.id and s.position = 2 and c.max_messages >= 2)
     from campaigns c
     where r.id = ${recipientId} and c.id = r.campaign_id and c.clinic_id = ${clinicId} and r.status in ('pendiente', 'error')
     returning r.campaign_id, c.type, r.context`;
@@ -760,6 +763,51 @@ export async function markManualSent(clinicId: string, recipientId: string): Pro
   return row.campaign_id;
 }
 
+/** Cuántos de la campaña ya recibieron el primer mensaje (por Sofi o a mano). */
+export async function contactedCount(campaignId: string): Promise<number> {
+  const [{ n }] = await sql<Array<{ n: number }>>`
+    select count(*)::int as n from campaign_recipients where campaign_id = ${campaignId} and messages_sent >= 1`;
+  return n;
+}
+
+/** Seguimiento mandado desde el WhatsApp de la clínica (el equipo lo abrió desde el lote). */
+export async function markManualFollowup(clinicId: string, recipientId: string): Promise<string | null> {
+  const [row] = await sql<Array<{ campaign_id: string; messages_sent: number }>>`
+    update campaign_recipients r set messages_sent = r.messages_sent + 1, last_message_at = now(),
+      next_step_at = (select now() + make_interval(days => s.delay_days) from campaign_steps s
+                      where s.campaign_id = c.id and s.position = r.messages_sent + 2 and c.max_messages >= r.messages_sent + 2),
+      sequence_stopped = case when c.max_messages <= r.messages_sent + 1 then 'Terminó la secuencia' else null end
+    from campaigns c
+    where r.id = ${recipientId} and c.id = r.campaign_id and c.clinic_id = ${clinicId} and r.manual
+      and r.next_step_at is not null and r.messages_sent < c.max_messages
+    returning r.campaign_id, r.messages_sent`;
+  if (!row) return null;
+  await recordCampaignMessage(await getClinic(clinicId), { campaignId: row.campaign_id, recipientId, step: row.messages_sent, manual: true });
+  return row.campaign_id;
+}
+
+export type Outcome = "respondio" | "no_interesa" | "baja";
+
+/**
+ * Lo que pasó con un envío desde el WhatsApp de la clínica (la respuesta no le llega a Sofi):
+ * «Respondió» y «No le interesa» cuentan como respuesta; «Pidió la baja» además marca la baja en la ficha.
+ * Las dos últimas cortan el seguimiento.
+ */
+export async function setRecipientOutcome(clinicId: string, recipientId: string, outcome: Outcome): Promise<boolean> {
+  const stop = outcome === "baja" ? "Pidió la baja" : outcome === "no_interesa" ? "No le interesa" : null;
+  const [row] = await sql<Array<{ patient_id: string }>>`
+    update campaign_recipients r set outcome = ${outcome},
+      status = case when r.status = 'agendo' then r.status else 'respondio' end,
+      next_step_at = case when ${stop}::text is null and ${outcome} = 'respondio' and c.stop_on_reply = false then r.next_step_at else null end,
+      sequence_stopped = coalesce(${stop}::text, case when c.stop_on_reply then 'Respondió' else r.sequence_stopped end)
+    from campaigns c
+    where r.id = ${recipientId} and c.id = r.campaign_id and c.clinic_id = ${clinicId} and r.status in ('enviado', 'respondio', 'agendo')
+    returning r.patient_id`;
+  if (!row) return false;
+  if (outcome === "baja") await sql`update patients set contact_opt_out = true where id = ${row.patient_id} and clinic_id = ${clinicId}`;
+  return true;
+}
+
 export type SendResult = {
   audience: number;
   sent: number;
@@ -769,9 +817,11 @@ export type SendResult = {
   errors: string[];
   /** Se frenó porque la línea llegó al tope del día (los que quedan salen mañana). */
   capped?: boolean;
+  /** Se frenó porque terminó el piloto (el equipo decide si sigue con el resto). */
+  pilot?: boolean;
 };
 
-export async function sendCampaign(campaignId: string): Promise<SendResult> {
+export async function sendCampaign(campaignId: string, opts: { only?: string[] } = {}): Promise<SendResult> {
   const [campaign] = await sql<Campaign[]>`select * from campaigns where id = ${campaignId}`;
   if (!campaign) throw new Error("No encontré la campaña.");
   const clinic = await getClinic(campaign.clinic_id);
@@ -787,13 +837,16 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
   const queue = await sql<Array<{ id: string; patient_id: string }>>`
     select id, patient_id from campaign_recipients
     where campaign_id = ${campaign.id} and status in ('pendiente', 'error')
+      ${opts.only ? sql`and id = any(${opts.only}::uuid[])` : sql``}
     order by created_at, id`;
 
   await sql`update campaigns set status = 'enviando' where id = ${campaign.id}`;
   const result: SendResult = { audience: queue.length, sent: 0, failed: 0, skipped: 0, remaining: 0, errors: [] };
   // Tope por corrida (50) y lo que le queda hoy a la línea de WhatsApp (60 por día en WAHA).
   const usage = await lineUsage(clinic);
-  const limit = Math.min(MAX_PER_RUN, usage.left);
+  // Piloto: solo los primeros N hasta que el equipo decida seguir.
+  const pilotLeft = campaign.pilot_size ? Math.max(0, campaign.pilot_size - (await contactedCount(campaign.id))) : Infinity;
+  const limit = Math.min(MAX_PER_RUN, usage.left, pilotLeft);
   const [followup] = await sql<Array<{ delay_days: number }>>`
     select delay_days from campaign_steps where campaign_id = ${campaign.id} and position = 2 and ${campaign.max_messages ?? 1} >= 2`;
 
@@ -808,6 +861,7 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
     if (attempts >= limit) {
       result.remaining++;
       if (attempts >= usage.left) result.capped = true;
+      else if (attempts >= pilotLeft) result.pilot = true;
       continue;
     }
     if (attempts++ > 0) await pauseBetweenSends(clinic);

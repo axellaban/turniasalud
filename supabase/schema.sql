@@ -2117,3 +2117,15 @@ create index if not exists saved_audiences_clinic_idx on saved_audiences (clinic
 alter table saved_audiences enable row level security;
 alter table campaigns add column if not exists audience_id uuid references saved_audiences(id) on delete set null;
 alter table campaigns add column if not exists audience_rules jsonb;
+
+-- ---------------------------------------------------------------------------
+-- Turnia Activa · PR 5 (24/11/2026): revisar lote. El mismo lote sale con Sofi o desde el WhatsApp de
+-- la clínica, de a uno. Lo que el paciente contesta en el WhatsApp de la clínica no llega a Sofi: el
+-- equipo lo marca (`outcome`) para que cuente en los resultados. `pilot_size` = piloto (los primeros N).
+-- ---------------------------------------------------------------------------
+alter table campaigns add column if not exists pilot_size smallint;
+alter table campaigns drop constraint if exists campaigns_pilot_size_check;
+alter table campaigns add constraint campaigns_pilot_size_check check (pilot_size is null or pilot_size between 1 and 200);
+alter table campaign_recipients add column if not exists outcome text;
+alter table campaign_recipients drop constraint if exists campaign_recipients_outcome_check;
+alter table campaign_recipients add constraint campaign_recipients_outcome_check check (outcome is null or outcome in ('respondio', 'no_interesa', 'baja'));

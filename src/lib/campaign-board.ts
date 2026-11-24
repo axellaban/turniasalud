@@ -141,9 +141,10 @@ export async function campaignQueue(
     const sentOn = r.last_message_at ?? r.sent_at;
     const sentLabel = sentOn ? `no contestó el ${formatDate(sentOn, clinic.timezone)}` : "enviado";
     if (r.next_step_at) {
-      const step = `Seguimiento ${r.messages_sent + 1} de ${campaign.max_messages}`;
+      const step = `Seguimiento ${r.messages_sent + 1} de ${campaign.max_messages}${r.manual ? " · desde tu WhatsApp" : ""}`;
       const due = new Date(r.next_step_at);
-      const when = !clinic.sequences_enabled ? "Seguimiento apagado" : due <= now ? next : humanSlot(due, clinic.timezone);
+      // Los seguimientos de lo mandado a mano salen desde el lote (no dependen de las secuencias de Sofi).
+      const when = !clinic.sequences_enabled && !r.manual ? "Seguimiento apagado" : due <= now ? next : humanSlot(due, clinic.timezone);
       return { ...base, reason: `${detail || "Mensaje"}: ${sentLabel}`, step, when, kind: due <= now ? "cola" : "hecho", action: null };
     }
     return {

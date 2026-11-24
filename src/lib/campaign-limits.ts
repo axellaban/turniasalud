@@ -14,6 +14,10 @@ export const SEND_WINDOW = { weekdays: [1, 2, 3, 4, 5], from: 9, to: 20 } as con
 /** Seguimiento sugerido: a los 5 días sin respuesta, hasta 2 mensajes por paciente. */
 export const DEFAULT_FOLLOWUP_DAYS = 5;
 export const DEFAULT_MAX_MESSAGES = 2;
+/** Pacientes por lote al revisar y mandar (con Sofi o desde el WhatsApp de la clínica). */
+export const LOT_SIZE = 5;
+/** Piloto: los primeros N, para ver cómo responden antes de mandarle al resto. */
+export const PILOT_SIZE = 20;
 
 export function inSendWindow(clinic: Pick<Clinic, "timezone">, now = new Date()): boolean {
   const p = zonedParts(now, clinic.timezone);

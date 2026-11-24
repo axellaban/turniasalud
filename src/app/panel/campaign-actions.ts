@@ -4,10 +4,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
-import { DAILY_LINE_CAP } from "@/lib/campaign-limits";
+import { DAILY_LINE_CAP, PILOT_SIZE } from "@/lib/campaign-limits";
 import { hasAnyRule, parseRules } from "@/lib/audience-rules";
 import { deleteSavedAudience, getSavedAudience, previewAudience, saveAudience, type AudiencePreview } from "@/lib/saved-audiences";
-import { CAMPAIGN_LABELS, markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
+import { CAMPAIGN_LABELS, markManualFollowup, markManualSent, prepareCampaign, setRecipientOutcome, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { randomUUID } from "node:crypto";
 import {
@@ -42,7 +42,10 @@ export type CampaignFormState = { ok?: boolean; message?: string };
 
 const refresh = (id?: string) => {
   revalidatePath("/panel/campanas");
-  if (id) revalidatePath(`/panel/campanas/${id}`);
+  if (id) {
+    revalidatePath(`/panel/campanas/${id}`);
+    revalidatePath(`/panel/campanas/${id}/lote`);
+  }
 };
 
 /** Arma la campaña con su lista para revisar (o sigue la que ya estaba sin terminar). */
@@ -110,6 +113,63 @@ export async function markManualSentAction(form: FormData) {
   const clinic = await getPanelClinic(form);
   const campaignId = await markManualSent(clinic.id, id);
   if (campaignId) refresh(campaignId);
+}
+
+/** Revisar lote: el equipo abrió el seguimiento en su WhatsApp. */
+export async function markManualFollowupAction(form: FormData) {
+  await requirePanelSession();
+  const id = uuid(form, "id");
+  if (!id) return;
+  const clinic = await getPanelClinic(form);
+  const campaignId = await markManualFollowup(clinic.id, id);
+  if (campaignId) refresh(campaignId);
+}
+
+/** Revisar lote: qué contestó en el WhatsApp de la clínica (Respondió / No le interesa / Pidió la baja). */
+export async function setOutcomeAction(form: FormData) {
+  await requirePanelSession();
+  const id = uuid(form, "id");
+  const outcome = text(form, "outcome");
+  if (!id || (outcome !== "respondio" && outcome !== "no_interesa" && outcome !== "baja")) return;
+  const clinic = await getPanelClinic(form);
+  await setRecipientOutcome(clinic.id, id, outcome);
+  refresh(uuid(form, "campaign_id") ?? undefined);
+}
+
+/** Revisar lote: manda con Sofi solo los elegidos del lote. */
+export async function sendLotWithSofiAction(_prev: CampaignFormState | undefined, form: FormData): Promise<CampaignFormState> {
+  await requirePanelSession();
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "Falta la campaña." };
+  const clinic = await getPanelClinic(form);
+  if (clinic.is_demo) return { ok: false, message: "Los perfiles de demo no envían campañas." };
+  if (!(await sql`select id from campaigns where id = ${id} and clinic_id = ${clinic.id}`).length) return { ok: false, message: "La campaña no pertenece a esta clínica." };
+  const only = form.getAll("recipient").filter((v): v is string => typeof v === "string" && isUuid(v));
+  if (!only.length) return { ok: false, message: "Elegí al menos un paciente del lote." };
+  try {
+    const r = await sendCampaign(id, { only });
+    refresh(id);
+    const parts = [`Sofi mandó ${r.sent} ${r.sent === 1 ? "mensaje" : "mensajes"}.`];
+    if (r.capped) parts.push(`El WhatsApp del consultorio llegó al tope de ${DAILY_LINE_CAP} de hoy.`);
+    if (r.pilot) parts.push("Terminó el piloto: mirá cómo respondieron antes de seguir.");
+    if (r.skipped) parts.push(`${r.skipped} ya no correspondían.`);
+    if (r.failed) parts.push(`${r.failed} con error: ${r.errors.slice(0, 2).join(" · ")}`);
+    return { ok: r.failed === 0, message: parts.join(" ") };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Piloto: los primeros 20 primero; apagarlo deja seguir con el resto. */
+export async function setPilotAction(form: FormData) {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (!id) return;
+  const on = text(form, "pilot") === "1";
+  await sql`update campaigns set pilot_size = ${on ? PILOT_SIZE : null} where id = ${id} and clinic_id = ${clinic.id}`;
+  refresh(id);
+  revalidatePath(`/panel/campanas/${id}/lote`);
 }
 
 /** Mensaje propio de la campaña ({nombre} y {detalle}); vacío vuelve al sugerido. */
