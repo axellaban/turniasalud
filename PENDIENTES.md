@@ -1,5 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## WhatsApp y llamadas del consultorio — 24/11/2026
+
+- La sesión propia de WAHA estaba en FAILED. Reiniciar conservando la autenticación no la recuperó; se renovó la vinculación y quedó WORKING con la cuenta correcta. El usuario confirmó una respuesta real y el mensaje y la respuesta se comprobaron en Turnia.
+- No se pudo establecer el motivo original de la desconexión: el contenedor seguía activo con el digest fijado y sus volúmenes; la consulta de logs de Easypanel devolvió 400 y no había configuración de logs disponible. No atribuirlo a créditos, a un despliegue o a una acción del teléfono sin evidencia.
+- Cambios de llamadas: nueva herramienta para consultar el resultado verificado de una gestión pendiente antes de despedirse, mención explícita de WhatsApp y revisión humana si ese canal no está operativo. Las fechas se ofrecen desde la última búsqueda, sin mezclar límites de ventanas anteriores.
+- La lista de espera admite turno_id para una reserva existente, conserva las restricciones de cirugía/implantes/extracciones/duración/antelación y verifica que un adelanto sea compatible. No habilita nuevas reservas del tipo genérico importado.
+- El cron existente controla cada diez minutos el estado real de las líneas propias: guarda transiciones, deja una tarea al caer y avisa a Axel (con el fallback existente de n8n), como máximo una vez por hora por incidente. El control no reinicia ni desvincula líneas.
+- La confirmación que falló antes de recuperar la sesión sigue requiriendo revisión contra la agenda; no reenviar mensajes antiguos automáticamente.
+
 ## Incidente de créditos y entrega — 19/11/2026
 
 - **Reprogramación y duración en Smile Connect (19/11):** reproducido con un turno ficticio a un año: 14:15–14:45 pasó el chequeo antiguo de celdas de 5 minutos, pero el PATCH devolvió `409 slot_unavailable`; 14:00–14:30 se aplicó y verificó en la agenda nativa. La oferta y la escritura ahora consultan la duración completa y conservan los inicios exactos del proveedor. Si otro turno ocupa el destino después de consultar, se vuelve a leer el original antes de decir que se conserva y pedir otra opción. La causa específica del rechazo histórico no se puede demostrar retrospectivamente: el registro antiguo guardó solo una frase genérica. El cliente ya conserva código, motivo y `request_id`. Validación previa: 704 pruebas en 84 archivos, ESLint y build correctos. El resultado del control posterior al despliegue y la limpieza de la prueba se registra en el cierre del [PR #247](https://github.com/axellaban/turniasalud/pull/247).

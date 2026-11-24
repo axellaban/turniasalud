@@ -512,7 +512,7 @@ async function finishDeferredBooking(tx: TransactionSql, row: Row, resolution: "
     await tx`
       update waitlist set status = 'resuelta' where patient_id = ${row.patient_id}
         and appointment_type_id = (select appointment_type_id from appointments where id = ${row.id})
-        and status in ('activa', 'ofrecida')`;
+        and appointment_id is null and status in ('activa', 'ofrecida')`;
   } else if (resolution === "occupied") {
     await tx`
       update appointments set status = 'cancelado', cancelled_at = coalesce(cancelled_at, now()), smile_sync = null, smile_error = null
@@ -583,6 +583,7 @@ async function processSmileManagement(tx: TransactionSql, client: SmileClient, r
       update appointments set status = 'cancelado', cancelled_at = now(), cancelled_via = ${request.via}, notes = ${notes || null},
         smile_management = null, smile_sync = 'ok', smile_error = null, external_status = 'Canceled with Notice'
       where id = ${row.id} returning *`;
+    await tx`update waitlist set status = 'cancelada' where appointment_id = ${row.id} and status in ('activa', 'ofrecida')`;
     await logChange(tx, row, "cancelar", "hecho", { request: { appointment_id: id }, before: remote });
     await finishManagementNotice(tx, row, request,
       `Cancelación confirmada. El turno del ${describe(row)} quedó cancelado.`, "smile_cancelado");
@@ -642,6 +643,7 @@ async function processSmileManagement(tx: TransactionSql, client: SmileClient, r
       'confirmado', ${request.replyPhone ? request.via : row.source}, ${row.notes}, ${row.title}, ${request.coverage},
       ${row.external_id}, ${row.external_status}, 'ok', ${request.replyPhone}) returning *`;
   await tx`update appointments set replaced_by = ${after.id} where id = ${row.id}`;
+  await tx`update waitlist set appointment_id = ${after.id} where appointment_id = ${row.id} and status in ('activa', 'ofrecida')`;
   await logChange(tx, row, "mover", "hecho", { request: { appointment_id: id, ...payload }, before: remote });
   await finishManagementNotice(tx, row, request,
     `Reprogramación confirmada. Tu turno quedó para el ${describe(target)}.`, "smile_confirmado", after.id);

@@ -7,6 +7,7 @@ import { runSmileConnect } from "@/lib/smile-connect-link";
 import { sendOfferFollowups } from "@/lib/followups";
 import { sendDueSummaries } from "@/lib/daily-summary";
 import { completePendingSummaries } from "@/lib/conversations-backfill";
+import { monitorClinicWhatsapps } from "@/lib/waha-health";
 import type { CampaignType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
       // Ya se dispara cada 10 minutos: el seguimiento de turnos ofrecidos va en la misma corrida,
       // sin pedir otro disparador en n8n. Si falla uno, el otro corre igual.
       const smileRun = job === "calendario" ? runSmileConnect() : Promise.resolve(null);
-      const [calendar, followups, changes, notices, smile, summaries, talks] = await Promise.allSettled([
+      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp] = await Promise.allSettled([
         job === "calendario" ? syncPendingCalendar() : Promise.resolve(null),
         sendOfferFollowups(),
         job === "calendario" ? checkCalendarChanges() : Promise.resolve(null),
@@ -60,7 +61,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         job === "calendario" ? sendDueSummaries() : Promise.resolve(null),
         // Las charlas que quedaron sin resumen (si el webhook post-call de ElevenLabs no llegó).
         job === "calendario" ? completePendingSummaries() : Promise.resolve(null),
+        job === "calendario" ? monitorClinicWhatsapps() : Promise.resolve(null),
       ]);
+      if (whatsapp.status === "rejected") console.error("Control de WhatsApp falló", whatsapp.reason);
       if (talks.status === "rejected") console.error("Completar resúmenes de conversaciones falló", talks.reason);
       if (summaries.status === "rejected") console.error("Resumen diario de Sofi falló", summaries.reason);
       if (followups.status === "rejected") console.error("Seguimiento de turnos ofrecidos falló", followups.reason);
@@ -71,6 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
       return NextResponse.json({
         ok: true,
         job,
+        ...(whatsapp.status === "fulfilled" && whatsapp.value && { whatsapp: whatsapp.value }),
         ...(calendar.value && { sincronizados: calendar.value.ok, errores: calendar.value.error }),
         seguimientos: followups.status === "fulfilled" ? followups.value : { error: String(followups.reason) },
         ...(changes.status === "fulfilled" && changes.value && { cambios_en_google: changes.value }),
