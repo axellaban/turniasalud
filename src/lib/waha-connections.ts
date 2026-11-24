@@ -16,7 +16,7 @@ const connectionSchema = z.object({
   webhookHmac: z.string().min(16),
   session: z.string().regex(/^[a-zA-Z0-9_-]+$/).default("default"),
   enabled: z.boolean().default(false),
-  revision: z.number().int().positive(),
+  revision: z.number().int().positive().max(2_147_483_647),
 });
 
 export type WahaConnection = z.infer<typeof connectionSchema>;

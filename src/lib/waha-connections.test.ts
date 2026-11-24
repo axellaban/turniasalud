@@ -44,11 +44,19 @@ describe("líneas WAHA propias", () => {
   });
 
   it("rechaza destinos y asignaciones ambiguas sin imprimir claves", () => {
-    for (const entries of [[own, own], [{ ...own, url: "https://usuario:clave@host.test" }], [{ ...own, url: "http://host.test" }]]) {
+    for (const entries of [[own, own], [{ ...own, url: "https://usuario:clave@host.test" }], [{ ...own, url: "http://host.test" }], [{ ...own, revision: 1_795_546_049_152 }]]) {
       vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify(entries));
       expect(() => wahaConnections()).toThrow(/WAHA_CONNECTIONS/);
       try { wahaConnections(); } catch (error) { expect(String(error)).not.toContain(own.apiKey); }
     }
+  });
+
+  it("limita también la revisión del transporte al entero de PostgreSQL", () => {
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([own]));
+    vi.stubEnv("WAHA_CONNECTION_TRANSPORTS", JSON.stringify({ [own.id]: { revision: 1_795_546_049_152 } }));
+    expect(() => wahaConnections()).toThrow(/WAHA_CONNECTION_TRANSPORTS/);
+    vi.stubEnv("WAHA_CONNECTION_TRANSPORTS", JSON.stringify({ [own.id]: { revision: 20_261_124 } }));
+    expect(wahaConnections()[0].revision).toBe(20_261_124);
   });
 
   it("mantiene aislados dos mensajes concurrentes y restablece el contexto", async () => {
