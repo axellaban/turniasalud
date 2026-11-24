@@ -7,6 +7,7 @@ import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Cam
 import { prepareCampaignAction } from "../../campaign-actions";
 import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { AutoToggle } from "./auto-toggle";
+import { DAILY_LINE_CAP, DEFAULT_FOLLOWUP_DAYS, DEFAULT_MAX_MESSAGES, SEND_WINDOW } from "@/lib/campaign-limits";
 import { ContactRules } from "./contact-rules";
 import { RecallSelect } from "./recall-select";
 import { CAMPAIGN_STATUS, money, plural } from "./labels";
@@ -374,6 +375,19 @@ export default async function CampaignsPage() {
               })}
               <li className="flex items-center justify-between gap-3 border-t border-brand-900/5 pt-2">
                 <span className="min-w-0">
+                  <span className="block text-brand-950">Seguimiento a quien no responde</span>
+                  <span className="block text-xs text-brand-900/60">
+                    A los {DEFAULT_FOLLOWUP_DAYS} días, hasta {DEFAULT_MAX_MESSAGES} mensajes. Se corta si responde, saca turno o pide la baja.
+                  </span>
+                </span>
+                {isAdmin ? (
+                  <AutoToggle clinicId={clinic.id} label="Seguimiento a quien no responde" on={clinic.sequences_enabled} />
+                ) : (
+                  <Badge tone={clinic.sequences_enabled ? "green" : "gray"}>{clinic.sequences_enabled ? "Prendido" : "Apagado"}</Badge>
+                )}
+              </li>
+              <li className="flex items-center justify-between gap-3 border-t border-brand-900/5 pt-2">
+                <span className="min-w-0">
                   <span className="block text-brand-950">{CAMPAIGN_LABELS.lista_espera.label}</span>
                   <span className="block text-xs text-brand-900/60">Avisa sola cuando se libera un turno</span>
                 </span>
@@ -381,6 +395,10 @@ export default async function CampaignsPage() {
               </li>
             </ul>
             <p className="mt-3 text-xs text-brand-900/65">
+              Lo que sale solo (salvo recordatorios y encuesta) sale de lunes a viernes, de {SEND_WINDOW.from} a {SEND_WINDOW.to}, y como mucho{" "}
+              {DAILY_LINE_CAP} mensajes por día desde el WhatsApp del consultorio.
+            </p>
+            <p className="mt-2 text-xs text-brand-900/65">
               «Turnos de mañana» y «Atendidos estos días» se pueden mandar a mano mientras estén apagadas: a quien ya le llegó el recordatorio o la
               encuesta (a mano o automática) no le llega otra.
             </p>

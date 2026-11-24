@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
+import { DAILY_LINE_CAP } from "@/lib/campaign-limits";
 import { CAMPAIGN_LABELS, markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { randomUUID } from "node:crypto";
@@ -69,7 +70,8 @@ export async function sendCampaignAction(_prev: CampaignFormState | undefined, f
     const r = await sendCampaign(id);
     refresh(id);
     const parts = [`Enviamos ${r.sent} ${r.sent === 1 ? "mensaje" : "mensajes"}.`];
-    if (r.remaining) parts.push(`Quedan ${r.remaining}: volvé a tocar «Enviar» para seguir.`);
+    if (r.remaining && r.capped) parts.push(`Quedan ${r.remaining}: el WhatsApp del consultorio llegó al tope de ${DAILY_LINE_CAP} mensajes de hoy. Seguí mañana.`);
+    else if (r.remaining) parts.push(`Quedan ${r.remaining}: volvé a tocar «Enviar» para seguir.`);
     if (r.skipped) parts.push(`${r.skipped} ya no correspondían y quedaron afuera.`);
     if (r.failed) parts.push(`${r.failed} con error: ${r.errors.slice(0, 3).join(" · ")}`);
     return { ok: r.failed === 0, message: parts.join(" ") };
@@ -183,6 +185,16 @@ export async function setAutoCampaignAction(form: FormData) {
       : sql`array_remove(auto_campaigns, ${type})`}
     where id = ${clinic.id}`;
   await logClinicChange(clinic.id, `Campaña automática «${CAMPAIGN_LABELS[type as CampaignType].label}» ${on ? "prendida" : "apagada"}`);
+  refresh();
+}
+
+/** Prende o apaga los seguimientos a quien no responde (secuencias). Solo el administrador. */
+export async function setSequencesAction(form: FormData) {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const on = text(form, "enabled") === "1";
+  await sql`update clinics set sequences_enabled = ${on} where id = ${clinic.id}`;
+  await logClinicChange(clinic.id, `Seguimiento de campañas ${on ? "prendido" : "apagado"}`);
   refresh();
 }
 

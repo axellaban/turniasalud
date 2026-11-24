@@ -3,6 +3,7 @@ import { sql } from "./db";
 import { getClinic } from "./clinic";
 import { pauseBetweenSends, renderTemplate, sendPatientMessage, templateKeyFor, whatsappReadiness, withOptOutFooter } from "./whatsapp";
 import { humanSlot, localDateKey } from "./time";
+import { DEFAULT_FOLLOWUP_DAYS, inSendWindow, lineUsage, recordCampaignMessage } from "./campaign-limits";
 import { ATTRIBUTION_DAYS, AUTO_CAMPAIGN_TYPES, type AutoCampaignType, type Campaign, type CampaignType, type Clinic } from "./types";
 
 // "Activa": campañas salientes por WhatsApp. Cada destinatario recibe un
@@ -509,6 +510,11 @@ export async function createCampaign(input: {
       automatic: input.automatic ?? false,
     })}
     returning *`;
+  // Las de volver a sacar turno traen el seguimiento sugerido (a los 5 días sin respuesta). Solo sale
+  // si la clínica tiene las secuencias prendidas.
+  if (ACTIVATION_TYPES.includes(input.type)) {
+    await sql`insert into campaign_steps (campaign_id, position, delay_days) values (${campaign.id}, 2, ${DEFAULT_FOLLOWUP_DAYS})`;
+  }
   return campaign;
 }
 
@@ -586,11 +592,15 @@ export async function prepareCampaign(clinic: Clinic, input: { type: CampaignTyp
 export async function setRecipientIncluded(clinicId: string, recipientId: string, included: boolean): Promise<boolean> {
   const rows = await sql`
     update campaign_recipients r set status = ${included ? "pendiente" : "excluido"}, error = null,
-      sent_at = case when r.manual then null else r.sent_at end, manual = false
+      sent_at = case when r.manual then null else r.sent_at end,
+      messages_sent = case when r.manual then 0 else r.messages_sent end,
+      last_message_at = case when r.manual then null else r.last_message_at end, manual = false
     from campaigns c
     where r.id = ${recipientId} and c.id = r.campaign_id and c.clinic_id = ${clinicId}
       and ${included ? sql`(r.status = 'excluido' or (r.status = 'enviado' and r.manual))` : sql`r.status in ('pendiente', 'error')`}
     returning r.id, r.campaign_id`;
+  // Un «Abrir chat» que no se mandó tampoco cuenta para el tope del día.
+  if (rows.length && included) await sql`delete from campaign_messages where recipient_id = ${rows[0].id} and manual and step = 1`;
   if (rows.length && included) await sql`update campaigns set status = 'enviando' where id = ${rows[0].campaign_id} and status = 'finalizada'`;
   return rows.length > 0;
 }
@@ -601,11 +611,13 @@ export async function setRecipientIncluded(clinicId: string, recipientId: string
  */
 export async function markManualSent(clinicId: string, recipientId: string): Promise<string | null> {
   const [row] = await sql<Array<{ campaign_id: string; type: CampaignType; context: string | null }>>`
-    update campaign_recipients r set status = 'enviado', manual = true, sent_at = now(), error = null
+    update campaign_recipients r set status = 'enviado', manual = true, sent_at = now(), error = null,
+      messages_sent = 1, last_message_at = now(), next_step_at = null
     from campaigns c
     where r.id = ${recipientId} and c.id = r.campaign_id and c.clinic_id = ${clinicId} and r.status in ('pendiente', 'error')
     returning r.campaign_id, c.type, r.context`;
   if (!row) return null;
+  await recordCampaignMessage(await getClinic(clinicId), { campaignId: row.campaign_id, recipientId, step: 1, manual: true });
   await markAppointmentsSent(row.type, row.context);
   await sql`
     update campaigns c set sent_at = now(), status = case
@@ -614,7 +626,16 @@ export async function markManualSent(clinicId: string, recipientId: string): Pro
   return row.campaign_id;
 }
 
-export type SendResult = { audience: number; sent: number; failed: number; skipped: number; remaining: number; errors: string[] };
+export type SendResult = {
+  audience: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  remaining: number;
+  errors: string[];
+  /** Se frenó porque la línea llegó al tope del día (los que quedan salen mañana). */
+  capped?: boolean;
+};
 
 export async function sendCampaign(campaignId: string): Promise<SendResult> {
   const [campaign] = await sql<Campaign[]>`select * from campaigns where id = ${campaignId}`;
@@ -636,6 +657,11 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
 
   await sql`update campaigns set status = 'enviando' where id = ${campaign.id}`;
   const result: SendResult = { audience: queue.length, sent: 0, failed: 0, skipped: 0, remaining: 0, errors: [] };
+  // Tope por corrida (50) y lo que le queda hoy a la línea de WhatsApp (60 por día en WAHA).
+  const usage = await lineUsage(clinic);
+  const limit = Math.min(MAX_PER_RUN, usage.left);
+  const [followup] = await sql<Array<{ delay_days: number }>>`
+    select delay_days from campaign_steps where campaign_id = ${campaign.id} and position = 2 and ${campaign.max_messages ?? 1} >= 2`;
 
   let attempts = 0;
   for (const row of queue) {
@@ -645,8 +671,9 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
       result.skipped++;
       continue;
     }
-    if (attempts >= MAX_PER_RUN) {
+    if (attempts >= limit) {
       result.remaining++;
+      if (attempts >= usage.left) result.capped = true;
       continue;
     }
     if (attempts++ > 0) await pauseBetweenSends(clinic);
@@ -665,8 +692,11 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
       });
       await sql`
         update campaign_recipients set status = 'enviado', elevenlabs_conversation_id = ${res.conversation_id ?? null}, sent_at = now(),
-          error = null, detail = ${member.detail}, context = ${member.context}, value = ${member.value}
+          error = null, detail = ${member.detail}, context = ${member.context}, value = ${member.value},
+          messages_sent = 1, last_message_at = now(),
+          next_step_at = ${followup ? sql`now() + make_interval(days => ${followup.delay_days})` : null}
         where id = ${row.id}`;
+      await recordCampaignMessage(clinic, { campaignId: campaign.id, recipientId: row.id, step: 1 });
       await markAppointmentsSent(campaign.type, member.context);
       result.sent++;
     } catch (e) {
@@ -773,7 +803,7 @@ async function runClinicAutomation(clinic: Clinic, type: CampaignType): Promise<
  * tenga prendida; con `clinicId`, solo en esa y solo si la tiene prendida. Una clínica que falla no
  * frena a las demás.
  */
-export async function runAutomation(type: CampaignType, clinicId?: string): Promise<AutomationRun[]> {
+export async function runAutomation(type: CampaignType, clinicId?: string, now = new Date()): Promise<AutomationRun[]> {
   const clinics = clinicId
     ? await sql<Clinic[]>`select * from clinics where id = ${clinicId}`
     : await sql<Clinic[]>`select * from clinics where not is_demo and ${type} = any(auto_campaigns) order by created_at`;
@@ -781,7 +811,9 @@ export async function runAutomation(type: CampaignType, clinicId?: string): Prom
   const runs: AutomationRun[] = [];
   for (const clinic of clinics) {
     const base = { clinic_id: clinic.id, clinic: clinic.name };
-    const blocked = automationBlock(clinic, type);
+    const blocked =
+      automationBlock(clinic, type) ??
+      (ACTIVATION_TYPES.includes(type) && !inSendWindow(clinic, now) ? "Fuera del horario de envío (lunes a viernes, de 9 a 20)." : null);
     if (blocked) {
       runs.push({ ...base, skipped: blocked });
       continue;
