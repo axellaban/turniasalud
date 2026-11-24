@@ -1,5 +1,12 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Conexión activa del consultorio — 24/11/2026, tarde
+
+- El usuario configuró el 3765 en `n8n/waha`. Se comprobó `WORKING` con la cuenta correcta. La instancia exclusiva anterior seguía en `FAILED`; un único reinicio conservando la autenticación no la recuperó. No se cerró sesión ni se pidió otro QR.
+- La firma del webhook de la sesión activa fue aceptada por Turnia, pero el evento de estado inocuo fue descartado como «otra sesión»: la sesión real es `default` y la configuración de la aplicación no coincidía. También había un 401 histórico al consultar WAHA.
+- `WAHA_CONNECTION_TRANSPORTS` permite corregir únicamente URL, API key, sesión y revisión de una conexión existente, preservando la variable sensible `WAHA_CONNECTIONS` completa y sin cambiar clínica, teléfono, habilitación ni firma. No sobrescribir el secreto original con una reconstrucción parcial.
+- La recepción real debe comprobarse después del despliegue, sin reenviar mensajes viejos ni pruebas a pacientes. Las campañas y sus automáticas conservan su configuración.
+
 ## Protección del WhatsApp de prospección — 24/11/2026
 
 - Axel informó una suspensión del 5483 en WhatsApp Business. No se confirmó la causa: `FAILED` no distingue una suspensión de otros fallos y los logs históricos no estaban disponibles.

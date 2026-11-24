@@ -23,18 +23,32 @@ export type WahaConnection = z.infer<typeof connectionSchema>;
 const scope = new AsyncLocalStorage<WahaConnection>();
 let cached: { raw: string; connections: WahaConnection[] } | undefined;
 
+// Permite corregir el transporte de una línea sin reemplazar el secreto con todas las clínicas.
+// No puede cambiar la asignación, el número, la firma del webhook ni habilitar una clínica.
+const transportSchema = z.record(z.string(), connectionSchema.pick({
+  url: true, apiKey: true, session: true, revision: true,
+}).partial().strict());
+
 export function wahaConnections(): WahaConnection[] {
   const raw = process.env.WAHA_CONNECTIONS || "[]";
-  if (cached?.raw === raw) return cached.connections;
+  const transportRaw = process.env.WAHA_CONNECTION_TRANSPORTS || "{}";
+  const cacheKey = raw + "\0" + transportRaw;
+  if (cached?.raw === cacheKey) return cached.connections;
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { throw new Error("WAHA_CONNECTIONS no contiene JSON válido."); }
   const result = z.array(connectionSchema).safeParse(parsed);
   if (!result.success) throw new Error("Revisá los campos de WAHA_CONNECTIONS; la configuración es inválida.");
-  const rows = result.data;
+  let transportParsed: unknown;
+  try { transportParsed = JSON.parse(transportRaw); } catch { throw new Error("WAHA_CONNECTION_TRANSPORTS no contiene JSON válido."); }
+  const transports = transportSchema.safeParse(transportParsed);
+  if (!transports.success || Object.keys(transports.data).some((id) => !result.data.some((c) => c.id === id))) {
+    throw new Error("Revisá los campos de WAHA_CONNECTION_TRANSPORTS; solo admite transportes de líneas existentes.");
+  }
+  const rows = result.data.map((c) => ({ ...c, ...transports.data[c.id] }));
   for (const key of ["id", "clinicId", "phone", "url"] as const) {
     if (new Set(rows.map((c) => c[key])).size !== rows.length) throw new Error(`WAHA_CONNECTIONS repite ${key}.`);
   }
-  cached = { raw, connections: rows };
+  cached = { raw: cacheKey, connections: rows };
   return rows;
 }
 
