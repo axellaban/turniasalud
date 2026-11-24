@@ -154,7 +154,13 @@ function lowerFirst(text: string): string {
 }
 
 /** Lo que comparten todas las audiencias de una clínica en un momento dado. */
-type Scope = { today: string; future: Set<string>; recent: Set<string> };
+type Scope = {
+  today: string;
+  future: Set<string>;
+  recent: Set<string>;
+  /** Para el desglose de la audiencia: también cuenta a quienes pidieron la baja (después se restan). */
+  includeOptedOut?: boolean;
+};
 
 async function audienceScope(clinic: Clinic): Promise<Scope> {
   const days = clinic.contact_cooldown_days ?? 30;
@@ -177,7 +183,8 @@ async function audienceScope(clinic: Clinic): Promise<Scope> {
 }
 
 export async function computeAudience(clinic: Clinic, type: CampaignType, scope?: Scope): Promise<AudienceMember[]> {
-  const { today, future, recent } = scope ?? (await audienceScope(clinic));
+  const { today, future, recent, includeOptedOut = false } = scope ?? (await audienceScope(clinic));
+  const optedOutOk = includeOptedOut ? sql`true` : sql`false`;
   const tz = clinic.timezone;
   const now = Date.now();
   const member = (m: Omit<AudienceMember, "reachable">): AudienceMember => ({ ...m, reachable: isWhatsAppId(m.phone) });
@@ -233,13 +240,13 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
         from history h
         join patients p on p.id = h.patient_id
         join appointment_types t on t.id = h.appointment_type_id
-        where not p.contact_opt_out and t.active and t.recall_months is not null
+        where (${optedOutOk} or not p.contact_opt_out) and t.active and t.recall_months is not null
         order by h.patient_id, h.appointment_type_id, h.day desc`,
       // Controles indicados a un paciente puntual: cuentan como hechos si vino desde 30 días antes de la fecha.
       sql<Array<{ id: string; full_name: string | null; phone: string | null; next_control_at: string; next_control_reason: string | null }>>`
         select p.id, p.full_name, p.phone, p.next_control_at::text as next_control_at, p.next_control_reason
         from patients p
-        where p.clinic_id = ${clinic.id} and not p.contact_opt_out and p.next_control_at <= ${today}::date
+        where p.clinic_id = ${clinic.id} and (${optedOutOk} or not p.contact_opt_out) and p.next_control_at <= ${today}::date
           and not exists (
             select 1 from appointments a where a.patient_id = p.id and a.status = 'atendido'
               and (a.starts_at at time zone ${tz})::date >= p.next_control_at - 30)
@@ -303,7 +310,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
       from history h
       join patients p on p.id = h.patient_id
       left join appointment_types t on t.id = h.appointment_type_id
-      where not p.contact_opt_out
+      where (${optedOutOk} or not p.contact_opt_out)
       order by h.patient_id, h.day desc`;
     return rows
       .filter((r) => available(r.patient_id) && monthsBetween(r.last_day, today) >= clinic.reactivation_months)
@@ -327,7 +334,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
       join patients p on p.id = a.patient_id
       join appointment_types t on t.id = a.appointment_type_id
       where a.clinic_id = ${clinic.id} and a.status = 'ausente' and a.starts_at >= ${new Date(now - 30 * 86400_000)}
-        and not p.contact_opt_out
+        and (${optedOutOk} or not p.contact_opt_out)
       order by a.starts_at desc`;
     const seen = new Set<string>();
     const members: AudienceMember[] = [];
@@ -357,7 +364,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
       join patients p on p.id = a.patient_id
       join professionals pr on pr.id = a.professional_id
       join appointment_types t on t.id = a.appointment_type_id
-      where a.clinic_id = ${clinic.id} and a.status = 'atendido' and a.survey_sent_at is null and not p.contact_opt_out
+      where a.clinic_id = ${clinic.id} and a.status = 'atendido' and a.survey_sent_at is null and (${optedOutOk} or not p.contact_opt_out)
         and a.starts_at >= ${new Date(now - 48 * 3600_000)} and a.starts_at <= ${new Date(now)}
       order by a.starts_at`;
     // Una sola encuesta por paciente, aunque haya tenido dos turnos (por ejemplo, control y limpieza
@@ -407,7 +414,7 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
   const rows = await sql<PatientRow[]>`
     select * from (
       select distinct on (phone) id, full_name, phone, created_at from patients
-      where clinic_id = ${clinic.id} and not contact_opt_out and phone is not null
+      where clinic_id = ${clinic.id} and (${optedOutOk} or not contact_opt_out) and phone is not null
       order by phone, birth_date nulls last, created_at, id
     ) p order by created_at, id`;
   return rows.map((r) => member({ patient_id: r.id, phone: r.phone, name: r.full_name, detail: clinic.name, context: "Aviso general de la clínica.", value: null }));
@@ -465,6 +472,44 @@ export async function opportunities(clinic: Clinic): Promise<{ list: Opportunity
 // ---------------------------------------------------------------------------
 // Mensaje: el sugerido para el tipo de campaña o uno propio con {nombre} y {detalle}.
 // ---------------------------------------------------------------------------
+export type AudienceBreakdown = {
+  /** Cumplen la regla de la audiencia (antes de sacar a nadie). */
+  matching: number;
+  optedOut: number;
+  hasAppointment: number;
+  recentCampaign: number;
+  noPhone: number;
+  /** Se les puede escribir. */
+  reachable: number;
+  value: number;
+};
+
+/** Quiénes cumplen la regla y por qué quedan afuera los que no reciben el mensaje. */
+export async function audienceBreakdown(clinic: Clinic, type: CampaignType): Promise<AudienceBreakdown> {
+  const scope = await audienceScope(clinic);
+  const [all, optedOutRows] = await Promise.all([
+    computeAudience(clinic, type, { today: scope.today, future: new Set(), recent: new Set(), includeOptedOut: true }),
+    sql<Array<{ id: string }>>`select id from patients where clinic_id = ${clinic.id} and contact_opt_out`,
+  ]);
+  const optedOut = new Set(optedOutRows.map((r) => r.id));
+  // Recordatorios, encuesta y lista de espera no miran el tope entre campañas; la baja sí vale para todas.
+  // Solo las de volver a sacar turno sacan a quien ya tiene turno o recibió otra campaña hace poco.
+  const checksRecent = ACTIVATION_TYPES.includes(type);
+  const checksFuture = checksRecent;
+  const out: AudienceBreakdown = { matching: all.length, optedOut: 0, hasAppointment: 0, recentCampaign: 0, noPhone: 0, reachable: 0, value: 0 };
+  for (const m of all) {
+    if (optedOut.has(m.patient_id) && type !== "recordatorio" && type !== "lista_espera") out.optedOut++;
+    else if (checksFuture && scope.future.has(m.patient_id)) out.hasAppointment++;
+    else if (checksRecent && scope.recent.has(m.patient_id)) out.recentCampaign++;
+    else if (!m.reachable) out.noPhone++;
+    else {
+      out.reachable++;
+      out.value += m.value ?? 0;
+    }
+  }
+  return out;
+}
+
 export const firstName = (name: string | null | undefined) => name?.trim().split(/\s+/)[0] || "hola";
 
 /** El texto que recibe el paciente (sin el pie de baja: lo suma cada canal). */
@@ -762,11 +807,12 @@ export type AutomationRun = { clinic_id: string; clinic: string } & (
 );
 
 /** Por qué una automática no corre en esta clínica (null = corre). */
-export function automationBlock(clinic: Pick<Clinic, "is_demo" | "auto_campaigns">, type: CampaignType): string | null {
+export function automationBlock(clinic: Pick<Clinic, "is_demo" | "auto_campaigns"> & Partial<Pick<Clinic, "external_reminders">>, type: CampaignType): string | null {
   if (!(AUTO_CAMPAIGN_TYPES as readonly CampaignType[]).includes(type)) {
     return type === "lista_espera" ? "La lista de espera avisa sola cuando se libera un turno." : "Este tipo de campaña no corre solo.";
   }
   if (clinic.is_demo) return "Es un perfil de demo: Sofi no le escribe a nadie.";
+  if (type === "recordatorio" && clinic.external_reminders) return `Los recordatorios los manda ${clinic.external_reminders}.`;
   if (!clinic.auto_campaigns?.includes(type as AutoCampaignType)) return "Apagada en esta clínica.";
   return null;
 }

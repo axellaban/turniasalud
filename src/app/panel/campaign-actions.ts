@@ -124,6 +124,54 @@ export async function saveCampaignMessageAction(_prev: CampaignFormState | undef
   return { ok: true, message: message ? "Mensaje guardado." : "Volvimos al mensaje sugerido." };
 }
 
+/**
+ * Secuencia de una campaña: a los cuántos días sale el seguimiento, cuántos mensajes como máximo y si
+ * se corta cuando responde o saca turno. La baja corta siempre (no hay opción para destildarla).
+ */
+export async function saveSequenceAction(_prev: CampaignFormState | undefined, form: FormData): Promise<CampaignFormState> {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "Falta la campaña." };
+  const delay = Number(text(form, "delay_days"));
+  const max = Number(text(form, "max_messages"));
+  if (!Number.isInteger(delay) || delay < 1 || delay > 30) return { ok: false, message: "El seguimiento va de 1 a 30 días." };
+  if (max !== 1 && max !== 2) return { ok: false, message: "Como máximo, 1 o 2 mensajes por paciente." };
+  const rows = await sql`
+    update campaigns set max_messages = ${max}, stop_on_reply = ${form.get("stop_on_reply") === "on"}, stop_on_booking = ${form.get("stop_on_booking") === "on"}
+    where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  if (!rows.length) return { ok: false, message: "La campaña no es de esta clínica." };
+  await sql`
+    insert into campaign_steps (campaign_id, position, delay_days) values (${id}, 2, ${delay})
+    on conflict (campaign_id, position) do update set delay_days = excluded.delay_days`;
+  // Si ahora es un solo mensaje, nadie queda esperando un seguimiento.
+  if (max === 1) {
+    await sql`update campaign_recipients set next_step_at = null, sequence_stopped = 'Un solo mensaje' where campaign_id = ${id} and next_step_at is not null`;
+  }
+  refresh(id);
+  return { ok: true, message: max === 1 ? "Un solo mensaje, sin seguimiento." : `Seguimiento a los ${delay} ${delay === 1 ? "día" : "días"} sin respuesta.` };
+}
+
+/** Textos de la campaña: el primer mensaje, el del seguimiento y lo que tiene que lograr Sofi. */
+export async function saveCampaignTextsAction(_prev: CampaignFormState | undefined, form: FormData): Promise<CampaignFormState> {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "Falta la campaña." };
+  const message = text(form, "message");
+  const followup = text(form, "followup");
+  if ((message?.length ?? 0) > 900 || (followup?.length ?? 0) > 900) return { ok: false, message: "Cada mensaje tiene que tener menos de 900 caracteres." };
+  const rows = await sql`update campaigns set message = ${message}, goal = coalesce(${text(form, "goal")}, goal) where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  if (!rows.length) return { ok: false, message: "La campaña no es de esta clínica." };
+  if (form.has("followup")) {
+    await sql`
+      insert into campaign_steps (campaign_id, position, message) values (${id}, 2, ${followup})
+      on conflict (campaign_id, position) do update set message = excluded.message`;
+  }
+  refresh(id);
+  return { ok: true, message: "Mensajes guardados." };
+}
+
 /** Descarta un borrador que todavía no le escribió a nadie. */
 export async function discardCampaignAction(form: FormData) {
   await requirePanelSession();

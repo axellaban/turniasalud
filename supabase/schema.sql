@@ -2081,3 +2081,21 @@ create table if not exists campaign_messages (
 );
 create index if not exists campaign_messages_line_idx on campaign_messages (line, sent_at desc);
 alter table campaign_messages enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Turnia Activa · PR 3 (24/11/2026): pantalla de Campañas.
+-- Cada campaña elige si la secuencia se corta cuando el paciente responde o saca turno (la baja corta
+-- siempre). `external_reminders` dice quién manda los recordatorios de turno cuando no es Turnia, para
+-- mostrarlo y para que la automática de recordatorios no mande uno repetido.
+-- ---------------------------------------------------------------------------
+alter table campaigns add column if not exists stop_on_reply boolean not null default true;
+alter table campaigns add column if not exists stop_on_booking boolean not null default true;
+alter table clinics add column if not exists external_reminders text;
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-24-recordatorios-smile-guerra-mininni') then
+    update clinics set external_reminders = 'Smile Connect'
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36' and external_reminders is null;
+    insert into data_migrations (name) values ('2026-11-24-recordatorios-smile-guerra-mininni');
+  end if;
+end $$;

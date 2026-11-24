@@ -1,30 +1,23 @@
 import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { CAMPAIGN_LABELS, campaignRule, campaignStats, EMPTY_STATS, opportunities, type Opportunity } from "@/lib/campaigns";
+import { CAMPAIGN_LABELS, audienceBreakdown, campaignMessage, campaignRule, campaignStats, EMPTY_STATS, firstName, opportunities, type Opportunity } from "@/lib/campaigns";
+import { activeCampaigns, campaignQueue, campaignResults, PERIODS, stepRate, type Period, type QueueFilter } from "@/lib/campaign-board";
+import { DAILY_LINE_CAP, DEFAULT_FOLLOWUP_DAYS, DEFAULT_MAX_MESSAGES, SEND_WINDOW, lineUsage } from "@/lib/campaign-limits";
+import { DEFAULT_FOLLOWUP_TEXT } from "@/lib/campaign-sequences";
+import { OPT_OUT_FOOTER } from "@/lib/whatsapp";
 import { formatDate } from "@/lib/time";
-import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Campaign } from "@/lib/types";
-import { prepareCampaignAction } from "../../campaign-actions";
-import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
+import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Campaign, type CampaignType } from "@/lib/types";
+import { prepareCampaignAction, toggleRecipientAction } from "../../campaign-actions";
+import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass } from "@/components/ui";
 import { AutoToggle } from "./auto-toggle";
-import { DAILY_LINE_CAP, DEFAULT_FOLLOWUP_DAYS, DEFAULT_MAX_MESSAGES, SEND_WINDOW } from "@/lib/campaign-limits";
+import { CampaignSettings } from "./campaign-settings";
 import { ContactRules } from "./contact-rules";
 import { RecallSelect } from "./recall-select";
 import { CAMPAIGN_STATUS, money, plural } from "./labels";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 
 export const metadata: Metadata = { title: "Campañas · Panel" };
-
-/** Color de cada oportunidad (borde superior y número). */
-const ACCENT: Partial<Record<Campaign["type"], string>> = {
-  recall: "before:bg-brand-500",
-  reactivacion: "before:bg-lila",
-  no_show: "before:bg-sun-500",
-  lista_espera: "before:bg-aqua",
-  recordatorio: "before:bg-emerald",
-  encuesta: "before:bg-brand-200",
-};
 
 /** Lo que corre solo (lo dispara n8n) en las clínicas que lo tienen prendido. */
 const AUTOMATIC: Array<[AutoCampaignType, string]> = [
@@ -35,77 +28,117 @@ const AUTOMATIC: Array<[AutoCampaignType, string]> = [
   ["reactivacion", "El 1 de cada mes a las 11"],
 ];
 
-function names(o: Opportunity): string {
-  const first = o.members.slice(0, 3).map((m) => m.name?.split(" ").slice(0, 2).join(" ") || "Sin nombre");
-  const rest = o.members.length - first.length;
-  return rest > 0 ? `${first.join(", ")} y ${plural(rest, "más", "más")}` : first.join(", ").replace(/, ([^,]*)$/, " y $1");
-}
+const ACTIVE_STATUS: Record<Campaign["status"], { label: string; tone: "yellow" | "blue" | "green" }> = {
+  borrador: { label: "Borrador", tone: "yellow" },
+  enviando: { label: "Activa", tone: "blue" },
+  finalizada: { label: "Enviada", tone: "green" },
+};
 
-function OpportunityCard({ o, clinicId, hint, compact = false }: { o: Opportunity; clinicId: string; hint?: ReactNode; compact?: boolean }) {
-  const label = CAMPAIGN_LABELS[o.type];
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+
+const shortName = (name: string) => {
+  const [first, last] = name.split(/\s+/);
+  return last ? `${first} ${last[0]}.` : first;
+};
+
+/** Una audiencia: cuántos, cuánto valen en turnos y una sola acción. */
+function AudienceCard({
+  title,
+  o,
+  clinicId,
+  note,
+  empty,
+}: {
+  title: string;
+  o: Opportunity;
+  clinicId: string;
+  note?: string;
+  empty?: React.ReactNode;
+}) {
   const count = o.members.length;
   return (
-    <Card
-      className={`relative flex flex-col overflow-hidden before:absolute before:inset-x-0 before:top-0 before:h-1 ${ACCENT[o.type] ?? ""} ${compact ? "" : "min-h-[15rem]"}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-brand-950">{label.title}</h3>
-        {o.open && <Badge tone={CAMPAIGN_STATUS[o.open.status].tone}>{CAMPAIGN_STATUS[o.open.status].label}</Badge>}
-      </div>
-      <p className="mt-1 text-xs text-brand-900/65">{o.type === "reactivacion" || o.type === "recall" ? campaignRuleShort(o.type) : label.description}</p>
-      <p className="mt-4 flex items-baseline gap-1.5">
-        <span className="font-display text-4xl text-brand-950 tabular-nums">{count.toLocaleString("es-AR")}</span>
-        <span className="text-sm text-brand-900/65">{count === 1 ? "paciente" : "pacientes"}</span>
-      </p>
-      {o.value > 0 && (
-        <p className="text-sm font-medium text-brand-800" title={o.priced < count ? `Suma los ${o.priced} que tienen una prestación con precio` : undefined}>
-          ≈ {money.format(o.value)} <span className="font-normal text-brand-900/60">en turnos{o.priced < count ? "*" : ""}</span>
-        </p>
-      )}
-      {o.value > 0 && o.priced < count && <p className="text-[11px] text-brand-900/55">*{plural(count - o.priced, "paciente sin precio de referencia", "pacientes sin precio de referencia")}</p>}
-      {count > 0 && !compact && <p className="mt-2 line-clamp-2 text-xs text-brand-900/60">{names(o)}</p>}
-      {o.unreachable > 0 && <p className="mt-1 text-xs text-sun-700">{plural(o.unreachable, "más sin celular válido", "más sin celular válido")}</p>}
-      {hint && count === 0 && <div className="mt-2 text-xs text-brand-900/70">{hint}</div>}
-      <div className="mt-auto pt-4">
+    <article className="flex min-h-40 flex-col rounded-2xl border border-brand-900/10 bg-white p-4">
+      <span className="text-xs text-brand-900/65">{title}</span>
+      <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{count.toLocaleString("es-AR")}</strong>
+      <span className="text-xs text-brand-900/65">
+        {o.value > 0 ? `≈ ${money.format(o.value)} en turnos` : count ? "Sin precio de referencia" : ""}
+        {note ? `${o.value > 0 || count ? " · " : ""}${note}` : ""}
+      </span>
+      {count === 0 && empty && <span className="mt-1 text-xs text-brand-900/70">{empty}</span>}
+      <div className="mt-auto pt-3 text-sm font-semibold">
         {o.open ? (
-          <Link href={`/panel/campanas/${o.open.id}`} className={`${buttonClass} w-full`}>
-            Seguir con la campaña
+          <Link href={`/panel/campanas?campana=${o.open.id}#campana`} className="text-brand-700 hover:underline">
+            {o.open.status === "borrador" ? "Seguir el borrador" : "Campaña activa"} ↗
           </Link>
-        ) : (
+        ) : count > 0 ? (
           <form action={prepareCampaignAction}>
             <input type="hidden" name="clinic_id" value={clinicId} />
             <input type="hidden" name="type" value={o.type} />
-            <button disabled={count === 0} className={`${count ? buttonClass : secondaryButtonClass} w-full disabled:cursor-not-allowed disabled:opacity-60`}>
-              {count ? "Revisar y enviar" : "Nadie por ahora"}
-            </button>
+            <button className="text-brand-700 hover:underline">Crear campaña +</button>
           </form>
+        ) : (
+          <span className="font-normal text-brand-900/50">Nadie por ahora</span>
         )}
       </div>
-    </Card>
+    </article>
   );
 }
 
-const campaignRuleShort = (type: "recall" | "reactivacion") =>
-  type === "recall" ? "Según cada cuánto vuelve cada prestación y los controles indicados." : "No vienen hace tiempo y no tienen turno.";
+function Stage({ label, value, rate, width }: { label: string; value: number; rate: number | null; width: number }) {
+  return (
+    <div className="min-w-0">
+      <span className="text-xs text-brand-900/65">{label}</span>
+      <strong className="mt-1 flex items-baseline gap-1.5 font-display text-2xl text-brand-950 tabular-nums">
+        {value.toLocaleString("es-AR")}
+        {rate !== null && <small className="font-sans text-xs font-semibold text-brand-700">{rate}%</small>}
+      </strong>
+      <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-brand-50" aria-hidden>
+        <span className="block h-full rounded-full bg-brand-500" style={{ width: `${width}%` }} />
+      </span>
+    </div>
+  );
+}
 
-export default async function CampaignsPage() {
+const QUEUE_FILTERS: Array<[QueueFilter, string]> = [
+  ["hoy", "Para hoy"],
+  ["fuera", "Fuera de la cola"],
+  ["todos", "Todos"],
+];
+
+const STEP_TONE: Record<string, string> = {
+  cola: "bg-brand-50 text-brand-800",
+  sofi: "bg-emerald/15 text-emerald-700",
+  fuera: "bg-neutral-100 text-neutral-700",
+  hecho: "bg-neutral-100 text-neutral-700",
+};
+
+export default async function CampaignsPage(props?: PageProps<"/panel/campanas">) {
+  const params = (await props?.searchParams) ?? {};
+  const pick = (key: string) => (typeof params[key] === "string" ? (params[key] as string) : undefined);
+  const period: Period = (["30", "mes", "todo"] as const).find((p) => p === pick("periodo")) ?? "30";
+  const filter: QueueFilter = (["hoy", "fuera", "todos"] as const).find((f) => f === pick("cola")) ?? "hoy";
+
   const [clinic, user] = await Promise.all([getPanelClinic(), getPanelUser()]);
   const isAdmin = user.role === "admin";
   const autoOn = new Set(clinic.auto_campaigns ?? []);
-  const [opp, campaigns, [base], types, [lastImport]] = await Promise.all([
+  const [opp, campaigns, active, [base], types, usage] = await Promise.all([
     opportunities(clinic),
     sql<Campaign[]>`select * from campaigns where clinic_id = ${clinic.id} order by created_at desc limit 30`,
-    sql<Array<{ total: number; with_history: number; opted_out: number; upcoming: number }>>`
+    activeCampaigns(clinic.id),
+    sql<Array<{ total: number; reachable: number; with_history: number }>>`
       select count(*)::int as total,
-        count(*) filter (where p.contact_opt_out)::int as opted_out,
-        count(*) filter (where p.next_control_at > current_date)::int as upcoming,
+        count(*) filter (where p.phone is not null and not p.contact_opt_out)::int as reachable,
         count(*) filter (where exists (select 1 from appointments a where a.patient_id = p.id and a.status = 'atendido')
           or exists (select 1 from patient_visits v where v.patient_id = p.id))::int as with_history
       from patients p where p.clinic_id = ${clinic.id}`,
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} and active order by specialty, name`,
-    sql<Array<{ created_at: string }>>`select created_at from patient_imports where clinic_id = ${clinic.id} and undone_at is null order by created_at desc limit 1`,
+    lineUsage(clinic),
   ]);
-  const stats = await campaignStats(clinic.id, campaigns.map((c) => c.id));
   const byType = new Map(opp.list.map((o) => [o.type, o]));
   const recall = byType.get("recall")!;
   const dueByType = new Map<string, number>();
@@ -113,17 +146,59 @@ export default async function CampaignsPage() {
   const withRecall = types.filter((t) => t.recall_months).length;
   const needsBase = base.total === 0 || base.with_history < base.total / 2;
 
+  // La campaña que se mira abajo: la elegida, o la primera activa, o la última que se mandó.
+  const selectedId = pick("campana");
+  const selected = campaigns.find((c) => c.id === selectedId) ?? active[0] ?? campaigns[0] ?? null;
+  const finished = campaigns.filter((c) => !active.some((a) => a.id === c.id));
+  const stats = await campaignStats(clinic.id, finished.map((c) => c.id));
+
+  const [results, queue, breakdown, steps, sampleRow] = selected
+    ? await Promise.all([
+        campaignResults(clinic, selected.id, period),
+        campaignQueue(clinic, selected, filter),
+        selected.type === "personalizada" ? Promise.resolve(null) : audienceBreakdown(clinic, selected.type),
+        sql<Array<{ position: number; delay_days: number; message: string | null }>>`select position, delay_days, message from campaign_steps where campaign_id = ${selected.id} order by position`,
+        sql<Array<{ name: string | null; detail: string | null }>>`
+          select p.full_name as name, r.detail from campaign_recipients r join patients p on p.id = r.patient_id
+          where r.campaign_id = ${selected.id} and r.detail is not null order by r.created_at limit 1`,
+      ])
+    : [null, null, null, [], []];
+  const followupStep = steps.find((s) => s.position === 2);
+  const sample = { name: firstName(sampleRow[0]?.name ?? "Lucía"), detail: sampleRow[0]?.detail ?? CAMPAIGN_LABELS[selected?.type ?? "recall"].title.toLowerCase() };
+  const qs = (patch: Record<string, string>) => {
+    const next = new URLSearchParams({ ...(selected ? { campana: selected.id } : {}), periodo: period, cola: filter, ...patch });
+    return `/panel/campanas?${next.toString()}`;
+  };
+
+  const dailyLine = (type: CampaignType) => {
+    if (type === "recordatorio" && clinic.external_reminders) return <b className="text-brand-950">lo manda {clinic.external_reminders}</b>;
+    const on = autoOn.has(type as AutoCampaignType);
+    return <b className={on ? "text-emerald-700" : "text-brand-950"}>{on ? "prendido" : "apagado"}</b>;
+  };
+
   return (
     <>
       <PageHeader
         title="Campañas"
-        description="Pacientes que ya te conocen y tienen algo pendiente. Elegí a quiénes escribirles, revisá la lista y mandalo desde tu WhatsApp o con Sofi."
-        // Sin base todavía, el botón de importar va en el recuadro de abajo, con su explicación.
-        actions={!needsBase && (
-          <Link href="/panel/pacientes/importar" className={secondaryButtonClass}>
-            Importar pacientes
-          </Link>
-        )}
+        description="Sofi les escribe a tus pacientes para que vuelvan a sacar turno, y te muestra cuántos volvieron."
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-52 rounded-xl border border-brand-900/10 bg-white px-3 py-2 text-xs text-brand-900/70">
+              <span className="flex justify-between gap-3">
+                <span>WhatsApp del consultorio · hoy</span>
+                <b className="text-brand-950 tabular-nums">{usage.capped ? `${usage.sent} de ${usage.cap}` : `${usage.sent} · sin tope`}</b>
+              </span>
+              {usage.capped && (
+                <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-brand-50" aria-hidden>
+                  <span className={`block h-full rounded-full ${usage.left === 0 ? "bg-sun-500" : "bg-brand-500"}`} style={{ width: `${Math.min(100, (usage.sent / usage.cap) * 100)}%` }} />
+                </span>
+              )}
+            </div>
+            <a href="#audiencias" className={buttonClass}>
+              + Nueva campaña
+            </a>
+          </div>
+        }
       />
       {clinic.is_demo && (
         <Notice tone="info" className="mb-6">
@@ -131,182 +206,339 @@ export default async function CampaignsPage() {
         </Notice>
       )}
 
-      <section aria-labelledby="base-titulo" className="mb-8 grid gap-6 overflow-hidden rounded-2xl bg-brand-950 p-6 text-white sm:p-8 lg:grid-cols-[1.3fr_1fr]">
-        <div>
-          <p id="base-titulo" className="text-xs font-semibold uppercase tracking-wider text-brand-200">
-            Tu base para volver a agendar
-          </p>
-          <p className="mt-3 flex flex-wrap items-baseline gap-x-3">
-            <span className="font-display text-5xl tabular-nums sm:text-6xl">{opp.patients.toLocaleString("es-AR")}</span>
-            <span className="text-lg text-brand-100">{opp.patients === 1 ? "paciente" : "pacientes"}</span>
-          </p>
-          <p className="mt-2 max-w-md text-sm text-brand-100/80">
-            {opp.value > 0 ? (
-              <>
-                <strong className="font-semibold text-white">≈ {money.format(opp.value)}</strong> en turnos, con los precios de referencia de tus
-                prestaciones. Cada paciente cuenta una vez, aunque esté en más de una lista de abajo.
-              </>
-            ) : (
-              <>
-                Con controles vencidos, inactivos, ausentes o en lista de espera, sin repetir pacientes.{" "}
-                <Link href="/panel/configuracion/prestaciones" className="underline underline-offset-2 hover:text-white">
-                  Cargá precios
-                </Link>{" "}
-                para ver cuánto vale.
-              </>
-            )}
-          </p>
+      <section aria-labelledby="audiencias-titulo" id="audiencias" className="mb-8">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="audiencias-titulo" className="font-semibold text-brand-950">Audiencias</h2>
+          <span className="text-xs text-brand-900/65">Se recalculan solas con la agenda{clinic.external_reminders ? ` y ${clinic.external_reminders}` : ""}.</span>
         </div>
-        <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <div>
-              <dt className="text-brand-200/80">En la base</dt>
-              <dd className="font-display text-2xl tabular-nums">{base.total.toLocaleString("es-AR")}</dd>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <article className="flex min-h-40 flex-col rounded-2xl border border-brand-900/10 bg-white p-4">
+            <span className="text-xs text-brand-900/65">Base de pacientes</span>
+            <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{base.total.toLocaleString("es-AR")}</strong>
+            <span className="text-xs text-brand-900/65">{base.reachable.toLocaleString("es-AR")} con WhatsApp</span>
+            <div className="mt-auto pt-3 text-sm font-semibold">
+              <Link href={needsBase ? "/panel/pacientes/importar" : "/panel/pacientes"} className="text-brand-700 hover:underline">
+                {needsBase ? "Importar pacientes" : "Ver pacientes"}
+              </Link>
             </div>
-            <div>
-              <dt className="text-brand-200/80">Con visitas conocidas</dt>
-              <dd className="font-display text-2xl tabular-nums">{base.with_history.toLocaleString("es-AR")}</dd>
-            </div>
-            <div>
-              <dt className="text-brand-200/80">Controles agendados</dt>
-              <dd className="font-display text-2xl tabular-nums">{base.upcoming.toLocaleString("es-AR")}</dd>
-            </div>
-            <div>
-              <dt className="text-brand-200/80">No quieren campañas</dt>
-              <dd className="font-display text-2xl tabular-nums">{base.opted_out.toLocaleString("es-AR")}</dd>
-            </div>
-          </dl>
-          <div className="mt-4 border-t border-white/10 pt-4 text-sm">
-            {needsBase ? (
-              <>
-                <p className="text-brand-100/85">Traé tus pacientes de tu sistema o tu Excel: con la fecha de su última visita aparecen los que hay que llamar.</p>
-                <Link href="/panel/pacientes/importar" className="mt-3 inline-flex rounded-full bg-white px-4 py-2 font-semibold text-brand-950 hover:bg-brand-50">
-                  Importar pacientes
-                </Link>
-              </>
-            ) : (
-              <p className="text-brand-100/80">
-                {lastImport ? `Última importación: ${formatDate(lastImport.created_at, clinic.timezone)}. ` : ""}
-                <Link href="/panel/pacientes/importar" className="underline underline-offset-2 hover:text-white">
-                  Sumar o actualizar pacientes
-                </Link>
-              </p>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section aria-labelledby="oportunidades" className="mb-8">
-        <h2 id="oportunidades" className="mb-3 font-semibold text-brand-950">Para volver a agendar</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <OpportunityCard
+          </article>
+          <AudienceCard
+            title="Controles vencidos"
             o={recall}
             clinicId={clinic.id}
-            hint={
-              withRecall === 0 ? (
-                <a href="#controles" className="font-medium text-brand-700 underline underline-offset-2">Definí cada cuánto vuelve cada prestación</a>
-              ) : base.with_history === 0 ? (
-                "Cuando haya visitas en la base, aparecen acá."
-              ) : undefined
-            }
+            empty={withRecall === 0 ? <a href="#controles" className="underline underline-offset-2">Definí cada cuánto vuelve cada prestación</a> : undefined}
           />
-          <OpportunityCard
+          <AudienceCard title="Faltaron y no volvieron" o={byType.get("no_show")!} clinicId={clinic.id} note="últimos 30 días" />
+          <article className="flex min-h-40 flex-col rounded-2xl border border-dashed border-brand-900/15 bg-white/60 p-4">
+            <span className="text-xs text-brand-900/65">Presupuestos sin iniciar</span>
+            <strong className="mt-1 font-display text-3xl text-brand-900/40">—</strong>
+            <span className="text-xs text-brand-900/65">{clinic.external_reminders ? `${clinic.external_reminders} no lo informa todavía` : "Falta el origen de los presupuestos"}</span>
+            <div className="mt-auto pt-3 text-sm font-semibold">
+              <Link href="/panel/configuracion" className="text-brand-700 hover:underline">
+                Conectar origen
+              </Link>
+            </div>
+          </article>
+          <AudienceCard
+            title={`Inactivos +${clinic.reactivation_months} meses`}
             o={byType.get("reactivacion")!}
             clinicId={clinic.id}
-            hint={base.with_history === 0 ? <Link href="/panel/pacientes/importar" className="font-medium text-brand-700 underline underline-offset-2">Importá la base con sus visitas</Link> : undefined}
+            empty={base.with_history === 0 ? <Link href="/panel/pacientes/importar" className="underline underline-offset-2">Importá la base con sus visitas</Link> : undefined}
           />
-          <OpportunityCard o={byType.get("no_show")!} clinicId={clinic.id} />
-          <OpportunityCard o={byType.get("lista_espera")!} clinicId={clinic.id} />
-        </div>
-        <h2 className="mb-3 mt-6 font-semibold text-brand-950">Del día a día</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <OpportunityCard o={byType.get("recordatorio")!} clinicId={clinic.id} compact />
-          <OpportunityCard o={byType.get("encuesta")!} clinicId={clinic.id} compact />
+          <article className="flex min-h-40 flex-col rounded-2xl border border-brand-900/10 bg-white p-4">
+            <span className="text-xs text-brand-900/65">Lista de espera</span>
+            <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{byType.get("lista_espera")!.members.length.toLocaleString("es-AR")}</strong>
+            <span className="text-xs text-brand-900/65">Se avisa sola al liberarse un turno</span>
+            <div className="mt-auto pt-3">
+              <Badge tone="blue">Automática</Badge>
+            </div>
+          </article>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <section aria-labelledby="historial" className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h2 id="historial" className="font-semibold text-brand-950">Campañas</h2>
-            <p className="text-xs text-brand-900/65">Un turno cuenta si se sacó dentro de los {ATTRIBUTION_DAYS} días del mensaje.</p>
-          </div>
-          {campaigns.length ? (
-            <ul className="space-y-3">
-              {campaigns.map((c) => {
-                const s = stats.get(c.id) ?? EMPTY_STATS;
-                const status = CAMPAIGN_STATUS[c.status];
-                const toSend = s.pending + s.errors;
-                return (
-                  <li key={c.id}>
-                    <Link href={`/panel/campanas/${c.id}`} className="block rounded-2xl border border-brand-900/10 bg-white p-4 transition hover:border-brand-300 sm:p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs text-brand-900/65">
-                            {CAMPAIGN_LABELS[c.type].label} · {formatDate(c.sent_at ?? c.created_at, clinic.timezone)}
-                          </p>
-                          <p className="truncate font-semibold text-brand-950">{c.name}</p>
-                        </div>
-                        <span className="flex gap-1.5">
-                          {c.automatic && <Badge tone="blue">Automática</Badge>}
-                          <Badge tone={status.tone}>{status.label}</Badge>
-                        </span>
-                      </div>
-                      {s.sent > 0 ? (
-                        <>
-                          <div className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-brand-50" aria-hidden>
-                            <span className="bg-emerald" style={{ width: `${(s.booked / s.sent) * 100}%` }} />
-                            <span className="bg-brand-300" style={{ width: `${((s.replied - s.booked) / s.sent) * 100}%` }} />
-                          </div>
-                          <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-brand-900/70">
-                            <span>{plural(s.sent, "enviado", "enviados")}</span>
-                            <span>{plural(s.replied, "respondió", "respondieron")}</span>
-                            <span className="font-medium text-emerald-700">{plural(s.booked, "sacó turno", "sacaron turno")}</span>
-                            {s.value > 0 && <span>≈ {money.format(s.value)}</span>}
-                            {toSend > 0 && <span className="text-sun-700">{toSend} por enviar</span>}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="mt-2 text-sm text-brand-900/70">{toSend ? `${plural(toSend, "paciente", "pacientes")} para revisar y enviar` : "Sin pacientes en la lista"}</p>
-                      )}
+      <section aria-labelledby="campanas-titulo" className="mb-8">
+        <h2 id="campanas-titulo" className="mb-3 font-semibold text-brand-950">Campañas</h2>
+        {active.length ? (
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {active.map((c) => {
+              const status = ACTIVE_STATUS[c.status];
+              const isSelected = selected?.id === c.id;
+              const pending = c.status === "borrador" ? `${plural(c.listed, "paciente", "pacientes")} en la lista` : `${c.queued} en cola`;
+              const stepsLabel = c.steps > 1 ? `${c.steps} pasos` : "1 paso · sin seguimiento";
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={`/panel/campanas?campana=${c.id}#campana`}
+                    aria-current={isSelected ? "true" : undefined}
+                    className={`block h-full rounded-2xl border bg-white p-4 transition hover:border-brand-300 ${isSelected ? "border-brand-500 ring-2 ring-brand-500/20" : "border-brand-900/10"}`}
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <b className="min-w-0 truncate text-brand-950">{c.name}</b>
+                      <span className="flex shrink-0 gap-1.5">
+                        {c.automatic && <Badge tone="blue">Automática</Badge>}
+                        <Badge tone={status.tone}>{status.label}</Badge>
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs text-brand-900/65">
+                      {pending} · {stepsLabel}
+                      {c.next_followup ? ` · próximo seguimiento ${formatDate(c.next_followup, clinic.timezone)}` : ""}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-brand-900/15 p-5 text-sm text-brand-900/65">
+            No hay campañas en curso. Elegí una audiencia de arriba: vas a poder revisar a quiénes les llega y el mensaje antes de enviar.
+          </p>
+        )}
+        <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-brand-50/60 px-4 py-2.5 text-sm text-brand-900/75">
+          <span className="font-semibold text-brand-950">Del día a día:</span>
+          <span>Recordatorio de turno · {dailyLine("recordatorio")}</span>
+          <span>Encuesta post-consulta · {dailyLine("encuesta")}</span>
+          <span>
+            Turno liberado a la lista de espera · <b className="text-emerald-700">prendido</b>
+          </span>
+          <a href="#automaticas" className="font-semibold text-brand-700 hover:underline">
+            Cambiar
+          </a>
+        </p>
+      </section>
+
+      {selected && results && queue ? (
+        <div id="campana" className="grid scroll-mt-6 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0 space-y-6">
+            <Card>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-semibold text-brand-950">Resultados · {selected.name}</h2>
+                <nav aria-label="Período" className="flex flex-wrap gap-1 text-xs">
+                  {PERIODS.map(([key, label]) => (
+                    <Link
+                      key={key}
+                      href={`${qs({ periodo: key })}#campana`}
+                      aria-current={period === key ? "true" : undefined}
+                      className={`rounded-full px-3 py-1.5 font-semibold ${period === key ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-800 hover:bg-brand-100"}`}
+                    >
+                      {label}
                     </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="rounded-2xl border border-dashed border-brand-900/15 p-6 text-sm text-brand-900/65">
-              Todavía no hay campañas. Elegí una de las listas de arriba: vas a poder revisar a quiénes les llega y el mensaje antes de enviar.
-            </p>
-          )}
+                  ))}
+                </nav>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <Stage label="Contactados" value={results.contacted} rate={null} width={results.contacted ? 100 : 0} />
+                <Stage label="Respondieron" value={results.replied} rate={stepRate(results.replied, results.contacted)} width={stepRate(results.replied, results.contacted) ?? 0} />
+                <Stage label="Sacaron turno" value={results.booked} rate={stepRate(results.booked, results.replied)} width={stepRate(results.booked, results.contacted) ?? 0} />
+                <Stage label="Vinieron" value={results.attended} rate={stepRate(results.attended, results.booked)} width={stepRate(results.attended, results.contacted) ?? 0} />
+              </div>
+              <div className="mt-4 flex flex-col gap-1 border-t border-brand-900/5 pt-3 text-xs text-brand-900/70 sm:flex-row sm:justify-between sm:gap-4">
+                <span>
+                  <b className="text-brand-950">{money.format(results.attendedValue)}</b> en turnos atendidos, con el precio de referencia de cada prestación
+                </span>
+                <span>
+                  Cuenta un turno si lo sacó dentro de los <b className="text-brand-950">{ATTRIBUTION_DAYS} días</b> del mensaje, por cualquier canal
+                </span>
+              </div>
+            </Card>
 
-          <Card>
-            <details>
-              <summary className="cursor-pointer font-semibold text-brand-950">Aviso a todos los pacientes</summary>
-              <p className="mt-1 text-sm text-brand-900/65">Para un cambio de horario, vacaciones o una novedad. Le llega a todos los que no pidieron la baja.</p>
-              <form action={prepareCampaignAction} className="mt-4 space-y-3">
-                <input type="hidden" name="clinic_id" value={clinic.id} />
-                <input type="hidden" name="type" value="personalizada" />
-                <Field label="Nombre de la campaña">
-                  <input name="name" placeholder="Ej. Vacaciones de enero" className={inputClass} />
-                </Field>
-                <Field label="Qué tiene que contar Sofi si responden" hint="El mensaje lo podés escribir en el paso siguiente.">
-                  <textarea name="goal" rows={3} placeholder="Del 2 al 16 de enero el consultorio está cerrado; las urgencias, a la guardia del Hospital…" className={inputClass} />
-                </Field>
-                {clinic.whatsapp_provider === "meta" && (
-                  <Field label="Template aprobado por Meta" hint="Solo para que lo envíe Sofi por el WhatsApp oficial.">
-                    <input name="template_name" placeholder="aviso_general" className={inputClass} />
-                  </Field>
-                )}
-                <button className={buttonClass}>Armar el aviso</button>
-              </form>
-            </details>
-          </Card>
+            <Card className="!p-0">
+              <div className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5">
+                <div>
+                  <h2 className="font-semibold text-brand-950">Cola de envíos</h2>
+                  <p className="mt-0.5 text-xs text-brand-900/65">
+                    Lo que sale solo, de lunes a viernes de {SEND_WINDOW.from} a {SEND_WINDOW.to}, como mucho {DAILY_LINE_CAP} mensajes por día desde esta línea.
+                  </p>
+                </div>
+                <nav aria-label="Qué mostrar" className="flex flex-wrap gap-1 text-xs">
+                  {QUEUE_FILTERS.map(([key, label]) => (
+                    <Link
+                      key={key}
+                      href={`${qs({ cola: key })}#campana`}
+                      aria-current={filter === key ? "true" : undefined}
+                      className={`rounded-full px-3 py-1.5 font-semibold ${filter === key ? "bg-brand-600 text-white" : "bg-brand-50 text-brand-800 hover:bg-brand-100"}`}
+                    >
+                      {label}
+                      {key === "fuera" && queue.counts.fuera ? ` (${queue.counts.fuera})` : ""}
+                    </Link>
+                  ))}
+                </nav>
+              </div>
+              {queue.rows.length ? (
+                <ul className="divide-y divide-brand-900/5 border-t border-brand-900/5">
+                  {queue.rows.slice(0, 60).map((r) => (
+                    <li key={r.id} className="grid grid-cols-[32px_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm sm:grid-cols-[32px_minmax(120px,1fr)_minmax(160px,1.6fr)_auto_minmax(110px,auto)] sm:px-5">
+                      <span className="grid size-8 place-items-center rounded-full bg-brand-50 text-xs font-bold text-brand-800" aria-hidden>
+                        {initials(r.name)}
+                      </span>
+                      <span className="min-w-0 truncate font-medium text-brand-950">{shortName(r.name)}</span>
+                      <span className="col-start-2 min-w-0 truncate text-brand-900/70 sm:col-start-auto">{r.reason}</span>
+                      <span className="col-start-2 sm:col-start-auto">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${STEP_TONE[r.kind]}`}>{r.step}</span>
+                      </span>
+                      <span className="col-start-2 text-xs text-brand-900/65 sm:col-start-auto sm:text-right">
+                        {r.action?.href ? (
+                          <Link href={r.action.href} className="font-semibold text-brand-700 hover:underline">
+                            {r.action.label}
+                          </Link>
+                        ) : r.action && r.action.include !== undefined ? (
+                          <form action={toggleRecipientAction} className="inline">
+                            <input type="hidden" name="clinic_id" value={clinic.id} />
+                            <input type="hidden" name="campaign_id" value={selected.id} />
+                            <input type="hidden" name="id" value={r.id} />
+                            <input type="hidden" name="include" value={String(r.action.include)} />
+                            {r.when && <span className="mr-2">{r.when}</span>}
+                            <button className="font-semibold text-brand-700 hover:underline">{r.action.label}</button>
+                          </form>
+                        ) : (
+                          r.when
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="border-t border-brand-900/5 px-5 py-6 text-sm text-brand-900/65">
+                  {filter === "fuera" ? "Nadie quedó afuera." : "No hay nadie esperando un mensaje en esta campaña."}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-brand-900/5 p-4 sm:px-5">
+                <span className="text-sm text-brand-900/70">
+                  <b className="text-brand-950">{plural(queue.counts.cola, "en cola", "en cola")}</b>
+                  {queue.counts.fuera > 0 && ` · ${queue.counts.fuera} fuera de la cola por los motivos de la lista`}
+                </span>
+                <Link href={`/panel/campanas/${selected.id}`} className={buttonClass}>
+                  {queue.counts.cola ? `Revisar lote de ${queue.counts.cola}` : "Ver la campaña"}
+                </Link>
+              </div>
+            </Card>
+          </div>
+
+          <aside aria-labelledby="ajustes-campana" className="min-w-0">
+            <Card>
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <h2 id="ajustes-campana" className="min-w-0 truncate font-semibold text-brand-950">{selected.name}</h2>
+                <Badge tone={ACTIVE_STATUS[selected.status].tone}>{ACTIVE_STATUS[selected.status].label}</Badge>
+              </div>
+              <CampaignSettings
+                key={selected.id}
+                clinicId={clinic.id}
+                campaignId={selected.id}
+                rule={selected.type === "personalizada" ? "Aviso a todos los pacientes que no pidieron la baja." : campaignRule(selected.type, clinic)}
+                breakdown={breakdown}
+                cooldownDays={clinic.contact_cooldown_days}
+                delayDays={followupStep?.delay_days ?? DEFAULT_FOLLOWUP_DAYS}
+                maxMessages={followupStep ? selected.max_messages : 1}
+                stopOnReply={selected.stop_on_reply}
+                stopOnBooking={selected.stop_on_booking}
+                sequencesEnabled={clinic.sequences_enabled}
+                message={selected.message?.trim() || campaignMessage({ type: selected.type, message: null }, "{nombre}", "{detalle}")}
+                followup={followupStep?.message?.trim() || DEFAULT_FOLLOWUP_TEXT}
+                goal={selected.goal ?? CAMPAIGN_LABELS[selected.type].goal}
+                sample={sample}
+                optOutFooter={OPT_OUT_FOOTER}
+                listHref={`/panel/campanas/${selected.id}`}
+              />
+            </Card>
+          </aside>
+        </div>
+      ) : null}
+
+      {finished.length > 0 && (
+        <section aria-labelledby="historial" className="mt-10">
+          <h2 id="historial" className="mb-3 font-semibold text-brand-950">Historial</h2>
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {finished.map((c) => {
+              const s = stats.get(c.id) ?? EMPTY_STATS;
+              return (
+                <li key={c.id}>
+                  <Link href={`/panel/campanas?campana=${c.id}#campana`} className="block rounded-2xl border border-brand-900/10 bg-white p-4 transition hover:border-brand-300">
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="block text-xs text-brand-900/65">
+                          {CAMPAIGN_LABELS[c.type].label} · {formatDate(c.sent_at ?? c.created_at, clinic.timezone)}
+                        </span>
+                        <b className="block truncate text-brand-950">{c.name}</b>
+                      </span>
+                      <span className="flex shrink-0 gap-1.5">
+                        {c.automatic && <Badge tone="blue">Automática</Badge>}
+                        <Badge tone={CAMPAIGN_STATUS[c.status].tone}>{CAMPAIGN_STATUS[c.status].label}</Badge>
+                      </span>
+                    </span>
+                    <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-brand-900/70">
+                      <span>{plural(s.sent, "contactado", "contactados")}</span>
+                      <span>{plural(s.replied, "respondió", "respondieron")}</span>
+                      <span className="font-medium text-emerald-700">{plural(s.booked, "sacó turno", "sacaron turno")}</span>
+                      {s.attended > 0 && <span>{plural(s.attended, "vino", "vinieron")}</span>}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </section>
+      )}
 
-        {/* Lo de arriba es el trabajo del día; acá, los ajustes que cambian a quiénes aparecen. */}
-        <aside aria-labelledby="ajustes" className="min-w-0 space-y-6">
-          <h2 id="ajustes" className="font-semibold text-brand-950">Ajustes de las campañas</h2>
+      <section aria-labelledby="otras" className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+        <h2 id="otras" className="sr-only">Mandar a mano y avisos</h2>
+        <Card>
+          <h3 className="font-semibold text-brand-950">Mandar a mano</h3>
+          <p className="mt-1 text-sm text-brand-900/65">
+            Mientras las automáticas estén apagadas, estas listas se revisan y se mandan desde acá. A quien ya le llegó el recordatorio o la encuesta no le
+            llega otra.
+          </p>
+          <ul className="mt-3 divide-y divide-brand-900/5 text-sm">
+            {(["recordatorio", "encuesta"] as const).map((type) => {
+              const o = byType.get(type)!;
+              return (
+                <li key={type} className="flex items-center justify-between gap-3 py-2">
+                  <span>
+                    {CAMPAIGN_LABELS[type].title} · <b className="tabular-nums">{o.members.length}</b>
+                  </span>
+                  {o.open ? (
+                    <Link href={`/panel/campanas/${o.open.id}`} className="font-semibold text-brand-700 hover:underline">
+                      Seguir
+                    </Link>
+                  ) : (
+                    <form action={prepareCampaignAction}>
+                      <input type="hidden" name="clinic_id" value={clinic.id} />
+                      <input type="hidden" name="type" value={type} />
+                      <button disabled={!o.members.length} className="font-semibold text-brand-700 hover:underline disabled:text-brand-900/40 disabled:no-underline">
+                        Revisar y enviar
+                      </button>
+                    </form>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+        <Card>
+          <details>
+            <summary className="cursor-pointer font-semibold text-brand-950">Aviso a todos los pacientes</summary>
+            <p className="mt-1 text-sm text-brand-900/65">Para un cambio de horario, vacaciones o una novedad. Le llega a todos los que no pidieron la baja.</p>
+            <form action={prepareCampaignAction} className="mt-4 space-y-3">
+              <input type="hidden" name="clinic_id" value={clinic.id} />
+              <input type="hidden" name="type" value="personalizada" />
+              <Field label="Nombre de la campaña">
+                <input name="name" placeholder="Ej. Vacaciones de enero" className={inputClass} />
+              </Field>
+              <Field label="Qué tiene que contar Sofi si responden" hint="El mensaje lo podés escribir en el paso siguiente.">
+                <textarea name="goal" rows={3} placeholder="Del 2 al 16 de enero el consultorio está cerrado; las urgencias, a la guardia del Hospital…" className={inputClass} />
+              </Field>
+              {clinic.whatsapp_provider === "meta" && (
+                <Field label="Template aprobado por Meta" hint="Solo para que lo envíe Sofi por el WhatsApp oficial.">
+                  <input name="template_name" placeholder="aviso_general" className={inputClass} />
+                </Field>
+              )}
+              <button className={buttonClass}>Armar el aviso</button>
+            </form>
+          </details>
+        </Card>
+      </section>
+
+        <section aria-labelledby="ajustes" id="ajustes-campanas" className="mt-10">
+          <h2 id="ajustes" className="mb-3 font-semibold text-brand-950">Ajustes de las campañas</h2>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 [&>*]:min-w-0">
           <Card id="controles">
             <h2 className="font-semibold text-brand-950">Controles periódicos</h2>
             <p className="mt-1 text-sm text-brand-900/65">
@@ -347,7 +579,7 @@ export default async function CampaignsPage() {
             </p>
           </Card>
 
-          <Card className="bg-brand-50/60">
+          <Card id="automaticas" className="bg-brand-50/60">
             <h2 className="font-semibold text-brand-950">Automáticas</h2>
             <p className="mt-1 text-sm text-brand-900/70">
               {autoOn.size
@@ -398,13 +630,9 @@ export default async function CampaignsPage() {
               Lo que sale solo (salvo recordatorios y encuesta) sale de lunes a viernes, de {SEND_WINDOW.from} a {SEND_WINDOW.to}, y como mucho{" "}
               {DAILY_LINE_CAP} mensajes por día desde el WhatsApp del consultorio.
             </p>
-            <p className="mt-2 text-xs text-brand-900/65">
-              «Turnos de mañana» y «Atendidos estos días» se pueden mandar a mano mientras estén apagadas: a quien ya le llegó el recordatorio o la
-              encuesta (a mano o automática) no le llega otra.
-            </p>
           </Card>
-        </aside>
-      </div>
+          </div>
+        </section>
     </>
   );
 }
