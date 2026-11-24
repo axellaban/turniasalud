@@ -8,12 +8,14 @@ import { sendOfferFollowups } from "@/lib/followups";
 import { sendDueSummaries } from "@/lib/daily-summary";
 import { completePendingSummaries } from "@/lib/conversations-backfill";
 import { monitorClinicWhatsapps } from "@/lib/waha-health";
+import { runSequences } from "@/lib/campaign-sequences";
 import type { CampaignType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Endpoints para que n8n (o cualquier cron) dispare las campañas automáticas:
+// Endpoints para que n8n (o cualquier cron) dispare las campañas automáticas. Cada una corre en las
+// clínicas que la tienen prendida (todas apagadas por defecto) o, con { clinic_id }, solo en esa:
 // POST /api/automations/recordatorios  (todos los días, ej. 10:00)
 // POST /api/automations/recall         (una vez por semana)
 // POST /api/automations/reactivacion   (una vez por mes)
@@ -24,7 +26,8 @@ export const maxDuration = 300;
 //                                       escribe a quien no contestó los horarios que le ofreció el agente,
 //                                       reintenta los avisos al consultorio por WhatsApp,
 //                                       sincroniza Smile Connect por API, si alguna clínica lo prendió,
-//                                       y, de lunes a viernes de 10 a 14, manda el resumen diario de Sofi al equipo)
+//                                       de lunes a viernes de 10 a 14, manda el resumen diario de Sofi al equipo
+//                                       y manda los seguimientos de campañas a quien no respondió)
 // POST /api/automations/seguimientos   (solo esto último, si se prefiere un disparador aparte)
 // POST /api/automations/resumen-sofi   (el resumen diario solo: lo dispara también la tarea diaria de Chapa Labs)
 const JOBS: Record<string, CampaignType> = {
@@ -51,7 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
       // Ya se dispara cada 10 minutos: el seguimiento de turnos ofrecidos va en la misma corrida,
       // sin pedir otro disparador en n8n. Si falla uno, el otro corre igual.
       const smileRun = job === "calendario" ? runSmileConnect() : Promise.resolve(null);
-      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp] = await Promise.allSettled([
+      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp, sequences] = await Promise.allSettled([
         job === "calendario" ? syncPendingCalendar() : Promise.resolve(null),
         sendOfferFollowups(),
         job === "calendario" ? checkCalendarChanges() : Promise.resolve(null),
@@ -62,7 +65,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         // Las charlas que quedaron sin resumen (si el webhook post-call de ElevenLabs no llegó).
         job === "calendario" ? completePendingSummaries() : Promise.resolve(null),
         job === "calendario" ? monitorClinicWhatsapps() : Promise.resolve(null),
+        // Seguimientos de campañas a quien no respondió (solo clínicas con las secuencias prendidas).
+        job === "calendario" ? runSequences() : Promise.resolve(null),
       ]);
+      if (sequences.status === "rejected") console.error("Secuencias de campañas fallaron", sequences.reason);
       if (whatsapp.status === "rejected") console.error("Control de WhatsApp falló", whatsapp.reason);
       if (talks.status === "rejected") console.error("Completar resúmenes de conversaciones falló", talks.reason);
       if (summaries.status === "rejected") console.error("Resumen diario de Sofi falló", summaries.reason);
@@ -82,6 +88,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         ...(smile.status === "fulfilled" && smile.value && Object.keys(smile.value).length > 0 && { smile_connect: smile.value }),
         ...(summaries.status === "fulfilled" && summaries.value?.length && { resumenes: summaries.value }),
         ...(talks.status === "fulfilled" && talks.value?.revisadas && { conversaciones_sin_resumen: talks.value }),
+        ...(sequences.status === "fulfilled" && sequences.value?.length && { secuencias: sequences.value }),
       });
     } catch (e) {
       return NextResponse.json({ ok: false, job, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
@@ -91,8 +98,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
   if (!type) return NextResponse.json({ error: `Automatización desconocida. Opciones: ${[...Object.keys(JOBS), "calendario", "seguimientos", "resumen-sofi"].join(", ")}` }, { status: 404 });
   const body = (await request.json().catch(() => ({}))) as { clinic_id?: string };
   try {
-    const result = await runAutomation(type, body.clinic_id);
-    return NextResponse.json({ ok: true, job, ...result });
+    // Corre en cada clínica que la tiene prendida (Panel → Campañas → Automáticas, solo el administrador).
+    const clinicas = await runAutomation(type, body.clinic_id);
+    const errors = clinicas.filter((r) => "error" in r);
+    return NextResponse.json({ ok: errors.length === 0, job, clinicas }, { status: errors.length ? 500 : 200 });
   } catch (e) {
     return NextResponse.json({ ok: false, job, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

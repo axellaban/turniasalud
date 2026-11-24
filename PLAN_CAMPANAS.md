@@ -1,6 +1,6 @@
 # Turnia Activa — campañas para activar la base de pacientes
 
-Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el CRM, qué quedó hecho en la versión 1 y qué sigue. No contiene credenciales.
+Actualizado: 24/11/2026. Qué es Panel → Campañas, qué se decidió sobre el CRM, qué quedó hecho en la versión 1 y qué sigue. No contiene credenciales.
 
 ## Referencia: Activate de Assort
 
@@ -70,11 +70,73 @@ Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el 
 
 **Perfiles de demo:** se puede importar y armar campañas para mostrar la lista y el mensaje. Sofi no envía nada. Abrir el chat desde el panel sí funciona, porque lo manda una persona desde su WhatsApp.
 
-## Qué sigue (versión 2)
+## Versión 2: Turnia Activa (desde el 24/11/2026)
+
+El rediseño está en el artefacto de diseño «Turnia Activa · Campañas» (tres pantallas) y se hace en cinco PRs. El avance de cada uno está en `PENDIENTES.md`. Ideas tomadas de cómo trabaja DentiPilot, sin copiar su material: recuperar pacientes por señales, seguimiento automático a quien no responde, un piloto chico antes de escalar y resultados en 4 etapas.
+
+**PR 1 (hecho): arreglos de fondo**
+
+- **Automáticas por clínica, apagadas por defecto.** `clinics.auto_campaigns` lista los tipos que corren solos en esa clínica: recordatorios, ausentes, encuesta, controles e inactivos. La lista de espera no está: avisa sola cuando se libera un turno.
+  - Las prende o apaga el administrador en Panel → Campañas → Automáticas, con una confirmación al prender. El consultorio ve si están prendidas o apagadas.
+  - `POST /api/automations/<job>` corre en cada clínica real que la tiene prendida. Con `{ clinic_id }` corre solo en esa, y solo si está prendida. Responde `clinicas: [...]` con lo que pasó en cada una (enviada, salteada y por qué, o error).
+- **El tope de 50 no deja a nadie afuera.** Antes, cada corrida creaba una campaña nueva: los que quedaban después del 50 se perdían, porque la audiencia vuelve a ordenarse con los más recientes primero. Ahora la automática retoma su campaña abierta (`campaigns.automatic = true`, estado `enviando`). Suma a los nuevos al final y les escribe primero a los que esperaban. Los borradores del equipo nunca los toma una automática, y «Revisar y enviar» nunca abre una automática.
+- **Ventana de atribución de 14 días** (`ATTRIBUTION_DAYS` en `src/lib/types.ts`). Un turno cuenta para la campaña si se sacó dentro de los 14 días del mensaje; antes contaba cualquier turno posterior, sin límite. Vale para los resultados y para marcar «agendó» cuando el paciente responde.
+
+**PR 2 (hecho): secuencias**
+
+- **Pasos:** `campaign_steps` guarda los pasos de cada campaña, del 2 en adelante; el 1 es el mensaje de la campaña. Controles, inactivos y ausentes nacen con el seguimiento sugerido: a los 5 días, con un máximo de 2 mensajes por paciente (`campaigns.max_messages`).
+- **Por paciente:** se guarda `messages_sent`, `last_message_at`, `next_step_at` (cuándo toca el próximo) y `sequence_stopped` (por qué se cortó).
+- **Cuándo corren:** en la tarea de cada 10 minutos (`runSequences` en `src/lib/campaign-sequences.ts`), solo en las clínicas con `sequences_enabled`. Se prende en Panel → Campañas → Automáticas → «Seguimiento a quien no responde», solo el administrador. Mandan hasta 10 por corrida.
+- **Se cortan si el paciente:**
+  - responde (estado «respondió» o «agendó», o un mensaje suyo en el chat);
+  - saca turno por cualquier canal (Sofi, panel, teléfono o Smile Connect);
+  - pide la baja;
+  - o ya recibió el máximo de mensajes.
+  - Lo enviado a mano desde el WhatsApp de la clínica no tiene seguimiento de Sofi.
+- **Pasos vencidos:** un paso que venció hace más de 4 días (por ejemplo, con las secuencias apagadas) se cierra sin mandarse.
+- **Solo por WAHA:** por el WhatsApp oficial un seguimiento necesita un template aprobado.
+- **Límites de la línea** (`src/lib/campaign-limits.ts`):
+  - Horario de envío: de lunes a viernes, de 9 a 20, para lo que sale solo (las secuencias y las automáticas de controles, inactivos y ausentes). Los recordatorios y la encuesta no lo respetan porque son del turno.
+  - Tope de 60 mensajes de campaña por día y por línea WAHA, contando lo que manda Sofi y lo que el equipo marca como enviado a mano. Cada mensaje queda en `campaign_messages`.
+  - «Enviar con Sofi» se frena en el tope y avisa que se sigue mañana.
+- **La llamada de Sofi como paso:** queda a futuro, porque requiere autorización.
+
+**PR 4 (hecho): nueva audiencia**
+
+- **Pantalla:** `/panel/campanas/audiencia` (`audience-builder.tsx`). Las reglas están en `src/lib/audience-rules.ts`, compartidas entre el navegador y el servidor y validadas con zod. `describeRules` arma la frase, por ejemplo: «Pacientes que no vienen hace más de 9 meses, se atendieron de ortodoncia, con cualquier profesional».
+- **Filtros, solo con datos que Turnia tiene:**
+  - meses sin venir: última visita en la agenda (incluido Smile Connect) o en las visitas importadas;
+  - prestación;
+  - profesional: el de la agenda o el nombre en la visita importada;
+  - cobertura;
+  - edad;
+  - cumpleaños este mes;
+  - faltó a un turno en el último año;
+  - control indicado por el profesional que ya llegó.
+- **Presupuestos sin iniciar:** deshabilitado hasta que haya de dónde leerlos.
+- **Vista previa en vivo:** `previewAudienceAction` muestra la cantidad, el valor, el desglose de quiénes quedan afuera y por qué (`audienceBreakdown` con las reglas) y tres nombres.
+- **Audiencias guardadas:** `saved_audiences` (`src/lib/saved-audiences.ts`). En Campañas aparecen como tarjetas, con la cantidad y el valor de hoy, «Crear campaña +» y «Editar», más la tarjeta «Nueva audiencia». «+ Nueva campaña» lleva al constructor.
+- **Campañas de audiencia propia:** `type = 'audiencia'`, con `audience_id` y `audience_rules` (las reglas al crearla).
+  - Cuentan como campaña para volver: respetan el tope entre campañas y a quien ya tiene turno, y traen el seguimiento sugerido.
+  - Traen un mensaje sugerido que nombra la prestación si la regla la tiene.
+
+**PR 5 (hecho): revisar lote**
+
+- **Pantalla:** `/panel/campanas/[id]/lote` (`lot-review.tsx`). Los datos salen de `campaignLot` en `src/lib/campaign-lot.ts`: los próximos 5 (`LOT_SIZE`), con primero los seguimientos vencidos de lo enviado a mano. Al lado, lo enviado a mano en las últimas 24 horas para marcar qué contestaron.
+- **«Con Sofi, automático»:** `sendLotWithSofiAction` llama a `sendCampaign(id, { only })` con los elegidos. Respeta el tope de la línea y el piloto.
+- **«Desde mi WhatsApp, de a uno»:** abre WhatsApp Web (en el celular, la app) con el mensaje escrito y marca el envío.
+  - Si la campaña tiene seguimiento, `markManualSent` agenda el próximo. Sale desde el lote con `markManualFollowup`, porque Sofi no les escribe a los de envío manual.
+  - Atajos de teclado: Enter abre el chat y → pasa al siguiente. «Saltear» deja al paciente para otro lote.
+- **Marcas** (`setRecipientOutcome`, columna `campaign_recipients.outcome`): «Respondió» y «No le interesa» cuentan como respuesta. «Pidió la baja» además marca la baja en la ficha. Las dos últimas cortan el seguimiento.
+- **Piloto** (`campaigns.pilot_size`, 20 por defecto): se prende en la pestaña Secuencia o en el lote.
+  - Mientras dura, solo les llega el primer mensaje a los primeros N.
+  - Al terminar, el lote avisa y ofrece «Seguir con el resto».
+
+## Qué sigue (lo anterior a Turnia Activa)
 
 1. **Secuencias:** si no responde en unos días, un segundo mensaje y después una llamada de Sofi. Twilio ya está configurado; las llamadas se hacen solo con autorización.
 2. **Respuestas de lo enviado a mano:** marcar «Respondió», «No le interesa» o «Pidió la baja» desde la lista, porque esas respuestas llegan al WhatsApp de la clínica y no a Sofi.
-3. **Automáticas por clínica:** un interruptor en el panel por tipo de campaña. Hoy las programa un workflow de n8n global y desactivado.
+3. ~~Automáticas por clínica~~: hecho en el PR 1 de Turnia Activa. El workflow de n8n sigue desactivado.
 4. **Segmentos preventivos por edad y sexo** (mamografía anual, antigripal, chequeo por edad). El sexo y la fecha de nacimiento ya están en la ficha (02/11/2026); falta armar los segmentos.
 5. **Órdenes y derivaciones pendientes:** las tareas `orden_medica` sin turno, como campaña.
 6. Ventanas horarias de envío y prueba A/B del mensaje.
