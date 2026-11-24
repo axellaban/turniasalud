@@ -5,6 +5,7 @@
 - El usuario configuró el 3765 en `n8n/waha`. Se comprobó `WORKING` con la cuenta correcta. La instancia exclusiva anterior seguía en `FAILED`; un único reinicio conservando la autenticación no la recuperó. No se cerró sesión ni se pidió otro QR.
 - La firma del webhook de la sesión activa fue aceptada por Turnia, pero el evento de estado inocuo fue descartado como «otra sesión»: la sesión real es `default` y la configuración de la aplicación no coincidía. También había un 401 histórico al consultar WAHA.
 - `WAHA_CONNECTION_TRANSPORTS` permite corregir únicamente URL, API key, sesión y revisión de una conexión existente, preservando la variable sensible `WAHA_CONNECTIONS` completa y sin cambiar clínica, teléfono, habilitación ni firma. No sobrescribir el secreto original con una reconstrucción parcial.
+- El primer valor de revisión cargado por Codex fue demasiado grande para `channel_conversations.revision` (PostgreSQL integer) y frenó la prueba real antes de llegar al agente. Se corrigió el secreto de Production a una revisión válida y se volvió a publicar el mismo commit, conservando la sesión. La validación ahora rechaza valores mayores que 2.147.483.647 tanto en la configuración base como en el transporte; no usar `Date.now()` como revisión.
 - La recepción real debe comprobarse después del despliegue, sin reenviar mensajes viejos ni pruebas a pacientes. Las campañas y sus automáticas conservan su configuración.
 
 ## Protección del WhatsApp de prospección — 24/11/2026
