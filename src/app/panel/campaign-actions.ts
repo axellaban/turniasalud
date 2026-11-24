@@ -4,8 +4,11 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
-import { markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
-import { getPanelClinic, logClinicChange, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { DAILY_LINE_CAP } from "@/lib/campaign-limits";
+import { hasAnyRule, parseRules } from "@/lib/audience-rules";
+import { deleteSavedAudience, getSavedAudience, previewAudience, saveAudience, type AudiencePreview } from "@/lib/saved-audiences";
+import { CAMPAIGN_LABELS, markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
+import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { randomUUID } from "node:crypto";
 import {
   IMPORT_FIELDS,
@@ -20,7 +23,7 @@ import {
   type ImportPatient,
 } from "@/lib/patient-import";
 import { parseDateKey } from "@/lib/time";
-import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
+import { AUTO_CAMPAIGN_TYPES, CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 
 // Campañas y base de pacientes: preparar, revisar y enviar campañas; frecuencia de controles,
 // reglas de contacto e importación de pacientes desde el sistema anterior de la clínica.
@@ -69,7 +72,8 @@ export async function sendCampaignAction(_prev: CampaignFormState | undefined, f
     const r = await sendCampaign(id);
     refresh(id);
     const parts = [`Enviamos ${r.sent} ${r.sent === 1 ? "mensaje" : "mensajes"}.`];
-    if (r.remaining) parts.push(`Quedan ${r.remaining}: volvé a tocar «Enviar» para seguir.`);
+    if (r.remaining && r.capped) parts.push(`Quedan ${r.remaining}: el WhatsApp del consultorio llegó al tope de ${DAILY_LINE_CAP} mensajes de hoy. Seguí mañana.`);
+    else if (r.remaining) parts.push(`Quedan ${r.remaining}: volvé a tocar «Enviar» para seguir.`);
     if (r.skipped) parts.push(`${r.skipped} ya no correspondían y quedaron afuera.`);
     if (r.failed) parts.push(`${r.failed} con error: ${r.errors.slice(0, 3).join(" · ")}`);
     return { ok: r.failed === 0, message: parts.join(" ") };
@@ -122,6 +126,117 @@ export async function saveCampaignMessageAction(_prev: CampaignFormState | undef
   return { ok: true, message: message ? "Mensaje guardado." : "Volvimos al mensaje sugerido." };
 }
 
+/**
+ * Secuencia de una campaña: a los cuántos días sale el seguimiento, cuántos mensajes como máximo y si
+ * se corta cuando responde o saca turno. La baja corta siempre (no hay opción para destildarla).
+ */
+export async function saveSequenceAction(_prev: CampaignFormState | undefined, form: FormData): Promise<CampaignFormState> {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "Falta la campaña." };
+  const delay = Number(text(form, "delay_days"));
+  const max = Number(text(form, "max_messages"));
+  if (!Number.isInteger(delay) || delay < 1 || delay > 30) return { ok: false, message: "El seguimiento va de 1 a 30 días." };
+  if (max !== 1 && max !== 2) return { ok: false, message: "Como máximo, 1 o 2 mensajes por paciente." };
+  const rows = await sql`
+    update campaigns set max_messages = ${max}, stop_on_reply = ${form.get("stop_on_reply") === "on"}, stop_on_booking = ${form.get("stop_on_booking") === "on"}
+    where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  if (!rows.length) return { ok: false, message: "La campaña no es de esta clínica." };
+  await sql`
+    insert into campaign_steps (campaign_id, position, delay_days) values (${id}, 2, ${delay})
+    on conflict (campaign_id, position) do update set delay_days = excluded.delay_days`;
+  // Si ahora es un solo mensaje, nadie queda esperando un seguimiento.
+  if (max === 1) {
+    await sql`update campaign_recipients set next_step_at = null, sequence_stopped = 'Un solo mensaje' where campaign_id = ${id} and next_step_at is not null`;
+  }
+  refresh(id);
+  return { ok: true, message: max === 1 ? "Un solo mensaje, sin seguimiento." : `Seguimiento a los ${delay} ${delay === 1 ? "día" : "días"} sin respuesta.` };
+}
+
+/** Textos de la campaña: el primer mensaje, el del seguimiento y lo que tiene que lograr Sofi. */
+export async function saveCampaignTextsAction(_prev: CampaignFormState | undefined, form: FormData): Promise<CampaignFormState> {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (!id) return { ok: false, message: "Falta la campaña." };
+  const message = text(form, "message");
+  const followup = text(form, "followup");
+  if ((message?.length ?? 0) > 900 || (followup?.length ?? 0) > 900) return { ok: false, message: "Cada mensaje tiene que tener menos de 900 caracteres." };
+  const rows = await sql`update campaigns set message = ${message}, goal = coalesce(${text(form, "goal")}, goal) where id = ${id} and clinic_id = ${clinic.id} returning id`;
+  if (!rows.length) return { ok: false, message: "La campaña no es de esta clínica." };
+  if (form.has("followup")) {
+    await sql`
+      insert into campaign_steps (campaign_id, position, message) values (${id}, 2, ${followup})
+      on conflict (campaign_id, position) do update set message = excluded.message`;
+  }
+  refresh(id);
+  return { ok: true, message: "Mensajes guardados." };
+}
+
+// ---------------------------------------------------------------------------
+// Audiencias propias (Nueva audiencia): vista previa en vivo, guardar y crear la campaña.
+// ---------------------------------------------------------------------------
+type AudienceInput = { clinic_id: string; id?: string | null; name: string; rules: unknown };
+
+async function audienceInput(input: AudienceInput) {
+  await requirePanelSession();
+  const form = new FormData();
+  form.set("clinic_id", input.clinic_id);
+  const clinic = await getPanelClinic(form);
+  const rules = parseRules(input.rules);
+  if (!rules) return { clinic, error: "Revisá las reglas: hay un valor que no corresponde." } as const;
+  if (!hasAnyRule(rules)) return { clinic, error: "Sumá al menos una regla. Para escribirles a todos está «Aviso a todos»." } as const;
+  return { clinic, rules } as const;
+}
+
+export async function previewAudienceAction(input: AudienceInput): Promise<{ ok: true; preview: AudiencePreview } | { ok: false; message: string }> {
+  const r = await audienceInput(input);
+  if ("error" in r) return { ok: false, message: r.error! };
+  return { ok: true, preview: await previewAudience(r.clinic, r.rules) };
+}
+
+export async function saveAudienceAction(input: AudienceInput): Promise<CampaignFormState & { id?: string }> {
+  const r = await audienceInput(input);
+  if ("error" in r) return { ok: false, message: r.error };
+  const name = input.name?.trim();
+  if (!name) return { ok: false, message: "Ponele un nombre a la audiencia." };
+  const id = await saveAudience(r.clinic.id, { id: isUuid(input.id) ? input.id : null, name: name.slice(0, 120), rules: r.rules });
+  refresh();
+  return { ok: true, id, message: "Audiencia guardada." };
+}
+
+/** Guarda la audiencia y arma la campaña con su lista, para revisar el mensaje y la secuencia. */
+export async function createAudienceCampaignAction(input: AudienceInput): Promise<CampaignFormState> {
+  const r = await audienceInput(input);
+  if ("error" in r) return { ok: false, message: r.error };
+  const name = input.name?.trim().slice(0, 120) || "Audiencia propia";
+  const id = await saveAudience(r.clinic.id, { id: isUuid(input.id) ? input.id : null, name, rules: r.rules });
+  const campaign = await prepareCampaign(r.clinic, { type: "audiencia", name, audience: { id, rules: r.rules } });
+  refresh(campaign.id);
+  redirect(`/panel/campanas?campana=${campaign.id}#campana`);
+}
+
+export async function deleteAudienceAction(form: FormData) {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (id) await deleteSavedAudience(clinic.id, id);
+  refresh();
+}
+
+/** Campaña nueva desde una audiencia guardada (con sus reglas de hoy). */
+export async function campaignFromSavedAudienceAction(form: FormData) {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  const audience = id ? await getSavedAudience(clinic.id, id) : null;
+  if (!audience) return;
+  const campaign = await prepareCampaign(clinic, { type: "audiencia", name: audience.name, audience: { id: audience.id, rules: audience.rules } });
+  refresh(campaign.id);
+  redirect(`/panel/campanas?campana=${campaign.id}#campana`);
+}
+
 /** Descarta un borrador que todavía no le escribió a nadie. */
 export async function discardCampaignAction(form: FormData) {
   await requirePanelSession();
@@ -165,6 +280,35 @@ export async function saveContactRulesAction(_prev: CampaignFormState | undefine
   await logClinicChange(clinic.id, "Reglas de campañas");
   refresh();
   return { ok: true, message: "Reglas guardadas." };
+}
+
+/**
+ * Prende o apaga una campaña automática en la clínica. Solo el administrador: el consultorio la ve
+ * pero no la cambia (las automáticas le escriben a pacientes reales sin que nadie revise la lista).
+ */
+export async function setAutoCampaignAction(form: FormData) {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const type = text(form, "type");
+  if (!type || !(AUTO_CAMPAIGN_TYPES as readonly string[]).includes(type)) return;
+  const on = text(form, "enabled") === "1";
+  await sql`
+    update clinics set auto_campaigns = ${on
+      ? sql`case when ${type} = any(auto_campaigns) then auto_campaigns else array_append(auto_campaigns, ${type}) end`
+      : sql`array_remove(auto_campaigns, ${type})`}
+    where id = ${clinic.id}`;
+  await logClinicChange(clinic.id, `Campaña automática «${CAMPAIGN_LABELS[type as CampaignType].label}» ${on ? "prendida" : "apagada"}`);
+  refresh();
+}
+
+/** Prende o apaga los seguimientos a quien no responde (secuencias). Solo el administrador. */
+export async function setSequencesAction(form: FormData) {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const on = text(form, "enabled") === "1";
+  await sql`update clinics set sequences_enabled = ${on} where id = ${clinic.id}`;
+  await logClinicChange(clinic.id, `Seguimiento de campañas ${on ? "prendido" : "apagado"}`);
+  refresh();
 }
 
 /** Control indicado para un paciente puntual: entra en el recall cuando llega la fecha. */
