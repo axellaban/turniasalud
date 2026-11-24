@@ -288,6 +288,7 @@ export type WaitlistEntry = {
   clinic_id: string;
   patient_id: string;
   appointment_type_id: string | null;
+  appointment_id?: string | null;
   professional_id: string | null;
   preferences: string | null;
   status: "activa" | "ofrecida" | "resuelta" | "cancelada";

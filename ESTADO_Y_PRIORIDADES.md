@@ -1,6 +1,12 @@
 # Turnia Salud — estado operativo y prioridades
 
-Actualización: 20/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+Actualización: 24/11/2026 (Argentina). Este registro prevalece sobre los pendientes históricos de los otros documentos. No contiene credenciales. **La lista consolidada de lo que falta está en [`PENDIENTES.md`](PENDIENTES.md).**
+
+## Llamadas y conexión de WhatsApp — 24/11/2026
+
+La revisión de dos llamadas reales mostró una reprogramación correcta en Smile Connect con confirmación al paciente sin entregar, una explicación que mezclaba ventanas de búsqueda y una lista de espera rechazada por el tipo genérico importado. Se recuperó la línea y se comprobó una conversación real de prueba. La causa original de la pérdida de sesión no pudo determinarse con los registros disponibles.
+
+Los cambios incorporan consulta del resultado pendiente durante la llamada, canal de confirmación explícito, revisión si WhatsApp no está operativo y lista de espera vinculada a una reserva existente con sus reglas. El control de WAHA del cron conserva un historial de estados y avisa por el circuito de Axel sin reiniciar ni desvincular sesiones. Detalle operativo en PENDIENTES.md.
 
 ## Seguimiento de horarios ofrecidos: no ofrecer lo que Sofi descartó — 21/11/2026
 

@@ -162,6 +162,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     schema: z.object({ paciente_id: z.string().optional() }),
   },
   {
+    name: "consultar_estado_turno",
+    description: "Consulta el resultado de una reserva, cancelación o reprogramación pendiente. Por teléfono usala una vez después de que la gestión devuelva pendiente_confirmacion, antes de despedirte. No vuelve a ejecutar el cambio.",
+    params: {
+      turno_id: { type: "string", description: "El turno_id que devolvió la gestión pendiente, aunque luego haya sido reemplazado al moverlo.", required: true },
+    },
+    schema: z.object({ turno_id: z.string().min(1) }),
+  },
+  {
     name: "confirmar_turno",
     description:
       "Marca que el paciente confirmó que va a venir a un turno (por ejemplo, cuando responde que sí a un recordatorio).",
@@ -209,13 +217,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "anotar_lista_espera",
-    description: "Anota al paciente en la lista de espera cuando no le sirve ningún horario disponible. Si se libera un turno, le escribimos.",
+    description: "Anota al paciente en lista de espera. Para adelantar o mover un turno existente, usá turno_id (también si figura como Turno Smile Connect); para uno nuevo, tipo_turno_id. Conserva el turno original. Confirmá que quedó anotado solo si devuelve éxito.",
     params: {
-      tipo_turno_id: { type: "string", description: "id del tipo de turno.", required: true },
+      tipo_turno_id: { type: "string", description: "Para un turno nuevo: id del tipo de turno." },
+      turno_id: { type: "string", description: "Para mover uno existente: id de ese turno. No lo reemplaces por el tipo genérico importado." },
       profesional_id: { type: "string", description: "id del profesional, si quiere uno en particular." },
       preferencias: { type: "string", description: "Días y horarios que le sirven." },
     },
-    schema: z.object({ tipo_turno_id: z.string().min(1), profesional_id: z.string().optional(), preferencias: z.string().optional() }),
+    schema: z.object({ tipo_turno_id: z.string().min(1).optional(), turno_id: z.string().min(1).optional(), profesional_id: z.string().optional(), preferencias: z.string().optional() })
+      .refine((i) => Boolean(i.tipo_turno_id) !== Boolean(i.turno_id), "Usá tipo_turno_id o turno_id, solo uno."),
   },
   {
     name: "guardar_ficha_salud",

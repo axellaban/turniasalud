@@ -19,6 +19,7 @@ import { healthFormSheet, healthFormTemplate, type HealthFormInput } from "../he
 import { HEALTH_FORM_VALID_DAYS, healthFormOffer, latestHealthForm, markHealthFormInvited, saveHealthFormAnswers } from "../health-forms";
 import { muteNumber } from "../chat-guard";
 import { CHAT_LIMITS } from "../chat-limits";
+import { clinicWhatsappStatus } from "../waha-health";
 
 export type ToolContext = {
   clinicId: string;
@@ -940,7 +941,7 @@ export function appointmentTitle(raw: string | undefined, typeName: string): str
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
-function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id" | "smile_reply_phone" | "smile_sync">) {
+function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id" | "smile_reply_phone" | "smile_sync">, ctx: ToolContext) {
   const review = appointment.smile_sync === "revisar";
   if (!review) processSmileBookingLater(clinicId, appointment.id);
   return {
@@ -951,6 +952,8 @@ function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id
     segundo_turno_id: undefined,
     mensaje: review
       ? "El pedido sigue pendiente y ya está en recepción. No crees otra tarea ni confirmes el turno."
+      : sourceFromChannel(ctx.channel, ctx.patientPhone) === "telefono"
+        ? "Pedido guardado. Antes de despedirte, llamá una vez a consultar_estado_turno con este turno_id para comprobar si quedó confirmado. Todavía no lo confirmes ni prometas un aviso por la llamada."
       : appointment.smile_reply_phone
         ? "Pedido recibido. Decile al paciente, en una línea, que le avisás por acá apenas quede confirmado. El turno sigue pendiente. No crees una tarea ni repitas la reserva."
         : "Pedido recibido. El turno sigue pendiente de verificación en la agenda. No lo confirmes todavía ni repitas la reserva.",
@@ -978,7 +981,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   // Si ya tiene la primera práctica y pide la segunda, se suma la segunda a continuación.
   const same = bookedAt(input.tipo_turno_id, startsAt);
   const sameNext = same && input.segundo_tipo_turno_id ? bookedAt(input.segundo_tipo_turno_id, new Date(same.ends_at)) : undefined;
-  if (same?.smile_deferred && same.status === "pendiente") return pendingSmileResult(clinic.id, same);
+  if (same?.smile_deferred && same.status === "pendiente") return pendingSmileResult(clinic.id, same, ctx);
   for (const existing of [same, sameNext]) {
     if (existing && (smileBookingPending(existing) || (liveSmile && !existing.external_id?.startsWith("sc:")))) {
       throw new SmileHandoff("Ese turno figura para revisión de recepción. Todavía no puedo confirmar la reserva.", `Comprobar en Smile Connect el turno de Turnia ${existing.id}.`);
@@ -1095,7 +1098,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   }
   if (deferSmile) {
     const [appointment] = created;
-    if (appointment.status === "pendiente") return pendingSmileResult(clinic.id, appointment);
+    if (appointment.status === "pendiente") return pendingSmileResult(clinic.id, appointment, ctx);
     return { ok: true, turno_id: appointment.id, segundo_turno_id: undefined, mensaje: "Ese turno ya estaba confirmado.", direccion: clinic.address };
   }
   if (smileProblem !== null) {
@@ -1109,7 +1112,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
     // Si el paciente estaba en lista de espera para esto, la damos por resuelta.
     await sql`
       update waitlist set status = 'resuelta'
-      where patient_id = ${patient.id} and appointment_type_id = ${p.type.id} and status in ('activa', 'ofrecida')`;
+      where patient_id = ${patient.id} and appointment_type_id = ${p.type.id} and appointment_id is null and status in ('activa', 'ofrecida')`;
     await notifyN8n("turno.reservado", { clinic_id: clinic.id, appointment: created[i], patient, professional: p.pro.full_name, type: nameOf(p, i) });
   }
 
@@ -1281,7 +1284,9 @@ async function requestSmileManagement(appt: Appointment, request: SmileManagemen
   return {
     ok: false, pendiente_confirmacion: true, turno_id: appt.id, segundo_turno_id: undefined,
     aviso: undefined, avisados_lista_espera: 0,
-    mensaje: request.replyPhone
+    mensaje: request.via === "telefono"
+      ? "Pedido de cambio guardado. Antes de despedirte, llamá una vez a consultar_estado_turno con este turno_id. No confirmes el cambio ni vuelvas a afirmar que conserva el horario anterior sin comprobar el resultado."
+      : request.replyPhone
       ? "Pedido recibido. Decile al paciente, en una línea, que le avisás por acá apenas quede hecho el cambio y que hasta entonces sigue el turno de antes. No repitas el pedido."
       : "Pedido recibido. El cambio sigue pendiente de verificación en la agenda. No lo confirmes todavía ni repitas el pedido.",
   };
@@ -1303,6 +1308,7 @@ async function cancelLoaded(
     update appointments set status = 'cancelado', cancelled_at = now(), notes = ${notes || null}, cancelled_via = ${via}
     where id = ${appt.id} and status = any(${ACTIVE}::text[]) returning id`;
   if (!done) throw new ToolError("Ese turno ya no está activo: se canceló o se reprogramó recién.");
+  await sql`update waitlist set status = 'cancelada' where appointment_id = ${appt.id} and status in ('activa', 'ofrecida')`;
   await notifyN8n("turno.cancelado", { clinic_id: clinic.id, appointment: appt, patient, motivo, cancelado_por: by });
   const offered = await offerFreedSlot(clinic, appt).catch((e) => {
     console.error("No se pudo ofrecer el turno liberado", e);
@@ -1366,10 +1372,12 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
   const template = clinic.templates?.lista_espera ?? (clinic.whatsapp_provider === "waha" ? "lista_espera" : null);
   if (!template || whatsappReadiness(clinic)) return 0;
 
-  const entries = await sql<Array<{ id: string; patient_id: string; professional_id: string | null; full_name: string | null; phone: string | null }>>`
-    select w.id, w.patient_id, w.professional_id, p.full_name, p.phone
+  const entries = await sql<Array<{ id: string; patient_id: string; appointment_id: string | null; professional_id: string | null; full_name: string | null; phone: string | null }>>`
+    select w.id, w.patient_id, w.appointment_id, w.professional_id, p.full_name, p.phone
     from waitlist w join patients p on p.id = w.patient_id
+    left join appointments current on current.id = w.appointment_id and current.clinic_id = w.clinic_id and current.patient_id = w.patient_id
     where w.clinic_id = ${clinic.id} and w.status = 'activa' and w.appointment_type_id = ${appt.appointment_type_id}
+      and (w.appointment_id is null or (current.status = 'confirmado' and current.starts_at > ${appt.starts_at}))
       and w.patient_id <> ${appt.patient_id}
     order by w.created_at
     limit 10`;
@@ -1383,8 +1391,18 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
   let sent = 0;
   for (const entry of candidates) {
     const phone = entry.phone;
-    const context = `Le escribimos para ofrecerle un turno que se liberó: ${when} (profesional_id=${appt.professional_id}, tipo_turno_id=${appt.appointment_type_id}, inicio=${appt.starts_at}). Si lo quiere, reservalo enseguida porque se ofreció a varias personas.`;
+    const context = entry.appointment_id
+      ? `Se liberó ${when} para adelantar su turno existente (turno_id=${entry.appointment_id}, profesional_id=${appt.professional_id}, inicio=${appt.starts_at}). Antes de ofrecerlo, verificá consultar_disponibilidad con ese turno_id. Si confirma, usá reprogramar_turno; nunca reservar_turno ni cancelar el original para simular un cambio.`
+      : `Le escribimos para ofrecerle un turno que se liberó: ${when} (profesional_id=${appt.professional_id}, tipo_turno_id=${appt.appointment_type_id}, inicio=${appt.starts_at}). Si lo quiere, reservalo enseguida porque se ofreció a varias personas.`;
     try {
+      if (entry.appointment_id) {
+        const offers = await checkAvailability({ clinicId: clinic.id, patientPhone: phone, patientId: entry.patient_id, channel: "whatsapp" }, {
+          turno_id: entry.appointment_id, profesional_id: appt.professional_id,
+          desde: localDateKey(new Date(appt.starts_at), clinic.timezone), hasta: localDateKey(new Date(appt.starts_at), clinic.timezone),
+          hora_exacta: clockTime(new Date(appt.starts_at), clinic.timezone),
+        });
+        if (!offers.turnos.some((s) => Date.parse(s.inicio) === Date.parse(appt.starts_at))) continue;
+      }
       await sendPatientMessage(clinic, {
         phone,
         templateKey: "lista_espera",
@@ -1392,6 +1410,7 @@ export async function offerFreedSlot(clinic: Clinic, appt: Appointment): Promise
         params: [entry.full_name?.split(" ")[0] || "hola", when],
         context,
         patientId: entry.patient_id,
+        ...(entry.appointment_id && { text: "Se liberó un horario el " + when + " para adelantar su turno. Si le sirve, responda este mensaje y verificamos el cambio." }),
       });
       await sql`update waitlist set status = 'ofrecida', offered_at = now() where id = ${entry.id}`;
       sent++;
@@ -1515,6 +1534,7 @@ async function rescheduleLoaded(
       const movedNext = follower && next ? await insertAppointment(tx, row(follower, next, next.startsAt)) : null;
       // Cuál reemplaza a cuál: el resumen diario dice «antes → ahora» (y la escritura en Smile Connect mueve el mismo turno).
       await tx`update appointments set replaced_by = ${moved.id} where id = ${appt.id}`;
+      await tx`update waitlist set appointment_id = ${moved.id} where appointment_id = ${appt.id} and status in ('activa', 'ofrecida')`;
       if (follower && movedNext) await tx`update appointments set replaced_by = ${movedNext.id} where id = ${follower.id}`;
       return [moved, movedNext] as const;
     });
@@ -1718,22 +1738,87 @@ export async function muteSender(ctx: ToolContext, input: { motivo: "vendedor" |
 // ---------------------------------------------------------------------------
 // anotar_lista_espera
 // ---------------------------------------------------------------------------
-export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id: string; profesional_id?: string; preferencias?: string }) {
-  const patient = await ensurePatient(ctx);
+export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string }) {
+  if (Boolean(input.tipo_turno_id) === Boolean(input.turno_id)) throw new ToolError("Usá tipo_turno_id o turno_id, solo uno.");
+  const clinic = await getClinic(ctx.clinicId);
+  const move = input.turno_id ? await loadReschedule(ctx, clinic, input.turno_id) : null;
+  const patient = move?.patient ?? await ensurePatient(ctx);
   const catalog = await getCatalog(ctx.clinicId);
-  const waitType = catalog.appointmentTypes.find((t) => t.id === input.tipo_turno_id);
+  const waitType = catalog.appointmentTypes.find((t) => t.id === (move?.appt.appointment_type_id ?? input.tipo_turno_id));
   if (!waitType) throw new ToolError("Tipo de turno inválido.");
-  assertAgentCanBook(waitType);
-  const professionalId = input.profesional_id && catalog.professionals.some((p) => p.id === input.profesional_id) ? input.profesional_id : null;
-  await sql`
-    insert into waitlist ${sql({
-      clinic_id: ctx.clinicId,
-      patient_id: patient.id,
-      appointment_type_id: input.tipo_turno_id,
-      professional_id: professionalId,
-      preferences: input.preferencias ?? null,
-    })}`;
-  return { ok: true, mensaje: "Paciente anotado en la lista de espera. Si se libera un turno le escribimos por WhatsApp." };
+  if (!move) assertAgentCanBook(waitType);
+  if (input.profesional_id && !catalog.professionals.some((p) => p.id === input.profesional_id)) throw new ToolError("Profesional inválido.");
+  const professionalId = input.profesional_id ?? move?.appt.professional_id ?? null;
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${"waitlist:" + ctx.clinicId + ":" + patient.id}::text, 0))`;
+    const [existing] = await tx`select id from waitlist where clinic_id = ${ctx.clinicId} and patient_id = ${patient.id}
+      and appointment_type_id = ${waitType.id} and appointment_id is not distinct from ${move?.appt.id ?? null}::uuid
+      and professional_id is not distinct from ${professionalId}::uuid and status in ('activa', 'ofrecida') limit 1`;
+    if (existing) await tx`update waitlist set preferences = coalesce(${input.preferencias ?? null}, preferences) where id = ${existing.id}`;
+    else await tx`insert into waitlist (clinic_id, patient_id, appointment_type_id, appointment_id, professional_id, preferences)
+      values (${ctx.clinicId}, ${patient.id}, ${waitType.id}, ${move?.appt.id ?? null}, ${professionalId}, ${input.preferencias ?? null})`;
+  });
+  return { ok: true, mensaje: move
+    ? "Paciente anotado en lista de espera para mover ese turno. El turno original sigue reservado. Si aparece una opción compatible, le escribimos por WhatsApp."
+    : "Paciente anotado en la lista de espera. Si se libera un turno le escribimos por WhatsApp." };
+}
+
+/** Consulta el resultado ya verificado por el proceso de Smile Connect; no repite escrituras. */
+export async function appointmentManagementStatus(ctx: ToolContext, input: { turno_id: string }) {
+  const patient = ctx.staff ? null : await appointmentPatient(ctx);
+  if (!ctx.staff && !patient) throw new ToolError("No encontré al paciente.");
+  if (!isUuid(input.turno_id)) throw new ToolError("No encontré ese turno.");
+  const read = async (id: string) => (await sql<Array<Appointment & { professional: string }>>`
+    select a.*, p.full_name as professional from appointments a join professionals p on p.id = a.professional_id
+    where a.id = ${id} and a.clinic_id = ${ctx.clinicId}
+      ${patient ? sql`and a.patient_id = ${patient.id}` : sql``}`)[0];
+  let row = await read(input.turno_id);
+  if (!row) throw new ToolError("No encontré ese turno para este paciente.");
+  const pending = (a: Appointment) => Boolean(a.smile_management) || ["pendiente", "error"].includes(a.smile_sync ?? "")
+    || (a.status === "pendiente" && a.smile_deferred);
+  const voice = sourceFromChannel(ctx.channel, ctx.patientPhone) === "telefono";
+  if (voice && pending(row) && row.smile_sync !== "revisar") {
+    // El trabajo corre después de la herramienta anterior. Espera acotada, por debajo de los 20 s de ElevenLabs.
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    row = await read(input.turno_id);
+    if (!row) throw new ToolError("Ese turno cambió. Recepción debe comprobar el resultado.");
+  }
+  if (row.status === "reprogramado" && row.replaced_by) {
+    const replacement = await read(row.replaced_by);
+    if (!replacement || replacement.patient_id !== row.patient_id) throw new ToolError("Recepción debe comprobar el resultado del cambio.");
+    row = replacement;
+  }
+  if (row.smile_sync === "revisar") return { ok: false, pendiente_recepcion: true,
+    mensaje: "La gestión necesita revisión de recepción. No afirmes que conserva el horario anterior ni que el cambio se hizo." };
+  if (pending(row)) {
+    const whatsapp = voice ? await clinicWhatsappStatus(ctx.clinicId) : null;
+    if (voice && !whatsapp?.ready) {
+      await sql`with claimed as (
+        insert into channel_events (key) values (${"confirm-call:" + ctx.clinicId + ":" + input.turno_id})
+        on conflict do nothing returning key)
+        insert into tasks (clinic_id, patient_id, conversation_id, type, title, details)
+        select ${ctx.clinicId}, ${row.patient_id}, ${ctx.conversationId ?? null}, 'derivacion_humana',
+          'Confirmar al paciente el resultado del turno',
+          ${"El pedido " + input.turno_id + " seguía pendiente al consultar por teléfono y WhatsApp no estaba disponible. Comprobar el estado actual antes de contactar al paciente."}
+        from claimed`;
+      return { ok: false, pendiente_confirmacion: true, pendiente_recepcion: true,
+        mensaje: "El pedido está guardado pero la agenda todavía no terminó de verificarlo. Recepción tiene el pedido para comprobar el resultado y contactarlo. No prometas un WhatsApp ni confirmes un horario." };
+    }
+    return { ok: false, pendiente_confirmacion: true, mensaje: voice
+      ? "El pedido sigue pendiente de verificación. Decile que la confirmación le llegará por WhatsApp al número desde el que llamó. Nombrá ese canal explícitamente y no vuelvas a afirmar el horario anterior."
+      : "El pedido sigue pendiente de verificación. Le avisás por este WhatsApp cuando quede resuelto. No repitas la gestión." };
+  }
+  if (!["confirmado", "cancelado"].includes(row.status)) {
+    return { ok: false, pendiente_recepcion: true, mensaje: "Ese turno cambió y no hay un resultado final verificable en esta consulta. Recepción debe comprobar el horario vigente. No confirmes el horario anterior." };
+  }
+  const clinic = await getClinic(ctx.clinicId);
+  const when = humanSlot(new Date(row.starts_at), clinic.timezone);
+  return { ok: true, estado: row.status, turno_id: row.id, cuando: when, profesional: row.professional,
+    mensaje: row.status === "cancelado"
+      ? "Cancelación confirmada. El turno del " + when + " quedó cancelado."
+      : row.status === "confirmado"
+        ? "Confirmado: el turno vigente es el " + when + " con " + row.professional + ". Comunicá este resultado antes de despedirte."
+        : "El estado actual del turno es " + row.status + ". No afirmes otro resultado." };
 }
 
 // ---------------------------------------------------------------------------

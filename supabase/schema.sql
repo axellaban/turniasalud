@@ -1679,6 +1679,32 @@ alter table appointments add column if not exists smile_attempts integer not nul
 alter table appointments add column if not exists replaced_by uuid references appointments(id) on delete set null;
 create index if not exists appointments_smile_pending_idx on appointments (clinic_id) where smile_sync in ('pendiente', 'error');
 
+-- Lista de espera para mover una reserva existente, sin habilitar altas del tipo importado.
+alter table waitlist add column if not exists appointment_id uuid references appointments(id) on delete cascade;
+create index if not exists waitlist_appointment_idx on waitlist (appointment_id) where appointment_id is not null;
+
+-- Estado real de las líneas propias y transiciones; no contiene claves ni mensajes de pacientes.
+create table if not exists waha_connection_health (
+  connection_id text primary key,
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  status text not null,
+  checked_at timestamptz not null default now(),
+  last_working_at timestamptz,
+  failure_at timestamptz,
+  error text,
+  alerted_at timestamptz
+);
+create table if not exists waha_health_events (
+  id uuid primary key default gen_random_uuid(),
+  connection_id text not null,
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  status text not null,
+  reason text,
+  created_at timestamptz not null default now()
+);
+alter table waha_connection_health enable row level security;
+alter table waha_health_events enable row level security;
+
 -- Lo libre de cada día según Smile Connect (incluye bloqueos y feriados), unos minutos.
 create table if not exists smile_connect_availability (
   clinic_id uuid not null references clinics(id) on delete cascade,

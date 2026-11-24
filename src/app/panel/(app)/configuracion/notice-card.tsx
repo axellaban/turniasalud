@@ -11,6 +11,7 @@ import { addStaffPhone, sendSummaryNowAction, toggleStaffSummary } from "../../p
 import { ActionForm } from "./action-form";
 import { NoticeTestButton } from "./notice-test";
 import { StaffAgentSetup } from "./clinic-agent";
+import { lastClinicWhatsappHealth, type StoredWahaHealth } from "@/lib/waha-health";
 
 const STATUS: Record<NoticeRow["status"], { label: string; tone: "green" | "yellow" | "red" | "gray" }> = {
   enviado: { label: "Enviado", tone: "green" },
@@ -25,12 +26,12 @@ const KIND: Record<NoticeRow["kind"], string> = {
   smile_cancelado: "Cancelación al paciente",
 };
 
-export type NoticeCardData = { phones: NoticePhone[]; staff: StaffPhone[]; recent: NoticeRow[]; line: ReturnType<typeof noticeLine> };
+export type NoticeCardData = { phones: NoticePhone[]; staff: StaffPhone[]; recent: NoticeRow[]; line: ReturnType<typeof noticeLine>; health?: StoredWahaHealth | null };
 
 /** Lo que muestra la tarjeta (se carga en la página, junto con lo demás). */
 export async function loadNoticeCard(clinic: Clinic): Promise<NoticeCardData> {
-  const [phones, staff, recent] = await Promise.all([listNoticePhones(clinic.id), listStaffPhones(clinic.id), recentNotices(clinic.id, 6)]);
-  return { phones, staff, recent, line: noticeLine(clinic) };
+  const [phones, staff, recent, health] = await Promise.all([listNoticePhones(clinic.id), listStaffPhones(clinic.id), recentNotices(clinic.id, 6), lastClinicWhatsappHealth(clinic.id)]);
+  return { phones, staff, recent, health, line: noticeLine(clinic) };
 }
 
 type Member = { phone: string; name: string; notice: NoticePhone | null; staff: StaffPhone | null };
@@ -58,7 +59,7 @@ const hidden = (clinicId: string, fields: Record<string, string>) => (
  * Configuración → Equipo por WhatsApp. Antes eran tres listas (avisos, acceso total y resumen) con las
  * mismas personas cargadas dos veces; ahora cada celular aparece una vez con lo que recibe.
  */
-export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line } }: { clinic: Clinic; admin: boolean; data: NoticeCardData }) {
+export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line, health } }: { clinic: Clinic; admin: boolean; data: NoticeCardData }) {
   const agent = clinic.agent_name || "Sofi";
   const members = teamMembers(phones, staff);
   const withAccess = members.filter((m) => m.staff).length;
@@ -66,6 +67,10 @@ export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line 
     <Card id="avisos-whatsapp" className="scroll-mt-20">
       <span id="whatsapp-equipo" className="block scroll-mt-20" />
       <h2 className="font-semibold text-brand-950">Equipo por WhatsApp</h2>
+      {health && <Notice tone={health.status === "WORKING" ? "success" : "warning"} className="mt-3">
+        Último control de la línea: {health.status === "WORKING" ? "Conectada" : "Necesita revisión (" + health.status + ")"} · {formatDateTime(health.checked_at, clinic.timezone)}.
+        {health.status !== "WORKING" && " Revisá la vinculación y las confirmaciones pendientes. El control se repite cada diez minutos."}
+      </Notice>}
       <p className="mt-1 text-sm text-brand-900/60">Los celulares del consultorio y lo que recibe cada uno:</p>
       <ul className="mt-2 space-y-1 text-xs text-brand-900/70">
         <li><span className="font-medium text-brand-950">Avisos:</span> el detalle de cada turno que {agent} da, mueve o cancela a pedido de un paciente. Lo que hace el equipo desde el panel no se avisa.</li>

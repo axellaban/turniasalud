@@ -12,6 +12,7 @@ import {
   findPatientByDni,
   joinWaitlist,
   listPatientAppointments,
+  appointmentManagementStatus,
   muteSender,
   registerPatient,
   rescheduleAppointment,
@@ -38,6 +39,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   consultar_disponibilidad: checkAvailability,
   reservar_turno: bookAppointment,
   ver_turnos_paciente: listPatientAppointments,
+  consultar_estado_turno: appointmentManagementStatus,
   confirmar_turno: confirmAppointment,
   cancelar_turno: cancelAppointment,
   reprogramar_turno: rescheduleAppointment,
@@ -61,7 +63,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
 const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 /** Lo que Sofi cambia en la agenda a pedido de un paciente se le avisa al consultorio por WhatsApp. */
 const NOTICE_OF: Record<string, NoticeKind> = { reservar_turno: "nuevo", reprogramar_turno: "movido", cancelar_turno: "cancelado" };
-const TEMPORARY_TOOLS = new Set(["ver_turnos_paciente", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
+const TEMPORARY_TOOLS = new Set(["ver_turnos_paciente", "consultar_estado_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 
 /**
  * ¿Le escribe alguien del equipo del consultorio? Solo por WhatsApp, donde el número lo garantiza
@@ -147,7 +149,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
       }
       if (access?.active) {
         const searchingMove = name === "consultar_disponibilidad" && Boolean(input.data.turno_id);
-        if (!TEMPORARY_TOOLS.has(name) && !searchingMove && !receptionTask) {
+        const waitingMove = name === "anotar_lista_espera" && Boolean(input.data.turno_id);
+        if (!TEMPORARY_TOOLS.has(name) && !searchingMove && !waitingMove && !receptionTask) {
           throw new ToolError("Esta verificación solo permite gestionar turnos existentes. Para otros trámites, ofrecé que recepción lo revise.");
         }
         context.appointmentPatientId = access.patient_id;

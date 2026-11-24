@@ -377,13 +377,15 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
 
   if (type === "lista_espera") {
     const rows = await sql<
-      Array<{ patient_id: string; appointment_type_id: string | null; preferences: string | null; type_name: string | null; price: string | null; full_name: string | null; phone: string | null }>
+      Array<{ patient_id: string; appointment_type_id: string | null; appointment_id: string | null; preferences: string | null; type_name: string | null; price: string | null; full_name: string | null; phone: string | null }>
     >`
-      select distinct on (w.patient_id) w.patient_id, w.appointment_type_id, w.preferences, t.name as type_name, t.price, p.full_name, p.phone
+      select distinct on (w.patient_id) w.patient_id, w.appointment_type_id, w.appointment_id, w.preferences, t.name as type_name, t.price, p.full_name, p.phone
       from waitlist w
       join patients p on p.id = w.patient_id
       left join appointment_types t on t.id = w.appointment_type_id
+      left join appointments a on a.id = w.appointment_id and a.clinic_id = w.clinic_id and a.patient_id = w.patient_id
       where w.clinic_id = ${clinic.id} and w.status = 'activa'
+        and (w.appointment_id is null or (a.status = 'confirmado' and a.starts_at > now()))
       order by w.patient_id, w.created_at`;
     return rows.map((r) =>
       member({
@@ -391,7 +393,9 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
         phone: r.phone,
         name: r.full_name,
         detail: r.type_name?.toLowerCase() ?? "tu turno",
-        context: `Está en lista de espera para "${r.type_name ?? "un turno"}" (tipo_turno_id=${r.appointment_type_id}). Preferencias: ${r.preferences ?? "sin datos"}. Consultá disponibilidad y ofrecé lo más cercano.`,
+        context: r.appointment_id
+          ? `Está en lista de espera para adelantar su turno existente (turno_id=${r.appointment_id}). Preferencias: ${r.preferences ?? "sin datos"}. Consultá disponibilidad con ese turno_id y gestioná con reprogramar_turno si confirma. No reserves otro turno ni canceles el original para simular el cambio.`
+          : `Está en lista de espera para "${r.type_name ?? "un turno"}" (tipo_turno_id=${r.appointment_type_id}). Preferencias: ${r.preferences ?? "sin datos"}. Consultá disponibilidad y ofrecé lo más cercano.`,
         value: price(r.price),
         appointment_type_id: r.appointment_type_id,
       }),
