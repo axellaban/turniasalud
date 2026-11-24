@@ -475,4 +475,85 @@ describe.runIf(base)("campañas para activar la base", () => {
     expect(builder).toContain("Pacientes que…");
     expect(builder).toContain("Siempre quedan afuera");
   }, 60000);
+
+  it("revisar lote: con Sofi solo los elegidos, desde mi WhatsApp con seguimiento a mano, marcas de respuesta y piloto", async () => {
+    const lotLib = await import("@/lib/campaign-lot");
+    const clinic = await clinicLib.getClinic();
+    await sql`update clinics set contact_cooldown_days = 0 where id = ${CLINIC}`;
+    // Seis pacientes nuevos que no vienen hace dos años.
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const [p] = await sql<Array<{ id: string }>>`insert into patients (clinic_id, full_name, phone) values (${CLINIC}, ${`Lote Paciente${i}`}, ${`54911444000${i}`}) returning id`;
+      await sql`insert into patient_visits (clinic_id, patient_id, service, visited_at) values (${CLINIC}, ${p.id}, 'Consulta', ${isoAgo(700 + i)})`;
+      ids.push(p.id);
+    }
+    const campaign = await campaigns.prepareCampaign(clinic, { type: "audiencia", name: "Lote", audience: { id: null, rules: { monthsSince: 18, appointmentTypeId: null, professionalId: null, coverage: null, ageMin: null, ageMax: null, birthdayThisMonth: false, noShow: false, controlIndicated: false } } });
+    await sql`update campaign_recipients set status = 'excluido' where campaign_id = ${campaign.id} and not (patient_id = any(${ids}::uuid[]))`;
+    const recipient = async (i: number) => (await sql`select * from campaign_recipients where campaign_id = ${campaign.id} and patient_id = ${ids[i]}`)[0];
+
+    // El lote trae los primeros 5 con su mensaje y el link al chat.
+    let lot = await lotLib.campaignLot(clinic, (await sql`select * from campaigns where id = ${campaign.id}`)[0] as never);
+    expect(lot.items).toHaveLength(5);
+    expect(lot.items[0]).toMatchObject({ step: 1, links: { web: expect.stringContaining("web.whatsapp.com") } });
+    expect(lot.items[0].message).toContain("BAJA");
+    expect(lot.pending).toBe(6);
+
+    // Piloto de 2: «Con Sofi» manda solo los elegidos y frena en el piloto.
+    await actions.setPilotAction(form({ clinic_id: CLINIC, id: campaign.id, pilot: "1" }));
+    expect((await sql`select pilot_size from campaigns where id = ${campaign.id}`)[0].pilot_size).toBe(20);
+    await sql`update campaigns set pilot_size = 2 where id = ${campaign.id}`;
+    mocks.sendWhatsAppTemplate.mockClear();
+    const chosen = new FormData();
+    chosen.set("clinic_id", CLINIC);
+    chosen.set("id", campaign.id);
+    for (const r of [await recipient(0), await recipient(1), await recipient(2)]) chosen.append("recipient", r.id);
+    const sofi = await actions.sendLotWithSofiAction(undefined, chosen);
+    expect(sofi).toMatchObject({ ok: true, message: expect.stringContaining("Terminó el piloto") });
+    expect(mocks.sendWhatsAppTemplate).toHaveBeenCalledTimes(2);
+    expect((await recipient(3)).status).toBe("pendiente");
+    lot = await lotLib.campaignLot(clinic, (await sql`select * from campaigns where id = ${campaign.id}`)[0] as never);
+    expect(lot.pilot).toMatchObject({ size: 2, contacted: 2, done: true });
+    expect(lot.items.filter((i) => i.step === 1)).toHaveLength(0);
+
+    // Seguir con el resto: desde mi WhatsApp, con seguimiento a mano a los 5 días.
+    await actions.setPilotAction(form({ clinic_id: CLINIC, id: campaign.id, pilot: "0" }));
+    const r3 = await recipient(3);
+    await actions.markManualSentAction(form({ clinic_id: CLINIC, id: r3.id }));
+    const sent3 = await recipient(3);
+    expect(sent3).toMatchObject({ status: "enviado", manual: true, messages_sent: 1 });
+    expect(Math.round((new Date(sent3.next_step_at).getTime() - Date.now()) / 86400_000)).toBe(5);
+    await sql`update campaign_recipients set next_step_at = now() - interval '1 hour' where id = ${r3.id}`;
+    lot = await lotLib.campaignLot(clinic, (await sql`select * from campaigns where id = ${campaign.id}`)[0] as never);
+    const follow = lot.items.find((i) => i.id === r3.id)!;
+    expect(follow).toMatchObject({ step: 2 });
+    expect(follow.message).toContain("te escribo de nuevo");
+    expect(lot.sent.map((s) => s.id)).toContain(r3.id);
+    await actions.markManualFollowupAction(form({ clinic_id: CLINIC, id: r3.id }));
+    expect(await recipient(3)).toMatchObject({ messages_sent: 2, next_step_at: null, sequence_stopped: "Terminó la secuencia" });
+    expect((await sql`select step, manual from campaign_messages where recipient_id = ${r3.id} order by step`).map((m) => m.step)).toEqual([1, 2]);
+
+    // Marcas de lo que contestó en el WhatsApp de la clínica.
+    const r4 = await recipient(4);
+    await actions.markManualSentAction(form({ clinic_id: CLINIC, id: r4.id }));
+    await actions.setOutcomeAction(form({ clinic_id: CLINIC, campaign_id: campaign.id, id: r4.id, outcome: "baja" }));
+    expect(await recipient(4)).toMatchObject({ outcome: "baja", status: "respondio", next_step_at: null, sequence_stopped: "Pidió la baja" });
+    expect((await sql`select contact_opt_out from patients where id = ${ids[4]}`)[0].contact_opt_out).toBe(true);
+    await actions.setOutcomeAction(form({ clinic_id: CLINIC, campaign_id: campaign.id, id: r3.id, outcome: "no_interesa" }));
+    expect(await recipient(3)).toMatchObject({ outcome: "no_interesa", status: "respondio" });
+    await actions.setOutcomeAction(form({ clinic_id: CLINIC, campaign_id: campaign.id, id: (await recipient(5)).id, outcome: "respondio" }));
+    expect((await recipient(5)).outcome).toBeNull(); // todavía no se le escribió: no se marca
+
+    // Cuentan en los resultados como respuestas.
+    const board = await import("@/lib/campaign-board");
+    expect((await board.campaignResults(clinic, campaign.id, "todo")).replied).toBeGreaterThanOrEqual(2);
+
+    // La pantalla del lote se arma.
+    const html = renderToStaticMarkup(
+      (await (await import("@/app/panel/(app)/campanas/[id]/lote/page")).default({ params: Promise.resolve({ id: campaign.id }) } as never)) as React.ReactElement,
+    );
+    expect(html).toContain("Revisar lote");
+    expect(html).toContain("Desde mi WhatsApp, de a uno");
+    expect(html).toContain("Pidió la baja");
+    await sql`update clinics set contact_cooldown_days = 30 where id = ${CLINIC}`;
+  }, 60000);
 });

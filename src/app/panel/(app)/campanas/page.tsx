@@ -3,7 +3,7 @@ import Link from "next/link";
 import { sql } from "@/lib/db";
 import { CAMPAIGN_LABELS, audienceBreakdown, campaignMessage, campaignRule, campaignStats, computeAudience, EMPTY_STATS, firstName, opportunities, type Opportunity } from "@/lib/campaigns";
 import { activeCampaigns, campaignQueue, campaignResults, PERIODS, stepRate, type Period, type QueueFilter } from "@/lib/campaign-board";
-import { DAILY_LINE_CAP, DEFAULT_FOLLOWUP_DAYS, DEFAULT_MAX_MESSAGES, SEND_WINDOW, lineUsage } from "@/lib/campaign-limits";
+import { DAILY_LINE_CAP, DEFAULT_FOLLOWUP_DAYS, DEFAULT_MAX_MESSAGES, LOT_SIZE, PILOT_SIZE, SEND_WINDOW, lineUsage } from "@/lib/campaign-limits";
 import { DEFAULT_FOLLOWUP_TEXT } from "@/lib/campaign-sequences";
 import { describeRules, parseRules } from "@/lib/audience-rules";
 import { listSavedAudiences } from "@/lib/saved-audiences";
@@ -11,7 +11,7 @@ import { OPT_OUT_FOOTER } from "@/lib/whatsapp";
 import { formatDate } from "@/lib/time";
 import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Campaign, type CampaignType } from "@/lib/types";
 import { campaignFromSavedAudienceAction, prepareCampaignAction, toggleRecipientAction } from "../../campaign-actions";
-import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass } from "@/components/ui";
+import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { AutoToggle } from "./auto-toggle";
 import { CampaignSettings } from "./campaign-settings";
 import { ContactRules } from "./contact-rules";
@@ -442,9 +442,16 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
                   <b className="text-brand-950">{plural(queue.counts.cola, "en cola", "en cola")}</b>
                   {queue.counts.fuera > 0 && ` · ${queue.counts.fuera} fuera de la cola por los motivos de la lista`}
                 </span>
-                <Link href={`/panel/campanas/${selected.id}`} className={buttonClass}>
-                  {queue.counts.cola ? `Revisar lote de ${queue.counts.cola}` : "Ver la campaña"}
-                </Link>
+                <span className="flex flex-wrap gap-2">
+                  <Link href={`/panel/campanas/${selected.id}`} className={secondaryButtonClass}>
+                    Ver la lista
+                  </Link>
+                  {queue.counts.cola > 0 && (
+                    <Link href={`/panel/campanas/${selected.id}/lote`} className={buttonClass}>
+                      Revisar lote de {Math.min(queue.counts.cola, LOT_SIZE)}
+                    </Link>
+                  )}
+                </span>
               </div>
             </Card>
           </div>
@@ -479,6 +486,8 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
                 sample={sample}
                 optOutFooter={OPT_OUT_FOOTER}
                 listHref={`/panel/campanas/${selected.id}`}
+                pilot={selected.pilot_size !== null}
+                pilotSize={PILOT_SIZE}
               />
             </Card>
           </aside>

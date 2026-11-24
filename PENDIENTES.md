@@ -29,7 +29,14 @@ Rediseño de Panel → Campañas, cerrado en otra sesión. Diseño de referencia
   - Vista previa en vivo con la cantidad, el valor, quiénes quedan afuera y por qué, y algunos nombres.
   - Audiencias guardadas (`saved_audiences`) como tarjetas en Campañas, con «Crear campaña +» y «Editar».
   - Las campañas de audiencia propia usan `type = 'audiencia'` y guardan sus reglas en `campaigns.audience_rules`. Cuentan para el tope entre campañas y traen el seguimiento sugerido.
-- [ ] **PR 5 · Revisar lote:** «Con Sofi» o «Desde mi WhatsApp», de a uno; marcas Respondió, No le interesa y Pidió la baja; atajos de teclado; lotes de 5 y piloto de 20.
+- [x] **PR 5 · Revisar lote.**
+  - Pantalla `/panel/campanas/[id]/lote`, con los próximos 5.
+  - **«Con Sofi, automático»:** manda solo los elegidos del lote.
+  - **«Desde mi WhatsApp, de a uno»:** abre el chat con el mensaje escrito y lo marca como enviado. Atajos de teclado: Enter abre el chat y → pasa al siguiente.
+  - **Seguimiento de lo enviado a mano:** también sale desde el lote, a los N días.
+  - **Marcas Respondió / No le interesa / Pidió la baja** (`campaign_recipients.outcome`): cuentan como respuesta. La baja queda en la ficha y corta el seguimiento.
+  - **Piloto de 20** (`campaigns.pilot_size`): frena «Con Sofi» y el lote hasta que el equipo sigue con el resto.
+- **Siguiente:** probar en producción con Axel cuando apruebe canal, destinatarios y baja, y prender las automáticas y el seguimiento de a una.
 - Valores confirmados:
   - atribución de 14 días;
   - seguimiento a los 5 días, con un máximo de 2 mensajes;

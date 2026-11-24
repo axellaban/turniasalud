@@ -337,6 +337,8 @@ export type Campaign = {
   /** La secuencia se corta si el paciente responde / saca turno (la baja corta siempre). */
   stop_on_reply: boolean;
   stop_on_booking: boolean;
+  /** Piloto: solo los primeros N reciben el mensaje hasta que el equipo decida seguir (null = sin piloto). */
+  pilot_size: number | null;
   created_at: string;
   sent_at: string | null;
 };
@@ -372,4 +374,6 @@ export type CampaignRecipient = {
   last_message_at: string | null;
   next_step_at: string | null;
   sequence_stopped: string | null;
+  /** Lo que marcó el equipo de un envío desde su WhatsApp (la respuesta no le llega a Sofi). */
+  outcome: "respondio" | "no_interesa" | "baja" | null;
 };

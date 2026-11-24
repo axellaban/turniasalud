@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { saveCampaignTextsAction, saveSequenceAction } from "../../campaign-actions";
+import { saveCampaignTextsAction, saveSequenceAction, setPilotAction } from "../../campaign-actions";
 import { buttonClass, inputClass } from "@/components/ui";
 
 // Panel derecho de la pantalla de Campañas: Audiencia, Secuencia y Mensaje de la campaña elegida.
@@ -26,6 +26,8 @@ export type SettingsProps = {
   sample: { name: string; detail: string };
   optOutFooter: string;
   listHref: string;
+  pilot: boolean;
+  pilotSize: number;
 };
 
 const fill = (text: string, sample: { name: string; detail: string }) =>
@@ -164,6 +166,24 @@ export function CampaignSettings(props: SettingsProps) {
               <input type="checkbox" checked disabled readOnly /> Pide no recibir más mensajes (siempre)
             </label>
           </fieldset>
+          <label className="flex items-start gap-2 rounded-xl bg-brand-50/60 p-3">
+            <input
+              type="checkbox"
+              defaultChecked={props.pilot}
+              onChange={(e) => {
+                const f = new FormData();
+                f.set("clinic_id", props.clinicId);
+                f.set("id", props.campaignId);
+                f.set("pilot", e.target.checked ? "1" : "0");
+                void setPilotAction(f);
+              }}
+              className="mt-1"
+            />
+            <span>
+              <b className="text-brand-950">Empezar con un piloto de {props.pilotSize} pacientes</b>
+              <span className="block text-xs text-brand-900/65">Ves cómo responden antes de mandarle al resto.</span>
+            </span>
+          </label>
           <div className="flex flex-wrap items-center gap-3">
             <button disabled={seqPending} className={buttonClass}>
               {seqPending ? "Guardando…" : "Guardar secuencia"}

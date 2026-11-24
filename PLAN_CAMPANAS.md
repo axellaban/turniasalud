@@ -120,6 +120,18 @@ El rediseño está en el artefacto de diseño «Turnia Activa · Campañas» (tr
   - Cuentan como campaña para volver: respetan el tope entre campañas y a quien ya tiene turno, y traen el seguimiento sugerido.
   - Traen un mensaje sugerido que nombra la prestación si la regla la tiene.
 
+**PR 5 (hecho): revisar lote**
+
+- **Pantalla:** `/panel/campanas/[id]/lote` (`lot-review.tsx`). Los datos salen de `campaignLot` en `src/lib/campaign-lot.ts`: los próximos 5 (`LOT_SIZE`), con primero los seguimientos vencidos de lo enviado a mano. Al lado, lo enviado a mano en las últimas 24 horas para marcar qué contestaron.
+- **«Con Sofi, automático»:** `sendLotWithSofiAction` llama a `sendCampaign(id, { only })` con los elegidos. Respeta el tope de la línea y el piloto.
+- **«Desde mi WhatsApp, de a uno»:** abre WhatsApp Web (en el celular, la app) con el mensaje escrito y marca el envío.
+  - Si la campaña tiene seguimiento, `markManualSent` agenda el próximo. Sale desde el lote con `markManualFollowup`, porque Sofi no les escribe a los de envío manual.
+  - Atajos de teclado: Enter abre el chat y → pasa al siguiente. «Saltear» deja al paciente para otro lote.
+- **Marcas** (`setRecipientOutcome`, columna `campaign_recipients.outcome`): «Respondió» y «No le interesa» cuentan como respuesta. «Pidió la baja» además marca la baja en la ficha. Las dos últimas cortan el seguimiento.
+- **Piloto** (`campaigns.pilot_size`, 20 por defecto): se prende en la pestaña Secuencia o en el lote.
+  - Mientras dura, solo les llega el primer mensaje a los primeros N.
+  - Al terminar, el lote avisa y ofrece «Seguir con el resto».
+
 ## Qué sigue (lo anterior a Turnia Activa)
 
 1. **Secuencias:** si no responde en unos días, un segundo mensaje y después una llamada de Sofi. Twilio ya está configurado; las llamadas se hacen solo con autorización.
