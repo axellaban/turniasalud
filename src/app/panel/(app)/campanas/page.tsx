@@ -1,11 +1,12 @@
-import { getPanelClinic } from "@/lib/panel-clinic";
+import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { CAMPAIGN_LABELS, campaignRule, campaignStats, EMPTY_STATS, opportunities, type Opportunity } from "@/lib/campaigns";
 import { formatDate } from "@/lib/time";
-import type { AppointmentType, Campaign } from "@/lib/types";
+import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Campaign } from "@/lib/types";
 import { prepareCampaignAction } from "../../campaign-actions";
 import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
+import { AutoToggle } from "./auto-toggle";
 import { ContactRules } from "./contact-rules";
 import { RecallSelect } from "./recall-select";
 import { CAMPAIGN_STATUS, money, plural } from "./labels";
@@ -24,8 +25,8 @@ const ACCENT: Partial<Record<Campaign["type"], string>> = {
   encuesta: "before:bg-brand-200",
 };
 
-/** Lo que corre solo con n8n cuando la automatización está activada. */
-const AUTOMATIC: Array<[Campaign["type"], string]> = [
+/** Lo que corre solo (lo dispara n8n) en las clínicas que lo tienen prendido. */
+const AUTOMATIC: Array<[AutoCampaignType, string]> = [
   ["recordatorio", "Todos los días a las 10"],
   ["no_show", "Todos los días a las 18"],
   ["encuesta", "Todos los días a las 19"],
@@ -87,7 +88,9 @@ const campaignRuleShort = (type: "recall" | "reactivacion") =>
   type === "recall" ? "Según cada cuánto vuelve cada prestación y los controles indicados." : "No vienen hace tiempo y no tienen turno.";
 
 export default async function CampaignsPage() {
-  const clinic = await getPanelClinic();
+  const [clinic, user] = await Promise.all([getPanelClinic(), getPanelUser()]);
+  const isAdmin = user.role === "admin";
+  const autoOn = new Set(clinic.auto_campaigns ?? []);
   const [opp, campaigns, [base], types, [lastImport]] = await Promise.all([
     opportunities(clinic),
     sql<Campaign[]>`select * from campaigns where clinic_id = ${clinic.id} order by created_at desc limit 30`,
@@ -223,7 +226,10 @@ export default async function CampaignsPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section aria-labelledby="historial" className="min-w-0 space-y-4">
-          <h2 id="historial" className="font-semibold text-brand-950">Campañas</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h2 id="historial" className="font-semibold text-brand-950">Campañas</h2>
+            <p className="text-xs text-brand-900/65">Un turno cuenta si se sacó dentro de los {ATTRIBUTION_DAYS} días del mensaje.</p>
+          </div>
           {campaigns.length ? (
             <ul className="space-y-3">
               {campaigns.map((c) => {
@@ -240,7 +246,10 @@ export default async function CampaignsPage() {
                           </p>
                           <p className="truncate font-semibold text-brand-950">{c.name}</p>
                         </div>
-                        <Badge tone={status.tone}>{status.label}</Badge>
+                        <span className="flex gap-1.5">
+                          {c.automatic && <Badge tone="blue">Automática</Badge>}
+                          <Badge tone={status.tone}>{status.label}</Badge>
+                        </span>
                       </div>
                       {s.sent > 0 ? (
                         <>
@@ -340,21 +349,41 @@ export default async function CampaignsPage() {
           <Card className="bg-brand-50/60">
             <h2 className="font-semibold text-brand-950">Automáticas</h2>
             <p className="mt-1 text-sm text-brand-900/70">
-              Con WhatsApp conectado a Sofi, estas salen solas (las programa n8n) y cada corrida queda en la lista de campañas. Se activan después de
-              probar el canal con la clínica.
+              {autoOn.size
+                ? "Las prendidas salen solas por el WhatsApp conectado a Sofi y cada corrida queda en la lista de campañas. Si una corrida llega al tope, la siguiente sigue por los que quedaron."
+                : "Están todas apagadas: no sale ningún mensaje solo. Se prenden de a una, cuando el consultorio valide el canal, a quiénes les llega y cómo se piden la baja."}
             </p>
-            <p className="mt-2 text-xs text-brand-900/65">
-              «Turnos de mañana» y «Atendidos estos días» sirven para mandarlas a mano antes de que estén activas: a quien ya le llegó el
-              recordatorio o la encuesta (a mano o automática) no le llega otra.
-            </p>
-            <ul className="mt-3 space-y-1.5 text-sm">
-              {AUTOMATIC.map(([type, when]) => (
-                <li key={type} className="flex justify-between gap-3">
-                  <span className="text-brand-950">{CAMPAIGN_LABELS[type].label}</span>
-                  <span className="text-right text-brand-900/60">{when}</span>
-                </li>
-              ))}
+            {!isAdmin && <p className="mt-2 text-xs text-brand-900/65">Las prende el equipo de Turnia, a pedido del consultorio.</p>}
+            {clinic.is_demo && <p className="mt-2 text-xs text-brand-900/65">Es un perfil de demo: aunque estén prendidas, Sofi no le escribe a nadie.</p>}
+            <ul className="mt-3 space-y-2 text-sm">
+              {AUTOMATIC.map(([type, when]) => {
+                const on = autoOn.has(type);
+                return (
+                  <li key={type} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block text-brand-950">{CAMPAIGN_LABELS[type].label}</span>
+                      <span className="block text-xs text-brand-900/60">{when}</span>
+                    </span>
+                    {isAdmin ? (
+                      <AutoToggle clinicId={clinic.id} type={type} label={CAMPAIGN_LABELS[type].label} on={on} />
+                    ) : (
+                      <Badge tone={on ? "green" : "gray"}>{on ? "Prendida" : "Apagada"}</Badge>
+                    )}
+                  </li>
+                );
+              })}
+              <li className="flex items-center justify-between gap-3 border-t border-brand-900/5 pt-2">
+                <span className="min-w-0">
+                  <span className="block text-brand-950">{CAMPAIGN_LABELS.lista_espera.label}</span>
+                  <span className="block text-xs text-brand-900/60">Avisa sola cuando se libera un turno</span>
+                </span>
+                <Badge tone="blue">Automática</Badge>
+              </li>
             </ul>
+            <p className="mt-3 text-xs text-brand-900/65">
+              «Turnos de mañana» y «Atendidos estos días» se pueden mandar a mano mientras estén apagadas: a quien ya le llegó el recordatorio o la
+              encuesta (a mano o automática) no le llega otra.
+            </p>
           </Card>
         </aside>
       </div>

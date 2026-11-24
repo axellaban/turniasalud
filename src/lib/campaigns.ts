@@ -3,7 +3,7 @@ import { sql } from "./db";
 import { getClinic } from "./clinic";
 import { pauseBetweenSends, renderTemplate, sendPatientMessage, templateKeyFor, whatsappReadiness, withOptOutFooter } from "./whatsapp";
 import { humanSlot, localDateKey } from "./time";
-import type { Campaign, CampaignType, Clinic } from "./types";
+import { ATTRIBUTION_DAYS, AUTO_CAMPAIGN_TYPES, type AutoCampaignType, type Campaign, type CampaignType, type Clinic } from "./types";
 
 // "Activa": campañas salientes por WhatsApp. Cada destinatario recibe un
 // template aprobado por Meta (o el mismo texto por WAHA) y, si responde, lo
@@ -496,6 +496,7 @@ export async function createCampaign(input: {
   templateName: string;
   templateLanguage?: string;
   goal?: string;
+  automatic?: boolean;
 }): Promise<Campaign> {
   const [campaign] = await sql<Campaign[]>`
     insert into campaigns ${sql({
@@ -505,6 +506,7 @@ export async function createCampaign(input: {
       template_name: input.templateName,
       template_language: input.templateLanguage || "es_AR",
       goal: input.goal || CAMPAIGN_LABELS[input.type].goal,
+      automatic: input.automatic ?? false,
     })}
     returning *`;
   return campaign;
@@ -556,7 +558,7 @@ export async function syncAudience(campaignId: string): Promise<{ added: number;
 export async function prepareCampaign(clinic: Clinic, input: { type: CampaignType; name?: string | null; goal?: string | null; templateName?: string | null }): Promise<Campaign> {
   if (input.type !== "personalizada") {
     const [open] = await sql<Campaign[]>`
-      select * from campaigns where clinic_id = ${clinic.id} and type = ${input.type} and status in ('borrador', 'enviando')
+      select * from campaigns where clinic_id = ${clinic.id} and type = ${input.type} and status in ('borrador', 'enviando') and not automatic
       order by created_at desc limit 1`;
     if (open) {
       await syncAudience(open.id);
@@ -712,7 +714,8 @@ export async function campaignStats(clinicId: string, campaignIds: string[]): Pr
     join campaigns c on c.id = r.campaign_id
     left join lateral (
       select a.status, a.appointment_type_id from appointments a
-      where a.patient_id = r.patient_id and r.sent_at is not null and a.created_at >= r.sent_at and a.status <> 'cancelado'
+      where a.patient_id = r.patient_id and r.sent_at is not null and a.status <> 'cancelado'
+        and a.created_at >= r.sent_at and a.created_at < r.sent_at + make_interval(days => ${ATTRIBUTION_DAYS})
       order by a.created_at
       limit 1
     ) b on true
@@ -722,12 +725,37 @@ export async function campaignStats(clinicId: string, campaignIds: string[]): Pr
   return new Map(rows.map(({ campaign_id, ...stats }) => [campaign_id, stats]));
 }
 
-/** Corre una campaña automática (la dispara n8n o un cron). */
-export async function runAutomation(type: CampaignType, clinicId?: string): Promise<SendResult & { campaign_id: string }> {
-  const clinic = await getClinic(clinicId);
+export type AutomationRun = { clinic_id: string; clinic: string } & (
+  | (SendResult & { campaign_id: string; resumed: boolean })
+  | { skipped: string }
+  | { error: string }
+);
+
+/** Por qué una automática no corre en esta clínica (null = corre). */
+export function automationBlock(clinic: Pick<Clinic, "is_demo" | "auto_campaigns">, type: CampaignType): string | null {
+  if (!(AUTO_CAMPAIGN_TYPES as readonly CampaignType[]).includes(type)) {
+    return type === "lista_espera" ? "La lista de espera avisa sola cuando se libera un turno." : "Este tipo de campaña no corre solo.";
+  }
+  if (clinic.is_demo) return "Es un perfil de demo: Sofi no le escribe a nadie.";
+  if (!clinic.auto_campaigns?.includes(type as AutoCampaignType)) return "Apagada en esta clínica.";
+  return null;
+}
+
+/**
+ * Corre una campaña automática en una clínica. Si la corrida anterior quedó a mitad (tope de 50 por
+ * corrida), sigue esa misma campaña: primero los que quedaron esperando y después los que se sumaron.
+ */
+async function runClinicAutomation(clinic: Clinic, type: CampaignType): Promise<SendResult & { campaign_id: string; resumed: boolean }> {
   // Por WAHA no hay templates de Meta: se manda el texto de TEMPLATE_TEXTS.
   const templateName = clinic.templates?.[type] ?? (clinic.whatsapp_provider === "waha" ? type : null);
   if (!templateName) throw new Error(`No hay template configurado para "${type}" (Configuración → Templates).`);
+  const [open] = await sql<Campaign[]>`
+    select * from campaigns where clinic_id = ${clinic.id} and type = ${type} and automatic and status = 'enviando'
+    order by created_at limit 1`;
+  if (open) {
+    await syncAudience(open.id);
+    return { ...(await sendCampaign(open.id)), campaign_id: open.id, resumed: true };
+  }
   const today = new Intl.DateTimeFormat("es-AR", { timeZone: clinic.timezone, day: "numeric", month: "short" }).format(new Date());
   const campaign = await createCampaign({
     clinicId: clinic.id,
@@ -735,7 +763,34 @@ export async function runAutomation(type: CampaignType, clinicId?: string): Prom
     type,
     templateName,
     templateLanguage: clinic.templates?.idioma || "es_AR",
+    automatic: true,
   });
-  const result = await sendCampaign(campaign.id);
-  return { ...result, campaign_id: campaign.id };
+  return { ...(await sendCampaign(campaign.id)), campaign_id: campaign.id, resumed: false };
+}
+
+/**
+ * Corre una campaña automática (la dispara n8n o un cron). Sin `clinicId`, en cada clínica real que la
+ * tenga prendida; con `clinicId`, solo en esa y solo si la tiene prendida. Una clínica que falla no
+ * frena a las demás.
+ */
+export async function runAutomation(type: CampaignType, clinicId?: string): Promise<AutomationRun[]> {
+  const clinics = clinicId
+    ? await sql<Clinic[]>`select * from clinics where id = ${clinicId}`
+    : await sql<Clinic[]>`select * from clinics where not is_demo and ${type} = any(auto_campaigns) order by created_at`;
+  if (clinicId && !clinics.length) throw new Error("No encontré la clínica.");
+  const runs: AutomationRun[] = [];
+  for (const clinic of clinics) {
+    const base = { clinic_id: clinic.id, clinic: clinic.name };
+    const blocked = automationBlock(clinic, type);
+    if (blocked) {
+      runs.push({ ...base, skipped: blocked });
+      continue;
+    }
+    try {
+      runs.push({ ...base, ...(await runClinicAutomation(clinic, type)) });
+    } catch (e) {
+      runs.push({ ...base, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return runs;
 }
