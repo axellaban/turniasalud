@@ -1,5 +1,12 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Protección del WhatsApp de prospección — 24/11/2026
+
+- Axel informó una suspensión del 5483 en WhatsApp Business. No se confirmó la causa: `FAILED` no distingue una suspensión de otros fallos y los logs históricos no estaban disponibles.
+- La recuperación previa solo reinició y renovó la sesión del 3765. Se encontró otra vía preexistente: Chapa intentaba recuperar el 5483 automáticamente al detectar `FAILED` con el diálogo de audios abierto. No se pudo establecer si se ejecutó durante este incidente ni si influyó en la suspensión.
+- Se retira esa automatización y la gestión de sesiones desde Chapa. Turnia rechaza `action: reconnect` con HTTP 423 y `reconnection_disabled`, incluso para pestañas que conservaron el código anterior. La vista de conexión solo consulta el estado; no solicita QR ni inicia, reinicia o desvincula una sesión.
+- No reactivar la línea, generar QR ni cambiar servicios, imágenes, claves o volúmenes como parte de este arreglo. La recuperación posterior requiere revisar primero el resultado en la app de WhatsApp Business y una intervención manual específica fuera de Chapa. Las pausas de envío no garantizan evitar bloqueos de WhatsApp.
+
 ## WhatsApp y llamadas del consultorio — 24/11/2026
 
 - La sesión propia de WAHA estaba en FAILED. Reiniciar conservando la autenticación no la recuperó; se renovó la vinculación y quedó WORKING con la cuenta correcta. El usuario confirmó una respuesta real y el mensaje y la respuesta se comprobaron en Turnia.

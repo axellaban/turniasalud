@@ -4,6 +4,8 @@ Actualización: 24/11/2026 (Argentina). Este registro prevalece sobre los pendie
 
 ## Llamadas y conexión de WhatsApp — 24/11/2026
 
+**Protección posterior del 5483:** ante una suspensión informada por Axel, se elimina la recuperación automática preexistente desde Chapa y se bloquea la operación de reconexión en la API con HTTP 423. El estado se consulta sin pedir QR ni modificar sesiones. No se estableció la causa de la suspensión ni se realizaron reconexiones como parte del arreglo. Detalle en PENDIENTES.md.
+
 La revisión de dos llamadas reales mostró una reprogramación correcta en Smile Connect con confirmación al paciente sin entregar, una explicación que mezclaba ventanas de búsqueda y una lista de espera rechazada por el tipo genérico importado. Se recuperó la línea y se comprobó una conversación real de prueba. La causa original de la pérdida de sesión no pudo determinarse con los registros disponibles.
 
 Los cambios incorporan consulta del resultado pendiente durante la llamada, canal de confirmación explícito, revisión si WhatsApp no está operativo y lista de espera vinculada a una reserva existente con sus reglas. El control de WAHA del cron conserva un historial de estados y avisa por el circuito de Axel sin reiniciar ni desvincular sesiones. Detalle operativo en PENDIENTES.md.
