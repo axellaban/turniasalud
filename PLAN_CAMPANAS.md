@@ -82,6 +82,25 @@ El rediseño está en el artefacto de diseño «Turnia Activa · Campañas» (tr
 - **El tope de 50 no deja a nadie afuera.** Antes, cada corrida creaba una campaña nueva: los que quedaban después del 50 se perdían, porque la audiencia vuelve a ordenarse con los más recientes primero. Ahora la automática retoma su campaña abierta (`campaigns.automatic = true`, estado `enviando`). Suma a los nuevos al final y les escribe primero a los que esperaban. Los borradores del equipo nunca los toma una automática, y «Revisar y enviar» nunca abre una automática.
 - **Ventana de atribución de 14 días** (`ATTRIBUTION_DAYS` en `src/lib/types.ts`). Un turno cuenta para la campaña si se sacó dentro de los 14 días del mensaje; antes contaba cualquier turno posterior, sin límite. Vale para los resultados y para marcar «agendó» cuando el paciente responde.
 
+**PR 2 (hecho): secuencias**
+
+- **Pasos:** `campaign_steps` guarda los pasos de cada campaña, del 2 en adelante; el 1 es el mensaje de la campaña. Controles, inactivos y ausentes nacen con el seguimiento sugerido: a los 5 días, con un máximo de 2 mensajes por paciente (`campaigns.max_messages`).
+- **Por paciente:** se guarda `messages_sent`, `last_message_at`, `next_step_at` (cuándo toca el próximo) y `sequence_stopped` (por qué se cortó).
+- **Cuándo corren:** en la tarea de cada 10 minutos (`runSequences` en `src/lib/campaign-sequences.ts`), solo en las clínicas con `sequences_enabled`. Se prende en Panel → Campañas → Automáticas → «Seguimiento a quien no responde», solo el administrador. Mandan hasta 10 por corrida.
+- **Se cortan si el paciente:**
+  - responde (estado «respondió» o «agendó», o un mensaje suyo en el chat);
+  - saca turno por cualquier canal (Sofi, panel, teléfono o Smile Connect);
+  - pide la baja;
+  - o ya recibió el máximo de mensajes.
+  - Lo enviado a mano desde el WhatsApp de la clínica no tiene seguimiento de Sofi.
+- **Pasos vencidos:** un paso que venció hace más de 4 días (por ejemplo, con las secuencias apagadas) se cierra sin mandarse.
+- **Solo por WAHA:** por el WhatsApp oficial un seguimiento necesita un template aprobado.
+- **Límites de la línea** (`src/lib/campaign-limits.ts`):
+  - Horario de envío: de lunes a viernes, de 9 a 20, para lo que sale solo (las secuencias y las automáticas de controles, inactivos y ausentes). Los recordatorios y la encuesta no lo respetan porque son del turno.
+  - Tope de 60 mensajes de campaña por día y por línea WAHA, contando lo que manda Sofi y lo que el equipo marca como enviado a mano. Cada mensaje queda en `campaign_messages`.
+  - «Enviar con Sofi» se frena en el tope y avisa que se sigue mañana.
+- **La llamada de Sofi como paso:** queda a futuro, porque requiere autorización.
+
 ## Qué sigue (lo anterior a Turnia Activa)
 
 1. **Secuencias:** si no responde en unos días, un segundo mensaje y después una llamada de Sofi. Twilio ya está configurado; las llamadas se hacen solo con autorización.

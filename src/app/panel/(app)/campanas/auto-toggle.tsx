@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { setAutoCampaignAction } from "../../campaign-actions";
+import { setAutoCampaignAction, setSequencesAction } from "../../campaign-actions";
 
 function ToggleButton({ on, label }: { on: boolean; label: string }) {
   const { pending } = useFormStatus();
@@ -20,16 +20,16 @@ function ToggleButton({ on, label }: { on: boolean; label: string }) {
 }
 
 /** Interruptor de una campaña automática (solo el administrador). Prenderla pide confirmación. */
-export function AutoToggle({ clinicId, type, label, on }: { clinicId: string; type: string; label: string; on: boolean }) {
+export function AutoToggle({ clinicId, type, label, on }: { clinicId: string; type?: string; label: string; on: boolean }) {
   return (
     <form
-      action={setAutoCampaignAction}
+      action={type ? setAutoCampaignAction : setSequencesAction}
       onSubmit={(e) => {
         if (!on && !window.confirm(`«${label}» va a salir sola y le va a escribir a pacientes reales sin que nadie revise la lista. ¿El consultorio ya validó el canal, los destinatarios y la baja?`)) e.preventDefault();
       }}
     >
       <input type="hidden" name="clinic_id" value={clinicId} />
-      <input type="hidden" name="type" value={type} />
+      {type && <input type="hidden" name="type" value={type} />}
       <input type="hidden" name="enabled" value={on ? "0" : "1"} />
       <ToggleButton on={on} label={label} />
     </form>

@@ -42,6 +42,8 @@ export type Clinic = {
   contact_cooldown_days: number;
   /** Campañas que la tarea programada manda sola en esta clínica. Vacío = ninguna (lo prende el administrador). */
   auto_campaigns: AutoCampaignType[];
+  /** Seguimiento a quien no responde (secuencias de campañas). Apagado por defecto; lo prende el administrador. */
+  sequences_enabled: boolean;
   /** Veces que se le vuelve a escribir a quien no contestó los horarios que le ofreció el agente (0 a 2). */
   followup_attempts: number;
   /** Horas que se espera antes del primer seguimiento. */
@@ -325,6 +327,8 @@ export type Campaign = {
   status: "borrador" | "enviando" | "finalizada";
   /** La creó la tarea programada (no un borrador del equipo). */
   automatic: boolean;
+  /** Mensajes por paciente como máximo, contando el primero (secuencia). */
+  max_messages: number;
   created_at: string;
   sent_at: string | null;
 };

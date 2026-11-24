@@ -2032,3 +2032,52 @@ alter table campaigns add column if not exists automatic boolean not null defaul
 -- Las automáticas de antes se reconocen por su nombre («… · automática 3 nov»).
 update campaigns set automatic = true where not automatic and name like '% · automática %';
 create index if not exists campaigns_open_automatic_idx on campaigns (clinic_id, type) where automatic and status = 'enviando';
+
+-- ---------------------------------------------------------------------------
+-- Turnia Activa · PR 2 (24/11/2026): secuencias. Primer mensaje y seguimientos a los N días sin
+-- respuesta, con un máximo de mensajes por paciente. Corren en la tarea de cada 10 minutos, de lunes
+-- a viernes de 9 a 20 y con un tope de 60 mensajes por día y por línea de WhatsApp (WAHA).
+-- Apagadas por defecto: `clinics.sequences_enabled` lo prende solo el administrador.
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists sequences_enabled boolean not null default false;
+alter table campaigns add column if not exists max_messages smallint not null default 2;
+alter table campaigns drop constraint if exists campaigns_max_messages_check;
+alter table campaigns add constraint campaigns_max_messages_check check (max_messages between 1 and 3);
+
+-- Pasos después del primer mensaje (el primero es el de la campaña). position 2 = primer seguimiento.
+create table if not exists campaign_steps (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references campaigns(id) on delete cascade,
+  position smallint not null check (position between 2 and 3),
+  delay_days smallint not null default 5 check (delay_days between 1 and 30),
+  -- Texto propio con {nombre} y {detalle}; null = el seguimiento sugerido.
+  message text,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, position)
+);
+alter table campaign_steps enable row level security;
+
+-- Por paciente: cuántos mensajes recibió, cuándo el último y cuándo toca el próximo paso.
+alter table campaign_recipients add column if not exists messages_sent smallint not null default 0;
+alter table campaign_recipients add column if not exists last_message_at timestamptz;
+alter table campaign_recipients add column if not exists next_step_at timestamptz;
+-- Por qué se cortó la secuencia («Respondió», «Sacó turno», «Pidió la baja»…).
+alter table campaign_recipients add column if not exists sequence_stopped text;
+create index if not exists campaign_recipients_next_step_idx on campaign_recipients (next_step_at) where next_step_at is not null;
+update campaign_recipients set messages_sent = 1, last_message_at = sent_at
+  where messages_sent = 0 and sent_at is not null and status in ('enviado', 'respondio', 'agendo');
+
+-- Cada mensaje de campaña que sale, para el tope diario por línea. line = id de la línea WAHA
+-- (la propia de la clínica o «general»); manual = lo mandó el equipo desde el WhatsApp de la clínica.
+create table if not exists campaign_messages (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  campaign_id uuid references campaigns(id) on delete set null,
+  recipient_id uuid references campaign_recipients(id) on delete set null,
+  step smallint not null default 1,
+  line text not null,
+  manual boolean not null default false,
+  sent_at timestamptz not null default now()
+);
+create index if not exists campaign_messages_line_idx on campaign_messages (line, sent_at desc);
+alter table campaign_messages enable row level security;

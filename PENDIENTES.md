@@ -10,12 +10,13 @@ Rediseño de Panel → Campañas, cerrado en otra sesión. Diseño de referencia
   - Automáticas por clínica: `clinics.auto_campaigns`, vacío por defecto, con interruptor en Panel → Campañas → Automáticas que solo cambia el administrador. n8n ya no llega solo a la clínica por defecto: cada job corre en las clínicas que lo tienen prendido y saltea las demo.
   - El tope de 50 ya no deja pacientes sin mensaje: la automática retoma su campaña abierta (`campaigns.automatic`) y nunca toma un borrador del equipo.
   - Atribución de 14 días (`ATTRIBUTION_DAYS`).
-- [ ] **PR 2 · Secuencias:**
-  - pasos por campaña y fecha del próximo paso por paciente;
-  - seguimiento a los 5 días sin respuesta, con un máximo de 2 mensajes;
-  - se corta si responde o saca turno por cualquier canal;
-  - corre en la tarea de cada 10 minutos (`/api/automations/calendario`), de lunes a viernes de 9 a 20, con un tope de 60 por día y por línea WAHA;
-  - apagadas por defecto.
+- [x] **PR 2 · Secuencias.**
+  - Pasos por campaña en `campaign_steps`. El de «volver a sacar turno» trae un seguimiento sugerido a los 5 días.
+  - Por paciente se guarda `messages_sent`, `next_step_at` y `sequence_stopped`.
+  - Corren en `/api/automations/calendario`, la tarea de cada 10 minutos, de lunes a viernes de 9 a 20.
+  - Se cortan si el paciente responde, saca turno por cualquier canal o pide la baja.
+  - Tope de 60 por día y por línea WAHA (`campaign_messages`). También frena «Enviar con Sofi» y anota lo que el equipo manda a mano.
+  - Interruptor «Seguimiento a quien no responde» por clínica, apagado y solo para el administrador. Un paso que venció hace más de 4 días se cierra sin mandarse.
 - [ ] **PR 3 · Pantalla de Campañas:**
   - audiencias con cantidad, valor y una acción (o el motivo si no hay datos, como «Presupuestos sin iniciar → Conectar origen»);
   - «WhatsApp del consultorio · hoy N de 60»;
