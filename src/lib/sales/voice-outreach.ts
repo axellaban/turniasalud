@@ -422,7 +422,9 @@ export async function voiceChannelStatus(ending?: string): Promise<VoiceChannelS
     const me = body.me?.id ? body.me.id.split("@")[0].split(":")[0] : null;
     const status = body.status ?? "?";
     const problem =
-      status !== "WORKING" ? `La sesión «${config.session}» está en ${status}: abrí el dashboard de WAHA y escaneá el QR con tu WhatsApp.`
+      status !== "WORKING" ? config.phone === AXEL_WHATSAPP
+        ? `La sesión del 5483 está en ${status}. Chapa no la reconecta. Revisá el aviso de WhatsApp Business en el teléfono antes de intentar una vinculación manual.`
+        : `La sesión «${config.session}» está en ${status}: abrí el dashboard de WAHA y escaneá el QR con tu WhatsApp.`
       : config.phone && me !== config.phone ? `La sesión está conectada a ${me ?? "otro número"}, no al ${config.phone} configurado para esta línea.`
       : null;
     return { configured: true, ok: !problem, status, me, problem };
@@ -433,53 +435,16 @@ export async function voiceChannelStatus(ending?: string): Promise<VoiceChannelS
 
 const businessEnding = AXEL_WHATSAPP.slice(-4);
 
+export const VOICE_RECOVERY_DISABLED = "La reconexión del 5483 está deshabilitada desde Chapa. Si WhatsApp muestra una suspensión, solicitá revisión en la aplicación. La vinculación se revisa manualmente; Chapa no reinicia ni desvincula la cuenta.";
+
 export async function voiceBusinessConnection() {
   const channel = await voiceChannelStatus(businessEnding);
-  if (!channel.configured) return { status: "CONFIG", ready: false, hasAccount: false, qr: null };
+  if (!channel.configured) return { status: "CONFIG", ready: false, hasAccount: false, qr: null, recoveryAllowed: false };
   const hasAccount = Boolean(channel.me);
   const status = hasAccount && channel.me !== AXEL_WHATSAPP ? "WRONG_NUMBER" : channel.status;
-  let qr: string | null = null;
-  if (status === "SCAN_QR_CODE") {
-    const config = prospectWaha(businessEnding)!;
-    try {
-      const response = await waha(config, `/api/${config.session}/auth/qr`, { signal: AbortSignal.timeout(5000) });
-      const body = await response.json() as { mimetype?: string; data?: string };
-      if (body.mimetype === "image/png" && typeof body.data === "string"
-        && body.data.length <= 100_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(body.data)) {
-        qr = body.data;
-      }
-    } catch {
-      // La sesión puede haberse conectado o rotado el código mientras se pedía la imagen.
-    }
-  }
-  return { status, ready: channel.ok, hasAccount, qr };
-}
-
-export async function reconnectVoiceBusiness(relink: boolean) {
-  const config = prospectWaha(businessEnding);
-  if (!config) throw new OutreachError("Falta configurar el WhatsApp Business en Turnia.");
-  await sql.begin(async (tx) => {
-    const [lock] = await tx<Array<{ acquired: boolean }>>`
-      select pg_try_advisory_xact_lock(hashtextextended('turnia-prospecting-voice-reconnect', 0)) as acquired`;
-    if (!lock.acquired) return;
-    const channel = await voiceChannelStatus(businessEnding);
-    if (!channel.configured || channel.status !== "FAILED" || (channel.me && channel.me !== config.phone)) return;
-    const path = `/api/sessions/${config.session}`;
-    const change = (action: string) => waha(config, `${path}/${action}`, {
-      method: "POST", body: "{}", signal: AbortSignal.timeout(8000),
-    });
-    try {
-      if (relink) {
-        const result = await change("logout");
-        const session = await result.json() as { status?: string };
-        if (session.status === "STOPPED") await change("start");
-      } else {
-        await change("restart");
-      }
-    } catch {
-      throw new OutreachError("WAHA no pudo recuperar la sesión. Revisá su estado y volvé a intentar.");
-    }
-  });
+  // FAILED no identifica la causa: puede ser una suspensión. Esta vista solo observa.
+  // qr:null mantiene el contrato de las pestañas anteriores sin ofrecer otra vinculación.
+  return { status, ready: channel.ok, hasAccount, qr: null, recoveryAllowed: false };
 }
 
 async function requireChannel(ending?: string): Promise<ProspectWaha> {

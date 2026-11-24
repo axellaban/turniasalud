@@ -1,5 +1,19 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Conexión activa del consultorio — 24/11/2026, tarde
+
+- El usuario configuró el 3765 en `n8n/waha`. Se comprobó `WORKING` con la cuenta correcta. La instancia exclusiva anterior seguía en `FAILED`; un único reinicio conservando la autenticación no la recuperó. No se cerró sesión ni se pidió otro QR.
+- La firma del webhook de la sesión activa fue aceptada por Turnia, pero el evento de estado inocuo fue descartado como «otra sesión»: la sesión real es `default` y la configuración de la aplicación no coincidía. También había un 401 histórico al consultar WAHA.
+- `WAHA_CONNECTION_TRANSPORTS` permite corregir únicamente URL, API key, sesión y revisión de una conexión existente, preservando la variable sensible `WAHA_CONNECTIONS` completa y sin cambiar clínica, teléfono, habilitación ni firma. No sobrescribir el secreto original con una reconstrucción parcial.
+- La recepción real debe comprobarse después del despliegue, sin reenviar mensajes viejos ni pruebas a pacientes. Las campañas y sus automáticas conservan su configuración.
+
+## Protección del WhatsApp de prospección — 24/11/2026
+
+- Axel informó una suspensión del 5483 en WhatsApp Business. No se confirmó la causa: `FAILED` no distingue una suspensión de otros fallos y los logs históricos no estaban disponibles.
+- La recuperación previa solo reinició y renovó la sesión del 3765. Se encontró otra vía preexistente: Chapa intentaba recuperar el 5483 automáticamente al detectar `FAILED` con el diálogo de audios abierto. No se pudo establecer si se ejecutó durante este incidente ni si influyó en la suspensión.
+- Se retira esa automatización y la gestión de sesiones desde Chapa. Turnia rechaza `action: reconnect` con HTTP 423 y `reconnection_disabled`, incluso para pestañas que conservaron el código anterior. La vista de conexión solo consulta el estado; no solicita QR ni inicia, reinicia o desvincula una sesión.
+- No reactivar la línea, generar QR ni cambiar servicios, imágenes, claves o volúmenes como parte de este arreglo. La recuperación posterior requiere revisar primero el resultado en la app de WhatsApp Business y una intervención manual específica fuera de Chapa. Las pausas de envío no garantizan evitar bloqueos de WhatsApp.
+
 ## Turnia Activa · Campañas — 24/11/2026 (en curso)
 
 Rediseño de Panel → Campañas, cerrado en otra sesión. Diseño de referencia: el artefacto de diseño «Turnia Activa · Campañas» de claude.ai, con tres pantallas (Campañas, Nueva audiencia y Revisar lote). Plan y decisiones en [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md) → «Versión 2: Turnia Activa». Va en cinco PRs chicos; cada uno se mergea a main solo con CI y el preview de Vercel en verde.

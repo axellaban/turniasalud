@@ -119,7 +119,7 @@ describe.runIf(base)("audios de seguimiento", () => {
     sendVoiceFails = false;
   });
 
-  it("solo devuelve el QR del 5483 autorizado y recupera una sesión fallida sin cerrar una activa", async () => {
+  it("bloquea los reinicios y desvinculaciones del 5483, también desde pestañas anteriores", async () => {
     const { GET, POST } = await import("@/app/api/prospeccion/audio/route");
     const { CHAPA_PROSPECTING_ORIGIN } = await import("@/lib/sales/chapa-voice");
     const { createProspectingVoiceToken } = await import("@/lib/session");
@@ -134,18 +134,25 @@ describe.runIf(base)("audios de seguimiento", () => {
 
     const qrUrl = url + "?view=connection";
     expect((await GET(new Request(qrUrl))).status).toBe(401);
-    expect((await reconnect(true)).status).toBe(200);
-    expect(calls.map((call) => call.path)).toEqual(["/api/sessions/secondary"]);
+    for (const status of ["FAILED", "STARTING", "STOPPED", "SCAN_QR_CODE", "WORKING"]) {
+      secondarySession.status = status;
+      for (const relink of [true, false]) {
+        const result = await reconnect(relink);
+        expect(result.status).toBe(423);
+        expect(await result.json()).toMatchObject({ code: "reconnection_disabled" });
+      }
+    }
+    // Ningún POST de recuperación llega a WAHA, ni se consulta otra línea.
+    expect(calls).toEqual([]);
 
-    secondarySession.status = "FAILED";
-    expect((await reconnect(false)).status).toBe(200);
-    const result = await GET(new Request(qrUrl, { headers }));
-    expect(result.headers.get("cache-control")).toBe("private, no-store");
-    expect(await result.json()).toEqual({ status: "SCAN_QR_CODE", ready: false, hasAccount: false, qr: "aW1hZ2U=" });
-    expect(calls.map((call) => call.path)).toEqual([
-      "/api/sessions/secondary", "/api/sessions/secondary", "/api/sessions/secondary/restart",
-      "/api/sessions/secondary", "/api/secondary/auth/qr",
-    ]);
+    // Consultar la conexión sigue siendo una lectura, incluso si WAHA espera un QR.
+    for (const status of ["FAILED", "STARTING", "STOPPED", "SCAN_QR_CODE", "WORKING"]) {
+      secondarySession.status = status;
+      const result = await GET(new Request(qrUrl, { headers }));
+      expect(result.headers.get("cache-control")).toBe("private, no-store");
+      expect(await result.json()).toEqual({ status, ready: status === "WORKING", hasAccount: true, qr: null, recoveryAllowed: false });
+    }
+    expect(calls.map((call) => call.path)).toEqual(Array(5).fill("/api/sessions/secondary"));
   });
 
   it("sugiere contactos con chats, también los @lid, sin confirmar líneas ni mandar nada", async () => {

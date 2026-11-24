@@ -8,7 +8,6 @@ import {
   forbidsLink,
   listVoiceNotes,
   needsLink,
-  reconnectVoiceBusiness,
   saveBrowserVoiceNote,
   sendVoiceTest,
   sendVoiceToProspect,
@@ -27,6 +26,7 @@ import {
   VOICE_GROUPS,
   VOICE_MAX_BYTES,
   VOICE_PANEL_TEMPLATES,
+  VOICE_RECOVERY_DISABLED,
   voiceNeedsSender,
   voiceTextOnly,
 } from "@/lib/sales/voice-outreach";
@@ -163,8 +163,8 @@ export async function POST(request: Request) {
       }
     }
     if (data.action === "reconnect") {
-      await reconnectVoiceBusiness(data.relink);
-      return json({ ok: true });
+      // También bloquea el código viejo de una pestaña que todavía intente recuperarse sola.
+      return json({ error: VOICE_RECOVERY_DISABLED, code: "reconnection_disabled" }, 423);
     }
     if (data.action === "source") {
       await setVoiceSender(data.person, data.sender, data.confirmed);
