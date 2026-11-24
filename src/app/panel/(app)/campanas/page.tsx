@@ -9,6 +9,7 @@ import { describeRules, parseRules } from "@/lib/audience-rules";
 import { listSavedAudiences } from "@/lib/saved-audiences";
 import { OPT_OUT_FOOTER } from "@/lib/whatsapp";
 import { formatDate } from "@/lib/time";
+import { readWaitlist } from "@/lib/waitlist";
 import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Campaign, type CampaignType } from "@/lib/types";
 import { campaignFromSavedAudienceAction, prepareCampaignAction, toggleRecipientAction } from "../../campaign-actions";
 import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass, secondaryButtonClass } from "@/components/ui";
@@ -128,7 +129,7 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
   const [clinic, user] = await Promise.all([getPanelClinic(), getPanelUser()]);
   const isAdmin = user.role === "admin";
   const autoOn = new Set(clinic.auto_campaigns ?? []);
-  const [opp, campaigns, active, [base], types, usage, saved] = await Promise.all([
+  const [opp, campaigns, active, [base], types, usage, saved, waitlist] = await Promise.all([
     opportunities(clinic),
     sql<Campaign[]>`select * from campaigns where clinic_id = ${clinic.id} order by created_at desc limit 30`,
     activeCampaigns(clinic.id),
@@ -141,6 +142,7 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} and active order by specialty, name`,
     lineUsage(clinic),
     listSavedAudiences(clinic.id),
+    readWaitlist(clinic.id),
   ]);
   // Audiencias propias guardadas: cuántos y cuánto valen hoy (las primeras 4).
   const savedCards = await Promise.all(
@@ -257,7 +259,7 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
           />
           <article className="flex min-h-40 flex-col rounded-2xl border border-brand-900/10 bg-white p-4">
             <span className="text-xs text-brand-900/65">Lista de espera</span>
-            <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{byType.get("lista_espera")!.members.length.toLocaleString("es-AR")}</strong>
+            <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{waitlist.total.toLocaleString("es-AR")}</strong>
             <span className="text-xs text-brand-900/65">Se avisa sola al liberarse un turno</span>
             <div className="mt-auto pt-3">
               <Badge tone="blue">Automática</Badge>
