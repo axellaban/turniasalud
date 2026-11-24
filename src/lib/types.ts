@@ -44,6 +44,8 @@ export type Clinic = {
   auto_campaigns: AutoCampaignType[];
   /** Seguimiento a quien no responde (secuencias de campañas). Apagado por defecto; lo prende el administrador. */
   sequences_enabled: boolean;
+  /** Quién manda los recordatorios de turno cuando no es Turnia (ej. «Smile Connect»); null = Turnia. */
+  external_reminders: string | null;
   /** Veces que se le vuelve a escribir a quien no contestó los horarios que le ofreció el agente (0 a 2). */
   followup_attempts: number;
   /** Horas que se espera antes del primer seguimiento. */
@@ -329,6 +331,9 @@ export type Campaign = {
   automatic: boolean;
   /** Mensajes por paciente como máximo, contando el primero (secuencia). */
   max_messages: number;
+  /** La secuencia se corta si el paciente responde / saca turno (la baja corta siempre). */
+  stop_on_reply: boolean;
+  stop_on_booking: boolean;
   created_at: string;
   sent_at: string | null;
 };
@@ -359,4 +364,9 @@ export type CampaignRecipient = {
   /** Lo envió el equipo desde su WhatsApp (chat abierto desde el panel con el mensaje escrito). */
   manual: boolean;
   created_at: string;
+  /** Secuencia: mensajes recibidos, cuándo toca el próximo paso y por qué se cortó. */
+  messages_sent: number;
+  last_message_at: string | null;
+  next_step_at: string | null;
+  sequence_stopped: string | null;
 };

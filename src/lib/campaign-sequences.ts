@@ -33,6 +33,8 @@ type DueRow = {
   template_name: string;
   template_language: string;
   max_messages: number;
+  stop_on_reply: boolean;
+  stop_on_booking: boolean;
   messages_sent: number;
   sent_at: string;
   last_message_at: string;
@@ -50,10 +52,13 @@ type DueRow = {
 };
 
 /** Por qué no se le escribe de nuevo (null = toca el seguimiento). */
-export function stopReason(row: Pick<DueRow, "contact_opt_out" | "replied" | "booked" | "messages_sent" | "max_messages" | "phone">): string | null {
+export function stopReason(
+  row: Pick<DueRow, "contact_opt_out" | "replied" | "booked" | "messages_sent" | "max_messages" | "phone"> & Partial<Pick<DueRow, "stop_on_reply" | "stop_on_booking">>,
+): string | null {
+  // La baja corta siempre; responder y sacar turno, salvo que la campaña diga lo contrario.
   if (row.contact_opt_out) return "Pidió la baja";
-  if (row.replied) return "Respondió";
-  if (row.booked) return "Sacó turno";
+  if (row.replied && row.stop_on_reply !== false) return "Respondió";
+  if (row.booked && row.stop_on_booking !== false) return "Sacó turno";
   if (row.messages_sent >= row.max_messages) return "Llegó al máximo de mensajes";
   if (!row.phone) return "No tiene un celular que sirva para WhatsApp";
   return null;
@@ -83,7 +88,7 @@ async function runClinicSequences(clinic: Clinic, now: Date): Promise<SequenceRu
   if (!usage.capped) return { ...run, skipped: "Los seguimientos salen solo por WAHA: por el WhatsApp oficial hace falta un template aprobado." };
 
   const due = await sql<DueRow[]>`
-    select r.id, r.campaign_id, c.name as campaign_name, c.type as campaign_type, c.goal, c.template_name, c.template_language, c.max_messages,
+    select r.id, r.campaign_id, c.name as campaign_name, c.type as campaign_type, c.goal, c.template_name, c.template_language, c.max_messages, c.stop_on_reply, c.stop_on_booking,
       r.messages_sent, r.sent_at, r.last_message_at, r.next_step_at, r.detail, r.context,
       p.id as patient_id, p.full_name, p.phone, p.contact_opt_out,
       s.message as step_message, nx.delay_days as next_delay,

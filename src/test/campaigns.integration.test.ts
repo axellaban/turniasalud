@@ -229,7 +229,20 @@ describe.runIf(base)("campañas para activar la base", () => {
     const [campaign] = await sql<Array<{ id: string }>>`select id from campaigns where type = 'recall'`;
     const render = async (page: Promise<unknown>) => renderToStaticMarkup((await page) as React.ReactElement);
     const index = await render((await import("@/app/panel/(app)/campanas/page")).default());
-    for (const text of ["Tu base para volver a agendar", "Controles vencidos", "Pacientes inactivos", "Controles periódicos", "Reglas de contacto"]) expect(index).toContain(text);
+    for (const text of [
+      "Audiencias",
+      "Controles vencidos",
+      "Inactivos +12 meses",
+      "Presupuestos sin iniciar",
+      "Conectar origen",
+      "Del día a día",
+      "Resultados ·",
+      "Contactados",
+      "Vinieron",
+      "Cola de envíos",
+      "Controles periódicos",
+      "Reglas de contacto",
+    ]) expect(index).toContain(text);
     const detail = await render(
       (await import("@/app/panel/(app)/campanas/[id]/page")).default({ params: Promise.resolve({ id: campaign.id }), searchParams: Promise.resolve({ ver: "enviados" }) } as never),
     );
@@ -256,6 +269,67 @@ describe.runIf(base)("campañas para activar la base", () => {
     expect(await sql`select id from patients where phone in ('5491155550101', '5493515550102')`).toHaveLength(2);
     expect(await sql`select id from patient_visits where import_id = ${importId}`).toHaveLength(0);
     expect((await sql`select undone_at from patient_imports where id = ${importId}`)[0].undone_at).not.toBeNull();
+  });
+
+  it("la pantalla nueva: desglose de la audiencia, resultados en 4 etapas, cola con motivos y ajustes de la secuencia", async () => {
+    const board = await import("@/lib/campaign-board");
+    const clinic = await clinicLib.getClinic();
+    const [campaign] = await sql<Array<{ id: string; max_messages: number; type: string }>>`select * from campaigns where type = 'recall' order by created_at limit 1`;
+
+    // Desglose: quienes cumplen la regla menos los que quedan afuera, y cada uno con su motivo.
+    const breakdown = await campaigns.audienceBreakdown(clinic, "recall");
+    const reachable = (await campaigns.computeAudience(clinic, "recall")).filter((m) => m.reachable).length;
+    expect(breakdown.reachable).toBe(reachable);
+    expect(breakdown.matching).toBe(breakdown.reachable + breakdown.optedOut + breakdown.hasAppointment + breakdown.recentCampaign + breakdown.noPhone);
+    expect(breakdown.hasAppointment + breakdown.recentCampaign).toBeGreaterThan(0);
+
+    // Resultados: contactados (enviados de verdad) → respondieron → sacaron turno → vinieron.
+    const results = await board.campaignResults(clinic, campaign.id, "todo");
+    expect(results.contacted).toBeGreaterThan(0);
+    expect(results.booked).toBeGreaterThanOrEqual(1);
+    expect(results.replied).toBeGreaterThanOrEqual(results.booked);
+    expect(results.attended).toBeLessThanOrEqual(results.booked);
+    expect(board.stepRate(1, 4)).toBe(25);
+    expect(board.stepRate(1, 0)).toBeNull();
+
+    // Cola: María quedó afuera porque la sacó el equipo, con la acción para volver a sumarla.
+    const queue = await board.campaignQueue(clinic, campaign as never, "fuera");
+    const maria = queue.rows.find((r) => r.name === "María González");
+    expect(maria).toMatchObject({ kind: "fuera", step: "Fuera de la cola", action: { label: "Volver a sumar", include: true } });
+    const all = await board.campaignQueue(clinic, campaign as never, "todos");
+    expect(all.rows.length).toBe(all.counts.cola + all.counts.sofi + all.counts.fuera + all.counts.hecho);
+    expect(board.nextSendLabel({ timezone: "America/Argentina/Buenos_Aires" }, new Date("2026-11-28T15:00:00Z"))).toBe("lun 9:00");
+    expect(board.nextSendLabel({ timezone: "America/Argentina/Buenos_Aires" }, new Date("2026-11-24T23:30:00Z"))).toBe("Mañana 9:00");
+
+    // Secuencia: a los 7 días, sin cortar al responder; la baja corta siempre.
+    expect(await actions.saveSequenceAction(undefined, form({ clinic_id: CLINIC, id: campaign.id, delay_days: "7", max_messages: "2", stop_on_booking: "on" }))).toMatchObject({ ok: true });
+    expect((await sql`select stop_on_reply, stop_on_booking, max_messages from campaigns where id = ${campaign.id}`)[0]).toEqual({ stop_on_reply: false, stop_on_booking: true, max_messages: 2 });
+    expect((await sql`select delay_days from campaign_steps where campaign_id = ${campaign.id} and position = 2`)[0].delay_days).toBe(7);
+    const { stopReason } = await import("@/lib/campaign-sequences");
+    const row = { contact_opt_out: false, replied: true, booked: false, messages_sent: 1, max_messages: 2, phone: "549", stop_on_reply: false, stop_on_booking: true };
+    expect(stopReason(row)).toBeNull();
+    expect(stopReason({ ...row, contact_opt_out: true })).toBe("Pidió la baja");
+    expect(await actions.saveSequenceAction(undefined, form({ clinic_id: CLINIC, id: campaign.id, delay_days: "40", max_messages: "2" }))).toMatchObject({ ok: false });
+    await actions.saveSequenceAction(undefined, form({ clinic_id: CLINIC, id: campaign.id, delay_days: "5", max_messages: "2", stop_on_reply: "on", stop_on_booking: "on" }));
+
+    // Mensajes: primer mensaje y seguimiento propios.
+    expect(
+      await actions.saveCampaignTextsAction(undefined, form({ clinic_id: CLINIC, id: campaign.id, message: "Hola {nombre}, te toca {detalle}.", followup: "{nombre}, ¿lo vemos?", goal: "Reservar el control." })),
+    ).toMatchObject({ ok: true });
+    expect((await sql`select message from campaign_steps where campaign_id = ${campaign.id} and position = 2`)[0].message).toBe("{nombre}, ¿lo vemos?");
+    expect((await sql`select goal from campaigns where id = ${campaign.id}`)[0].goal).toBe("Reservar el control.");
+
+    // Recordatorios que manda otro sistema: la automática no manda uno repetido.
+    expect(campaigns.automationBlock({ is_demo: false, auto_campaigns: ["recordatorio"], external_reminders: "Smile Connect" }, "recordatorio")).toContain("Smile Connect");
+    const render = async (page: Promise<unknown>) => renderToStaticMarkup((await page) as React.ReactElement);
+    await sql`update clinics set external_reminders = 'Smile Connect' where id = ${CLINIC}`;
+    const html = await render(
+      (await import("@/app/panel/(app)/campanas/page")).default({ searchParams: Promise.resolve({ campana: campaign.id, cola: "fuera", periodo: "todo" }) } as never),
+    );
+    expect(html).toContain("lo manda Smile Connect");
+    expect(html).toContain("Volver a sumar");
+    expect(html).toContain("Seguimiento");
+    await sql`update clinics set external_reminders = null where id = ${CLINIC}`;
   });
 
   it("las automáticas salen apagadas, corren solo donde se prendieron, retoman lo que dejó el tope y cuentan 14 días", async () => {
