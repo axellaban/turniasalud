@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "../db";
+import { readWaitlist, type WaitlistFilters } from "../waitlist";
 import { getCatalog, getClinic, isUuid } from "../clinic";
 import { displayPhone, normalizePhone } from "../phone";
 import { PAUSE_HOURS, isMuted, muteNumber, unmuteNumber } from "../chat-guard";
@@ -22,6 +23,12 @@ function requireStaff(ctx: ToolContext): void {
 function dayStart(key: string, timeZone: string): Date {
   const [y, m, d] = key.split("-").map(Number);
   return zonedTimeToUtc(y, m, d, 0, 0, timeZone);
+}
+
+/** Lista actual, solo para los números autorizados del consultorio. */
+export async function viewWaitlist(ctx: ToolContext, input: WaitlistFilters) {
+  requireStaff(ctx);
+  return readWaitlist(ctx.clinicId, input);
 }
 
 const STATUS_LABEL: Record<string, string> = {

@@ -283,6 +283,17 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   // Equipo del consultorio (acceso total por WhatsApp).
   {
+    name: "ver_lista_espera",
+    description: `${STAFF} Lee ahora la lista de espera de la clínica, incluidas las altas de hoy: pacientes, celulares, prestación, profesional, preferencias, estado y turno que conservan. Usala cada vez que pregunte por la lista; no respondas de memoria. Por defecto trae todas las inscripciones pendientes, activas y ofrecidas, sin límite de fecha. Tiene páginas de 30: seguí siguiente_pagina para una lista completa. No agrega ni avisa a pacientes.`,
+    params: {
+      desde: { type: "string", description: `Filtrar por fecha de inscripción, inclusive. ${isoDate} Para las altas de hoy, usá la fecha de hoy de la clínica; para la lista completa, omitilo.` },
+      profesional_id: { type: "string", description: "id del profesional, solo si pide filtrar por uno." },
+      estado: { type: "string", description: "Por defecto pendientes (activa y ofrecida). Todas incluye también resueltas y canceladas.", enum: ["pendientes", "activa", "ofrecida", "resuelta", "cancelada", "todas"] },
+      pagina: { type: "number", description: "Número entero de página desde 1. Usá siguiente_pagina si la lista no entró completa." },
+    },
+    schema: z.object({ desde: z.string().optional(), profesional_id: z.string().optional(), estado: z.enum(["pendientes", "activa", "ofrecida", "resuelta", "cancelada", "todas"]).optional(), pagina: z.number().int().min(1).max(10000).optional() }),
+  },
+  {
     name: "ver_agenda",
     description: `${STAFF} Muestra los turnos de la agenda de uno o varios días (hasta 14), de toda la clínica o de un profesional, con su turno_id y paciente_id.`,
     params: {

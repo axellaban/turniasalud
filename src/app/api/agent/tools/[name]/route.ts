@@ -22,7 +22,7 @@ import {
   ToolError,
   type ToolContext,
 } from "@/lib/agent/service";
-import { agentActivityForStaff, appointmentDetailForStaff, blockAgenda, createPatientForStaff, listOpenTasks, pauseChatForStaff, reactivateChatForStaff, resolveTaskForStaff, searchPatients, viewAgenda } from "@/lib/agent/staff-tools";
+import { agentActivityForStaff, appointmentDetailForStaff, blockAgenda, createPatientForStaff, listOpenTasks, pauseChatForStaff, reactivateChatForStaff, resolveTaskForStaff, searchPatients, viewAgenda, viewWaitlist } from "@/lib/agent/staff-tools";
 import { isUuid } from "@/lib/clinic";
 import { queueAppointmentNotice, sendNoticesLater, type NoticeKind } from "@/lib/clinic-notices";
 import { sql } from "@/lib/db";
@@ -48,6 +48,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   guardar_ficha_salud: saveHealthForm,
   silenciar_numero: muteSender,
   // Equipo del consultorio (acceso total por WhatsApp).
+  ver_lista_espera: viewWaitlist,
   ver_agenda: viewAgenda,
   detalle_turno: appointmentDetailForStaff,
   turnos_de_sofi: agentActivityForStaff,

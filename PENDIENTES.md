@@ -1,5 +1,13 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Lista de espera consultable por el equipo — 24/11/2026
+
+- `ver_lista_espera` lee la base en cada pedido de un número con acceso total por WhatsApp. Incluye activas y ofrecidas, también las altas de hoy, con paciente, celular, prestación, profesional, preferencias, estado y turno que conserva. Tiene filtro desde una fecha local, por profesional/estado y páginas de 30 sin ocultar el total.
+- Panel → Campañas → Lista de espera → «Ver lista» abre `/panel/lista-espera`, con «Todos los pendientes», «Anotados hoy» y actualización manual. Usa la misma lectura que Sofi, limitada a la clínica de la sesión.
+- Para que Sofi use la herramienta nueva, ejecutar «Actualizar a Sofi» después del despliegue. Una inscripción aceptada se registra con `anotar_lista_espera`; una propuesta pendiente en un chat no se incorpora por inferencia.
+- Este cambio no activa campañas, no manda mensajes a pacientes ni incorpora avisos de cancelaciones hechas directamente en Smile Connect. Esas mejoras conservan su autorización pendiente.
+- Control de las altas de hoy: contrastar la lista real con los pedidos aceptados de las conversaciones de Mónica y Adriana. El resultado de publicación y revisión se registra al cerrar la tarea.
+
 ## Conexión activa del consultorio — 24/11/2026, tarde
 
 - El usuario configuró el 3765 en `n8n/waha`. Se comprobó `WORKING` con la cuenta correcta. La instancia exclusiva anterior seguía en `FAILED`; un único reinicio conservando la autenticación no la recuperó. No se cerró sesión ni se pidió otro QR.
