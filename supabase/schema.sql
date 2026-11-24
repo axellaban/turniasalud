@@ -2014,3 +2014,21 @@ end $$;
 -- Null conserva todos los días de la agenda. El equipo sigue pudiendo operar los demás días.
 alter table clinics add column if not exists booking_weekdays smallint[]
   check (booking_weekdays <@ array[0,1,2,3,4,5,6]::smallint[] and cardinality(booking_weekdays) > 0 and array_position(booking_weekdays, null) is null);
+
+-- ---------------------------------------------------------------------------
+-- Turnia Activa · PR 1 (24/11/2026): campañas automáticas por clínica, apagadas por defecto.
+-- `auto_campaigns` lista los tipos que la tarea programada puede mandar solos en esa clínica.
+-- Vacío = ninguna (el 18/11 Axel pidió no mandar mensajes nuevos a pacientes): solo el
+-- administrador las prende desde Panel → Campañas, cuando valide canal, destinatarios y baja.
+-- `campaigns.automatic` separa lo que corre solo de los borradores del equipo: una automática
+-- retoma su campaña abierta (los que quedaron afuera del tope de 50 van primero) y nunca toma
+-- un borrador que alguien está revisando.
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists auto_campaigns text[] not null default '{}';
+alter table clinics drop constraint if exists clinics_auto_campaigns_check;
+alter table clinics add constraint clinics_auto_campaigns_check
+  check (auto_campaigns <@ array['recall', 'reactivacion', 'recordatorio', 'no_show', 'encuesta']::text[]);
+alter table campaigns add column if not exists automatic boolean not null default false;
+-- Las automáticas de antes se reconocen por su nombre («… · automática 3 nov»).
+update campaigns set automatic = true where not automatic and name like '% · automática %';
+create index if not exists campaigns_open_automatic_idx on campaigns (clinic_id, type) where automatic and status = 'enviando';

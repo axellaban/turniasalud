@@ -1,6 +1,6 @@
 # Turnia Activa — campañas para activar la base de pacientes
 
-Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el CRM, qué quedó hecho en la versión 1 y qué sigue. No contiene credenciales.
+Actualizado: 24/11/2026. Qué es Panel → Campañas, qué se decidió sobre el CRM, qué quedó hecho en la versión 1 y qué sigue. No contiene credenciales.
 
 ## Referencia: Activate de Assort
 
@@ -70,11 +70,23 @@ Actualizado: 25/10/2026. Qué es Panel → Campañas, qué se decidió sobre el 
 
 **Perfiles de demo:** se puede importar y armar campañas para mostrar la lista y el mensaje. Sofi no envía nada. Abrir el chat desde el panel sí funciona, porque lo manda una persona desde su WhatsApp.
 
-## Qué sigue (versión 2)
+## Versión 2: Turnia Activa (desde el 24/11/2026)
+
+El rediseño está en el artefacto de diseño «Turnia Activa · Campañas» (tres pantallas) y se hace en cinco PRs. El avance de cada uno está en `PENDIENTES.md`. Ideas tomadas de cómo trabaja DentiPilot, sin copiar su material: recuperar pacientes por señales, seguimiento automático a quien no responde, un piloto chico antes de escalar y resultados en 4 etapas.
+
+**PR 1 (hecho): arreglos de fondo**
+
+- **Automáticas por clínica, apagadas por defecto.** `clinics.auto_campaigns` lista los tipos que corren solos en esa clínica: recordatorios, ausentes, encuesta, controles e inactivos. La lista de espera no está: avisa sola cuando se libera un turno.
+  - Las prende o apaga el administrador en Panel → Campañas → Automáticas, con una confirmación al prender. El consultorio ve si están prendidas o apagadas.
+  - `POST /api/automations/<job>` corre en cada clínica real que la tiene prendida. Con `{ clinic_id }` corre solo en esa, y solo si está prendida. Responde `clinicas: [...]` con lo que pasó en cada una (enviada, salteada y por qué, o error).
+- **El tope de 50 no deja a nadie afuera.** Antes, cada corrida creaba una campaña nueva: los que quedaban después del 50 se perdían, porque la audiencia vuelve a ordenarse con los más recientes primero. Ahora la automática retoma su campaña abierta (`campaigns.automatic = true`, estado `enviando`). Suma a los nuevos al final y les escribe primero a los que esperaban. Los borradores del equipo nunca los toma una automática, y «Revisar y enviar» nunca abre una automática.
+- **Ventana de atribución de 14 días** (`ATTRIBUTION_DAYS` en `src/lib/types.ts`). Un turno cuenta para la campaña si se sacó dentro de los 14 días del mensaje; antes contaba cualquier turno posterior, sin límite. Vale para los resultados y para marcar «agendó» cuando el paciente responde.
+
+## Qué sigue (lo anterior a Turnia Activa)
 
 1. **Secuencias:** si no responde en unos días, un segundo mensaje y después una llamada de Sofi. Twilio ya está configurado; las llamadas se hacen solo con autorización.
 2. **Respuestas de lo enviado a mano:** marcar «Respondió», «No le interesa» o «Pidió la baja» desde la lista, porque esas respuestas llegan al WhatsApp de la clínica y no a Sofi.
-3. **Automáticas por clínica:** un interruptor en el panel por tipo de campaña. Hoy las programa un workflow de n8n global y desactivado.
+3. ~~Automáticas por clínica~~: hecho en el PR 1 de Turnia Activa. El workflow de n8n sigue desactivado.
 4. **Segmentos preventivos por edad y sexo** (mamografía anual, antigripal, chequeo por edad). El sexo y la fecha de nacimiento ya están en la ficha (02/11/2026); falta armar los segmentos.
 5. **Órdenes y derivaciones pendientes:** las tareas `orden_medica` sin turno, como campaña.
 6. Ventanas horarias de envío y prueba A/B del mensaje.

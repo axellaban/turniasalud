@@ -1,5 +1,39 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Turnia Activa · Campañas — 24/11/2026 (en curso)
+
+Rediseño de Panel → Campañas, cerrado en otra sesión. Diseño de referencia: el artefacto de diseño «Turnia Activa · Campañas» de claude.ai, con tres pantallas (Campañas, Nueva audiencia y Revisar lote). Plan y decisiones en [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md) → «Versión 2: Turnia Activa». Va en cinco PRs chicos; cada uno se mergea a main solo con CI y el preview de Vercel en verde.
+
+**Regla:** las automáticas y las secuencias salen **apagadas**. Se prenden por clínica cuando Axel valide el canal, los destinatarios y la baja (el 18/11 dijo «por ahora no» a mensajes nuevos a pacientes).
+
+- [x] **PR 1 · Arreglos de fondo.**
+  - Automáticas por clínica: `clinics.auto_campaigns`, vacío por defecto, con interruptor en Panel → Campañas → Automáticas que solo cambia el administrador. n8n ya no llega solo a la clínica por defecto: cada job corre en las clínicas que lo tienen prendido y saltea las demo.
+  - El tope de 50 ya no deja pacientes sin mensaje: la automática retoma su campaña abierta (`campaigns.automatic`) y nunca toma un borrador del equipo.
+  - Atribución de 14 días (`ATTRIBUTION_DAYS`).
+- [ ] **PR 2 · Secuencias:**
+  - pasos por campaña y fecha del próximo paso por paciente;
+  - seguimiento a los 5 días sin respuesta, con un máximo de 2 mensajes;
+  - se corta si responde o saca turno por cualquier canal;
+  - corre en la tarea de cada 10 minutos (`/api/automations/calendario`), de lunes a viernes de 9 a 20, con un tope de 60 por día y por línea WAHA;
+  - apagadas por defecto.
+- [ ] **PR 3 · Pantalla de Campañas:**
+  - audiencias con cantidad, valor y una acción (o el motivo si no hay datos, como «Presupuestos sin iniciar → Conectar origen»);
+  - «WhatsApp del consultorio · hoy N de 60»;
+  - borradores y una línea «Del día a día» (los recordatorios de Guerra–Mininni los manda Smile Connect);
+  - resultados en 4 etapas: contactados → respondieron → citas agendadas → citas atendidas;
+  - una cola con motivos y acciones;
+  - el panel con las pestañas Audiencia, Secuencia y Mensaje.
+- [ ] **PR 4 · Nueva audiencia:** reglas como frase (meses sin venir, prestación, profesional, cobertura, edad, cumpleaños, faltó, control indicado), el conteo en vivo con quiénes quedan afuera y por qué, y audiencias guardadas.
+- [ ] **PR 5 · Revisar lote:** «Con Sofi» o «Desde mi WhatsApp», de a uno; marcas Respondió, No le interesa y Pidió la baja; atajos de teclado; lotes de 5 y piloto de 20.
+- Valores confirmados:
+  - atribución de 14 días;
+  - seguimiento a los 5 días, con un máximo de 2 mensajes;
+  - lotes de 5;
+  - 60 por día y por línea WAHA;
+  - piloto de 20;
+  - envío de lunes a viernes, de 9 a 20.
+- La IA se llama «Sofi». La llamada de Sofi aparece como paso futuro y no se implementa: requiere autorización. No copiar textos, diseño ni código de DentiPilot.
+
 ## WhatsApp y llamadas del consultorio — 24/11/2026
 
 - La sesión propia de WAHA estaba en FAILED. Reiniciar conservando la autenticación no la recuperó; se renovó la vinculación y quedó WORKING con la cuenta correcta. El usuario confirmó una respuesta real y el mensaje y la respuesta se comprobaron en Turnia.

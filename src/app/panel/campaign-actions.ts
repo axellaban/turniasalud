@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
-import { markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
-import { getPanelClinic, logClinicChange, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
+import { CAMPAIGN_LABELS, markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
+import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { randomUUID } from "node:crypto";
 import {
   IMPORT_FIELDS,
@@ -20,7 +20,7 @@ import {
   type ImportPatient,
 } from "@/lib/patient-import";
 import { parseDateKey } from "@/lib/time";
-import { CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
+import { AUTO_CAMPAIGN_TYPES, CAMPAIGN_TYPES, type CampaignType } from "@/lib/types";
 
 // Campañas y base de pacientes: preparar, revisar y enviar campañas; frecuencia de controles,
 // reglas de contacto e importación de pacientes desde el sistema anterior de la clínica.
@@ -165,6 +165,25 @@ export async function saveContactRulesAction(_prev: CampaignFormState | undefine
   await logClinicChange(clinic.id, "Reglas de campañas");
   refresh();
   return { ok: true, message: "Reglas guardadas." };
+}
+
+/**
+ * Prende o apaga una campaña automática en la clínica. Solo el administrador: el consultorio la ve
+ * pero no la cambia (las automáticas le escriben a pacientes reales sin que nadie revise la lista).
+ */
+export async function setAutoCampaignAction(form: FormData) {
+  await requireAdmin();
+  const clinic = await getPanelClinic(form);
+  const type = text(form, "type");
+  if (!type || !(AUTO_CAMPAIGN_TYPES as readonly string[]).includes(type)) return;
+  const on = text(form, "enabled") === "1";
+  await sql`
+    update clinics set auto_campaigns = ${on
+      ? sql`case when ${type} = any(auto_campaigns) then auto_campaigns else array_append(auto_campaigns, ${type}) end`
+      : sql`array_remove(auto_campaigns, ${type})`}
+    where id = ${clinic.id}`;
+  await logClinicChange(clinic.id, `Campaña automática «${CAMPAIGN_LABELS[type as CampaignType].label}» ${on ? "prendida" : "apagada"}`);
+  refresh();
 }
 
 /** Control indicado para un paciente puntual: entra en el recall cuando llega la fecha. */

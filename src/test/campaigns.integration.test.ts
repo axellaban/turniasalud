@@ -257,4 +257,81 @@ describe.runIf(base)("campañas para activar la base", () => {
     expect(await sql`select id from patient_visits where import_id = ${importId}`).toHaveLength(0);
     expect((await sql`select undone_at from patient_imports where id = ${importId}`)[0].undone_at).not.toBeNull();
   });
+
+  it("las automáticas salen apagadas, corren solo donde se prendieron, retoman lo que dejó el tope y cuentan 14 días", async () => {
+    const { POST } = await import("@/app/api/automations/[job]/route");
+    const run = (job: string, body?: unknown) =>
+      POST(new Request(`https://turnia.test/api/automations/${job}`, { method: "POST", headers: { "x-turnia-secret": "test-tools" }, body: body ? JSON.stringify(body) : undefined }), {
+        params: Promise.resolve({ job }),
+      }).then((r) => r.json());
+    mocks.sendWhatsAppTemplate.mockClear();
+
+    // Apagadas por defecto: n8n no le escribe a nadie, ni siquiera a la clínica por defecto.
+    expect((await clinicLib.getClinic()).auto_campaigns).toEqual([]);
+    expect(await run("reactivacion")).toMatchObject({ ok: true, clinicas: [] });
+    expect(await run("reactivacion", { clinic_id: CLINIC })).toMatchObject({ ok: true, clinicas: [{ clinic_id: CLINIC, skipped: "Apagada en esta clínica." }] });
+    expect(mocks.sendWhatsAppTemplate).not.toHaveBeenCalled();
+    expect(campaigns.automationBlock({ is_demo: false, auto_campaigns: [] }, "lista_espera")).toContain("avisa sola");
+    expect(campaigns.automationBlock({ is_demo: true, auto_campaigns: ["recall"] }, "recall")).toContain("demo");
+
+    // 55 inactivos más (sin celular repetido), con la última visita en días distintos.
+    const extra = Array.from({ length: 55 }, (_, i) => ({ name: `Inactivo ${String(i).padStart(2, "0")}`, phone: `5491166${String(600000 + i)}`, months: 20, days: i }));
+    const insertInactive = async (rows: typeof extra) => {
+      for (const r of rows) {
+        const [p] = await sql<Array<{ id: string }>>`insert into patients (clinic_id, full_name, phone) values (${CLINIC}, ${r.name}, ${r.phone}) returning id`;
+        await sql`insert into patient_visits (clinic_id, patient_id, service, visited_at) values (${CLINIC}, ${p.id}, 'Consulta', ${isoAgo(r.months * 30 + r.days)})`;
+      }
+    };
+    await insertInactive(extra);
+
+    // Un borrador del equipo de la misma campaña: la automática nunca lo toma.
+    const draft = await redirectedId(actions.prepareCampaignAction(form({ clinic_id: CLINIC, type: "reactivacion" })));
+
+    // El administrador la prende (una vez, aunque toque dos veces).
+    await actions.setAutoCampaignAction(form({ clinic_id: CLINIC, type: "reactivacion", enabled: "1" }));
+    await actions.setAutoCampaignAction(form({ clinic_id: CLINIC, type: "reactivacion", enabled: "1" }));
+    await actions.setAutoCampaignAction(form({ clinic_id: CLINIC, type: "lista_espera", enabled: "1" }));
+    expect((await clinicLib.getClinic()).auto_campaigns).toEqual(["reactivacion"]);
+
+    const audience = (await campaigns.computeAudience(await clinicLib.getClinic(), "reactivacion")).filter((m) => m.reachable);
+    expect(audience.length).toBeGreaterThan(50);
+    const first = await run("reactivacion");
+    expect(first.ok).toBe(true);
+    expect(first.clinicas).toHaveLength(1);
+    expect(first.clinicas[0]).toMatchObject({ clinic_id: CLINIC, sent: 50, remaining: audience.length - 50, resumed: false });
+    const auto = first.clinicas[0].campaign_id as string;
+    expect((await sql`select automatic, status from campaigns where id = ${auto}`)[0]).toEqual({ automatic: true, status: "enviando" });
+
+    // Entre corridas aparecen tres inactivos más recientes (quedan primeros en la audiencia): igual, la
+    // segunda corrida sigue la misma campaña y les escribe a los que quedaron y a los nuevos.
+    await insertInactive(extra.slice(0, 3).map((r, i) => ({ name: `Nuevo ${i}`, phone: `5491177${String(700000 + i)}`, months: 13, days: i })));
+    const second = await run("reactivacion");
+    expect(second.clinicas[0]).toMatchObject({ campaign_id: auto, resumed: true, sent: audience.length - 50 + 3, remaining: 0 });
+    const phones = mocks.sendWhatsAppTemplate.mock.calls.map(([msg]) => (msg as { userId: string }).userId);
+    expect(new Set(phones).size).toBe(phones.length);
+    for (const m of audience) expect(phones).toContain(m.phone);
+    expect((await sql`select status from campaigns where id = ${auto}`)[0].status).toBe("finalizada");
+    // El borrador del equipo sigue intacto y prepararla de nuevo abre ese, no la automática.
+    expect(await sql`select status from campaign_recipients where campaign_id = ${draft} and status <> 'pendiente' and status <> 'excluido'`).toHaveLength(0);
+    expect(await redirectedId(actions.prepareCampaignAction(form({ clinic_id: CLINIC, type: "reactivacion" })))).toBe(draft);
+
+    // Atribución: un turno cuenta si se sacó dentro de los 14 días del mensaje.
+    const [target] = await sql<Array<{ id: string; patient_id: string }>>`
+      select r.id, r.patient_id from campaign_recipients r join patients p on p.id = r.patient_id where r.campaign_id = ${auto} and p.full_name = 'Nuevo 0'`;
+    const start = new Date(Date.now() + 5 * 86400_000);
+    await sql`
+      insert into appointments (clinic_id, patient_id, professional_id, appointment_type_id, starts_at, ends_at, status, source)
+      values (${CLINIC}, ${target.patient_id}, '00000000-0000-4000-8000-0000000000a3', ${LIMPIEZA}, ${start}, ${new Date(start.getTime() + 40 * 60_000)}, 'confirmado', 'panel')`;
+    await sql`update campaign_recipients set sent_at = now() - interval '20 days' where id = ${target.id}`;
+    expect((await campaigns.campaignStats(CLINIC, [auto])).get(auto)).toMatchObject({ booked: 0, value: 0 });
+    await sql`update campaign_recipients set sent_at = now() - interval '13 days' where id = ${target.id}`;
+    expect((await campaigns.campaignStats(CLINIC, [auto])).get(auto)).toMatchObject({ booked: 1, value: 40000 });
+
+    // Apagarla la saca de la lista y la próxima corrida no manda nada.
+    await actions.setAutoCampaignAction(form({ clinic_id: CLINIC, type: "reactivacion", enabled: "0" }));
+    expect((await clinicLib.getClinic()).auto_campaigns).toEqual([]);
+    mocks.sendWhatsAppTemplate.mockClear();
+    expect(await run("reactivacion")).toMatchObject({ ok: true, clinicas: [] });
+    expect(mocks.sendWhatsAppTemplate).not.toHaveBeenCalled();
+  }, 60000);
 });

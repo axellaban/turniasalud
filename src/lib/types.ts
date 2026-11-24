@@ -40,6 +40,8 @@ export type Clinic = {
   reactivation_months: number;
   /** Días mínimos entre dos campañas para volver a sacar turno al mismo paciente (0 = sin tope). */
   contact_cooldown_days: number;
+  /** Campañas que la tarea programada manda sola en esta clínica. Vacío = ninguna (lo prende el administrador). */
+  auto_campaigns: AutoCampaignType[];
   /** Veces que se le vuelve a escribir a quien no contestó los horarios que le ofreció el agente (0 a 2). */
   followup_attempts: number;
   /** Horas que se espera antes del primer seguimiento. */
@@ -299,6 +301,16 @@ export type WaitlistEntry = {
 export const CAMPAIGN_TYPES = ["recall", "reactivacion", "recordatorio", "lista_espera", "no_show", "encuesta", "personalizada"] as const;
 export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
 
+/**
+ * Un turno cuenta para la campaña si se sacó dentro de estos días desde el mensaje (con Sofi, en el
+ * panel o por teléfono). Hasta el 24/11/2026 contaba cualquier turno posterior, sin límite.
+ */
+export const ATTRIBUTION_DAYS = 14;
+
+/** Las que pueden correr solas. La lista de espera no: avisa sola cuando se libera un turno. */
+export const AUTO_CAMPAIGN_TYPES = ["recordatorio", "no_show", "encuesta", "recall", "reactivacion"] as const satisfies readonly CampaignType[];
+export type AutoCampaignType = (typeof AUTO_CAMPAIGN_TYPES)[number];
+
 export type Campaign = {
   id: string;
   clinic_id: string;
@@ -311,6 +323,8 @@ export type Campaign = {
   message: string | null;
   /** borrador = lista para revisar · enviando = en curso (quedan pendientes) · finalizada = enviada a todos. */
   status: "borrador" | "enviando" | "finalizada";
+  /** La creó la tarea programada (no un borrador del equipo). */
+  automatic: boolean;
   created_at: string;
   sent_at: string | null;
 };

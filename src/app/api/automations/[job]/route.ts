@@ -13,7 +13,8 @@ import type { CampaignType } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Endpoints para que n8n (o cualquier cron) dispare las campañas automáticas:
+// Endpoints para que n8n (o cualquier cron) dispare las campañas automáticas. Cada una corre en las
+// clínicas que la tienen prendida (todas apagadas por defecto) o, con { clinic_id }, solo en esa:
 // POST /api/automations/recordatorios  (todos los días, ej. 10:00)
 // POST /api/automations/recall         (una vez por semana)
 // POST /api/automations/reactivacion   (una vez por mes)
@@ -91,8 +92,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
   if (!type) return NextResponse.json({ error: `Automatización desconocida. Opciones: ${[...Object.keys(JOBS), "calendario", "seguimientos", "resumen-sofi"].join(", ")}` }, { status: 404 });
   const body = (await request.json().catch(() => ({}))) as { clinic_id?: string };
   try {
-    const result = await runAutomation(type, body.clinic_id);
-    return NextResponse.json({ ok: true, job, ...result });
+    // Corre en cada clínica que la tiene prendida (Panel → Campañas → Automáticas, solo el administrador).
+    const clinicas = await runAutomation(type, body.clinic_id);
+    const errors = clinicas.filter((r) => "error" in r);
+    return NextResponse.json({ ok: errors.length === 0, job, clinicas }, { status: errors.length ? 500 : 200 });
   } catch (e) {
     return NextResponse.json({ ok: false, job, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
