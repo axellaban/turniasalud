@@ -1,43 +1,11 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-## Turnia Activa · Campañas — 24/11/2026 (en curso)
+## Turnia Activa · Campañas: revertido el 24/11/2026
 
-Rediseño de Panel → Campañas, cerrado en otra sesión. Diseño de referencia: el artefacto de diseño «Turnia Activa · Campañas» de claude.ai, con tres pantallas (Campañas, Nueva audiencia y Revisar lote). Plan y decisiones en [`PLAN_CAMPANAS.md`](PLAN_CAMPANAS.md) → «Versión 2: Turnia Activa». Va en cinco PRs chicos; cada uno se mergea a main solo con CI y el preview de Vercel en verde.
-
-**Regla:** las automáticas y las secuencias salen **apagadas**. Se prenden por clínica cuando Axel valide el canal, los destinatarios y la baja (el 18/11 dijo «por ahora no» a mensajes nuevos a pacientes).
-
-- [x] **PR 1 · Arreglos de fondo.**
-  - Automáticas por clínica: `clinics.auto_campaigns`, vacío por defecto, con interruptor en Panel → Campañas → Automáticas que solo cambia el administrador. n8n ya no llega solo a la clínica por defecto: cada job corre en las clínicas que lo tienen prendido y saltea las demo.
-  - El tope de 50 ya no deja pacientes sin mensaje: la automática retoma su campaña abierta (`campaigns.automatic`) y nunca toma un borrador del equipo.
-  - Atribución de 14 días (`ATTRIBUTION_DAYS`).
-- [x] **PR 2 · Secuencias.**
-  - Pasos por campaña en `campaign_steps`. El de «volver a sacar turno» trae un seguimiento sugerido a los 5 días.
-  - Por paciente se guarda `messages_sent`, `next_step_at` y `sequence_stopped`.
-  - Corren en `/api/automations/calendario`, la tarea de cada 10 minutos, de lunes a viernes de 9 a 20.
-  - Se cortan si el paciente responde, saca turno por cualquier canal o pide la baja.
-  - Tope de 60 por día y por línea WAHA (`campaign_messages`). También frena «Enviar con Sofi» y anota lo que el equipo manda a mano.
-  - Interruptor «Seguimiento a quien no responde» por clínica, apagado y solo para el administrador. Un paso que venció hace más de 4 días se cierra sin mandarse.
-- [ ] **PR 3 · Pantalla de Campañas:**
-  - audiencias con cantidad, valor y una acción (o el motivo si no hay datos, como «Presupuestos sin iniciar → Conectar origen»);
-  - «WhatsApp del consultorio · hoy N de 60»;
-  - borradores y una línea «Del día a día» (los recordatorios de Guerra–Mininni los manda Smile Connect);
-  - resultados en 4 etapas: contactados → respondieron → citas agendadas → citas atendidas;
-  - una cola con motivos y acciones;
-  - el panel con las pestañas Audiencia, Secuencia y Mensaje.
-- [x] **PR 4 · Nueva audiencia.**
-  - Pantalla `/panel/campanas/audiencia` con reglas que se leen como frase: meses sin venir, prestación, profesional, cobertura, edad, cumpleaños este mes, faltó a un turno y control indicado. «Presupuesto sin iniciar» queda deshabilitado hasta tener el origen.
-  - Vista previa en vivo con la cantidad, el valor, quiénes quedan afuera y por qué, y algunos nombres.
-  - Audiencias guardadas (`saved_audiences`) como tarjetas en Campañas, con «Crear campaña +» y «Editar».
-  - Las campañas de audiencia propia usan `type = 'audiencia'` y guardan sus reglas en `campaigns.audience_rules`. Cuentan para el tope entre campañas y traen el seguimiento sugerido.
-- [ ] **PR 5 · Revisar lote:** «Con Sofi» o «Desde mi WhatsApp», de a uno; marcas Respondió, No le interesa y Pidió la baja; atajos de teclado; lotes de 5 y piloto de 20.
-- Valores confirmados:
-  - atribución de 14 días;
-  - seguimiento a los 5 días, con un máximo de 2 mensajes;
-  - lotes de 5;
-  - 60 por día y por línea WAHA;
-  - piloto de 20;
-  - envío de lunes a viernes, de 9 a 20.
-- La IA se llama «Sofi». La llamada de Sofi aparece como paso futuro y no se implementa: requiere autorización. No copiar textos, diseño ni código de DentiPilot.
+- **Qué se revirtió:** los PRs 1 a 3 (automáticas por clínica, secuencias, pantalla nueva de Campañas: [#255](https://github.com/axellaban/turniasalud/pull/255), [#257](https://github.com/axellaban/turniasalud/pull/257) y [#258](https://github.com/axellaban/turniasalud/pull/258)). Lo pidió el usuario mientras se investiga por qué Sofi dejó de funcionar. El código queda igual que antes del PR 1.
+- **Hasta resolverlo:** no se publica nada de campañas.
+- **La base de datos:** conserva lo que agregaron esos PRs (columnas `auto_campaigns`, `sequences_enabled`, `external_reminders`, `automatic`, `max_messages`, `stop_on_*`, `messages_sent`, `next_step_at`, `sequence_stopped`; tablas `campaign_steps` y `campaign_messages`). Es todo agregado y el código actual no lo usa.
+- **Para volver a publicarlo:** revertir este revert. Todo está en la historia de la rama `claude/intelligent-edison-gi9t6b`. El PR 4 (nueva audiencia y audiencias guardadas) quedó hecho y probado, sin publicar, en el commit `395c409`. El plan completo (PRs 1 a 5) está en esa historia, en `PLAN_CAMPANAS.md`.
 
 ## WhatsApp y llamadas del consultorio — 24/11/2026
 

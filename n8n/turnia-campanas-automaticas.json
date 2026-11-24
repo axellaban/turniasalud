@@ -234,7 +234,7 @@
     },
     {
       "parameters": {
-        "content": "## Turnia · campañas automáticas\n1. Editá el nodo **Configuración** con la URL de tu app en Vercel y tu `AGENT_TOOLS_SECRET`.\n2. Revisá que la zona horaria del workflow sea **America/Argentina/Buenos_Aires** (Settings del workflow).\n3. La encuesta post-consulta necesita el template de encuesta en Configuración; si no lo vas a usar, borrá ese disparador.\n4. Activá el workflow.\n\nCada campaña corre solo en las clínicas que la tienen prendida (Panel → Campañas → Automáticas; las prende el administrador). Si una corrida llega al tope de 50, la siguiente sigue la misma campaña.",
+        "content": "## Turnia · campañas automáticas\n1. Editá el nodo **Configuración** con la URL de tu app en Vercel y tu `AGENT_TOOLS_SECRET`.\n2. Revisá que la zona horaria del workflow sea **America/Argentina/Buenos_Aires** (Settings del workflow).\n3. La encuesta post-consulta necesita el template de encuesta en Configuración; si no lo vas a usar, borrá ese disparador.\n4. Activá el workflow.\n\nCada corrida crea una campaña en el panel → Campañas.",
         "height": 260,
         "width": 420
       },

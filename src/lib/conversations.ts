@@ -10,7 +10,7 @@ import { normalizePhone } from "./phone";
 import { formatDate } from "./time";
 import { mergeMemory } from "./memory";
 import { notifyN8n } from "./n8n";
-import { ATTRIBUTION_DAYS, type Clinic, type Conversation, type Patient, type Task } from "./types";
+import type { Clinic, Conversation, Patient, Task } from "./types";
 
 export { mergeMemory };
 
@@ -238,8 +238,7 @@ export async function updateCampaignRecipient(campaignId: string, patientId: str
   const [{ booked }] = await sql<Array<{ booked: boolean }>>`
     select exists (
       select 1 from appointments
-      where patient_id = ${patientId} and status <> 'cancelado' and created_at >= ${recipient.sent_at ?? new Date(0)}
-        and (${recipient.sent_at}::timestamptz is null or created_at < ${recipient.sent_at}::timestamptz + make_interval(days => ${ATTRIBUTION_DAYS}))
+      where patient_id = ${patientId} and created_at >= ${recipient.sent_at ?? new Date(0)} and status <> 'cancelado'
     ) as booked`;
   await sql`update campaign_recipients set status = ${booked ? "agendo" : "respondio"} where id = ${recipient.id}`;
 }
