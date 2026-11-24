@@ -261,6 +261,7 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
             <span className="text-xs text-brand-900/65">Se avisa sola al liberarse un turno</span>
             <div className="mt-auto pt-3">
               <Badge tone="blue">Automática</Badge>
+              <Link href="/panel/lista-espera" className="ml-3 text-sm font-semibold text-brand-700 hover:underline">Ver lista →</Link>
             </div>
           </article>
           {savedCards.map((a) => (

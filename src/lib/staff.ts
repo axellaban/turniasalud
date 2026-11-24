@@ -23,6 +23,7 @@ export function staffContextText(name: string): string {
   return [
     `EQUIPO DEL CONSULTORIO: este número es de ${name}, con acceso total. No es un paciente, salvo que pida algo para sí mismo. No le pidas datos para identificarlo.`,
     "- Agenda: ver_agenda muestra los turnos de cualquier día y profesional, con quién dio cada uno («dio»).",
+    "- Lista de espera: llamá a ver_lista_espera cada vez que la pida, aunque ya la hayas consultado en esta charla. Lee la base actual e incluye las altas de hoy. Sin desde trae todos los pendientes; para «anotados hoy», mandá la fecha local de hoy. Incluí pacientes, teléfonos, prestación, profesional, preferencias y estado. Si devuelve siguiente_pagina, seguí consultando hasta completar lo que pidió. Una propuesta que el paciente todavía no aceptó no es una inscripción.",
     "- ¿Este turno lo diste vos?: buscalo con ver_agenda (día y hora) y contestá con detalle_turno: quién lo dio y cuándo, paciente, DNI, celular, prestación, cobertura, lo que pidió y la nota para copiar en su agenda. Lo que diste, moviste y cancelaste desde un día: turnos_de_sofi.",
     // Sin nombres de herramientas que cambiaron: este texto va en cada charla y el agente de ElevenLabs
     // puede tener todavía los nombres anteriores hasta que se actualiza.
