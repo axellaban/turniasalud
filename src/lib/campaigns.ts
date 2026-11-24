@@ -4,6 +4,7 @@ import { getClinic } from "./clinic";
 import { pauseBetweenSends, renderTemplate, sendPatientMessage, templateKeyFor, whatsappReadiness, withOptOutFooter } from "./whatsapp";
 import { humanSlot, localDateKey } from "./time";
 import { DEFAULT_FOLLOWUP_DAYS, inSendWindow, lineUsage, recordCampaignMessage } from "./campaign-limits";
+import { describeRules, parseRules, type AudienceRules } from "./audience-rules";
 import { ATTRIBUTION_DAYS, AUTO_CAMPAIGN_TYPES, type AutoCampaignType, type Campaign, type CampaignType, type Clinic } from "./types";
 
 // "Activa": campañas salientes por WhatsApp. Cada destinatario recibe un
@@ -53,6 +54,12 @@ export const CAMPAIGN_LABELS: Record<CampaignType, { label: string; title: strin
     description: "Pacientes atendidos en los últimos 2 días: puntaje del 0 al 10 y comentarios.",
     goal: "Que el paciente responda del 0 al 10 si recomendaría la clínica y cuente cómo fue su atención.",
   },
+  audiencia: {
+    label: "Audiencia propia",
+    title: "Audiencia propia",
+    description: "Pacientes que cumplen las reglas que armó el equipo.",
+    goal: "Que el paciente vuelva a atenderse y reserve un turno.",
+  },
   personalizada: {
     label: "Aviso a todos",
     title: "Aviso a todos",
@@ -69,7 +76,7 @@ export function campaignRule(type: CampaignType, clinic: Pick<Clinic, "reactivat
 }
 
 /** Campañas para que el paciente vuelva a sacar turno: comparten el tope de contacto de la clínica. */
-export const ACTIVATION_TYPES: readonly CampaignType[] = ["recall", "reactivacion", "no_show"];
+export const ACTIVATION_TYPES: readonly CampaignType[] = ["recall", "reactivacion", "no_show", "audiencia"];
 
 export type AudienceMember = {
   patient_id: string;
@@ -182,7 +189,68 @@ async function audienceScope(clinic: Clinic): Promise<Scope> {
   };
 }
 
-export async function computeAudience(clinic: Clinic, type: CampaignType, scope?: Scope): Promise<AudienceMember[]> {
+/** Audiencia propia: pacientes que cumplen las reglas que armó el equipo (Nueva audiencia). */
+async function customAudience(
+  clinic: Clinic,
+  rules: AudienceRules,
+  ctx: { today: string; includeOptedOut: boolean; available: (patientId: string) => boolean },
+): Promise<AudienceMember[]> {
+  const tz = clinic.timezone;
+  const today = ctx.today;
+  const conditions = [sql`p.clinic_id = ${clinic.id}`, ctx.includeOptedOut ? sql`true` : sql`not p.contact_opt_out`];
+  if (rules.monthsSince) conditions.push(sql`l.last_day is not null and l.last_day <= (${today}::date - make_interval(months => ${rules.monthsSince}))::date`);
+  const byProfessional = rules.professionalId
+    ? sql`(h.professional_id = ${rules.professionalId} or (h.professional_name is not null and h.professional_name ilike (select '%' || pr.full_name || '%' from professionals pr where pr.id = ${rules.professionalId})))`
+    : sql`true`;
+  if (rules.appointmentTypeId || rules.professionalId) {
+    conditions.push(sql`exists (select 1 from history h where h.patient_id = p.id
+      and ${rules.appointmentTypeId ? sql`h.appointment_type_id = ${rules.appointmentTypeId}` : sql`true`} and ${byProfessional})`);
+  }
+  if (rules.coverage) conditions.push(sql`p.coverage ilike ${rules.coverage}`);
+  if (rules.ageMin !== null) conditions.push(sql`p.birth_date <= (${today}::date - make_interval(years => ${rules.ageMin}))::date`);
+  if (rules.ageMax !== null) conditions.push(sql`p.birth_date > (${today}::date - make_interval(years => ${rules.ageMax + 1}))::date`);
+  if (rules.birthdayThisMonth) conditions.push(sql`extract(month from p.birth_date) = extract(month from ${today}::date)`);
+  if (rules.noShow) {
+    conditions.push(sql`exists (select 1 from appointments a where a.patient_id = p.id and a.status = 'ausente' and a.starts_at >= ${today}::date - interval '12 months')`);
+  }
+  if (rules.controlIndicated) {
+    conditions.push(sql`p.next_control_at <= ${today}::date
+      and not exists (select 1 from appointments a where a.patient_id = p.id and a.status = 'atendido' and (a.starts_at at time zone ${tz})::date >= p.next_control_at - 30)
+      and not exists (select 1 from patient_visits v where v.patient_id = p.id and v.visited_at >= p.next_control_at - 30)`);
+  }
+  const where = conditions.reduce((acc, c) => sql`${acc} and ${c}`);
+  const rows = await sql<Array<{ id: string; full_name: string | null; phone: string | null; last_day: string | null; type_name: string | null; price: string | null }>>`
+    with history as (
+      select a.patient_id, (a.starts_at at time zone ${tz})::date as day, a.appointment_type_id, a.professional_id, null::text as professional_name
+      from appointments a where a.clinic_id = ${clinic.id} and a.status = 'atendido'
+      union all
+      select v.patient_id, v.visited_at, v.appointment_type_id, null::uuid, v.professional
+      from patient_visits v where v.clinic_id = ${clinic.id}
+    ),
+    last as (select patient_id, max(day) as last_day from history group by patient_id)
+    select p.id, p.full_name, p.phone, l.last_day::text as last_day, t.name as type_name, t.price
+    from patients p
+    left join last l on l.patient_id = p.id
+    left join appointment_types t on t.id = ${rules.appointmentTypeId}::uuid
+    where ${where}
+    order by l.last_day desc nulls last, p.created_at, p.id
+    limit 5000`;
+  const sentence = describeRules(rules, { type: rows[0]?.type_name });
+  return rows
+    .filter((r) => ctx.available(r.id))
+    .map((r) => ({
+      patient_id: r.id,
+      phone: r.phone,
+      name: r.full_name,
+      reachable: isWhatsAppId(r.phone),
+      detail: r.type_name ? lowerFirst(r.type_name) : clinic.name,
+      context: `Campaña de audiencia propia (${sentence})${r.last_day ? ` Su última visita fue hace ${monthsBetween(r.last_day, today)} meses.` : ""} Preguntá cómo está y ofrecé un turno.`,
+      value: price(r.price),
+      appointment_type_id: rules.appointmentTypeId,
+    }));
+}
+
+export async function computeAudience(clinic: Clinic, type: CampaignType, scope?: Scope, rules?: AudienceRules | null): Promise<AudienceMember[]> {
   const { today, future, recent, includeOptedOut = false } = scope ?? (await audienceScope(clinic));
   const optedOutOk = includeOptedOut ? sql`true` : sql`false`;
   const tz = clinic.timezone;
@@ -356,6 +424,11 @@ export async function computeAudience(clinic: Clinic, type: CampaignType, scope?
     return members;
   }
 
+  if (type === "audiencia") {
+    if (!rules) return [];
+    return customAudience(clinic, rules, { today, includeOptedOut, available });
+  }
+
   if (type === "encuesta") {
     const rows = await sql<Array<{ id: string; patient: PatientRow; professional: string; type_name: string }>>`
       select a.id, pr.full_name as professional, coalesce(a.title, t.name) as type_name,
@@ -485,10 +558,10 @@ export type AudienceBreakdown = {
 };
 
 /** Quiénes cumplen la regla y por qué quedan afuera los que no reciben el mensaje. */
-export async function audienceBreakdown(clinic: Clinic, type: CampaignType): Promise<AudienceBreakdown> {
+export async function audienceBreakdown(clinic: Clinic, type: CampaignType, rules?: AudienceRules | null): Promise<AudienceBreakdown> {
   const scope = await audienceScope(clinic);
   const [all, optedOutRows] = await Promise.all([
-    computeAudience(clinic, type, { today: scope.today, future: new Set(), recent: new Set(), includeOptedOut: true }),
+    computeAudience(clinic, type, { today: scope.today, future: new Set(), recent: new Set(), includeOptedOut: true }, rules),
     sql<Array<{ id: string }>>`select id from patients where clinic_id = ${clinic.id} and contact_opt_out`,
   ]);
   const optedOut = new Set(optedOutRows.map((r) => r.id));
@@ -543,6 +616,8 @@ export async function createCampaign(input: {
   templateLanguage?: string;
   goal?: string;
   automatic?: boolean;
+  audience?: { id: string | null; rules: AudienceRules };
+  message?: string | null;
 }): Promise<Campaign> {
   const [campaign] = await sql<Campaign[]>`
     insert into campaigns ${sql({
@@ -553,6 +628,9 @@ export async function createCampaign(input: {
       template_language: input.templateLanguage || "es_AR",
       goal: input.goal || CAMPAIGN_LABELS[input.type].goal,
       automatic: input.automatic ?? false,
+      audience_id: input.audience?.id ?? null,
+      audience_rules: input.audience ? sql.json(input.audience.rules) : null,
+      message: input.message ?? null,
     })}
     returning *`;
   // Las de volver a sacar turno traen el seguimiento sugerido (a los 5 días sin respuesta). Solo sale
@@ -572,7 +650,7 @@ export async function syncAudience(campaignId: string): Promise<{ added: number;
   const [campaign] = await sql<Campaign[]>`select * from campaigns where id = ${campaignId}`;
   if (!campaign) throw new Error("No encontré la campaña.");
   const clinic = await getClinic(campaign.clinic_id);
-  const audience = await computeAudience(clinic, campaign.type);
+  const audience = await computeAudience(clinic, campaign.type, undefined, parseRules(campaign.audience_rules));
   let added = 0;
   for (let i = 0; i < audience.length; i += 500) {
     const rows = audience.slice(i, i + 500).map((m) => ({
@@ -606,8 +684,11 @@ export async function syncAudience(campaignId: string): Promise<{ added: number;
 }
 
 /** Borrador listo para revisar: si ya hay uno de ese tipo sin terminar, se actualiza ese. */
-export async function prepareCampaign(clinic: Clinic, input: { type: CampaignType; name?: string | null; goal?: string | null; templateName?: string | null }): Promise<Campaign> {
-  if (input.type !== "personalizada") {
+export async function prepareCampaign(
+  clinic: Clinic,
+  input: { type: CampaignType; name?: string | null; goal?: string | null; templateName?: string | null; audience?: { id: string | null; rules: AudienceRules } },
+): Promise<Campaign> {
+  if (input.type !== "personalizada" && input.type !== "audiencia") {
     const [open] = await sql<Campaign[]>`
       select * from campaigns where clinic_id = ${clinic.id} and type = ${input.type} and status in ('borrador', 'enviando') and not automatic
       order by created_at desc limit 1`;
@@ -625,6 +706,14 @@ export async function prepareCampaign(clinic: Clinic, input: { type: CampaignTyp
     templateName: input.templateName || clinic.templates?.[input.type] || input.type,
     templateLanguage: clinic.templates?.idioma || "es_AR",
     goal: input.goal ?? undefined,
+    audience: input.audience,
+    // Audiencia propia: el mensaje sugerido nombra la prestación si la regla la tiene.
+    message:
+      input.type === "audiencia"
+        ? input.audience?.rules.appointmentTypeId
+          ? "¡Hola {nombre}! Ya es momento de volver por tu {detalle}. ¿Querés que te busquemos un turno?"
+          : "¡Hola {nombre}! Hace un tiempo que no te vemos por {detalle}. ¿Querés que te busquemos un turno?"
+        : null,
   });
   await syncAudience(campaign.id);
   return campaign;
@@ -694,7 +783,7 @@ export async function sendCampaign(campaignId: string): Promise<SendResult> {
   if (!saved) await syncAudience(campaign.id);
 
   // Antes de escribirle, se confirma que cada uno sigue cumpliendo (pudo sacar turno o pedir la baja).
-  const current = new Map((await computeAudience(clinic, campaign.type)).map((m) => [m.patient_id, m]));
+  const current = new Map((await computeAudience(clinic, campaign.type, undefined, parseRules(campaign.audience_rules))).map((m) => [m.patient_id, m]));
   const queue = await sql<Array<{ id: string; patient_id: string }>>`
     select id, patient_id from campaign_recipients
     where campaign_id = ${campaign.id} and status in ('pendiente', 'error')
