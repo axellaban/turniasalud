@@ -24,7 +24,11 @@ Rediseño de Panel → Campañas, cerrado en otra sesión. Diseño de referencia
   - resultados en 4 etapas: contactados → respondieron → citas agendadas → citas atendidas;
   - una cola con motivos y acciones;
   - el panel con las pestañas Audiencia, Secuencia y Mensaje.
-- [ ] **PR 4 · Nueva audiencia:** reglas como frase (meses sin venir, prestación, profesional, cobertura, edad, cumpleaños, faltó, control indicado), el conteo en vivo con quiénes quedan afuera y por qué, y audiencias guardadas.
+- [x] **PR 4 · Nueva audiencia.**
+  - Pantalla `/panel/campanas/audiencia` con reglas que se leen como frase: meses sin venir, prestación, profesional, cobertura, edad, cumpleaños este mes, faltó a un turno y control indicado. «Presupuesto sin iniciar» queda deshabilitado hasta tener el origen.
+  - Vista previa en vivo con la cantidad, el valor, quiénes quedan afuera y por qué, y algunos nombres.
+  - Audiencias guardadas (`saved_audiences`) como tarjetas en Campañas, con «Crear campaña +» y «Editar».
+  - Las campañas de audiencia propia usan `type = 'audiencia'` y guardan sus reglas en `campaigns.audience_rules`. Cuentan para el tope entre campañas y traen el seguimiento sugerido.
 - [ ] **PR 5 · Revisar lote:** «Con Sofi» o «Desde mi WhatsApp», de a uno; marcas Respondió, No le interesa y Pidió la baja; atajos de teclado; lotes de 5 y piloto de 20.
 - Valores confirmados:
   - atribución de 14 días;

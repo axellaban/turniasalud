@@ -253,7 +253,7 @@ alter table tasks add constraint tasks_type_check
   check (type in ('receta', 'consulta_clinica', 'resultados', 'orden_medica', 'administrativo', 'derivacion_humana', 'urgencia', 'facturacion', 'otro'));
 alter table campaigns drop constraint if exists campaigns_type_check;
 alter table campaigns add constraint campaigns_type_check
-  check (type in ('recall', 'reactivacion', 'recordatorio', 'lista_espera', 'no_show', 'encuesta', 'personalizada'));
+  check (type in ('recall', 'reactivacion', 'recordatorio', 'lista_espera', 'no_show', 'encuesta', 'personalizada', 'audiencia'));
 
 -- ---------------------------------------------------------------------------
 -- WhatsApp por WAHA (chip común, API no oficial) conectado al agente con el
@@ -2099,3 +2099,21 @@ begin
     insert into data_migrations (name) values ('2026-11-24-recordatorios-smile-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Turnia Activa · PR 4 (24/11/2026): audiencias propias. Reglas que se leen como frase («no vienen
+-- hace más de 9 meses, se atendieron de ortodoncia, con cualquier profesional») guardadas por clínica.
+-- Una campaña de audiencia propia (type = 'audiencia') guarda las reglas con las que se creó.
+-- ---------------------------------------------------------------------------
+create table if not exists saved_audiences (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  name text not null,
+  rules jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists saved_audiences_clinic_idx on saved_audiences (clinic_id, created_at desc);
+alter table saved_audiences enable row level security;
+alter table campaigns add column if not exists audience_id uuid references saved_audiences(id) on delete set null;
+alter table campaigns add column if not exists audience_rules jsonb;

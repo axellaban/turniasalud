@@ -101,6 +101,25 @@ El rediseño está en el artefacto de diseño «Turnia Activa · Campañas» (tr
   - «Enviar con Sofi» se frena en el tope y avisa que se sigue mañana.
 - **La llamada de Sofi como paso:** queda a futuro, porque requiere autorización.
 
+**PR 4 (hecho): nueva audiencia**
+
+- **Pantalla:** `/panel/campanas/audiencia` (`audience-builder.tsx`). Las reglas están en `src/lib/audience-rules.ts`, compartidas entre el navegador y el servidor y validadas con zod. `describeRules` arma la frase, por ejemplo: «Pacientes que no vienen hace más de 9 meses, se atendieron de ortodoncia, con cualquier profesional».
+- **Filtros, solo con datos que Turnia tiene:**
+  - meses sin venir: última visita en la agenda (incluido Smile Connect) o en las visitas importadas;
+  - prestación;
+  - profesional: el de la agenda o el nombre en la visita importada;
+  - cobertura;
+  - edad;
+  - cumpleaños este mes;
+  - faltó a un turno en el último año;
+  - control indicado por el profesional que ya llegó.
+- **Presupuestos sin iniciar:** deshabilitado hasta que haya de dónde leerlos.
+- **Vista previa en vivo:** `previewAudienceAction` muestra la cantidad, el valor, el desglose de quiénes quedan afuera y por qué (`audienceBreakdown` con las reglas) y tres nombres.
+- **Audiencias guardadas:** `saved_audiences` (`src/lib/saved-audiences.ts`). En Campañas aparecen como tarjetas, con la cantidad y el valor de hoy, «Crear campaña +» y «Editar», más la tarjeta «Nueva audiencia». «+ Nueva campaña» lleva al constructor.
+- **Campañas de audiencia propia:** `type = 'audiencia'`, con `audience_id` y `audience_rules` (las reglas al crearla).
+  - Cuentan como campaña para volver: respetan el tope entre campañas y a quien ya tiene turno, y traen el seguimiento sugerido.
+  - Traen un mensaje sugerido que nombra la prestación si la regla la tiene.
+
 ## Qué sigue (lo anterior a Turnia Activa)
 
 1. **Secuencias:** si no responde en unos días, un segundo mensaje y después una llamada de Sofi. Twilio ya está configurado; las llamadas se hacen solo con autorización.

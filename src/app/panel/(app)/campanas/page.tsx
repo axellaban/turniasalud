@@ -1,14 +1,16 @@
 import { getPanelClinic, getPanelUser } from "@/lib/panel-clinic";
 import Link from "next/link";
 import { sql } from "@/lib/db";
-import { CAMPAIGN_LABELS, audienceBreakdown, campaignMessage, campaignRule, campaignStats, EMPTY_STATS, firstName, opportunities, type Opportunity } from "@/lib/campaigns";
+import { CAMPAIGN_LABELS, audienceBreakdown, campaignMessage, campaignRule, campaignStats, computeAudience, EMPTY_STATS, firstName, opportunities, type Opportunity } from "@/lib/campaigns";
 import { activeCampaigns, campaignQueue, campaignResults, PERIODS, stepRate, type Period, type QueueFilter } from "@/lib/campaign-board";
 import { DAILY_LINE_CAP, DEFAULT_FOLLOWUP_DAYS, DEFAULT_MAX_MESSAGES, SEND_WINDOW, lineUsage } from "@/lib/campaign-limits";
 import { DEFAULT_FOLLOWUP_TEXT } from "@/lib/campaign-sequences";
+import { describeRules, parseRules } from "@/lib/audience-rules";
+import { listSavedAudiences } from "@/lib/saved-audiences";
 import { OPT_OUT_FOOTER } from "@/lib/whatsapp";
 import { formatDate } from "@/lib/time";
 import { ATTRIBUTION_DAYS, type AppointmentType, type AutoCampaignType, type Campaign, type CampaignType } from "@/lib/types";
-import { prepareCampaignAction, toggleRecipientAction } from "../../campaign-actions";
+import { campaignFromSavedAudienceAction, prepareCampaignAction, toggleRecipientAction } from "../../campaign-actions";
 import { Badge, Card, Field, Notice, PageHeader, buttonClass, inputClass } from "@/components/ui";
 import { AutoToggle } from "./auto-toggle";
 import { CampaignSettings } from "./campaign-settings";
@@ -126,7 +128,7 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
   const [clinic, user] = await Promise.all([getPanelClinic(), getPanelUser()]);
   const isAdmin = user.role === "admin";
   const autoOn = new Set(clinic.auto_campaigns ?? []);
-  const [opp, campaigns, active, [base], types, usage] = await Promise.all([
+  const [opp, campaigns, active, [base], types, usage, saved] = await Promise.all([
     opportunities(clinic),
     sql<Campaign[]>`select * from campaigns where clinic_id = ${clinic.id} order by created_at desc limit 30`,
     activeCampaigns(clinic.id),
@@ -138,7 +140,15 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
       from patients p where p.clinic_id = ${clinic.id}`,
     sql<AppointmentType[]>`select * from appointment_types where clinic_id = ${clinic.id} and active order by specialty, name`,
     lineUsage(clinic),
+    listSavedAudiences(clinic.id),
   ]);
+  // Audiencias propias guardadas: cuántos y cuánto valen hoy (las primeras 4).
+  const savedCards = await Promise.all(
+    saved.slice(0, 4).map(async (a) => {
+      const members = (await computeAudience(clinic, "audiencia", undefined, a.rules)).filter((m) => m.reachable);
+      return { ...a, count: members.length, value: members.reduce((sum, m) => sum + (m.value ?? 0), 0) };
+    }),
+  );
   const byType = new Map(opp.list.map((o) => [o.type, o]));
   const recall = byType.get("recall")!;
   const dueByType = new Map<string, number>();
@@ -156,7 +166,7 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
     ? await Promise.all([
         campaignResults(clinic, selected.id, period),
         campaignQueue(clinic, selected, filter),
-        selected.type === "personalizada" ? Promise.resolve(null) : audienceBreakdown(clinic, selected.type),
+        selected.type === "personalizada" ? Promise.resolve(null) : audienceBreakdown(clinic, selected.type, parseRules(selected.audience_rules)),
         sql<Array<{ position: number; delay_days: number; message: string | null }>>`select position, delay_days, message from campaign_steps where campaign_id = ${selected.id} order by position`,
         sql<Array<{ name: string | null; detail: string | null }>>`
           select p.full_name as name, r.detail from campaign_recipients r join patients p on p.id = r.patient_id
@@ -194,9 +204,9 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
                 </span>
               )}
             </div>
-            <a href="#audiencias" className={buttonClass}>
+            <Link href="/panel/campanas/audiencia" className={buttonClass}>
               + Nueva campaña
-            </a>
+            </Link>
           </div>
         }
       />
@@ -253,6 +263,32 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
               <Badge tone="blue">Automática</Badge>
             </div>
           </article>
+          {savedCards.map((a) => (
+            <article key={a.id} className="flex min-h-40 flex-col rounded-2xl border border-brand-900/10 bg-white p-4">
+              <span className="line-clamp-2 text-xs text-brand-900/65">{a.name}</span>
+              <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{a.count.toLocaleString("es-AR")}</strong>
+              <span className="text-xs text-brand-900/65">{a.value > 0 ? `≈ ${money.format(a.value)} en turnos` : "Audiencia propia"}</span>
+              <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-sm font-semibold">
+                {a.count > 0 && (
+                  <form action={campaignFromSavedAudienceAction}>
+                    <input type="hidden" name="clinic_id" value={clinic.id} />
+                    <input type="hidden" name="id" value={a.id} />
+                    <button className="text-brand-700 hover:underline">Crear campaña +</button>
+                  </form>
+                )}
+                <Link href={`/panel/campanas/audiencia?id=${a.id}`} className="font-normal text-brand-900/65 hover:underline">
+                  Editar
+                </Link>
+              </div>
+            </article>
+          ))}
+          <Link
+            href="/panel/campanas/audiencia"
+            className="flex min-h-40 flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-brand-300 bg-brand-50/40 p-4 text-sm font-semibold text-brand-800 hover:bg-brand-50"
+          >
+            <span className="text-2xl leading-none">+</span>
+            Nueva audiencia
+          </Link>
         </div>
       </section>
 
@@ -423,7 +459,13 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
                 key={selected.id}
                 clinicId={clinic.id}
                 campaignId={selected.id}
-                rule={selected.type === "personalizada" ? "Aviso a todos los pacientes que no pidieron la baja." : campaignRule(selected.type, clinic)}
+                rule={
+                  selected.type === "personalizada"
+                    ? "Aviso a todos los pacientes que no pidieron la baja."
+                    : selected.type === "audiencia" && parseRules(selected.audience_rules)
+                      ? describeRules(parseRules(selected.audience_rules)!, { type: sample.detail })
+                      : campaignRule(selected.type, clinic)
+                }
                 breakdown={breakdown}
                 cooldownDays={clinic.contact_cooldown_days}
                 delayDays={followupStep?.delay_days ?? DEFAULT_FOLLOWUP_DAYS}

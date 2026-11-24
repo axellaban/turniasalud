@@ -302,7 +302,7 @@ export type WaitlistEntry = {
   created_at: string;
 };
 
-export const CAMPAIGN_TYPES = ["recall", "reactivacion", "recordatorio", "lista_espera", "no_show", "encuesta", "personalizada"] as const;
+export const CAMPAIGN_TYPES = ["recall", "reactivacion", "recordatorio", "lista_espera", "no_show", "encuesta", "personalizada", "audiencia"] as const;
 export type CampaignType = (typeof CAMPAIGN_TYPES)[number];
 
 /**
@@ -329,6 +329,9 @@ export type Campaign = {
   status: "borrador" | "enviando" | "finalizada";
   /** La creó la tarea programada (no un borrador del equipo). */
   automatic: boolean;
+  /** Campañas de una audiencia propia: la audiencia guardada y sus reglas al crearla (las que valen). */
+  audience_id: string | null;
+  audience_rules: unknown;
   /** Mensajes por paciente como máximo, contando el primero (secuencia). */
   max_messages: number;
   /** La secuencia se corta si el paciente responde / saca turno (la baja corta siempre). */

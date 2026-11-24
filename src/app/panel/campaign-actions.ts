@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { DAILY_LINE_CAP } from "@/lib/campaign-limits";
+import { hasAnyRule, parseRules } from "@/lib/audience-rules";
+import { deleteSavedAudience, getSavedAudience, previewAudience, saveAudience, type AudiencePreview } from "@/lib/saved-audiences";
 import { CAMPAIGN_LABELS, markManualSent, prepareCampaign, sendCampaign, setRecipientIncluded, syncAudience } from "@/lib/campaigns";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { randomUUID } from "node:crypto";
@@ -170,6 +172,69 @@ export async function saveCampaignTextsAction(_prev: CampaignFormState | undefin
   }
   refresh(id);
   return { ok: true, message: "Mensajes guardados." };
+}
+
+// ---------------------------------------------------------------------------
+// Audiencias propias (Nueva audiencia): vista previa en vivo, guardar y crear la campaña.
+// ---------------------------------------------------------------------------
+type AudienceInput = { clinic_id: string; id?: string | null; name: string; rules: unknown };
+
+async function audienceInput(input: AudienceInput) {
+  await requirePanelSession();
+  const form = new FormData();
+  form.set("clinic_id", input.clinic_id);
+  const clinic = await getPanelClinic(form);
+  const rules = parseRules(input.rules);
+  if (!rules) return { clinic, error: "Revisá las reglas: hay un valor que no corresponde." } as const;
+  if (!hasAnyRule(rules)) return { clinic, error: "Sumá al menos una regla. Para escribirles a todos está «Aviso a todos»." } as const;
+  return { clinic, rules } as const;
+}
+
+export async function previewAudienceAction(input: AudienceInput): Promise<{ ok: true; preview: AudiencePreview } | { ok: false; message: string }> {
+  const r = await audienceInput(input);
+  if ("error" in r) return { ok: false, message: r.error! };
+  return { ok: true, preview: await previewAudience(r.clinic, r.rules) };
+}
+
+export async function saveAudienceAction(input: AudienceInput): Promise<CampaignFormState & { id?: string }> {
+  const r = await audienceInput(input);
+  if ("error" in r) return { ok: false, message: r.error };
+  const name = input.name?.trim();
+  if (!name) return { ok: false, message: "Ponele un nombre a la audiencia." };
+  const id = await saveAudience(r.clinic.id, { id: isUuid(input.id) ? input.id : null, name: name.slice(0, 120), rules: r.rules });
+  refresh();
+  return { ok: true, id, message: "Audiencia guardada." };
+}
+
+/** Guarda la audiencia y arma la campaña con su lista, para revisar el mensaje y la secuencia. */
+export async function createAudienceCampaignAction(input: AudienceInput): Promise<CampaignFormState> {
+  const r = await audienceInput(input);
+  if ("error" in r) return { ok: false, message: r.error };
+  const name = input.name?.trim().slice(0, 120) || "Audiencia propia";
+  const id = await saveAudience(r.clinic.id, { id: isUuid(input.id) ? input.id : null, name, rules: r.rules });
+  const campaign = await prepareCampaign(r.clinic, { type: "audiencia", name, audience: { id, rules: r.rules } });
+  refresh(campaign.id);
+  redirect(`/panel/campanas?campana=${campaign.id}#campana`);
+}
+
+export async function deleteAudienceAction(form: FormData) {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  if (id) await deleteSavedAudience(clinic.id, id);
+  refresh();
+}
+
+/** Campaña nueva desde una audiencia guardada (con sus reglas de hoy). */
+export async function campaignFromSavedAudienceAction(form: FormData) {
+  await requirePanelSession();
+  const clinic = await getPanelClinic(form);
+  const id = uuid(form, "id");
+  const audience = id ? await getSavedAudience(clinic.id, id) : null;
+  if (!audience) return;
+  const campaign = await prepareCampaign(clinic, { type: "audiencia", name: audience.name, audience: { id: audience.id, rules: audience.rules } });
+  refresh(campaign.id);
+  redirect(`/panel/campanas?campana=${campaign.id}#campana`);
 }
 
 /** Descarta un borrador que todavía no le escribió a nadie. */

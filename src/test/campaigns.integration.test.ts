@@ -48,7 +48,7 @@ const isoAgo = (days: number) => new Date(Date.now() - days * 86400_000).toISOSt
 /** La server action redirige al detalle: devuelve el id de la campaña. */
 const redirectedId = async (run: Promise<unknown>) => {
   const error = await run.then(() => null, (e: Error) => e);
-  const match = /redirect:\/panel\/campanas\/([0-9a-f-]{36})/.exec(error?.message ?? "");
+  const match = /redirect:\/panel\/campanas(?:\/|\?campana=)([0-9a-f-]{36})/.exec(error?.message ?? "");
   if (!match) throw new Error(`No redirigió a una campaña: ${error?.message}`);
   return match[1];
 };
@@ -407,5 +407,72 @@ describe.runIf(base)("campañas para activar la base", () => {
     mocks.sendWhatsAppTemplate.mockClear();
     expect(await run("reactivacion")).toMatchObject({ ok: true, clinicas: [] });
     expect(mocks.sendWhatsAppTemplate).not.toHaveBeenCalled();
+  }, 60000);
+
+  it("nueva audiencia: reglas como frase, vista previa en vivo, audiencias guardadas y campaña con su lista", async () => {
+    const preview = (rules: Record<string, unknown>) => actions.previewAudienceAction({ clinic_id: CLINIC, name: "", rules });
+    const base = { monthsSince: null, appointmentTypeId: null, professionalId: null, coverage: null, ageMin: null, ageMax: null, birthdayThisMonth: false, noShow: false, controlIndicated: false };
+
+    // Sin reglas no hay audiencia (para eso está «Aviso a todos»); la edad se valida.
+    expect(await preview(base)).toMatchObject({ ok: false, message: expect.stringContaining("al menos una regla") });
+    expect(await preview({ ...base, ageMin: 50, ageMax: 20 })).toMatchObject({ ok: false });
+
+    // Cobertura y cumpleaños: una paciente nueva que cumple este mes y tiene OSDE.
+    const month = String(new Date().getUTCMonth() + 1).padStart(2, "0");
+    const [vera] = await sql<Array<{ id: string }>>`
+      insert into patients (clinic_id, full_name, phone, coverage, birth_date) values (${CLINIC}, 'Vera Coto', '5491199990001', 'OSDE', ${`1990-${month}-15`}) returning id`;
+    await sql`insert into patient_visits (clinic_id, patient_id, appointment_type_id, service, visited_at, professional) values (${CLINIC}, ${vera.id}, ${LIMPIEZA}, 'Limpieza dental', ${isoAgo(400)}, 'Dra. Prueba')`;
+    const osde = await preview({ ...base, coverage: "OSDE", birthdayThisMonth: true });
+    expect(osde).toMatchObject({ ok: true, preview: { reachable: 1, matching: 1 } });
+    if (osde.ok) {
+      expect(osde.preview.sentence).toBe("Pacientes que tienen OSDE, cumplen años este mes.");
+      expect(osde.preview.sample[0].name).toBe("Vera C.");
+    }
+
+    // Meses sin venir + prestación: cuenta visitas importadas; el desglose suma.
+    const limpieza = await preview({ ...base, monthsSince: 12, appointmentTypeId: LIMPIEZA });
+    expect(limpieza.ok).toBe(true);
+    if (limpieza.ok) {
+      const p = limpieza.preview;
+      expect(p.reachable).toBeGreaterThanOrEqual(1);
+      expect(p.matching).toBe(p.reachable + p.optedOut + p.hasAppointment + p.recentCampaign + p.noPhone);
+      expect(p.sentence).toBe("Pacientes que no vienen hace más de 12 meses, se atendieron de limpieza dental, con cualquier profesional.");
+      expect(p.value).toBeGreaterThan(0);
+    }
+    // Edad: Vera tiene 36; entre 40 y 60 no entra.
+    const older = await preview({ ...base, coverage: "OSDE", ageMin: 40, ageMax: 60 });
+    expect(older.ok && older.preview.matching).toBe(0);
+
+    // Guardar pide nombre; guardada aparece en la pantalla y se puede editar.
+    expect(await actions.saveAudienceAction({ clinic_id: CLINIC, name: " ", rules: { ...base, coverage: "OSDE" } })).toMatchObject({ ok: false });
+    const saved = await actions.saveAudienceAction({ clinic_id: CLINIC, name: "OSDE que cumplen años", rules: { ...base, coverage: "OSDE", birthdayThisMonth: true } });
+    expect(saved).toMatchObject({ ok: true, id: expect.any(String) });
+    const again = await actions.saveAudienceAction({ clinic_id: CLINIC, id: saved.id, name: "OSDE cumpleaños", rules: { ...base, coverage: "OSDE", birthdayThisMonth: true } });
+    expect(again.id).toBe(saved.id);
+    expect(await sql`select name from saved_audiences where clinic_id = ${CLINIC}`).toEqual([{ name: "OSDE cumpleaños" }]);
+
+    // Crear la campaña: guarda las reglas, arma la lista y trae el mensaje sugerido y el seguimiento.
+    const id = await redirectedId(actions.createAudienceCampaignAction({ clinic_id: CLINIC, id: saved.id, name: "OSDE cumpleaños", rules: { ...base, coverage: "OSDE", birthdayThisMonth: true } }));
+    const [campaign] = await sql`select * from campaigns where id = ${id}`;
+    expect(campaign).toMatchObject({ type: "audiencia", audience_id: saved.id, name: "OSDE cumpleaños" });
+    expect(campaign.audience_rules).toMatchObject({ coverage: "OSDE", birthdayThisMonth: true });
+    expect(campaign.message).toContain("{nombre}");
+    expect(await sql`select patient_id, status from campaign_recipients where campaign_id = ${id}`).toEqual([{ patient_id: vera.id, status: "pendiente" }]);
+    expect(await sql`select position from campaign_steps where campaign_id = ${id}`).toEqual([{ position: 2 }]);
+    // Enviarla respeta las mismas reglas (si Vera saca turno antes, queda afuera).
+    mocks.sendWhatsAppTemplate.mockClear();
+    expect(await campaigns.sendCampaign(id)).toMatchObject({ sent: 1 });
+    // Ya recibió una campaña para volver: la vista previa la cuenta como «otra campaña hace poco».
+    const after = await preview({ ...base, coverage: "OSDE", birthdayThisMonth: true });
+    expect(after.ok && after.preview.recentCampaign).toBe(1);
+
+    // Las pantallas: la audiencia guardada en Campañas y el constructor con sus reglas.
+    const render = async (page: Promise<unknown>) => renderToStaticMarkup((await page) as React.ReactElement);
+    const index = await render((await import("@/app/panel/(app)/campanas/page")).default({ searchParams: Promise.resolve({ campana: id }) } as never));
+    expect(index).toContain("OSDE cumpleaños");
+    expect(index).toContain("Nueva audiencia");
+    const builder = await render((await import("@/app/panel/(app)/campanas/audiencia/page")).default({ searchParams: Promise.resolve({ id: saved.id }) } as never));
+    expect(builder).toContain("Pacientes que…");
+    expect(builder).toContain("Siempre quedan afuera");
   }, 60000);
 });
