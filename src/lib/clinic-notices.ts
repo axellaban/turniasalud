@@ -29,7 +29,7 @@ export type NoticeRow = {
   phone: string;
   kind: NoticeKind | "prueba" | "smile" | "smile_paciente" | "smile_confirmado" | "smile_cancelado";
   body: string;
-  status: "pendiente" | "enviando" | "enviado" | "error" | "vencido";
+  status: "pendiente" | "enviando" | "enviado" | "error" | "vencido" | "en_chat";
   attempts: number;
   error: string | null;
   created_at: string;
@@ -335,6 +335,22 @@ export async function sendPendingNotices(clinicId?: string): Promise<{ enviados:
     if (outcome === "error") result.errores++;
   }
   return result;
+}
+
+/**
+ * Sofi ya le contó el resultado al paciente en el chat: sus avisos de Smile Connect no salen.
+ * Devuelve si alguno ya había salido (entonces Sofi no lo repite).
+ */
+export async function noticesToldInChat(appointmentIds: Array<string | null | undefined>): Promise<boolean> {
+  const ids = appointmentIds.filter((id): id is string => Boolean(id));
+  if (!ids.length) return false;
+  await sql`
+    update clinic_notices set status = 'en_chat'
+    where appointment_id = any(${ids}::uuid[]) and kind = any(${[...SMILE_PATIENT_NOTICES]}::text[]) and status in ('pendiente', 'error')`;
+  const [sent] = await sql`
+    select 1 from clinic_notices
+    where appointment_id = any(${ids}::uuid[]) and kind = any(${[...SMILE_PATIENT_NOTICES]}::text[]) and status in ('enviando', 'enviado') limit 1`;
+  return Boolean(sent);
 }
 
 /** Manda los avisos después de responder; fuera de un pedido, quedan para la automatización. */

@@ -20,6 +20,8 @@ export const env = {
     process.env.APP_URL ||
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
   agentLlm: () => process.env.AGENT_LLM || "claude-sonnet-5-5",
+  /** Por chat, cuánto espera Sofi a Smile Connect para contestar en el mismo mensaje si el turno quedó (0: no espera). */
+  smileChatWaitMs: () => Math.max(0, Number(process.env.SMILE_CHAT_WAIT_MS ?? 9000) || 0),
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
   // WhatsApp por WAHA + Custom Channel de ElevenLabs
   wahaUrl: () => required("WAHA_URL").replace(/\/$/, ""),

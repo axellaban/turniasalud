@@ -19,6 +19,7 @@ const STATUS: Record<NoticeRow["status"], { label: string; tone: "green" | "yell
   enviando: { label: "Enviando", tone: "yellow" },
   error: { label: "Reintentando", tone: "red" },
   vencido: { label: "No salió", tone: "gray" },
+  en_chat: { label: "Dicho en el chat", tone: "green" },
 };
 const KIND: Record<NoticeRow["kind"], string> = {
   nuevo: "Turno nuevo", movido: "Turno movido", cancelado: "Turno cancelado", prueba: "Prueba",
