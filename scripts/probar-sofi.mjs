@@ -107,7 +107,11 @@ const CASES = [
     scenario: "Sos Laura, paciente del consultorio. Escribís: «Hola, necesito turno para el mantenimiento periodontal, lo antes posible». Cuando te ofrezcan horarios, decís que son muy lejos y pedís que te anoten en la lista de espera para la semana que viene a la mañana. Aceptás lo que te proponga el agente y respondés «sí» cuando te pida confirmación. Cuando quede todo hecho, agradecés y terminás.",
     mocks: {
       consultar_disponibilidad: { ok: true, turnos: [slot(26, "10:00", "Dra. María Emilia Coldeira"), slot(27, "12:15", "Dra. María Emilia Coldeira"), slot(28, "11:30", "Dra. María Emilia Coldeira")] },
-      reservar_turno: { ok: true, turno_id: "turno-simulado-2", mensaje: `Turno confirmado: Mantenimiento periodontal con Dra. María Emilia Coldeira el ${slot(26, "10:00").cuando}.`, direccion: "Aráoz 2879, 1° D" },
+      // Confirma el horario que eligió, sea cual sea de los tres.
+      reservar_turno: [[26, "10:00"], [27, "12:15"], [28, "11:30"]].map(([d, h]) => ({
+        si: { campo: "inicio", valor: slot(d, h).inicio },
+        resultado: { ok: true, turno_id: "turno-simulado-2", mensaje: `Turno confirmado: Mantenimiento periodontal con Dra. María Emilia Coldeira el ${slot(d, h).cuando}.`, direccion: "Aráoz 2879, 1° D" },
+      })),
       anotar_lista_espera: { ok: true, mensaje: "Anotado en lista de espera para adelantar ese turno, que sigue reservado. Decile que conserva ese turno y que, si se libera un lugar antes, le escribimos por WhatsApp. No le prometas que lo van a adelantar." },
     },
     conditions: [

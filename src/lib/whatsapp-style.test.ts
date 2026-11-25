@@ -29,6 +29,7 @@ describe("texto de Sofi para WhatsApp", () => {
     expect(toWhatsAppText("Con gusto le busco un turno. Qué necesita hacerse?")).toBe("Le busco un turno. Qué necesita hacerse?");
     expect(toWhatsAppText("Con gusto. Para no equivocarme: es para la lista de espera?")).toBe("Para no equivocarme: es para la lista de espera?");
     expect(toWhatsAppText("Quedó anotada. Quedamos a disposición.")).toBe("Quedó anotada.");
+    expect(toWhatsAppText("Sí, con gusto. Para no quedarse sin lugar, le reservo uno de esos turnos.")).toBe("Sí. Para no quedarse sin lugar, le reservo uno de esos turnos.");
   });
 
   it("no toca una fórmula que es todo el mensaje ni la que está dentro de otra frase", () => {

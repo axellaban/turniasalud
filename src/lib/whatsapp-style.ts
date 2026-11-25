@@ -57,7 +57,8 @@ export function withoutFormulas(text: string): string {
     const rest = out.replace(opening, "");
     out = rest.charAt(0).toUpperCase() + rest.slice(1);
   }
-  return out;
+  // «Sí, con gusto. Para…» → «Sí. Para…»
+  return out.replace(/^(s[ií]|claro|perfecto|listo),\s+con\s+(?:mucho\s+)?gusto(?=[.!,])/iu, "$1");
 }
 
 /**
