@@ -5,14 +5,14 @@ const mocks = vi.hoisted(() => ({
   cookie: undefined as string | undefined,
   getClinic: vi.fn(),
   buildDynamicVariables: vi.fn(),
-  getConversationToken: vi.fn(),
+  getVoiceCredential: vi.fn(),
   getChatCredential: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: mocks.cookie }) }) }));
 vi.mock("@/lib/panel-clinic", () => ({ getPanelClinic: mocks.getClinic }));
 vi.mock("@/lib/clinic", () => ({ getClinic: mocks.getClinic, buildDynamicVariables: mocks.buildDynamicVariables }));
-vi.mock("@/lib/elevenlabs", () => ({ getConversationToken: mocks.getConversationToken, getChatCredential: mocks.getChatCredential }));
+vi.mock("@/lib/elevenlabs", () => ({ getVoiceCredential: mocks.getVoiceCredential, getChatCredential: mocks.getChatCredential }));
 
 import { POST } from "./route";
 
@@ -23,7 +23,7 @@ describe("credenciales de la demo", () => {
     mocks.cookie = undefined;
     mocks.getClinic.mockResolvedValue({ elevenlabs_agent_id: "agent-test", name: "Clínica de prueba" });
     mocks.buildDynamicVariables.mockResolvedValue({ clinic_id: "clinic-test" });
-    mocks.getConversationToken.mockResolvedValue("voice-token");
+    mocks.getVoiceCredential.mockResolvedValue({ token: "voice-token", llm: "claude-sonnet-5-5" });
     mocks.getChatCredential.mockResolvedValue({ signedUrl: "https://example.com/signed", sinSaludo: true });
   });
 
@@ -37,7 +37,7 @@ describe("credenciales de la demo", () => {
     const response = await POST(request());
     expect(response.status).toBe(401);
     expect(mocks.getClinic).not.toHaveBeenCalled();
-    expect(mocks.getConversationToken).not.toHaveBeenCalled();
+    expect(mocks.getVoiceCredential).not.toHaveBeenCalled();
     expect(mocks.getChatCredential).not.toHaveBeenCalled();
   });
 
@@ -49,9 +49,9 @@ describe("credenciales de la demo", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     if (mode === "chat") {
       expect(body).toMatchObject({ signedUrl: "https://example.com/signed", sinSaludo: true });
-      expect(mocks.getConversationToken).not.toHaveBeenCalled();
+      expect(mocks.getVoiceCredential).not.toHaveBeenCalled();
     } else {
-      expect(body.token).toBe("voice-token");
+      expect(body).toMatchObject({ token: "voice-token", llm: "claude-sonnet-5-5" });
       expect(mocks.getChatCredential).not.toHaveBeenCalled();
     }
   });

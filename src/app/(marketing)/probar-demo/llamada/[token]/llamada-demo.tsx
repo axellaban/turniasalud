@@ -7,7 +7,7 @@ import { requestMicrophone } from "@/lib/microphone";
 import { TOPE_LLAMADA_AVISO, useTopeDeVoz } from "@/components/demo/tope-voz";
 import { errorText } from "@/lib/error-text";
 
-type Info = { token: string; dynamicVariables: Record<string, string>; userId: string; clinicName: string; agentName: string; error?: string };
+type Info = { token: string; llm?: string; dynamicVariables: Record<string, string>; userId: string; clinicName: string; agentName: string; error?: string };
 
 export function LlamadaDemo({ token }: { token: string }) {
   return (
@@ -63,7 +63,13 @@ function Llamada({ token }: { token: string }) {
       const data = (await res.json()) as Info;
       if (!res.ok) throw new Error(data.error || "No se pudo iniciar la llamada.");
       setInfo(data);
-      await conversation.startSession({ conversationToken: data.token, dynamicVariables: data.dynamicVariables, userId: data.userId });
+      await conversation.startSession({
+        conversationToken: data.token,
+        // El agente piensa con el LLM de chat; por voz se pide el rápido.
+        ...(data.llm ? { overrides: { agent: { prompt: { llm: data.llm } } } } : {}),
+        dynamicVariables: data.dynamicVariables,
+        userId: data.userId,
+      });
       startedAt.current = Date.now();
       track("demo_conversation_started", { demo_kind: "llamada_web", mode: "voz" });
     } catch (e) {

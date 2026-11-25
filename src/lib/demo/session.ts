@@ -7,7 +7,7 @@ import type { ScrapeResult } from "./scraper";
 import { env } from "../env";
 import { buildDynamicVariables, getClinic } from "../clinic";
 import { forwardToAgent } from "../channel";
-import { startPhoneCall } from "../elevenlabs";
+import { startPhoneCall, voiceLlmFor } from "../elevenlabs";
 import { syncLeadsToSheet } from "../leads-sheet";
 import { syncTurniaSheet } from "../sheets/turnia-sheet";
 import { notifyN8n } from "../n8n";
@@ -363,11 +363,16 @@ async function startMode(session: DemoSession, clinic: Clinic, mode: DemoMode): 
       return;
     }
     try {
+      const [dynamicVariables, llm] = await Promise.all([
+        demoDynamicVariables(clinic, session.phone),
+        voiceLlmFor(main.elevenlabs_agent_id),
+      ]);
       await startPhoneCall({
         agentId: main.elevenlabs_agent_id,
         phoneNumberId,
         toNumber: `+${session.phone}`,
-        dynamicVariables: await demoDynamicVariables(clinic, session.phone),
+        dynamicVariables,
+        llm,
       });
     } catch (e) {
       await releaseDemoCall(session.id);

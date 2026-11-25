@@ -19,7 +19,16 @@ export const env = {
   appUrl: () =>
     process.env.APP_URL ||
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000"),
-  agentLlm: () => process.env.AGENT_LLM || "claude-sonnet-5-5",
+  /**
+   * LLM de Sofi en los chats (WhatsApp y demos por chat): el agente general. Opus 5.5 mientras se
+   * ajusta el prompt (sigue mejor las reglas largas; en texto la demora extra casi no se nota).
+   */
+  agentChatLlm: () => process.env.AGENT_CHAT_LLM || "claude-opus-5-5",
+  /**
+   * LLM de Sofi por voz: el agente propio de cada clínica (llamadas) y las demos por voz del agente
+   * general. En voz cada segundo se nota, así que va el modelo rápido. AGENT_LLM queda por compatibilidad.
+   */
+  agentVoiceLlm: () => process.env.AGENT_VOICE_LLM || process.env.AGENT_LLM || "claude-sonnet-5-5",
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
   // WhatsApp por WAHA + Custom Channel de ElevenLabs
   wahaUrl: () => required("WAHA_URL").replace(/\/$/, ""),
