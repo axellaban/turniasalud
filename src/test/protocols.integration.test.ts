@@ -406,6 +406,11 @@ describe.runIf(url)("reglas de turnos del panel en las herramientas de Sofi", ()
     try {
       const info = clinicLib.clinicInfoText(await clinic());
       expect(info).toContain("Trato: de usted con todos los pacientes");
+      // El trato va arriba de todo en el prompt, para que el primer mensaje ya salga bien.
+      expect((await clinicLib.buildDynamicVariables(await clinic(), plain)).trato).toMatch(/^Tratás de usted a todos/);
+      expect(clinicLib.clinicTone({ tone: null, agent_context: "TRATO\n- Tratar siempre de usted, en todos los mensajes." })).toBe("usted");
+      expect(clinicLib.clinicTone({ tone: null, agent_context: "Atender con calidez." })).toBe("vos");
+      expect(clinicLib.toneText({ tone: "vos", agent_context: null })).toMatch(/^Tratás de vos/);
       expect(info).toContain("Protocolo odontológico de Turnia");
       // También si la ficha dice otra especialidad pero sus profesionales son odontólogos.
       await sql`update clinics set specialty = 'Multiespecialidad' where id = ${clinicId}`;

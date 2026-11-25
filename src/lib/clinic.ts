@@ -357,6 +357,20 @@ export async function findPatientByPhone(clinicId: string, phone: string): Promi
 /** Variables dinámicas que recibe el agente al empezar cada conversación. */
 export const INBOUND_CONTEXT = "El paciente inició la conversación.";
 
+/** Trato de la clínica: lo que eligió en el panel o, si no eligió, lo que piden sus instrucciones. */
+export function clinicTone(clinic: Pick<Clinic, "tone" | "agent_context">): "usted" | "vos" {
+  if (clinic.tone) return clinic.tone;
+  return /\b(tratar|trato|trate)\b[^.\n]{0,30}\bde usted\b/i.test(clinic.agent_context ?? "") ? "usted" : "vos";
+}
+
+/** Va arriba de todo en el prompt ({{trato}}): así Sofi escribe en el trato correcto desde la primera palabra. */
+export function toneText(clinic: Pick<Clinic, "tone" | "agent_context">): string {
+  const tone = clinicTone(clinic) === "usted"
+    ? 'Tratás de usted a todos, pacientes y equipo ("usted", "tiene", "quiere", "le"), en cada mensaje desde la primera palabra, aunque te tuteen.'
+    : 'Tratás de vos, con voseo ("vos", "tenés", "querés", "te").';
+  return `${tone} Si alguna vez se te escapa el otro trato, seguí con el correcto sin pedir perdón ni repetir el mensaje.`;
+}
+
 export async function buildDynamicVariables(
   clinic: Clinic,
   phone: string,
@@ -379,6 +393,7 @@ export async function buildDynamicVariables(
     clinic_id: clinic.id,
     clinic_name: clinic.name,
     agent_name: clinic.agent_name,
+    trato: toneText(clinic),
     clinic_info: clinicInfoText(clinic, openNow, { dental: isDentalClinic(clinic, catalog) }),
     clinic_catalog: catalogText(catalog, blocks, clinic.timezone, clinic),
     urgency_instructions: clinic.after_hours_instructions
