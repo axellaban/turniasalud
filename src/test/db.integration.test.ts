@@ -224,7 +224,9 @@ describe.runIf(url)("integración con Postgres", () => {
     const task = await service.createTask(waiting, { tipo: "receta", titulo: "Renovar receta", detalle: "Ibuprofeno" });
     const [taskRow] = await sql<Array<{ priority: string; conversation_id: string }>>`select priority, conversation_id from tasks where id = ${task.tarea_id}`;
     expect(taskRow).toEqual({ priority: "normal", conversation_id: "conv_test" });
-    await service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, preferencias: "tardes" });
+    // Como la secretaria: sin turno reservado, primero se reserva uno y la lista de espera es para adelantarlo.
+    await expect(service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ })).rejects.toThrow("reservale un turno");
+    await service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, preferencias: "tardes", sin_turno: "no_hay_horarios" });
 
     const holder = ctx("5491166660010");
     await service.registerPatient(holder, { nombre_completo: "Gabi Cancela" });
@@ -246,11 +248,25 @@ describe.runIf(url)("integración con Postgres", () => {
     expect(resolved.status).toBe("resuelta");
   });
 
+  it("la lista de espera adelanta el turno ya reservado y no anota a nadie sin turno por su cuenta", async () => {
+    const waiting = ctx("5491100007731");
+    await service.registerPatient(waiting, { nombre_completo: "Paciente ficticio que adelanta" });
+    const { turnos } = await service.checkAvailability(waiting, { tipo_turno_id: LIMPIEZA, desde: inTwoDays() });
+    const booked = await service.bookAppointment(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: turnos[0].profesional_id, inicio: turnos[0].inicio });
+    // Si ya tiene turno de eso, la herramienta le indica cuál usar, aunque pida sin turno.
+    await expect(service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, sin_turno: "no_quiere_turno" })).rejects.toThrow(`turno_id=${booked.turno_id}`);
+    const joined = await service.joinWaitlist(waiting, { turno_id: booked.turno_id, preferencias: "mañanas" });
+    expect(joined.mensaje).toContain("conserva ese turno");
+    expect(await sql`select w.appointment_id, a.status from waitlist w join appointments a on a.id = w.appointment_id
+      where w.appointment_id = ${booked.turno_id} and w.status = 'activa'`).toEqual([{ appointment_id: booked.turno_id, status: "confirmado" }]);
+    await service.cancelAppointment(waiting, { turno_id: booked.turno_id });
+  });
+
   it("la lista de espera no ofrece un día reservado al equipo aunque se cancele un turno existente", async () => {
     await sql`update clinics set whatsapp_phone_number_id = 'wa_test', elevenlabs_agent_id = 'agent_test', booking_weekdays = array[1,2,3,4]::smallint[] where id = ${CLINIC}`;
     const waiting = ctx("5491100007729");
     await service.registerPatient(waiting, { nombre_completo: "Paciente ficticio en espera" });
-    await service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ });
+    await service.joinWaitlist(waiting, { tipo_turno_id: LIMPIEZA, profesional_id: RUIZ, sin_turno: "no_quiere_turno" });
     const [{ id: holder }] = await sql`insert into patients (clinic_id, full_name, phone) values (${CLINIC}, 'Paciente ficticio que cancela', '5491100007730') returning id`;
     let friday = new Date(Date.now() + 30 * 86400_000);
     while (friday.getUTCDay() !== 5) friday = new Date(friday.getTime() + 86400_000);
