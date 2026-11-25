@@ -372,7 +372,7 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     const body = fake.sent("channel")[0].body as { conversation_id?: string; dynamic_variables: Record<string, string> };
     expect(body.conversation_id).toBeUndefined();
     expect(body.dynamic_variables.conversation_context).toContain("Ya venían hablando por este chat (el último mensaje fue hace 40 minutos)");
-    expect(body.dynamic_variables.conversation_context).toContain("No saludes ni te presentes otra vez");
+    expect(body.dynamic_variables.conversation_context).toContain("sin saludar de nuevo");
     expect(body.dynamic_variables.conversation_context).toContain("Agente: Hola! Soy Sofi. Para qué tipo de turno?");
 
     // Al día siguiente es una charla nueva: puede saludar.
