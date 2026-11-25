@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { buildDynamicVariables, getClinic } from "@/lib/clinic";
-import { getChatCredential, getConversationToken } from "@/lib/elevenlabs";
+import { getChatCredential, getVoiceCredential } from "@/lib/elevenlabs";
 import { normalizePhone } from "@/lib/phone";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
@@ -31,11 +31,11 @@ export async function POST(request: Request) {
     const phone = normalizePhone(body.phone) || `web-${randomBytes(4).toString("hex")}`;
     const chat = body.mode === "chat";
     const [credential, dynamicVariables] = await Promise.all([
-      chat ? getChatCredential(agentId) : getConversationToken(agentId),
+      chat ? getChatCredential(agentId) : getVoiceCredential(agentId),
       clinic.is_demo ? demoDynamicVariables(clinic, phone) : buildDynamicVariables(clinic, phone),
     ]);
     return NextResponse.json({
-      ...(typeof credential === "string" ? { token: credential } : credential),
+      ...credential,
       agentId,
       clinicName: clinic.name,
       dynamicVariables,

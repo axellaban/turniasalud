@@ -123,6 +123,14 @@ export function callLimits(general: boolean) {
       };
 }
 
+/**
+ * LLM de cada agente. El general atiende los chats de WhatsApp de todas las clínicas (y las demos);
+ * el propio de una clínica solo atiende sus llamadas.
+ */
+export function agentLlm(general: boolean): string {
+  return general ? env.agentChatLlm() : env.agentVoiceLlm();
+}
+
 function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, baseUrl: string, secret: string, general: boolean) {
   const handoffPhone = handoffNumber(clinic.handoff_phone);
   return {
@@ -135,7 +143,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
         ...(!general && { max_conversation_duration_message: CALL_LIMIT_MESSAGE }),
         prompt: {
           prompt: SYSTEM_PROMPT,
-          llm: env.agentLlm(),
+          llm: agentLlm(general),
           temperature: 0.3,
           timezone: clinic.timezone,
           tool_ids: toolIds,
@@ -174,7 +182,12 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
       overrides: {
         enable_conversation_initiation_client_data_from_webhook: true,
         // first_message: el chat de la demo arranca sin el saludo fijo (el paciente escribe primero).
-        conversation_config_override: { agent: { first_message: true }, conversation: { text_only: true } },
+        // El agente general atiende chats con el LLM de chat; sus demos por voz piden el de voz
+        // (ver voiceLlmOverride en elevenlabs.ts), así que el LLM tiene que poder cambiarse por charla.
+        conversation_config_override: {
+          agent: { first_message: true, ...(general && { prompt: { llm: true } }) },
+          conversation: { text_only: true },
+        },
       },
       workspace_overrides: {
         conversation_initiation_client_data_webhook: {

@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { sql } from "../db";
 import { getClinic } from "../clinic";
-import { getChatCredential, getConversationToken } from "../elevenlabs";
+import { getChatCredential, getVoiceCredential } from "../elevenlabs";
 import { messagingSettings } from "../messaging-settings";
 import { notifyN8n } from "../n8n";
 import type { Clinic } from "../types";
@@ -190,11 +190,11 @@ export async function startWebConversation(token: string, mode: WebDemoMode) {
     // Una conversación nueva arranca de cero, como al cambiar de modo por chat.
     await sql`update channel_conversations set closed_at = now() where clinic_id = ${clinic.id} and phone = ${session.phone} and closed_at is null`;
     const [credential, dynamicVariables] = await Promise.all([
-      mode === "chat" ? getChatCredential(main.elevenlabs_agent_id) : getConversationToken(main.elevenlabs_agent_id),
+      mode === "chat" ? getChatCredential(main.elevenlabs_agent_id) : getVoiceCredential(main.elevenlabs_agent_id),
       demoDynamicVariables(clinic, session.phone),
     ]);
     return {
-      ...(typeof credential === "string" ? { token: credential } : credential),
+      ...credential,
       dynamicVariables,
       userId: session.phone,
       clinicName: clinic.name,

@@ -11,7 +11,7 @@ vi.mock("next/server", async (original) => ({ ...(await original<typeof import("
 vi.mock("@/lib/waha", async (original) => ({ ...(await original<typeof import("@/lib/waha")>()), wahaSendText: mocks.sent }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn() }));
 vi.mock("@/lib/agent/setup", () => ({ setupAgent: mocks.setup }));
-vi.mock("@/lib/elevenlabs", async (original) => ({ ...(await original<typeof import("@/lib/elevenlabs")>()), sendChannelMessage: mocks.agent, getConversationToken: vi.fn(async () => "test-token"), getSignedUrl: vi.fn(async () => "wss://test.invalid") }));
+vi.mock("@/lib/elevenlabs", async (original) => ({ ...(await original<typeof import("@/lib/elevenlabs")>()), sendChannelMessage: mocks.agent, getConversationToken: vi.fn(async () => "test-token"), getVoiceCredential: vi.fn(async () => ({ token: "test-token" })), getSignedUrl: vi.fn(async () => "wss://test.invalid") }));
 vi.mock("@/lib/demo/scraper", async (original) => ({ ...(await original<typeof import("@/lib/demo/scraper")>()), scrapeSite: vi.fn(async () => ({ url: "https://clinica.example/", text: "Texto original leído", pages: [{ url: "https://clinica.example/", title: "Fuente original", text: "Texto original leído <script>inofensivo</script>" }] })) }));
 vi.mock("@/lib/demo/profile", async (original) => ({ ...(await original<typeof import("@/lib/demo/profile")>()), buildProfile: vi.fn(async () => PROFILE) }));
 
