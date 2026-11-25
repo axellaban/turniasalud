@@ -380,7 +380,7 @@ describe.runIf(base)("pacientes que ya existen", () => {
     await Promise.all([
       service.createTask(ctx(phone), { tipo: "administrativo", titulo: "Uno" }),
       service.createTask(ctx(phone), { tipo: "administrativo", titulo: "Dos" }),
-      service.joinWaitlist(ctx(phone), { tipo_turno_id: LIMPIEZA }),
+      service.joinWaitlist(ctx(phone), { tipo_turno_id: LIMPIEZA, sin_turno: "no_hay_horarios" }),
     ]);
     expect(await sql`select id from patients where clinic_id = ${CLINIC} and phone = ${phone}`).toHaveLength(1);
   });

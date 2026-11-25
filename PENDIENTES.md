@@ -113,6 +113,19 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 - [ ] **Bloqueos: rechazo real 403 de Smile Connect.** Después del [PR #238](https://github.com/axellaban/turniasalud/pull/238) se ejecutó una única sincronización manual a las 10:16 con la misma clave vigente: turnos y horarios correctos, pero `/events` devuelve 403. El usuario indicó que esa clave ya tenía todos los permisos y pidió conservarla. Revisar con Smile Connect la habilitación de `events:read` para esa clave; no generar otra ni revocarla por iniciativa propia. El arreglo distingue 403 de 404 y permite volver a probar desde «Sincronizar ahora» sin cambiar la clave. Sofi sigue verificando la disponibilidad en vivo.
 - [x] **Recepción de un aviso de integración confirmada por Axel el 19/11.** Indicó que recibió un mensaje de «Turnia · Smile Connect» en su WhatsApp personal. No se revisó el contenido ni se envió otro aviso para esta confirmación.
 
+## Lista de espera como la secretaria (25/11/2026)
+
+- Pedido de Mariano (Guerra–Mininni): que Sofi haga como la secretaria, primero cerrar un turno y además anotar en lista de espera. Si no, el paciente cree que estar anotado le asegura un turno antes y, cuando no se libera nada, termina más atrás.
+- [x] `anotar_lista_espera` (`joinWaitlist`): sin `turno_id` rechaza la inscripción y le pide a Sofi reservar primero el primer horario que le sirva. Si el paciente ya tiene un turno futuro de esa prestación, le devuelve su `turno_id`. Sin turno solo con `sin_turno` (`no_hay_horarios` o `no_quiere_turno`). El equipo no tiene esta restricción.
+- [x] Prompt y mensajes de la herramienta: «Le reservo el lunes 21/12 a las 10:30 y lo anoto en la lista de espera: si se libera un lugar antes, le escribimos». Sin prometer que lo adelantan; sin turno, se aclara que todavía no tiene turno.
+- [ ] Después del despliegue, «Actualizar a Sofi»: cambió la definición de la herramienta (parámetro `sin_turno`), no solo el prompt.
+
+## Sofi le explicó reglas a una paciente (25/11/2026)
+
+- Por WhatsApp, Sofi le escribió a una paciente de Guerra–Mininni «como ya es paciente, puede pedir directamente el mantenimiento, sin una consulta de primera vez» y que la profesional del mantenimiento no atiende el martes. El usuario pidió que no vuelva a pasar.
+- [x] Prompt: las reglas de la clínica (qué turno corresponde, quién hace cada práctica, qué días atiende cada uno) se aplican sin contarlas; si un día no se puede, solo «ese día no tengo lugar»; un error se corrige ofreciendo lo correcto, sin explicarlo. Con un ejemplo de mal y bien.
+- [ ] Después del despliegue, «Actualizar a Sofi» para que llegue a los agentes de ElevenLabs (WhatsApp y llamadas).
+
 ## Feedback de Guerra–Mininni sobre Sofi (18/11/2026)
 
 - Hecho y en producción (PR #223 a #227): primer turno del día, «molestia» no es urgencia (la guardia solo con mucho dolor, sangrado o hinchazón), no prometer días antes de mirar la agenda, datos juntos por WhatsApp, sin reglas internas ni «limpieza», radiografías en un párrafo aparte, y días que Smile Connect no confirmó a tiempo sin darlos por llenos. Prompt actualizado en los dos agentes de ElevenLabs.

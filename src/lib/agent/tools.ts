@@ -217,14 +217,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "anotar_lista_espera",
-    description: "Anota al paciente en lista de espera. Para adelantar o mover un turno existente, usá turno_id (también si figura como Turno Smile Connect); para uno nuevo, tipo_turno_id. Conserva el turno original. Confirmá que quedó anotado solo si devuelve éxito.",
+    description: "Anota al paciente en lista de espera para adelantar un turno que ya tiene reservado: usá turno_id (también si figura como Turno Smile Connect). Conserva ese turno. Si todavía no tiene turno, primero reservale el primer horario que le sirva y después anotalo con el turno_id de esa reserva. tipo_turno_id con sin_turno solo si no hubo ningún horario o no quiso ninguno. Confirmá que quedó anotado solo si devuelve éxito.",
     params: {
-      tipo_turno_id: { type: "string", description: "Para un turno nuevo: id del tipo de turno." },
+      tipo_turno_id: { type: "string", description: "Solo sin turno reservado (con sin_turno): id del tipo de turno." },
       turno_id: { type: "string", description: "Para mover uno existente: id de ese turno. No lo reemplaces por el tipo genérico importado." },
       profesional_id: { type: "string", description: "id del profesional, si quiere uno en particular." },
       preferencias: { type: "string", description: "Días y horarios que le sirven." },
+      sin_turno: { type: "string", description: "Solo con tipo_turno_id: por qué queda en lista de espera sin turno reservado.", enum: ["no_hay_horarios", "no_quiere_turno"] },
     },
-    schema: z.object({ tipo_turno_id: z.string().min(1).optional(), turno_id: z.string().min(1).optional(), profesional_id: z.string().optional(), preferencias: z.string().optional() })
+    schema: z.object({ tipo_turno_id: z.string().min(1).optional(), turno_id: z.string().min(1).optional(), profesional_id: z.string().optional(), preferencias: z.string().optional(),
+      sin_turno: z.enum(["no_hay_horarios", "no_quiere_turno"]).optional() })
       .refine((i) => Boolean(i.tipo_turno_id) !== Boolean(i.turno_id), "Usá tipo_turno_id o turno_id, solo uno."),
   },
   {

@@ -547,7 +547,7 @@ export async function checkAvailability(
           ? "No hay lugar de urgencia hoy ni mañana. Creá una tarea de tipo «urgencia» con prioridad «urgente» para que el equipo lo contacte hoy, y decile qué hacer mientras tanto según el protocolo de urgencias."
           : next
           ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
-          : `No hay turnos libres entre ${fromKey} y ${toKey}. Ofrecé buscar más adelante o anotar al paciente en la lista de espera.`),
+          : `No hay turnos libres entre ${fromKey} y ${toKey}. Buscá más adelante y reservale el primero que le sirva; la lista de espera es para adelantar ese turno.`),
     };
   }
   const turnos = slots.map((s) => ({
@@ -1738,7 +1738,10 @@ export async function muteSender(ctx: ToolContext, input: { motivo: "vendedor" |
 // ---------------------------------------------------------------------------
 // anotar_lista_espera
 // ---------------------------------------------------------------------------
-export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string }) {
+// Como hace la secretaria: primero un turno reservado y la lista de espera es para adelantarlo.
+// Así el paciente no cree que estar anotado le asegura un turno antes, ni se queda sin ninguno.
+export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string;
+  sin_turno?: "no_hay_horarios" | "no_quiere_turno" }) {
   if (Boolean(input.tipo_turno_id) === Boolean(input.turno_id)) throw new ToolError("Usá tipo_turno_id o turno_id, solo uno.");
   const clinic = await getClinic(ctx.clinicId);
   const move = input.turno_id ? await loadReschedule(ctx, clinic, input.turno_id) : null;
@@ -1747,6 +1750,16 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: st
   const waitType = catalog.appointmentTypes.find((t) => t.id === (move?.appt.appointment_type_id ?? input.tipo_turno_id));
   if (!waitType) throw new ToolError("Tipo de turno inválido.");
   if (!move) assertAgentCanBook(waitType);
+  if (!move && !ctx.staff) {
+    const [held] = await sql<Array<{ id: string; starts_at: string }>>`select id, starts_at from appointments
+      where clinic_id = ${ctx.clinicId} and patient_id = ${patient.id} and appointment_type_id = ${waitType.id}
+        and status in ('confirmado', 'pendiente') and starts_at > now() order by starts_at limit 1`;
+    if (held) throw new ToolError(`Ya tiene turno de «${waitType.name}» el ${humanSlot(new Date(held.starts_at), clinic.timezone)}: `
+      + `anotalo con turno_id=${held.id} para adelantar ese turno.`);
+    if (!input.sin_turno) throw new ToolError("Antes de la lista de espera, reservale un turno: el primer horario que le sirva de "
+      + "consultar_disponibilidad, con reservar_turno. Después anotalo con el turno_id de esa reserva, por si se libera algo antes. "
+      + "Sin turno, solo si consultar_disponibilidad no devolvió ningún horario o si no quiso ninguno de los que le ofreciste: entonces sin_turno.");
+  }
   if (input.profesional_id && !catalog.professionals.some((p) => p.id === input.profesional_id)) throw new ToolError("Profesional inválido.");
   const professionalId = input.profesional_id ?? move?.appt.professional_id ?? null;
   await sql.begin(async (tx) => {
@@ -1759,8 +1772,8 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: st
       values (${ctx.clinicId}, ${patient.id}, ${waitType.id}, ${move?.appt.id ?? null}, ${professionalId}, ${input.preferencias ?? null})`;
   });
   return { ok: true, mensaje: move
-    ? "Paciente anotado en lista de espera para mover ese turno. El turno original sigue reservado. Si aparece una opción compatible, le escribimos por WhatsApp."
-    : "Paciente anotado en la lista de espera. Si se libera un turno le escribimos por WhatsApp." };
+    ? "Anotado en lista de espera para adelantar ese turno, que sigue reservado. Decile que conserva ese turno y que, si se libera un lugar antes, le escribimos por WhatsApp. No le prometas que lo van a adelantar."
+    : "Anotado en lista de espera, sin turno reservado. Decile que todavía no tiene turno y que la lista de espera no le asegura uno: si se libera un lugar, le escribimos por WhatsApp." };
 }
 
 /** Consulta el resultado ya verificado por el proceso de Smile Connect; no repite escrituras. */
