@@ -10,6 +10,10 @@ Registro del QA de producción de turniasalud.app, igual que el de habita. (`doc
 - **Demos de prospectos:** abrirlas siempre con `?vista=panel`. Así no cuentan como visita, no se identifican en PostHog y la conversación no queda en la ficha del prospecto. Igual crea un pedido de demo (ver OBS-002).
 - **Repositorio público:** acá no van nombres, códigos de demo, teléfonos, cantidades de sesiones, tasas ni enlaces a grabaciones. Los patrones se describen con palabras, como `aislado` o `repetido`.
 
+## Batería de Sofi
+
+Además del QA de producción, el comportamiento de Sofi se prueba con `npm run probar-sofi -- --agente <id> --clinica "<parte del nombre>"`: casos de charlas reales simulados en ElevenLabs, con todas las herramientas simuladas, contra el prompt del repositorio. Correrla después de cada cambio de prompt y antes de «Actualizar a Sofi». Detalle en [`PENDIENTES.md`](PENDIENTES.md) (25/11/2026).
+
 ## Cómo entrar
 
 - **PostHog:** proyecto 518346 (US). La clave personal está en la variable `POSTHOG_PERSONAL_API_KEY` del entorno de la nube. Las consultas van por la API `query` (HogQL).

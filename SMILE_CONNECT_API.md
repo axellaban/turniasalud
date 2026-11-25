@@ -237,6 +237,10 @@ La clave la dio Mininni con todos los permisos que ofrece Smile Connect. El cont
 
 Pruebas: `src/test/smile-connect-api.integration.test.ts`, bloque «Smile Connect como fuente de la verdad». Cada regla tiene una verificación de mutación: sin ella, su prueba falla.
 
+## Confirmación en el mismo mensaje por chat (25/11/2026)
+
+Por WhatsApp o web, reservar, mover o cancelar ya no termina siempre en «pendiente»: la herramienta escribe el pedido en Smile Connect al momento y espera hasta `SMILE_CHAT_WAIT_MS` (7 s por defecto; 0 vuelve al flujo anterior). Si Smile Connect confirma a tiempo, Sofi lo dice en su respuesta y el aviso al paciente de ese pedido queda en `en_chat` (no sale). Si el horario se ocupó o lo tiene que revisar recepción, también lo dice. Lo que no llega a tiempo sigue solo, con el aviso posterior de siempre. Por teléfono se sigue comprobando con `consultar_estado_turno`; desde el panel, sin espera.
+
 ## Avisos al consultorio por WhatsApp (`src/lib/clinic-notices.ts`)
 
 **Qué avisa:** cuando Sofi da, mueve o cancela un turno a pedido de un paciente, les llega el detalle a los celulares cargados en Panel → Configuración → «Avisos por WhatsApp».

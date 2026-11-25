@@ -13,6 +13,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:migrate": "node scripts/migrate-db.mjs --force",
+    "probar-sofi": "node scripts/probar-sofi.mjs",
     "embudo": "node scripts/embudo.mjs"
   },
   "dependencies": {
