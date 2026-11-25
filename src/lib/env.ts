@@ -29,6 +29,8 @@ export const env = {
    * general. En voz cada segundo se nota, así que va el modelo rápido. AGENT_LLM queda por compatibilidad.
    */
   agentVoiceLlm: () => process.env.AGENT_VOICE_LLM || process.env.AGENT_LLM || "claude-sonnet-5-5",
+  /** Por chat, cuánto espera Sofi a Smile Connect para contestar en el mismo mensaje si el turno quedó (0: no espera). ElevenLabs corta las herramientas a los 20 s. */
+  smileChatWaitMs: () => Math.max(0, Number(process.env.SMILE_CHAT_WAIT_MS ?? 7000) || 0),
   n8nWebhookUrl: () => process.env.N8N_WEBHOOK_URL ?? "",
   // WhatsApp por WAHA + Custom Channel de ElevenLabs
   wahaUrl: () => required("WAHA_URL").replace(/\/$/, ""),

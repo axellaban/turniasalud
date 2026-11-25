@@ -11,7 +11,8 @@ import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
 import { getSmileApiConnection, isLiveSmileMode, smileBusy, writesEnabledOnServer } from "../smile-connect-link";
-import { confirmNewSmileAppointment, processSmileBookingLater, processSmileNotesLater } from "../smile-connect-push";
+import { confirmNewSmileAppointment, processSmileBookingLater, processSmileNotesLater, settleSmileBooking } from "../smile-connect-push";
+import { noticesToldInChat } from "../clinic-notices";
 import { appointmentAccessEnabled, appointmentAccessKey, expireAppointmentAccess } from "./appointment-access";
 import type { Appointment, AppointmentSource, AppointmentType, Clinic, Patient, SmileManagement, Task, TaskPriority, TaskType } from "../types";
 
@@ -941,9 +942,77 @@ export function appointmentTitle(raw: string | undefined, typeName: string): str
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
-function pendingSmileResult(clinicId: string, appointment: Pick<Appointment, "id" | "smile_reply_phone" | "smile_sync">, ctx: ToolContext) {
+/**
+ * Por chat (WhatsApp o web), Sofi espera unos segundos a Smile Connect para contestar en el mismo
+ * mensaje si el turno quedó, en vez de «le avisamos cuando se confirme». Por teléfono se comprueba
+ * con consultar_estado_turno; en el panel, sigue diferido. Devuelve null si no hay resultado a tiempo.
+ */
+async function settleInChat(clinicId: string, appointmentId: string, ctx: ToolContext): Promise<boolean> {
+  const wait = env.smileChatWaitMs();
+  const source = sourceFromChannel(ctx.channel, ctx.patientPhone);
+  if (!wait || source === "telefono" || source === "panel") {
+    processSmileBookingLater(clinicId, appointmentId);
+    return false;
+  }
+  return settleSmileBooking(clinicId, appointmentId, wait);
+}
+
+/** El resultado que Sofi contesta en el chat cuando Smile Connect respondió a tiempo. */
+type ChatSettled = {
+  ok: boolean;
+  turno_id: string;
+  segundo_turno_id?: undefined;
+  mensaje: string;
+  direccion?: string | null;
+  indicaciones?: string;
+  ocupado?: boolean;
+  pendiente_recepcion?: boolean;
+  ficha_de_salud?: NonNullable<Awaited<ReturnType<typeof healthFormOffer>>>;
+};
+
+/** Lo que quedó de un turno nuevo después de escribirlo en Smile Connect, para contestarlo en el chat. */
+async function settledBooking(clinic: Clinic, appointmentId: string, ctx: ToolContext): Promise<ChatSettled | null> {
+  const [row] = await sql<Array<Appointment & { professional: string; type_name: string; instructions: string | null }>>`
+    select a.*, p.full_name as professional, coalesce(a.title, t.name) as type_name, t.instructions
+    from appointments a join professionals p on p.id = a.professional_id join appointment_types t on t.id = a.appointment_type_id
+    where a.id = ${appointmentId}`;
+  if (!row) return null;
+  const when = humanSlot(new Date(row.starts_at), clinic.timezone);
+  const confirmed = row.status === "confirmado" && row.smile_sync === "ok";
+  const occupied = row.status === "cancelado" && !row.smile_sync;
+  const review = row.smile_sync === "revisar";
+  if (!confirmed && !occupied && !review) return null;
+  const alreadySent = await noticesToldInChat([row.id]);
+  if (occupied) return { ok: false, ocupado: true, turno_id: row.id,
+    mensaje: `El horario del ${when} se ocupó recién en la agenda: no quedó reservado. Decíselo en una línea y ofrecé otros horarios (consultá de nuevo).` };
+  if (review) return { ok: false, pendiente_recepcion: true, turno_id: row.id,
+    mensaje: "La agenda no lo pudo confirmar y el pedido quedó en recepción, que lo revisa y le escribe. Decile que todavía no tiene el turno confirmado. No crees otra tarea." };
+  if (alreadySent) return { ok: true, turno_id: row.id,
+    mensaje: `Turno confirmado: ${row.type_name} con ${row.professional} el ${when}. Ya le llegó la confirmación por WhatsApp: decile solo que quedó confirmado.` };
+  // Como en una reserva confirmada al momento: al paciente nuevo se le ofrece la ficha de salud.
+  const [patient] = ctx.staff ? [] : await sql<Patient[]>`select * from patients where id = ${row.patient_id}`;
+  const healthForm = patient
+    ? await healthFormOffer(clinic, patient, sourceFromChannel(ctx.channel, ctx.patientPhone), ctx.conversationId).catch((e) => {
+        console.error("Ficha de salud: no se pudo preparar la oferta", e);
+        return null;
+      })
+    : null;
+  return {
+    ok: true,
+    turno_id: row.id,
+    mensaje: `Turno confirmado: ${row.type_name} con ${row.professional} el ${when}.`,
+    direccion: clinic.address,
+    indicaciones: row.instructions ?? undefined,
+    ...(healthForm && { ficha_de_salud: healthForm }),
+  };
+}
+
+async function pendingSmileResult(clinic: Clinic, appointment: Pick<Appointment, "id" | "smile_reply_phone" | "smile_sync">, ctx: ToolContext) {
   const review = appointment.smile_sync === "revisar";
-  if (!review) processSmileBookingLater(clinicId, appointment.id);
+  if (!review && await settleInChat(clinic.id, appointment.id, ctx)) {
+    const settled = await settledBooking(clinic, appointment.id, ctx);
+    if (settled) return settled;
+  }
   return {
     ok: false,
     pendiente_confirmacion: !review,
@@ -981,7 +1050,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   // Si ya tiene la primera práctica y pide la segunda, se suma la segunda a continuación.
   const same = bookedAt(input.tipo_turno_id, startsAt);
   const sameNext = same && input.segundo_tipo_turno_id ? bookedAt(input.segundo_tipo_turno_id, new Date(same.ends_at)) : undefined;
-  if (same?.smile_deferred && same.status === "pendiente") return pendingSmileResult(clinic.id, same, ctx);
+  if (same?.smile_deferred && same.status === "pendiente") return pendingSmileResult(clinic, same, ctx);
   for (const existing of [same, sameNext]) {
     if (existing && (smileBookingPending(existing) || (liveSmile && !existing.external_id?.startsWith("sc:")))) {
       throw new SmileHandoff("Ese turno figura para revisión de recepción. Todavía no puedo confirmar la reserva.", `Comprobar en Smile Connect el turno de Turnia ${existing.id}.`);
@@ -1098,7 +1167,7 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   }
   if (deferSmile) {
     const [appointment] = created;
-    if (appointment.status === "pendiente") return pendingSmileResult(clinic.id, appointment, ctx);
+    if (appointment.status === "pendiente") return pendingSmileResult(clinic, appointment, ctx);
     return { ok: true, turno_id: appointment.id, segundo_turno_id: undefined, mensaje: "Ese turno ya estaba confirmado.", direccion: clinic.address };
   }
   if (smileProblem !== null) {
@@ -1251,7 +1320,43 @@ export async function confirmAppointment(ctx: ToolContext, input: { turno_id: st
 // ---------------------------------------------------------------------------
 // cancelar_turno (+ ofrece el hueco a la lista de espera)
 // ---------------------------------------------------------------------------
-async function requestSmileManagement(appt: Appointment, request: SmileManagement) {
+/** Lo que quedó de un pedido de mover o cancelar después de escribirlo en Smile Connect, para contestarlo en el chat. */
+async function settledManagement(appt: Appointment, request: SmileManagement): Promise<ChatSettled | null> {
+  const clinic = await getClinic(appt.clinic_id);
+  const [row] = await sql<Appointment[]>`select * from appointments where id = ${appt.id}`;
+  if (!row) return null;
+  const was = humanSlot(new Date(appt.starts_at), clinic.timezone);
+  const told = (ids: Array<string | null>) => noticesToldInChat(ids);
+  if (row.smile_sync === "revisar") {
+    await told([row.id]);
+    return { ok: false, pendiente_recepcion: true, turno_id: row.id,
+      mensaje: `La agenda no pudo confirmar el pedido y quedó en recepción, que lo revisa y le escribe. Hasta entonces el turno del ${was} sigue como estaba. No crees otra tarea.` };
+  }
+  if (row.smile_management) return null;
+  if (request.operation === "cancelar") {
+    if (row.status !== "cancelado") return null;
+    const sent = await told([row.id]);
+    return { ok: true, turno_id: row.id,
+      mensaje: `Cancelación confirmada: el turno del ${was} quedó cancelado.${sent ? " Ya le llegó el aviso por WhatsApp: decile solo que quedó hecho." : ""}` };
+  }
+  if (row.status === "reprogramado" && row.replaced_by) {
+    const [moved] = await sql<Array<Appointment & { professional: string }>>`
+      select a.*, p.full_name as professional from appointments a join professionals p on p.id = a.professional_id where a.id = ${row.replaced_by}`;
+    if (!moved) return null;
+    const sent = await told([row.id, moved.id]);
+    return { ok: true, turno_id: moved.id, direccion: clinic.address,
+      mensaje: `Cambio confirmado: el turno quedó para el ${humanSlot(new Date(moved.starts_at), clinic.timezone)} con ${moved.professional}.${sent ? " Ya le llegó el aviso por WhatsApp: decile solo que quedó hecho." : ""}` };
+  }
+  if (ACTIVE.includes(row.status) && row.smile_sync === "ok") {
+    // El horario pedido se ocupó antes de escribirlo: el turno sigue donde estaba.
+    await told([row.id]);
+    return { ok: false, ocupado: true, turno_id: row.id,
+      mensaje: `El horario pedido se ocupó recién: el turno sigue el ${was}. Decíselo en una línea y ofrecé buscar otro horario.` };
+  }
+  return null;
+}
+
+async function requestSmileManagement(appt: Appointment, request: SmileManagement, ctx?: ToolContext) {
   assertNotOver(appt);
   if (!/^sc:\d+$/.test(appt.external_id ?? "") || appt.second_professional_id) {
     throw new SmileHandoff("Recepción tiene que verificar ese turno antes de aplicar el cambio.", `Revisar el turno ${appt.id} para ${request.operation}.`);
@@ -1280,7 +1385,11 @@ async function requestSmileManagement(appt: Appointment, request: SmileManagemen
       update appointments set smile_management = ${json(request)}, smile_sync = 'pendiente', smile_attempts = 0, smile_error = null
       where id = ${appt.id}`;
   });
-  processSmileBookingLater(appt.clinic_id, appt.id);
+  // Por chat, Sofi espera el resultado para contestarlo en el mismo mensaje; si no llega, sigue pendiente.
+  if (ctx ? await settleInChat(appt.clinic_id, appt.id, ctx) : (processSmileBookingLater(appt.clinic_id, appt.id), false)) {
+    const settled = await settledManagement(appt, request);
+    if (settled) return { segundo_turno_id: undefined, aviso: undefined, avisados_lista_espera: 0, ...settled };
+  }
   return {
     ok: false, pendiente_confirmacion: true, turno_id: appt.id, segundo_turno_id: undefined,
     aviso: undefined, avisados_lista_espera: 0,
@@ -1333,7 +1442,7 @@ export async function cancelAppointment(ctx: ToolContext, input: { turno_id: str
     if (await inCombinedVisit(appt)) {
       throw new SmileHandoff("La cancelación de esta visita combinada la coordina recepción. El turno sigue reservado.", `Cancelar la visita combinada del turno ${appt.id}. ${input.motivo ?? ""}`);
     }
-    return requestSmileManagement(appt, { operation: "cancelar", via, reason: input.motivo ?? null, replyPhone: smileReplyPhone(ctx, via) });
+    return requestSmileManagement(appt, { operation: "cancelar", via, reason: input.motivo ?? null, replyPhone: smileReplyPhone(ctx, via) }, ctx);
   }
   if (await usesLiveSmile(clinic.id)) {
     throw new SmileHandoff("La cancelación la confirma recepción. El turno sigue reservado.", `Cancelar el turno ${appt.id} en Smile Connect. ${input.motivo ?? ""}`);
@@ -1438,6 +1547,8 @@ async function rescheduleLoaded(
   /** Por dónde se mueve (lo cuenta el resumen diario); por defecto, el panel o el canal del paciente. */
   via: string = byPanel ? "panel" : source,
   management?: { via: AppointmentSource; replyPhone: string | null },
+  /** Quien lo pide por chat: espera el resultado de Smile Connect para contestarlo. */
+  ctx?: ToolContext,
 ) {
   assertNotOver(appt);
   const professionalId = input.profesional_id || appt.professional_id;
@@ -1493,7 +1604,7 @@ async function rescheduleLoaded(
     }
     return requestSmileManagement(appt, {
       operation: "mover", ...management, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), professionalId: pro.id, coverage,
-    });
+    }, ctx);
   }
 
   // En una transacción: liberamos el turno viejo (puede superponerse con el
@@ -1640,7 +1751,7 @@ export async function rescheduleAppointment(ctx: ToolContext, input: { turno_id:
     if (follower || (await predecessorOf(appt))) throw new SmileHandoff("Recepción coordina el cambio de esta visita combinada.", `Reprogramar la visita del turno ${appt.id}.`);
     return rescheduleLoaded(clinic, patient, appt, input, ctx.staff ? appt.source : via, false, undefined, Boolean(ctx.staff), via, {
       via, replyPhone: smileReplyPhone(ctx, via),
-    });
+    }, ctx);
   }
   if (await usesLiveSmile(clinic.id)) {
     throw new SmileHandoff("El cambio lo confirma recepción. El turno original sigue reservado.", `Reprogramar el turno ${appt.id}. Horario pedido: ${input.nuevo_inicio}.`);

@@ -155,7 +155,7 @@ describe.runIf(url)("QA de Smile Connect: lista para otras clínicas", () => {
   beforeAll(async () => {
     const db = await scratchDatabase(url!, "turnia_smile_qa_test");
     await resetTestDatabase(db);
-    for (const [k, v] of Object.entries({ DATABASE_URL: db, AGENT_TOOLS_SECRET: secret, SESSION_SECRET: "test-session", APP_URL: "https://turnia.test", SMILE_CONNECT_API_URL: API, SMILE_CONNECT_WRITES: "on" })) vi.stubEnv(k, v);
+    for (const [k, v] of Object.entries({ DATABASE_URL: db, AGENT_TOOLS_SECRET: secret, SESSION_SECRET: "test-session", APP_URL: "https://turnia.test", SMILE_CONNECT_API_URL: API, SMILE_CONNECT_WRITES: "on", SMILE_CHAT_WAIT_MS: "0" })) vi.stubEnv(k, v);
     vi.stubGlobal("fetch", fakeFetch);
     ({ sql } = await import("@/lib/db"));
     ({ POST: handler } = await import("@/app/api/agent/tools/[name]/route"));

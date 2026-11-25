@@ -906,22 +906,53 @@ async function refreshHealthNotes(
 }
 
 /** El pedido ya está en Postgres. Si la ejecución se corta, lo recoge el próximo cron. */
+/** Escribe en Smile Connect un pedido recién hecho, con un reintento corto si el proveedor pide esperar. */
+async function pushBooking(clinicId: string, appointmentId: string): Promise<Record<string, number | string>> {
+  let outcome = await pushPendingSmile(clinicId, appointmentId);
+  const retryIn = typeof outcome.reintentar_en === "string"
+    ? Date.parse(outcome.reintentar_en) - Date.now()
+    : outcome.error ? 3_000 : null;
+  if (retryIn !== null && retryIn <= MAX_INLINE_RETRY_MS) {
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, retryIn)));
+    outcome = await pushPendingSmile(clinicId, appointmentId);
+  }
+  return outcome;
+}
+
+async function afterBooking(clinicId: string, outcome: Record<string, number | string>) {
+  await Promise.allSettled([sendPendingNotices(clinicId), ...(outcome.ok ? [syncPendingCalendar(clinicId)] : [])]);
+}
+
 export function processSmileBookingLater(clinicId: string, appointmentId: string): void {
   try {
-    after(async () => {
-      let outcome = await pushPendingSmile(clinicId, appointmentId);
-      const retryIn = typeof outcome.reintentar_en === "string"
-        ? Date.parse(outcome.reintentar_en) - Date.now()
-        : outcome.error ? 3_000 : null;
-      if (retryIn !== null && retryIn <= MAX_INLINE_RETRY_MS) {
-        await new Promise((resolve) => setTimeout(resolve, Math.max(0, retryIn)));
-        outcome = await pushPendingSmile(clinicId, appointmentId);
-      }
-      await Promise.allSettled([sendPendingNotices(clinicId), ...(outcome.ok ? [syncPendingCalendar(clinicId)] : [])]);
-    });
+    after(async () => afterBooking(clinicId, await pushBooking(clinicId, appointmentId)));
   } catch {
     // Fuera de una petición, se procesa con la automatización de calendario.
   }
+}
+
+/**
+ * Por chat: escribe el pedido ya y espera hasta `waitMs` el resultado, para que Sofi lo conteste en el
+ * mismo mensaje. Si no llega a tiempo, sigue solo. Los avisos salen después de responder, así Sofi
+ * alcanza a marcar los que ya le dijo al paciente (`noticesToldInChat`). Devuelve si terminó a tiempo.
+ */
+export async function settleSmileBooking(clinicId: string, appointmentId: string, waitMs: number): Promise<boolean> {
+  const work = pushBooking(clinicId, appointmentId).catch((e): Record<string, number | string> => {
+    console.error("Smile Connect: no se pudo escribir el pedido", e instanceof Error ? e.message : e);
+    return { error: 1 };
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const inTime = await Promise.race([
+    work.then(() => true),
+    new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), waitMs); }),
+  ]);
+  clearTimeout(timer);
+  try {
+    after(async () => afterBooking(clinicId, await work));
+  } catch {
+    // Fuera de una petición, los avisos los manda la automatización de calendario.
+  }
+  return inTime;
 }
 
 /** Después de guardar la ficha de salud: la suma a las notas en Smile Connect sin esperar la automatización. */

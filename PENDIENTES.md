@@ -121,6 +121,17 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 - [ ] **Bloqueos: rechazo real 403 de Smile Connect.** Después del [PR #238](https://github.com/axellaban/turniasalud/pull/238) se ejecutó una única sincronización manual a las 10:16 con la misma clave vigente: turnos y horarios correctos, pero `/events` devuelve 403. El usuario indicó que esa clave ya tenía todos los permisos y pidió conservarla. Revisar con Smile Connect la habilitación de `events:read` para esa clave; no generar otra ni revocarla por iniciativa propia. El arreglo distingue 403 de 404 y permite volver a probar desde «Sincronizar ahora» sin cambiar la clave. Sofi sigue verificando la disponibilidad en vivo.
 - [x] **Recepción de un aviso de integración confirmada por Axel el 19/11.** Indicó que recibió un mensaje de «Turnia · Smile Connect» en su WhatsApp personal. No se revisó el contenido ni se envió otro aviso para esta confirmación.
 
+## Sofi confirma en el mismo mensaje, prompt más corto y batería de pruebas (25/11/2026)
+
+Salió de leer las charlas reales de Guerra–Mininni del 16 al 25/11.
+
+- [x] **Confirmación en el mismo mensaje por WhatsApp.** Al reservar, mover o cancelar por chat, la herramienta escribe el pedido en Smile Connect y espera hasta 7 s (`SMILE_CHAT_WAIT_MS`, 0 apaga la espera). Si llega, Sofi contesta «Turno confirmado» (o que el horario se ocupó, o que lo revisa recepción) y el aviso posterior al paciente no sale: queda como «Dicho en el chat» (`clinic_notices.status = 'en_chat'`). Si no llega a tiempo, sigue como antes (pendiente y confirmación por WhatsApp). Por teléfono y desde el panel no cambia nada.
+- [x] **Prompt general más corto y ordenado** (de unos 21.000 a 17.000 caracteres, mismas reglas) con una revisión final antes de mandar. Ante «limpieza» sin saber si es primera vez, pregunta si ya se atendió sin nombrar la práctica.
+- [x] **Filtro de fórmulas en WhatsApp** (`withoutFormulas` en `whatsapp-style.ts`): saca del final «Que tenga un buen día», «Necesita algo más?», «Quedamos a disposición», «Tiene alguna otra consulta?», «Hasta pronto» y el «Con gusto» del principio, que el prompt prohíbe pero a veces se escapan. Si el mensaje es solo eso, queda como está.
+- [x] **Batería de pruebas** (`npm run probar-sofi -- --agente <id> --clinica "Guerra"`): siete casos de charlas reales, simulados en ElevenLabs con todas las herramientas simuladas (no toca la agenda ni Smile Connect). Prueba el prompt del repositorio sin cargarlo en el agente; con `--prompt actual`, el cargado. Correrla después de cada cambio de prompt y antes de «Actualizar a Sofi». El 25/11: 14/14 con el prompt nuevo (dos corridas por caso) y 7/7 con el cargado.
+- [ ] Después del despliegue, «Actualizar a Sofi» (cambió el prompt).
+- [ ] Sumar casos a la batería cuando aparezca un error nuevo en una charla real (en `scripts/probar-sofi.mjs`, con pacientes ficticios: el repositorio es público).
+
 ## Lista de espera como la secretaria (25/11/2026)
 
 - Pedido de Mariano (Guerra–Mininni): que Sofi haga como la secretaria, primero cerrar un turno y además anotar en lista de espera. Si no, el paciente cree que estar anotado le asegura un turno antes y, cuando no se libera nada, termina más atrás.

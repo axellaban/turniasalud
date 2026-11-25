@@ -11,7 +11,7 @@ export const MAX_BUBBLES = 3;
  * «texto: url». No toca la plantilla de la ficha de salud: esa va aparte, tal cual.
  */
 export function toWhatsAppText(text: string): string {
-  return text
+  return withoutFormulas(text
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/__(.+?)__/g, "$1")
@@ -22,7 +22,42 @@ export function toWhatsAppText(text: string): string {
     .replace(/^(\s*)[*•]\s+/gm, "$1- ")
     .replace(/[¿¡]/g, "")
     .replace(/[ \t]+$/gm, "")
-    .trim();
+    .trim());
+}
+
+// Fórmulas que una recepcionista no escribe por WhatsApp. El prompt ya las prohíbe, pero a veces se
+// escapan: acá se sacan cuando son una frase suelta al final del mensaje, o el «Con gusto» del
+// principio. Si el mensaje no tiene otra cosa (contesta un «chau»), queda como está.
+const CLOSING_FORMULAS = [
+  /(?:que\s+)?tenga(?:s)?\s+(?:un\s+)?(?:muy\s+)?(?:buen|lindo|excelente|hermoso)\s+(?:día|fin de semana|resto del día)(?:\s+también)?/,
+  /(?:quedamos|quedo)\s+a\s+(?:(?:su|tu)\s+)?(?:entera\s+)?disposición(?:\s+para lo que (?:necesite|necesites))?/,
+  /(?:necesita|necesitás|necesitas)\s+algo\s+más/,
+  /(?:hay\s+)?algo\s+más\s+en\s+(?:lo\s+)?(?:que|lo que)\s+(?:le|te)?\s*(?:pueda|puedo)\s+ayudar/,
+  /(?:tiene|tenés|tienes)\s+(?:alguna\s+)?otra\s+consulta/,
+  /cualquier\s+(?:cosa|duda|consulta),?\s+(?:nos|me)\s+(?:escribe|escribís|escribes|avisa|avisás)(?:\s+por\s+acá)?/,
+  /hasta\s+pronto/,
+];
+const FORMULA_SENTENCE = new RegExp(
+  `(^|[.!?…]\\s+|\\n+)(?:${CLOSING_FORMULAS.map((r) => r.source).join("|")})[.!?…]*\\s*(?:🙂|😊)?\\s*$`,
+  "iu",
+);
+
+/** Saca las fórmulas de cierre del final y el «Con gusto» del principio. Pura. */
+export function withoutFormulas(text: string): string {
+  let out = text.trim();
+  for (let i = 0; i < 3; i++) {
+    const match = FORMULA_SENTENCE.exec(out);
+    if (!match) break;
+    const rest = out.slice(0, match.index + (match[1].match(/^[.!?…]/) ? 1 : 0)).trim();
+    if (!/\p{L}/u.test(rest)) break;
+    out = rest;
+  }
+  const opening = /^(?:con\s+(?:mucho\s+)?gusto)[,.!]?\s+(?=\p{L})/iu;
+  if (opening.test(out)) {
+    const rest = out.replace(opening, "");
+    out = rest.charAt(0).toUpperCase() + rest.slice(1);
+  }
+  return out;
 }
 
 /**

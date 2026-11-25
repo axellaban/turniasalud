@@ -285,7 +285,9 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
   beforeAll(async () => {
     const db = await scratchDatabase(url!, "turnia_smile_api_test");
     await resetTestDatabase(db);
-    for (const [k, v] of Object.entries({ DATABASE_URL: db, AGENT_TOOLS_SECRET: secret, SESSION_SECRET: "test-session", APP_URL: "https://turnia.test", SMILE_CONNECT_API_URL: API })) vi.stubEnv(k, v);
+    // Estos casos prueban la confirmación diferida (el aviso posterior): Sofi no espera a Smile Connect.
+    // La espera por chat tiene sus propios casos abajo («por chat, contesta en el mismo mensaje…»).
+    for (const [k, v] of Object.entries({ DATABASE_URL: db, AGENT_TOOLS_SECRET: secret, SESSION_SECRET: "test-session", APP_URL: "https://turnia.test", SMILE_CONNECT_API_URL: API, SMILE_CHAT_WAIT_MS: "0" })) vi.stubEnv(k, v);
     vi.stubGlobal("fetch", fakeFetch);
     ({ sql } = await import("@/lib/db"));
     ({ POST: handler } = await import("@/app/api/agent/tools/[name]/route"));
@@ -1081,6 +1083,55 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(writes().filter((w) => w.path.endsWith("/cancel"))).toHaveLength(1);
       await send();
       expect(fake.whatsapps.map((w) => w.text)).toEqual([expect.stringContaining("Reprogramación confirmada"), expect.stringContaining("Cancelación confirmada")]);
+    });
+
+    it("por chat, contesta en el mismo mensaje si Smile Connect confirma a tiempo, sin repetir el aviso", async () => {
+      await link.setSmileMode(gm, "completa");
+      vi.stubEnv("SMILE_CHAT_WAIT_MS", "5000");
+      try {
+        fake.whatsapps.length = 0;
+        const booking = await book(31);
+        expect(booking).toMatchObject({ ok: true, mensaje: expect.stringContaining("Turno confirmado"), direccion: "Dirección ficticia" });
+        expect(booking).not.toHaveProperty("pendiente_confirmacion");
+        expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:/) });
+        // Sofi ya se lo dijo: el aviso de Smile Connect no sale.
+        expect(await sql`select status from clinic_notices where appointment_id = ${booking.turno_id!} and kind = 'smile_confirmado'`)
+          .toEqual([{ status: "en_chat" }]);
+
+        const moved = await tool("reprogramar_turno", { clinic_id: gm, turno_id: booking.turno_id, nuevo_inicio: at(31, "11:00"), profesional_id: gmPro });
+        expect(moved).toMatchObject({ ok: true, mensaje: expect.stringContaining("Cambio confirmado") });
+        expect(moved.turno_id).not.toBe(booking.turno_id);
+        expect(await smileSync(moved.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok" });
+
+        const cancelled = await tool("cancelar_turno", { clinic_id: gm, turno_id: moved.turno_id, motivo: "Prueba" });
+        expect(cancelled).toMatchObject({ ok: true, mensaje: expect.stringContaining("Cancelación confirmada") });
+        expect(await smileSync(moved.turno_id!)).toMatchObject({ status: "cancelado" });
+
+        for (const fn of mocks.after.splice(0)) await fn();
+        await send();
+        expect(fake.whatsapps).toEqual([]);
+      } finally {
+        vi.stubEnv("SMILE_CHAT_WAIT_MS", "0");
+        // Estas escrituras no cuentan para el tope por hora de los casos que siguen.
+        await sql`delete from smile_connect_changes where clinic_id = ${gm} and created_at > now() - interval '1 minute'
+          and appointment_id in (select id from appointments where clinic_id = ${gm} and starts_at::date = ${day(31)}::date)`;
+      }
+    });
+
+    it("por chat, si Smile Connect no responde a tiempo, queda pendiente y la confirmación sale después", async () => {
+      vi.stubEnv("SMILE_CHAT_WAIT_MS", "1");
+      try {
+        fake.whatsapps.length = 0;
+        const booking = await book(32);
+        expect(booking).toMatchObject({ ok: false, pendiente_confirmacion: true });
+        for (const fn of mocks.after.splice(0)) await fn();
+        expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok" });
+        await send();
+        // La confirmación llega después, en sus burbujas (con la dirección).
+        expect(fake.whatsapps.map((w) => w.text).join("\n")).toContain("Dirección ficticia");
+      } finally {
+        vi.stubEnv("SMILE_CHAT_WAIT_MS", "0");
+      }
     });
 
     it("en «Crear, mover y cancelar» Sofi cancela en Smile Connect, pero las visitas combinadas van a recepción", async () => {

@@ -1627,7 +1627,7 @@ alter table clinic_notices drop constraint if exists clinic_notices_kind_check;
 alter table clinic_notices add constraint clinic_notices_kind_check check (kind in ('nuevo', 'movido', 'cancelado', 'prueba', 'smile', 'smile_paciente', 'smile_confirmado', 'smile_cancelado'));
 alter table clinic_notices add column if not exists attempted_at timestamptz;
 alter table clinic_notices drop constraint if exists clinic_notices_status_check;
-alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviando', 'enviado', 'error', 'vencido'));
+alter table clinic_notices add constraint clinic_notices_status_check check (status in ('pendiente', 'enviando', 'enviado', 'error', 'vencido', 'en_chat'));
 create index if not exists clinic_notices_pending_idx on clinic_notices (created_at) where status in ('pendiente', 'error');
 create index if not exists clinic_notices_clinic_idx on clinic_notices (clinic_id, created_at desc);
 alter table clinic_notices enable row level security;
