@@ -83,7 +83,7 @@ export default async function SystemPage() {
               <li><Check ok={configured.tools} />AGENT_TOOLS_SECRET</li>
               <li><Check ok={configured.webhook} />ELEVENLABS_WEBHOOK_SECRET</li>
               <li><Check ok={configured.n8n} optional />N8N_WEBHOOK_URL (opcional)</li>
-              <li className="pt-2 text-xs text-brand-900/65">LLM del agente: {env.agentLlm()}</li>
+              <li className="pt-2 text-xs text-brand-900/65">LLM de Sofi: {env.agentChatLlm()} en chat · {env.agentVoiceLlm()} en voz</li>
             </ul>
           </Card>
         </div>

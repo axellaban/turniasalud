@@ -1,5 +1,13 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Modelo de Sofi por canal — 25/11/2026
+
+- Pedido de Facu: Opus 5.5 en el chat mientras se ajusta el prompt y Sonnet 5.5 en voz.
+- `AGENT_CHAT_LLM` (por defecto `claude-opus-5-5`) va en el agente general, que atiende todos los WhatsApp y las demos por chat. `AGENT_VOICE_LLM` (por defecto `claude-sonnet-5-5`; antes `AGENT_LLM`) va en el agente propio de cada clínica, que solo atiende llamadas.
+- Las demos por voz del agente general (web, `/probar-demo/llamada`, la llamada saliente de la demo y «Probar a Sofi» por voz) piden el LLM de voz al arrancar. Solo lo piden si el agente ya permite cambiar el LLM por charla (`platform_settings.overrides.conversation_config_override.agent.prompt.llm`). Si no, siguen con el de chat, que es más lento pero no se cortan.
+- **Después del deploy:** tocar «Actualizar a Sofi» (Sistema) para el agente general. Después, abrir en ElevenLabs → agente general → Security y confirmar que el override «LLM» quedó prendido (la forma del campo no está en la documentación de la API: se dedujo de la del resto). Si no quedó, prenderlo a mano. Probar una demo por voz y un WhatsApp.
+- Revisar en una semana el consumo de LLM en ElevenLabs: Opus cuesta el doble que Sonnet por token.
+
 ## Lista de espera consultable por el equipo — 24/11/2026
 
 - `ver_lista_espera` lee la base en cada pedido de un número con acceso total por WhatsApp. Incluye activas y ofrecidas, también las altas de hoy, con paciente, celular, prestación, profesional, preferencias, estado y turno que conserva. Tiene filtro desde una fecha local, por profesional/estado y páginas de 30 sin ocultar el total.

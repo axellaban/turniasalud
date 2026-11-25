@@ -80,6 +80,25 @@ describe.runIf(base)("agentes y llamadas exclusivos de cada clínica", () => {
     expect(mocks.calls.filter((r) => r.path === "/v1/convai/agents/create")).toHaveLength(1);
     expect((await sql`select elevenlabs_agent_id from clinics where id = ${b}`)[0].elevenlabs_agent_id).toBe("agent-beta");
   });
+  it("usa el LLM de chat en el agente general (con cambio por charla para la voz) y el de voz en el de cada clínica", async () => {
+    await setup((await sql`select * from clinics where id = ${MAIN}`)[0] as never);
+    const general = mocks.calls.find((r) => r.path === "/v1/convai/agents/agent-main" && r.method === "PATCH")!.body as {
+      conversation_config: { agent: { prompt: { llm: string } } };
+      platform_settings: { overrides: { conversation_config_override: { agent: Record<string, unknown> } } };
+    };
+    expect(general.conversation_config.agent.prompt.llm).toBe("claude-opus-5-5");
+    expect(general.platform_settings.overrides.conversation_config_override.agent).toEqual({ first_message: true, prompt: { llm: true } });
+    await setup((await sql`select * from clinics where id = ${a}`)[0] as never);
+    const own = mocks.calls.find((r) => r.path === "/v1/convai/agents/agent-mininni" && r.method === "PATCH")!.body as typeof general;
+    expect(own.conversation_config.agent.prompt.llm).toBe("claude-sonnet-5-5");
+    expect(own.platform_settings.overrides.conversation_config_override.agent).toEqual({ first_message: true });
+    vi.stubEnv("AGENT_CHAT_LLM", "claude-sonnet-5-5");
+    vi.stubEnv("AGENT_VOICE_LLM", "claude-haiku-4-5");
+    const { agentLlm } = await import("@/lib/agent/setup");
+    expect([agentLlm(true), agentLlm(false)]).toEqual(["claude-sonnet-5-5", "claude-haiku-4-5"]);
+    vi.stubEnv("AGENT_CHAT_LLM", "");
+    vi.stubEnv("AGENT_VOICE_LLM", "");
+  });
   it("conserva la voz propia de una clínica y no consulta ni cambia la del agente general", async () => {
     await sql`update clinics set elevenlabs_voice_id = 'voice-clinic' where id = ${a}`;
     const result = await setup((await sql`select * from clinics where id = ${a}`)[0] as never);

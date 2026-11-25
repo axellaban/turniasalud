@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getClinic } from "@/lib/clinic";
-import { getConversationToken } from "@/lib/elevenlabs";
+import { getVoiceCredential } from "@/lib/elevenlabs";
 import { demoDynamicVariables, releaseDemoCall, reserveDemoCall, sessionForCallToken } from "@/lib/demo/session";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +20,12 @@ export async function POST(request: Request) {
       { error: "Ya usaste las 3 llamadas de esta demo. Volvé al chat y escribí MENU para probar chat o audio." },
       { status: 429, headers: { "Cache-Control": "no-store" } },
     );
-    const [token, dynamicVariables] = await Promise.all([
-      getConversationToken(main.elevenlabs_agent_id),
+    const [credential, dynamicVariables] = await Promise.all([
+      getVoiceCredential(main.elevenlabs_agent_id),
       demoDynamicVariables(found.clinic, found.session.phone),
     ]);
     return NextResponse.json(
-      { token, dynamicVariables, userId: found.session.phone, clinicName: found.clinic.name, agentName: found.clinic.agent_name },
+      { ...credential, dynamicVariables, userId: found.session.phone, clinicName: found.clinic.name, agentName: found.clinic.agent_name },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

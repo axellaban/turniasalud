@@ -51,6 +51,34 @@ export async function getConversationToken(agentId: string): Promise<string> {
   return body.token;
 }
 
+type AgentSettings = {
+  conversation_config?: { agent?: { prompt?: { llm?: string } } };
+  platform_settings?: { overrides?: { conversation_config_override?: { agent?: { first_message?: boolean; prompt?: { llm?: boolean } } } } };
+};
+
+/**
+ * LLM para una charla por voz con este agente. El agente general piensa con el LLM de chat
+ * (WhatsApp); sus demos por voz piden el de voz, que contesta más rápido. Solo se pide si el
+ * agente ya permite cambiar el LLM por charla (se activa con «Actualizar a Sofi»): si no,
+ * ElevenLabs rechazaría la charla, y es mejor que siga con su LLM. Puro.
+ */
+export function voiceLlmOverride(agent: AgentSettings | null | undefined, voiceLlm: string): string | undefined {
+  if (agent?.platform_settings?.overrides?.conversation_config_override?.agent?.prompt?.llm !== true) return undefined;
+  return agent.conversation_config?.agent?.prompt?.llm === voiceLlm ? undefined : voiceLlm;
+}
+
+/** Lo que hay que mandarle a un agente para hablar por voz con él: su LLM de voz, si hace falta cambiarlo. */
+export async function voiceLlmFor(agentId: string): Promise<string | undefined> {
+  const agent = await elevenlabs<AgentSettings>(`/v1/convai/agents/${encodeURIComponent(agentId)}`).catch(() => null);
+  return voiceLlmOverride(agent, env.agentVoiceLlm());
+}
+
+/** Token de una charla por voz en el navegador y, si hace falta, el LLM de voz para pedir al arrancar. */
+export async function getVoiceCredential(agentId: string): Promise<{ token: string; llm?: string }> {
+  const [token, llm] = await Promise.all([getConversationToken(agentId), voiceLlmFor(agentId)]);
+  return llm ? { token, llm } : { token };
+}
+
 /** URL firmada para conversaciones por WebSocket (modo chat de la demo web). */
 export async function getSignedUrl(agentId: string): Promise<string> {
   const body = await elevenlabs<{ signed_url: string }>(
@@ -207,6 +235,8 @@ export async function startPhoneCall(call: {
   phoneNumberId: string;
   toNumber: string;
   dynamicVariables: Record<string, string>;
+  /** LLM de voz, si el agente piensa con otro (ver voiceLlmFor). */
+  llm?: string;
 }): Promise<{ conversation_id: string | null }> {
   const body = await elevenlabs<{ success?: boolean; message?: string; conversation_id?: string | null }>("/v1/convai/twilio/outbound-call", {
     method: "POST",
@@ -216,7 +246,11 @@ export async function startPhoneCall(call: {
       to_number: call.toNumber,
       // Grabación nativa en Twilio; record_voice de ElevenLabs es independiente.
       call_recording_enabled: true,
-      conversation_initiation_client_data: { dynamic_variables: call.dynamicVariables, user_id: call.toNumber.replace(/^\+/, "") },
+      conversation_initiation_client_data: {
+        dynamic_variables: call.dynamicVariables,
+        user_id: call.toNumber.replace(/^\+/, ""),
+        ...(call.llm && { conversation_config_override: { agent: { prompt: { llm: call.llm } } } }),
+      },
     }),
   });
   if (body.success === false) throw new ElevenLabsError(`No se pudo iniciar la llamada: ${body.message ?? "sin detalle"}`, 200, null);

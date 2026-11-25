@@ -17,6 +17,8 @@ export type DemoCredential = {
   signedUrl?: string;
   /** El agente puede arrancar sin su saludo: en el chat contesta una vez al primer mensaje. */
   sinSaludo?: boolean;
+  /** Por voz: el LLM rápido, si el agente piensa con otro en los chats. */
+  llm?: string;
   dynamicVariables: Record<string, string>;
   userId: string;
 };
@@ -168,6 +170,7 @@ export function useCharlaDemo({
         ...(mode === "chat" ? { signedUrl: info.signedUrl!, textOnly: true } : { conversationToken: info.token! }),
         // En el chat escribe primero el paciente: sin el saludo fijo, la primera respuesta saluda y contesta.
         ...(mode === "chat" && first && info.sinSaludo ? { overrides: { agent: { firstMessage: "" } } } : {}),
+        ...(mode === "voz" && info.llm ? { overrides: { agent: { prompt: { llm: info.llm } } } } : {}),
         dynamicVariables: info.dynamicVariables,
         userId: info.userId,
       });
