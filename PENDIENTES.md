@@ -118,13 +118,14 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 - Pedido de Mariano (Guerra–Mininni): que Sofi haga como la secretaria, primero cerrar un turno y además anotar en lista de espera. Si no, el paciente cree que estar anotado le asegura un turno antes y, cuando no se libera nada, termina más atrás.
 - [x] `anotar_lista_espera` (`joinWaitlist`): sin `turno_id` rechaza la inscripción y le pide a Sofi reservar primero el primer horario que le sirva. Si el paciente ya tiene un turno futuro de esa prestación, le devuelve su `turno_id`. Sin turno solo con `sin_turno` (`no_hay_horarios` o `no_quiere_turno`). El equipo no tiene esta restricción.
 - [x] Prompt y mensajes de la herramienta: «Le reservo el lunes 21/12 a las 10:30 y lo anoto en la lista de espera: si se libera un lugar antes, le escribimos». Sin prometer que lo adelantan; sin turno, se aclara que todavía no tiene turno.
-- [ ] Después del despliegue, «Actualizar a Sofi»: cambió la definición de la herramienta (parámetro `sin_turno`), no solo el prompt.
+- [x] Desplegado ([PR #264](https://github.com/axellaban/turniasalud/pull/264)) y «Actualizar a Sofi» hecho el 25/11.
 
 ## Sofi le explicó reglas a una paciente (25/11/2026)
 
 - Por WhatsApp, Sofi le escribió a una paciente de Guerra–Mininni «como ya es paciente, puede pedir directamente el mantenimiento, sin una consulta de primera vez» y que la profesional del mantenimiento no atiende el martes. El usuario pidió que no vuelva a pasar.
 - [x] Prompt: las reglas de la clínica (qué turno corresponde, quién hace cada práctica, qué días atiende cada uno) se aplican sin contarlas; si un día no se puede, solo «ese día no tengo lugar»; un error se corrige ofreciendo lo correcto, sin explicarlo. Con un ejemplo de mal y bien.
-- [ ] Después del despliegue, «Actualizar a Sofi» para que llegue a los agentes de ElevenLabs (WhatsApp y llamadas).
+- [x] Desplegado ([PR #264](https://github.com/axellaban/turniasalud/pull/264)) y «Actualizar a Sofi» hecho el 25/11.
+- [x] «Instrucciones adicionales» de Guerra–Mininni reescritas el 25/11, más cortas: sin lo que repetía el prompt general, el viernes sin explicar la regla («ese día no tengo lugar») y la lista de espera con un turno reservado primero.
 
 ## Feedback de Guerra–Mininni sobre Sofi (18/11/2026)
 

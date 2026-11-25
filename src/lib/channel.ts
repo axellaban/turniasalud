@@ -149,7 +149,7 @@ async function recentConversation(db: TransactionSql, clinicId: string, phone: s
 /** Para que Sofi siga la charla en vez de saludar y presentarse otra vez. */
 export function resumeContext(minutes: number, transcript: TranscriptLine[]): string {
   const ago = minutes < 60 ? `hace ${Math.max(1, minutes)} minutos` : `hace ${Math.round(minutes / 60)} horas`;
-  return ` Ya venían hablando por este chat (el último mensaje fue ${ago}): es la misma charla, no una nueva. No saludes ni te presentes otra vez: respondé directo a lo que escribe ahora. Lo último que se habló: ${recapTranscript(transcript)}`;
+  return ` Ya venían hablando por este chat (el último mensaje fue ${ago}): es la misma charla, no una nueva. Respondé directo a lo que escribe ahora, sin saludar de nuevo. Lo último que se habló: ${recapTranscript(transcript)}`;
 }
 
 export async function forwardToAgent(
