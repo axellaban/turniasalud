@@ -113,6 +113,12 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 - [ ] **Bloqueos: rechazo real 403 de Smile Connect.** Después del [PR #238](https://github.com/axellaban/turniasalud/pull/238) se ejecutó una única sincronización manual a las 10:16 con la misma clave vigente: turnos y horarios correctos, pero `/events` devuelve 403. El usuario indicó que esa clave ya tenía todos los permisos y pidió conservarla. Revisar con Smile Connect la habilitación de `events:read` para esa clave; no generar otra ni revocarla por iniciativa propia. El arreglo distingue 403 de 404 y permite volver a probar desde «Sincronizar ahora» sin cambiar la clave. Sofi sigue verificando la disponibilidad en vivo.
 - [x] **Recepción de un aviso de integración confirmada por Axel el 19/11.** Indicó que recibió un mensaje de «Turnia · Smile Connect» en su WhatsApp personal. No se revisó el contenido ni se envió otro aviso para esta confirmación.
 
+## Sofi le explicó reglas a una paciente (25/11/2026)
+
+- Por WhatsApp, Sofi le escribió a una paciente de Guerra–Mininni «como ya es paciente, puede pedir directamente el mantenimiento, sin una consulta de primera vez» y que la profesional del mantenimiento no atiende el martes. El usuario pidió que no vuelva a pasar.
+- [x] Prompt: las reglas de la clínica (qué turno corresponde, quién hace cada práctica, qué días atiende cada uno) se aplican sin contarlas; si un día no se puede, solo «ese día no tengo lugar»; un error se corrige ofreciendo lo correcto, sin explicarlo. Con un ejemplo de mal y bien.
+- [ ] Después del despliegue, «Actualizar a Sofi» para que llegue a los agentes de ElevenLabs (WhatsApp y llamadas).
+
 ## Feedback de Guerra–Mininni sobre Sofi (18/11/2026)
 
 - Hecho y en producción (PR #223 a #227): primer turno del día, «molestia» no es urgencia (la guardia solo con mucho dolor, sangrado o hinchazón), no prometer días antes de mirar la agenda, datos juntos por WhatsApp, sin reglas internas ni «limpieza», radiografías en un párrafo aparte, y días que Smile Connect no confirmó a tiempo sin darlos por llenos. Prompt actualizado en los dos agentes de ElevenLabs.
