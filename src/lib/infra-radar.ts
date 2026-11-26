@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { sql, type TransactionSql as Tx } from "./db";
 import { notifyAxel } from "./chat-guard";
 
@@ -21,7 +21,8 @@ export function easypanelConfig(): EasypanelConfig | null {
   // Si se pegó con las comillas del archivo .env, se sacan.
   const clean = (v: string | undefined) => v?.trim().replace(/^(['"])(.*)\1$/, "$2").trim();
   const url = clean(process.env.EASYPANEL_API_URL)?.replace(/\/$/, "");
-  const token = clean(process.env.EASYPANEL_API_TOKEN);
+  // También si se pegó como «EASYPANEL_API_TOKEN=…» o con «Bearer » adelante.
+  const token = clean(clean(process.env.EASYPANEL_API_TOKEN)?.replace(/^EASYPANEL_API_TOKEN\s*=\s*/, "").replace(/^Bearer\s+/i, ""));
   if (!url || !token) return null;
   try {
     return { url, token, host: new URL(url).host };
@@ -33,6 +34,16 @@ export function easypanelConfig(): EasypanelConfig | null {
 /** La clave con la que el lector de logs del VPS firma lo que manda. Sale del token, sin otra variable. */
 export function radarLogSecret(config = easypanelConfig()): string | null {
   return config ? createHmac("sha256", config.token).update("turnia-waha-radar").digest("hex") : null;
+}
+
+/**
+ * Para comparar el token de Vercel con el del lector sin mostrarlo: su largo y el comienzo de su
+ * SHA-256 (no permite reconstruirlo).
+ */
+export function radarTokenFingerprint(): { largo: number; huella: string } | null {
+  const config = easypanelConfig();
+  if (!config) return null;
+  return { largo: config.token.length, huella: createHash("sha256").update(config.token).digest("hex").slice(0, 8) };
 }
 
 export function verifyRadarSecret(header: string | null): boolean {

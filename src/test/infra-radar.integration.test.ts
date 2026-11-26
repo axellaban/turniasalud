@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 const mocks = vi.hoisted(() => ({ alerts: vi.fn(async (text: string) => text.length > 0) }));
@@ -210,6 +210,15 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     vi.stubEnv("EASYPANEL_API_URL", "\"" + PANEL + "/\"");
     expect(radar.radarLogSecret()).toBe(secret);
     expect(radar.easypanelConfig()).toMatchObject({ url: PANEL, host: "panel.test" });
+    // Y con «Bearer » adelante o como la línea entera del archivo.
+    vi.stubEnv("EASYPANEL_API_TOKEN", "Bearer " + TOKEN);
+    expect(radar.radarLogSecret()).toBe(secret);
+    vi.stubEnv("EASYPANEL_API_TOKEN", "EASYPANEL_API_TOKEN=\"" + TOKEN + "\"");
+    expect(radar.radarLogSecret()).toBe(secret);
+    // La huella deja comparar tokens sin mostrarlos.
+    const fp = radar.radarTokenFingerprint()!;
+    expect(fp).toEqual({ largo: TOKEN.length, huella: createHash("sha256").update(TOKEN).digest("hex").slice(0, 8) });
+    expect(JSON.stringify(fp)).not.toContain(TOKEN);
     vi.stubEnv("EASYPANEL_API_TOKEN", TOKEN);
     vi.stubEnv("EASYPANEL_API_URL", PANEL);
   });

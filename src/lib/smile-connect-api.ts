@@ -117,7 +117,15 @@ export type ScPatient = {
   email: string | null;
   phone_country_code: string | null;
   phone_number: string | null;
+  /** Desde noviembre de 2026 la ficha trae también estos datos. */
+  birth_day?: string | null;
+  sex?: ScSex | null;
+  address?: string | null;
+  medical_insurance_name?: string | null;
+  medical_insurance_plan?: string | null;
+  medical_insurance_number?: string | null;
 };
+export type ScSex = "male" | "female" | "other";
 export type ScAppointment = {
   appointment_id: number;
   patient_id: number;
@@ -202,8 +210,16 @@ export type ScNewPatient = {
   email?: string;
   phone_country_code?: string;
   phone_number?: string;
+  birth_day?: string;
+  sex?: ScSex;
+  address?: string;
+  medical_insurance_name?: string;
+  medical_insurance_plan?: string;
+  medical_insurance_number?: string;
   professional_ids?: number[];
 };
+/** Lo mínimo del alta (nombre, DNI, mail, celular y profesional): lo que se acepta siempre. */
+export const SC_BASIC_PATIENT_FIELDS = ["name", "surname", "id_number", "email", "phone_country_code", "phone_number", "professional_ids"] as const;
 export type ScAppointmentTimes = { professional_id: number; box_id: number; start_date: string; end_date: string; notes?: string; service_id?: number };
 
 export async function scCreatePatient(c: SmileClient, body: ScNewPatient, idempotencyKey: string) {
@@ -317,6 +333,28 @@ export function smileEmail(email: string | null | undefined): string | undefined
 export function smileIdNumber(dni: string | null | undefined): string | undefined {
   const clean = (dni ?? "").trim();
   return clean && clean.length <= 50 ? clean : undefined;
+}
+
+/** La fecha de nacimiento (AAAA-MM-DD), solo si es una fecha real y no futura. */
+export function smileBirthDay(date: string | null | undefined, now = new Date()): string | undefined {
+  const d = (date ?? "").trim().slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  if (!m) return undefined;
+  const parsed = new Date(`${d}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== d) return undefined;
+  if (Number(m[1]) < 1900 || parsed.getTime() > now.getTime()) return undefined;
+  return d;
+}
+
+/** El sexo de la ficha de Turnia (femenino, masculino, otro) como lo pide Smile Connect. */
+export function smileSex(sex: string | null | undefined): ScSex | undefined {
+  return ({ femenino: "female", masculino: "male", otro: "other" } as const)[(sex ?? "").trim().toLowerCase() as "femenino"];
+}
+
+/** Un texto libre, recortado al largo que acepta Smile Connect; vacío no se manda. */
+export function smileText(value: string | null | undefined, max: number): string | undefined {
+  const clean = (value ?? "").replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, max) : undefined;
 }
 
 /** Celdas libres (de cualquier largo) → tramos libres por profesional, unidos y ordenados. */

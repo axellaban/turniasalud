@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { busyFromFree, fitsFree, freeRanges, smileClient, smileErrorText, SmileApiError, smileEmail, smileIdNumber, smilePhone, splitName } from "./smile-connect-api";
+import { busyFromFree, fitsFree, freeRanges, smileBirthDay, smileClient, smileErrorText, SmileApiError, smileEmail, smileIdNumber, smilePhone, smileSex, smileText, splitName } from "./smile-connect-api";
 
 // Conversiones puras de la API de Smile Connect: celdas libres → tramos, lo ocupado, nombres y teléfonos.
 
@@ -66,5 +66,27 @@ describe("datos del paciente que acepta Smile Connect", () => {
     expect(smileIdNumber("30111222")).toBe("30111222");
     expect(smileIdNumber("x".repeat(51))).toBeUndefined();
     expect(smileIdNumber(null)).toBeUndefined();
+  });
+});
+
+describe("ficha completa de un paciente nuevo en Smile Connect", () => {
+  it("manda la fecha de nacimiento solo si es real y no futura", () => {
+    const now = new Date("2026-11-26T12:00:00Z");
+    expect(smileBirthDay("1985-01-02", now)).toBe("1985-01-02");
+    expect(smileBirthDay("1985-01-02T00:00:00Z", now)).toBe("1985-01-02");
+    expect(smileBirthDay("1985-02-30", now)).toBeUndefined();
+    expect(smileBirthDay("2027-01-01", now)).toBeUndefined();
+    expect(smileBirthDay("02/01/1985", now)).toBeUndefined();
+    expect(smileBirthDay(null, now)).toBeUndefined();
+  });
+
+  it("pasa el sexo de la ficha al de Smile Connect y recorta los textos", () => {
+    expect(smileSex("femenino")).toBe("female");
+    expect(smileSex("masculino")).toBe("male");
+    expect(smileSex("otro")).toBe("other");
+    expect(smileSex(null)).toBeUndefined();
+    expect(smileText("  Av.   Colón 1234 ", 200)).toBe("Av. Colón 1234");
+    expect(smileText("x".repeat(300), 200)).toHaveLength(200);
+    expect(smileText("   ", 200)).toBeUndefined();
   });
 });

@@ -162,6 +162,14 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 - [ ] **Bloqueos: rechazo real 403 de Smile Connect.** Después del [PR #238](https://github.com/axellaban/turniasalud/pull/238) se ejecutó una única sincronización manual a las 10:16 con la misma clave vigente: turnos y horarios correctos, pero `/events` devuelve 403. El usuario indicó que esa clave ya tenía todos los permisos y pidió conservarla. Revisar con Smile Connect la habilitación de `events:read` para esa clave; no generar otra ni revocarla por iniciativa propia. El arreglo distingue 403 de 404 y permite volver a probar desde «Sincronizar ahora» sin cambiar la clave. Sofi sigue verificando la disponibilidad en vivo.
 - [x] **Recepción de un aviso de integración confirmada por Axel el 19/11.** Indicó que recibió un mensaje de «Turnia · Smile Connect» en su WhatsApp personal. No se revisó el contenido ni se envió otro aviso para esta confirmación.
 
+## Smile Connect: ficha completa del paciente nuevo (26/11/2026)
+
+Smile Connect avisó que `POST /patients` ahora acepta más campos (ver su OpenAPI).
+- [x] Cuando Sofi da un turno a alguien que no está en Smile Connect, la ficha se crea con nombre, DNI, mail, celular, nacimiento, sexo, domicilio y obra social con plan y afiliado. Si la rechaza, se crea con lo básico y el turno sale igual. Detalle en `SMILE_CONNECT_API.md`.
+- [ ] **Verificar el primer alta real:** abrir en Smile Connect la ficha del próximo paciente nuevo que agende Sofi y confirmar que trae la obra social y el nacimiento. Si en «Detalle» aparece `ficha_rechazada`, revisar qué campo rechazó.
+- [ ] **Traer a Turnia los datos nuevos de Smile Connect** (nacimiento, sexo, obra social de las fichas que carga recepción). Hoy la lectura solo usa nombre, DNI, mail y celular. Sin hacer: hay que decidir qué manda si Turnia y Smile Connect dicen distinto.
+- CUIT y «cómo llegó» no se mandan: Turnia no los pide.
+
 ## Sofi confirma en el mismo mensaje, prompt más corto y batería de pruebas (25/11/2026)
 
 Salió de leer las charlas reales de Guerra–Mininni del 16 al 25/11.
