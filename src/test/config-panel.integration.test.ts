@@ -134,4 +134,27 @@ describe.runIf(url)("Configuración del consultorio", () => {
     expect(prestaciones).not.toContain("Hay un dato que se contradice");
     await sql`update clinics set agent_context = null where id = ${clinicId}`;
   });
+  it("cambia las horas de un horario en el lugar, solo de esta clínica y con horas válidas", async () => {
+    const [pro] = await sql`insert into professionals (clinic_id, full_name, specialty) values (${clinicId}, 'Dra. Prueba', 'Odontología') returning id`;
+    const [row] = await sql`insert into schedules (professional_id, weekday, start_time, end_time) values (${pro.id}, 1, '10:00', '17:30') returning id`;
+    await actions.updateSchedule(form({ clinic_id: clinicId, id: row.id, start_time: "09:00", end_time: "17:30" }));
+    expect((await sql`select start_time::text, end_time::text from schedules where id = ${row.id}`)[0]).toEqual({ start_time: "09:00:00", end_time: "17:30:00" });
+    // Al revés no se guarda.
+    await actions.updateSchedule(form({ clinic_id: clinicId, id: row.id, start_time: "18:00", end_time: "09:00" }));
+    expect((await sql`select start_time::text from schedules where id = ${row.id}`)[0].start_time).toBe("09:00:00");
+    // De otra clínica, tampoco.
+    const [{ id: other }] = await sql`insert into clinics (name, specialty) values ('Ajena', 'Odontología') returning id`;
+    const [otherPro] = await sql`insert into professionals (clinic_id, full_name, specialty) values (${other}, 'Dr. Ajeno', 'Odontología') returning id`;
+    const [foreign] = await sql`insert into schedules (professional_id, weekday, start_time, end_time) values (${otherPro.id}, 2, '10:00', '12:00') returning id`;
+    await actions.updateSchedule(form({ clinic_id: clinicId, id: foreign.id, start_time: "08:00", end_time: "12:00" }));
+    expect((await sql`select start_time::text from schedules where id = ${foreign.id}`)[0].start_time).toBe("10:00:00");
+  });
+
+  it("la ficha de salud se guarda desde la pestaña Consultorio", async () => {
+    const res = await actions.saveClinicWithFeedback({}, form({ clinic_id: clinicId, health_form_field: "1", health_form_monogram: "CP", health_form_text: "DRA. PRUEBA\nODONTÓLOGA" }));
+    expect(res.ok).toBe(true);
+    expect((await sql`select health_form from clinics where id = ${clinicId}`)[0].health_form).toMatchObject({ monogram: "CP", professionals: [{ name: "DRA. PRUEBA", lines: ["ODONTÓLOGA"] }] });
+    await actions.saveClinicWithFeedback({}, form({ clinic_id: clinicId, health_form_field: "1", health_form_monogram: "", health_form_text: "" }));
+    expect((await sql`select health_form from clinics where id = ${clinicId}`)[0].health_form).toBeNull();
+  });
 });

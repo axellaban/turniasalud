@@ -215,7 +215,13 @@ Hecho en el código (todos los consultorios):
 - Con Smile Connect: el formulario de bloqueos es «Frenar a Sofi» de punta a punta, y los bloqueos cargados en Turnia dicen «Solo Sofi». Sofi ya no repite el motivo interno de un bloqueo de Smile Connect («Día cancelado manualmente»).
 - Prestaciones agrupadas: «Las que ofrece Sofi» y, plegadas, «Solo el consultorio» e «Inactivas». Los nombres repetidos también se distinguen en la lista.
 - El 403 de bloqueos se explica sin código; el detalle técnico queda en «Qué hacer».
-- No se tocó: la ficha de salud y el fuera de horario siguen en «Turnos y urgencias», y tampoco Equipo por WhatsApp. El aviso de cambios sin guardar funciona: se comprobó en local que pide confirmar al cambiar de pestaña.
+- El aviso de cambios sin guardar funciona: se comprobó en local que pide confirmar al cambiar de pestaña.
+
+**Tercera tanda (26/11):**
+- La **ficha de salud** (iniciales y profesionales del encabezado) pasó a la pestaña **Consultorio**. «Turnos y urgencias» queda con lo de los turnos, las urgencias y el fuera de horario, con un índice arriba para saltar a cada sección.
+- **Horarios editables en el lugar:** al tocar un horario de Turnia se abre para cambiar las horas o quitarlo (`updateSchedule`). Los de Smile Connect siguen con candado.
+- **Equipo por WhatsApp:** una fila por cosa que recibe cada persona (avisos de turnos, acceso total, resumen de las 10), con su estado y su acción, en vez de mezclados en una línea.
+- Sigue sin hacer: unir los tres campos de texto libre en uno (es un cambio de contenido de cada consultorio; con los avisos de contradicciones alcanza por ahora).
 
 Ya estaba: el aviso de cambios sin guardar (pide confirmar al cambiar de pestaña y guarda un borrador) y el aviso de precios o plazos que no coinciden.
 

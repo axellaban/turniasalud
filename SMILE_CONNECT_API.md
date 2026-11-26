@@ -292,7 +292,7 @@ Pruebas: `src/test/smile-connect-qa.integration.test.ts`, con una verificación 
 
 **También resuelto el 18/11:** las tres opciones que seguían atadas a Guerra–Mininni en el código ahora son de cada clínica:
 - **la verificación de identidad** para gestionar un turno desde otro número (`clinics.verify_appointment_access`, en Turnos y urgencias);
-- **la ficha de salud** (`clinics.health_form`, en Turnos y urgencias);
+- **la ficha de salud** (`clinics.health_form`, en Consultorio);
 - **los días del resumen** (`clinics.summary_last_weekday`, en Equipo por WhatsApp).
 
 Guerra–Mininni recibió sus valores con una migración de una sola vez y no cambia. El código ya no tiene el id de ninguna clínica.
@@ -306,7 +306,7 @@ Guerra–Mininni recibió sus valores con una migración de una sola vez y no ca
    - que no haya aviso de zona horaria;
    - que cada profesional activo quede vinculado con su consultorio. Si no, «Vincular» a mano.
 4. **Avisos:** cargar los celulares en «Equipo por WhatsApp» (le llegan los avisos, incluido el de la clave) y mandar uno de prueba.
-5. **Opciones de la clínica** (Configuración → Turnos y urgencias y Equipo por WhatsApp): la verificación de identidad desde otro número, la ficha de salud si la usa y los días del resumen.
+5. **Opciones de la clínica** (Configuración → Turnos y urgencias, Consultorio y Equipo por WhatsApp): la verificación de identidad desde otro número, la ficha de salud si la usa (en Consultorio) y los días del resumen.
 6. **Probar por etapas:** seguir los pasos 5 a 8 de abajo («Solo lectura», «Escritura de prueba», «Crear turnos», «Crear, mover y cancelar»), con el consultorio mirando su Smile Connect.
 7. **Controlar el cupo:** mirar «Lecturas de hoy» los primeros días. Si llega cerca de 7.000, la sincronización se espacia sola.
 
