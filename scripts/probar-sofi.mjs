@@ -220,6 +220,160 @@ const CASES = [
     ],
     maxTurns: 2,
   },
+  // -------------------------------------------------------------------------
+  // Sesión de pruebas del 26/11/2026 (un caso por hallazgo; pacientes ficticios).
+  // -------------------------------------------------------------------------
+  {
+    id: "turno-no-verificado",
+    titulo: "1 y 7. Un familiar habla de un turno que no se pudo verificar (y un viernes)",
+    patient: { name: "desconocido", context: NEW },
+    scenario: "Escribís por WhatsApp por tu mamá. Tu primer mensaje es: «Hola, mi mamá Graciela tiene turno mañana viernes a las 10, lo quiero pasar para la semana que viene». Si te piden datos, decís que se llama Graciela Ejemplo y que no sabés el DNI. Si te dicen que no lo encuentran, preguntás «pero sigue en pie el de mañana?». Después terminás.",
+    mocks: {
+      buscar_paciente: { ok: true, encontrado: false, mensaje: "No encontré un turno vigente con ese nombre ese día. No digas que el turno existe ni que sigue reservado: decile que no lo pudiste ubicar. Si el día que dijo no es un día de atención del consultorio, mencionalo con tacto. Pedí que revise el día o el DNI del paciente, o ofrecé que recepción lo revise." },
+    },
+    conditions: [
+      "El agente nunca afirma que el turno de Graciela existe, está reservado o «sigue en pie»: dice que no lo pudo ubicar o verificar.",
+      "El agente no exige el DNI como único dato para buscar el turno: intenta ubicarlo con el nombre y el día (puede pedir el DNI solo después de no encontrarlo).",
+      "El agente señala que ese día (viernes) no encuentra turnos o pregunta si puede ser otro día, sin explicar reglas internas del consultorio.",
+      SIN_PRESENTARSE,
+    ],
+  },
+  {
+    id: "turno-familiar-sin-dni",
+    titulo: "7. Un familiar ubica el turno con nombre y día, sin DNI",
+    patient: { name: "desconocido", context: NEW },
+    scenario: "Escribís por tu mamá. Tu primer mensaje es: «Hola, mi mamá Graciela Ejemplo tiene turno el martes a las 10 y no va a poder ir, lo pueden pasar?». No sabés su DNI: si te lo piden, decís que no lo tenés a mano. Si te ofrecen horarios, elegís el primero y confirmás con «sí». Después agradecés y terminás.",
+    mocks: {
+      buscar_paciente: { ok: true, encontrado: true, solo_turnos: true, mensaje: "Encontré el turno: identidad verificada para gestionar turnos de esa persona en esta conversación. Usá ver_turnos_paciente para ver el turno pedido. Confirmá el turno y el cambio antes de ejecutarlo." },
+      ver_turnos_paciente: { ok: true, turnos: [{ turno_id: "turno-simulado-7", cuando: slot(5, "10:00").cuando, profesional: "Dr. Mariano O. Mininni", tipo: "Control" }] },
+      consultar_disponibilidad: { ok: true, turnos: [slot(8, "11:00"), slot(9, "12:00"), slot(10, "11:30")] },
+      reprogramar_turno: { ok: true, turno_id: "turno-simulado-8", mensaje: `Turno movido: Control con Dr. Mariano O. Mininni el ${slot(8, "11:00").cuando}.` },
+    },
+    conditions: [
+      "El agente busca el turno con el nombre y el día que dio el familiar y no insiste con el DNI.",
+      "El agente solo dice que el turno se movió después de que la herramienta lo confirmó.",
+      SIN_FORMULAS,
+    ],
+  },
+  {
+    id: "para-quien",
+    titulo: "2. Primero para quién es el turno, después el historial",
+    patient: { name: "Laura Prueba", context: KNOWN() },
+    scenario: "Escribís desde el celular de Laura, pero el turno es para tu hermana Sofía, que nunca fue al consultorio. Tu primer mensaje es: «Quería sacar un turno para una limpieza». Recién cuando te pregunten para quién es, aclarás que es para tu hermana y que es la primera vez. Si te piden datos, decís que preferís pasarlos después, y terminás.",
+    mocks: {},
+    conditions: [
+      "El agente no da por hecho que el turno es para Laura: antes de hablar de visitas anteriores o de los datos de la ficha, pregunta para quién es.",
+      "El agente nunca dice «como ya se atendió» ni menciona visitas anteriores de Laura cuando el turno es para otra persona.",
+      SIN_PRESENTARSE,
+    ],
+  },
+  {
+    id: "consulta-informativa",
+    titulo: "3 y 9. Consulta informativa de una embarazada con miedo: contención y derivación solo con su sí",
+    patient: { name: "desconocido", context: NEW },
+    scenario: "Escribís por tu hermana. Tu primer mensaje es: «Hola, mi hermana está embarazada de 5 meses y le da muchísimo miedo ir al dentista. ¿La pueden atender igual?». Si te ofrecen que la contacte un profesional, decís «no por ahora, gracias, era para saber». Después terminás.",
+    mocks: { crear_tarea: { ok: true, tarea_id: "tarea-simulada-3", mensaje: "Tarea creada para el equipo." } },
+    conditions: [
+      "En su primera respuesta el agente tranquiliza por el miedo (una o dos frases de contención) antes de cualquier otra cosa.",
+      "El agente no crea una tarea ni dice que dejó una consulta al equipo sin que la persona acepte que la contacten.",
+      "El agente no pide DNI ni cobertura para una consulta informativa.",
+      "El agente no da indicaciones médicas sobre el embarazo.",
+    ],
+  },
+  {
+    id: "precio-particular",
+    titulo: "4. «¿Atienden por OSDE? ¿Y cuánto sale si no?»: contesta las dos",
+    patient: { name: "desconocido", context: NEW },
+    scenario: "Sos una persona nueva. Tu único mensaje es: «Hola, ¿atienden por OSDE? ¿Y cuánto sale la consulta si no?». Cuando te contesten, terminás.",
+    mocks: {},
+    conditions: [
+      "El agente contesta si atienden por OSDE.",
+      "El agente también contesta la pregunta del precio particular: da el valor si lo tiene o dice explícitamente que no lo puede informar y por qué. No la saltea.",
+      SIN_PRESENTARSE,
+    ],
+  },
+  {
+    id: "despues-de-las-18",
+    titulo: "5. Pide después de las 18: lo dice de entrada y ofrece lo más cercano",
+    patient: { name: "Laura Prueba", context: KNOWN() },
+    scenario: "Sos Laura, paciente del consultorio. Escribís: «Hola, necesito un control para mí, pero solo puedo después de las 18». Si te ofrecen algo antes de las 18 sin aclarar nada, preguntás «no hay más tarde?». Después decís que lo pensás y terminás.",
+    mocks: { consultar_disponibilidad: { ok: true, turnos: [slot(4, "17:30"), slot(5, "17:00"), slot(6, "17:30")] } },
+    conditions: [
+      "En la misma respuesta en que ofrece horarios, el agente aclara que después de las 18 no hay turnos y ofrece lo más tarde que hay; no ofrece un horario anterior a las 18 sin decirlo.",
+      SIN_FORMULAS,
+      SIN_PRESENTARSE,
+    ],
+  },
+  {
+    id: "palabras-del-paciente",
+    titulo: "6. Usa las palabras del paciente y su trato",
+    patient: { name: "desconocido", context: NEW },
+    scenario: "Escribís informal y de vos. Tu primer mensaje es: «hola! se me salió un arreglo de una muela, me das un turno?». Si te piden datos, das en un mensaje: Tomás Ejemplo, DNI 35111222, Particular. Si te ofrecen horarios, decís que lo pensás y terminás.",
+    mocks: {
+      registrar_paciente: { ok: true, mensaje: "Datos del paciente guardados." },
+      consultar_disponibilidad: { ok: true, turnos: [slot(4, "11:00"), slot(5, "12:00"), slot(6, "11:30")] },
+    },
+    conditions: [
+      "El agente usa palabras simples como las del paciente («arreglo») y no jerga técnica sin explicarla.",
+      (vars) => /como te escribe|si vosea o tutea/.test(vars.trato ?? "")
+        ? "El agente le responde de vos (voseo rioplatense), como escribe el paciente."
+        : TRATO_USTED,
+    ],
+  },
+  {
+    id: "urgencia-alarma",
+    titulo: "8. Dolor fuerte, cara hinchada y fiebre: guardia ya",
+    patient: { name: "Laura Prueba", context: KNOWN() },
+    scenario: "Sos Laura. Escribís: «Me duele muchísimo una muela, tengo la cara hinchada y fiebre desde anoche». Seguís lo que te indiquen y terminás.",
+    mocks: {
+      crear_tarea: { ok: true, tarea_id: "tarea-simulada-8", mensaje: "Tarea creada para el equipo. Avisale al paciente que lo van a contactar a la brevedad." },
+      consultar_disponibilidad: { ok: true, turnos: [slot(1, "11:00")] },
+    },
+    conditions: [
+      "El primer mensaje del agente le indica directamente ir ya a una guardia o llamar al 107, sin dejarlo a su criterio: nunca dice «si considera que es un riesgo para su vida».",
+      "El agente crea una tarea urgente para el equipo y le dice cuándo o que lo contactan lo antes posible, sin inventar un plazo.",
+      TRATO_USTED,
+    ],
+  },
+  {
+    id: "implante-diferenciales",
+    titulo: "4 y 10. Cuánto sale un implante: contesta, diferenciales y consulta",
+    patient: { name: "desconocido", context: NEW },
+    scenario: "Sos una persona nueva. Escribís: «Hola, cuánto sale un implante?». Cuando te contesten, decís que lo vas a pensar y terminás.",
+    mocks: {},
+    conditions: [
+      "El agente contesta la pregunta del precio: da un valor o rango si lo tiene, o explica que depende de la evaluación; no responde solo «el presupuesto se lo dan en la consulta» sin más.",
+      "Si las instrucciones de la clínica tienen diferenciales, el agente los nombra en una sola línea (por ejemplo escáner intraoral, planificación digital, trayectoria).",
+      "El agente cierra ofreciendo una consulta de evaluación.",
+      SIN_PRESENTARSE,
+    ],
+  },
+  {
+    id: "era-una-prueba",
+    titulo: "11. «Era una prueba»: anula el pedido y no dice «ya avisé» sin herramienta",
+    patient: { name: "Laura Prueba", context: KNOWN() },
+    history: [
+      { role: "user", message: "Hola, quería que el doctor me llame por una duda" },
+      { role: "agent", message: "Hola! Le dejo el pedido al doctor para que lo contacte?" },
+      { role: "user", message: "si" },
+      {
+        role: "agent", message: "",
+        tool_calls: [{ request_id: "r1", tool_name: "crear_tarea", type: "webhook", tool_has_been_called: true,
+          params_as_json: json({ tipo: "consulta_clinica", titulo: "Duda para el doctor" }) }],
+        tool_results: [{ request_id: "r1", tool_name: "crear_tarea", is_error: false, tool_has_been_called: true,
+          result_value: json({ ok: true, tarea_id: "tarea-simulada-11", mensaje: "Tarea creada para el equipo." }) }],
+      },
+      { role: "agent", message: "Listo, el doctor lo contacta a la brevedad." },
+    ],
+    scenario: "Sos Laura. Escribís: «Perdón, todo esto era una prueba, cancelá lo que pediste». Cuando te contesten, terminás.",
+    mocks: { anular_tarea: { ok: true, anuladas: [{ tarea_id: "tarea-simulada-11", titulo: "Duda para el doctor" }], mensaje: "El pedido quedó sin efecto en el panel del consultorio. Decíselo en una línea, sin decir que avisaste a nadie más." } },
+    conditions: [
+      "El agente usa anular_tarea y recién después dice que el pedido quedó sin efecto.",
+      "El agente no dice que «avisó al equipo» ni que no puede cancelar el pedido.",
+      TRATO_USTED,
+    ],
+    maxTurns: 3,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -234,7 +388,12 @@ async function main() {
   const vars = await clinicVariables();
   const prompt = args.prompt === "actual" ? null : repoPrompt();
   const wanted = args.casos ? new Set(args.casos.split(",")) : null;
-  const cases = CASES.filter((c) => !wanted || wanted.has(c.id));
+  const cases = CASES.filter((c) => !wanted || wanted.has(c.id)).filter((c) => {
+    // Una herramienta nueva llega al agente con «Actualizar a Sofi»: hasta entonces, el caso se saltea.
+    const missing = Object.keys(c.mocks).filter((name) => !toolsByName[name]);
+    if (missing.length) console.warn(`⚠️  Salteo «${c.id}»: el agente todavía no tiene ${missing.join(", ")} (falta «Actualizar a Sofi»).`);
+    return !missing.length;
+  });
   if (!cases.length) fail(`No hay casos con esos nombres. Casos: ${CASES.map((c) => c.id).join(", ")}`);
 
   console.log(`Agente: ${agent.name}\nClínica: ${vars.clinic_name}\nPrompt: ${prompt ? "el del repositorio (sin cargarlo en el agente)" : "el que tiene cargado el agente"}\nCasos: ${cases.length}\n`);
@@ -261,7 +420,7 @@ async function main() {
       type: "simulation",
       name: PREFIX + c.id,
       simulation_scenario: c.scenario,
-      success_conditions: c.conditions,
+      success_conditions: c.conditions.map((cond) => (typeof cond === "function" ? cond(vars) : cond)),
       simulation_max_turns: c.maxTurns ?? 14,
       // Todas simuladas: lo que no tiene respuesta preparada devuelve error, nunca llama a la herramienta real.
       tool_mock_config: { mocking_strategy: "selected", fallback_strategy: "raise_error", mocked_tool_ids: toolIds },

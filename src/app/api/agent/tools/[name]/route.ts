@@ -10,6 +10,7 @@ import {
   confirmAppointment,
   createTask,
   findPatientByDni,
+  isTesterPhone,
   joinWaitlist,
   listPatientAppointments,
   appointmentManagementStatus,
@@ -20,6 +21,7 @@ import {
   SmileHandoff,
   sourceFromChannel,
   ToolError,
+  voidTask,
   type ToolContext,
 } from "@/lib/agent/service";
 import { agentActivityForStaff, appointmentDetailForStaff, blockAgenda, createPatientForStaff, listOpenTasks, pauseChatForStaff, reactivateChatForStaff, resolveTaskForStaff, searchPatients, viewAgenda, viewWaitlist } from "@/lib/agent/staff-tools";
@@ -44,6 +46,7 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
   cancelar_turno: cancelAppointment,
   reprogramar_turno: rescheduleAppointment,
   crear_tarea: createTask,
+  anular_tarea: voidTask,
   anotar_lista_espera: joinWaitlist,
   guardar_ficha_salud: saveHealthForm,
   silenciar_numero: muteSender,
@@ -64,6 +67,29 @@ const HANDLERS: Record<string, (ctx: ToolContext, input: any) => Promise<unknown
 const CHANGES_AGENDA = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 /** Lo que Sofi cambia en la agenda a pedido de un paciente se le avisa al consultorio por WhatsApp. */
 const NOTICE_OF: Record<string, NoticeKind> = { reservar_turno: "nuevo", reprogramar_turno: "movido", cancelar_turno: "cancelado" };
+/**
+ * Modo prueba (clinics.test_phones): con un tester, lo que cambia la agenda no se ejecuta. Sofi recibe una
+ * respuesta simulada que lo dice, así la charla sigue igual que con un paciente, sin tocar la agenda, Smile
+ * Connect ni avisar al consultorio.
+ */
+const SIMULATED_IN_TEST = new Set(["reservar_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno", "anotar_lista_espera"]);
+
+function simulatedResult(name: string, input: Record<string, unknown>) {
+  const done: Record<string, string> = {
+    reservar_turno: "reservado",
+    confirmar_turno: "confirmado",
+    cancelar_turno: "cancelado",
+    reprogramar_turno: "movido",
+    anotar_lista_espera: "anotado en la lista de espera",
+  };
+  return {
+    ok: true,
+    modo_prueba: true,
+    turno_id: typeof input.turno_id === "string" ? input.turno_id : `prueba-${Date.now()}`,
+    mensaje: `MODO PRUEBA: el turno se da por ${done[name]}, pero la agenda real no se tocó y no se avisó al consultorio. Respondé como lo harías con un paciente real.`,
+  };
+}
+
 const TEMPORARY_TOOLS = new Set(["ver_turnos_paciente", "consultar_estado_turno", "confirmar_turno", "cancelar_turno", "reprogramar_turno"]);
 
 /**
@@ -155,6 +181,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ nam
           throw new ToolError("Esta verificación solo permite gestionar turnos existentes. Para otros trámites, ofrecé que recepción lo revise.");
         }
         context.appointmentPatientId = access.patient_id;
+      }
+    }
+    if (!staff && await isTesterPhone(ctx.data.clinic_id, ctx.data.patient_phone)) {
+      context.testMode = true;
+      if (SIMULATED_IN_TEST.has(name)) {
+        log("prueba");
+        return NextResponse.json(simulatedResult(name, toolInput as Record<string, unknown>));
       }
     }
     let result: unknown;

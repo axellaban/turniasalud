@@ -225,7 +225,7 @@ describe.runIf(base)("pacientes que ya existen", () => {
     const vars = await clinicLib.buildDynamicVariables(await clinicLib.getClinic(CLINIC), "5491170000005");
     expect(vars.patient_context).toContain("Ya tiene ficha");
     expect(vars.patient_context).toContain("Última visita: 14 de sept de 2024 (Consulta), hace más de un año");
-    expect(vars.patient_context).toContain("No le preguntes si ya vino antes");
+    expect(vars.patient_context).toContain("Si el turno es para esta persona, no le preguntes si ya vino antes");
     expect(vars.patient_context).toContain("Faltan en la ficha (pedilos antes de reservar): fecha de nacimiento, mail");
     expect(vars.patient_context).not.toContain("número de afiliado");
     const nuevo = await clinicLib.buildDynamicVariables(await clinicLib.getClinic(CLINIC), "web-sin-ficha");

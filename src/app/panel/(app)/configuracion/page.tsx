@@ -102,10 +102,11 @@ export default async function SettingsPage() {
 
             <Section id="respuestas" title={`Lo que responde ${agent}`} description="Una idea por línea es más fácil de mantener. Los turnos, las coberturas y las urgencias tienen su pestaña: ahí se cargan como reglas que se cumplen siempre.">
               <div className={wide}><Field label="Sobre el consultorio y preguntas frecuentes" hint="Cómo es el consultorio, estacionamiento, qué traer, si atienden chicos… una idea por línea. Los precios van en Prestaciones y las condiciones de los turnos, en «Turnos y urgencias»."><textarea name="faq" rows={6} defaultValue={clinic.faq ?? ""} className={inputClass} /></Field></div>
-              <Field label="Cómo trata a los pacientes" hint="De usted: en todos los mensajes, aunque el paciente tutee.">
-                <select name="tone" defaultValue={clinic.tone === "usted" ? "usted" : ""} className={inputClass}>
+              <Field label="Cómo trata a los pacientes" hint="De usted: en todos los mensajes, aunque el paciente tutee. Como escribe el paciente: de vos si vosea o tutea, de usted si usa usted.">
+                <select name="tone" defaultValue={clinic.tone === "usted" || clinic.tone === "espejo" ? clinic.tone : ""} className={inputClass}>
                   <option value="">De vos</option>
                   <option value="usted">De usted</option>
+                  <option value="espejo">Como escribe el paciente</option>
                 </select>
               </Field>
               <div className={wide}><Field label="Instrucciones adicionales" hint={`Cómo atender, qué preguntar y qué evitar. El trato se elige arriba; las coberturas y sus excepciones, en Coberturas.`}><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>

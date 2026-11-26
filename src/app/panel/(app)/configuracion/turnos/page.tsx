@@ -136,6 +136,16 @@ export default async function BookingRulesPage() {
         </Section>
 
         {admin && (
+          <Section id="modo-prueba" title="Modo prueba" description={`Celulares de quienes prueban a ${agent} por WhatsApp. Desde esos números, ${agent} conversa igual que con un paciente, pero los pedidos al equipo no le llegan a nadie (quedan cerrados y marcados como prueba) y las reservas, cambios, cancelaciones y la lista de espera se simulan: la agenda y Smile Connect no se tocan.`}>
+            <div className={wide}>
+              <Field label="Celulares de testers" hint="Uno por línea o separados por coma, con código de país y área (por ejemplo 5491155550000).">
+                <textarea name="test_phones" rows={2} defaultValue={(clinic.test_phones ?? []).join("\n")} className={inputClass} />
+              </Field>
+            </div>
+          </Section>
+        )}
+
+        {admin && (
           <Section id="protocolo" title="Protocolo odontológico de Turnia" description="Lo común a todos los consultorios odontológicos: qué es urgente, qué turno corresponde a cada pedido y qué tratamientos empiezan con una consulta. Las instrucciones propias del consultorio mandan sobre él.">
             <div className={`${wide} flex flex-wrap items-center gap-2`}>
               <Badge tone={active ? "green" : "gray"}>{active ? "Prendido" : "Apagado"}</Badge>

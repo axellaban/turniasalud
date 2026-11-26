@@ -463,7 +463,10 @@ export async function saveClinic(form: FormData) {
     if (!Number.isInteger(delay) || delay < 1 || delay > 24) throw new Error("Elegí cuánto esperar antes de volver a escribir.");
     fields.followup_delay_hours = delay;
   }
-  if (form.has("tone")) fields.tone = text(form, "tone") === "usted" ? "usted" : text(form, "tone") === "vos" ? "vos" : null;
+  if (form.has("tone")) {
+    const tone = text(form, "tone");
+    fields.tone = tone === "usted" || tone === "vos" || tone === "espejo" ? tone : null;
+  }
   // El ayudante de postgres.js tiene que ir directo después de «set» (dentro de otro fragmento no
   // se arma bien), así que sin campos se marca la ficha sola.
   if (Object.keys(fields).length) {
