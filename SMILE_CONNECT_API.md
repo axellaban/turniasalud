@@ -149,7 +149,7 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
 | Turnos de 4 a 61 días | Sincronización lejana | 8 horas |
 | Asistencia, cancelaciones o cambios cargados tarde (hasta 30 días atrás) y turnos de 61 a 120 días | Copia diaria aplicada a Turnia (`mirrorSmileBackup`) | Una vez por día, después de la copia (de 3 a 6) |
 | Pacientes nuevos (aunque no tengan turno) | Copia diaria, leyendo solo desde el último id (la API pagina por id) | Una vez por día |
-| Cambios en los pacientes que ya existían (nombre, DNI, mail y celular) | Copia con la lista completa | Dos veces por semana (cada 3 días y medio) |
+| Cambios en los pacientes que ya existían (nombre, DNI, mail, celular y, desde el 26/11, nacimiento, sexo, domicilio y obra social con plan y afiliado) | Copia con la lista completa | Dos veces por semana (cada 3 días y medio) |
 | Horario semanal de cada profesional | `syncSmileHours`, a sus horarios de Turnia | 6 horas, y con «Sincronizar ahora» |
 | Bloqueos de agenda (vacaciones, fuera de servicio) | Las dos sincronizaciones y la copia, si la clave tiene `events:read` | Igual que los turnos |
 | Notas y prestación del turno | A las notas del turno en Turnia (la prestación, adelante) | Igual que los turnos |
@@ -163,6 +163,7 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
 - **Pacientes:**
   - la primera vez que se ve a un paciente, solo se anota cómo está en Smile Connect (`patient_external_ids.smile_data`). Lo que Turnia ya sabe, como el WhatsApp desde el que escribe, no se pisa con un dato viejo;
   - desde ahí, cada cambio que se haga en Smile Connect pasa a Turnia;
+  - **ficha completa (26/11):** lo que Turnia no tiene (nacimiento, sexo, domicilio, obra social, plan, afiliado) se completa con la copia. Lo que ya tiene no se pisa la primera vez, porque la ficha de Smile Connect puede ser vieja y la obra social que le dio a Sofi, nueva. Desde ahí, si recepción cambia la obra social allá, pasa a Turnia con su plan y afiliado (los de la anterior se reemplazan). Un dato que se borra allá no se borra en Turnia;
   - si cambia el celular, el anterior queda vinculado para que Sofi lo siga reconociendo;
   - una ficha de Turnia unida a dos de Smile Connect no se toca;
   - los pacientes que Turnia no tiene entran de a 1.000 por copia;
@@ -209,17 +210,17 @@ Si el WhatsApp no sale, se reintenta una vez por hora. **Ojo:** salen por la lí
 | Avisos que llegan aunque la demo pública esté pausada | Sí: los avisos internos a Axel ya no dependen del selector de la demo; si el WhatsApp falla, van a n8n (`axel.aviso`) |
 | Renovar las claves cada tanto | Sí: la clave es sin vencimiento para que no se corte sola, y a los 6 meses Axel recibe el recordatorio de renovarla |
 
-### Pedido a Smile Connect: traer solo lo que cambió
+### Pedido a Smile Connect para el 10/10 (actualizado el 26/11)
 
-Es lo único que falta para el 10/10, y depende de Smile Connect (lo gestiona Mininni, como los pedidos anteriores). Texto para mandarles:
+Lo que falta depende de Smile Connect. El OpenAPI del 26/11 confirma que hoy no existe ninguna de estas cinco cosas. Texto para mandarles (lo puede mandar Axel o Mininni):
 
-> Hola, equipo de Smile Connect. Gracias por sumar las notas, la prestación y los bloqueos a la API. Les queremos pedir una cosa más, que nos permitiría tener la agenda sincronizada casi al instante gastando una fracción del cupo diario:
+> Hola, equipo de Smile Connect. ¡Gracias por sumar los campos nuevos al alta de pacientes! Ya los estamos usando: cada paciente nuevo que agenda Sofi entra con nacimiento, obra social, plan y afiliado. Para que la integración quede completa les pedimos, por orden de importancia:
 >
-> **Un parámetro `updated_since` (fecha y hora ISO 8601) en `GET /appointments` y en `GET /patients`.** Debería devolver los registros creados, modificados o cancelados (también los cambios de asistencia) desde ese momento, sin ventana de fechas. La paginación puede seguir con `after`, y también serviría un campo `updated_at` en cada registro.
->
-> Si borran registros de verdad (no la cancelación), un campo `deleted_at` en la respuesta o un listado de borrados nos ayudaría a reflejarlo.
->
-> Como alternativa, también nos sirve un webhook firmado (HMAC) que avise cada cambio de turno o paciente.
+> 1. **Editar un paciente: `PATCH /patients/{id}`** (permiso `patients:update`), con los mismos campos del alta. Hoy, si un paciente que ya existe cambia de obra social o de celular, o le faltan datos, solo lo puede corregir recepción a mano.
+> 2. **Traer solo lo que cambió: `updated_since` (fecha y hora ISO 8601) en `GET /appointments` y `GET /patients`**, con los creados, modificados y cancelados (también la asistencia) desde ese momento. También sirve un webhook firmado (HMAC) por cada cambio. Hoy tenemos que releer la agenda entera cada 30 minutos: los cambios de recepción tardan en llegar y se gasta el cupo diario.
+> 3. **Marcar la confirmación del paciente en el turno** (por ejemplo, `attendance: "Confirmed"` en el `PATCH`), para que cuando el paciente le confirma a Sofi por WhatsApp, recepción lo vea en la agenda.
+> 4. **Turnos con dos profesionales al crear y mover** (`professional_ids` en vez de `professional_id`). Hoy esos turnos los carga recepción.
+> 5. **Revisar el permiso `events:read` de nuestra clave:** `GET /events` nos devuelve 403 aunque la clave se creó con todos los permisos.
 >
 > ¡Gracias!
 
@@ -232,7 +233,7 @@ Es lo único que falta para el 10/10, y depende de Smile Connect (lo gestiona Mi
 
 **Falta para Guerra–Mininni:**
 - el control en producción por computer use (tarea 10 de `TAREAS_COMPUTER_USE.md`);
-- el pedido de `updated_since` a Smile Connect.
+- el pedido a Smile Connect de arriba (editar pacientes, `updated_since`, confirmación, dos profesionales y `events:read`).
 
 La clave la dio Mininni con todos los permisos que ofrece Smile Connect. El control del 19/11 confirmó un rechazo **403 al leer `/events`** con esa misma clave. El usuario pidió conservarla: hay que revisar la habilitación de esa operación con Smile Connect antes de decidir una renovación. Desde el PR #238, el panel distingue 403 de 404 y «Sincronizar ahora» vuelve a probar sin cambiar la clave; un 404 de la ruta no se diagnostica como falta de permisos.
 
