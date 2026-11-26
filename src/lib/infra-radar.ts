@@ -18,8 +18,10 @@ const KEEP_DAYS = 30;
 export type EasypanelConfig = { url: string; token: string; host: string };
 
 export function easypanelConfig(): EasypanelConfig | null {
-  const url = process.env.EASYPANEL_API_URL?.trim().replace(/\/$/, "");
-  const token = process.env.EASYPANEL_API_TOKEN?.trim();
+  // Si se pegó con las comillas del archivo .env, se sacan.
+  const clean = (v: string | undefined) => v?.trim().replace(/^(['"])(.*)\1$/, "$2").trim();
+  const url = clean(process.env.EASYPANEL_API_URL)?.replace(/\/$/, "");
+  const token = clean(process.env.EASYPANEL_API_TOKEN);
   if (!url || !token) return null;
   try {
     return { url, token, host: new URL(url).host };
