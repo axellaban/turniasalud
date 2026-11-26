@@ -13,6 +13,8 @@ import { SmileLock } from "../smile-lock";
 import { SmileApiCard, loadSmileApiCard } from "../smile-api-card";
 
 export const metadata: Metadata = { title: "Agenda e integraciones · Panel" };
+// Las recuperaciones de Smile Connect continúan después de responder la acción del panel.
+export const maxDuration = 120;
 
 const RESULT: Record<string, { tone: "success" | "warning" | "error"; text: string }> = {
   conectado: { tone: "success", text: "Google Calendar quedó conectado. Ahora elegí el calendario de cada profesional." },

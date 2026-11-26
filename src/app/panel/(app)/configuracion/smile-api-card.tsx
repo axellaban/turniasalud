@@ -5,7 +5,7 @@ import { recentSmileChanges, smileReviewList } from "@/lib/smile-connect-push";
 import { formatDateTime } from "@/lib/time";
 import type { Clinic } from "@/lib/types";
 import { Badge, Card, Field, Notice, inputClass, smallButtonClass } from "@/components/ui";
-import { dismissSmileReviewAction, linkSmileProfessionalAction, removeSmileApiKeyAction, resumeSmileWritesAction, saveSmileApiKeyAction, setSmileModeAction, syncSmileNowAction } from "../../smile-api-actions";
+import { dismissSmileReviewAction, linkSmileProfessionalAction, removeSmileApiKeyAction, resumeSmileWritesAction, retrySmileBookingAction, saveSmileApiKeyAction, setSmileModeAction, syncSmileNowAction } from "../../smile-api-actions";
 import { ActionForm } from "./action-form";
 
 const ACTION: Record<string, string> = { crear_paciente: "Crear paciente", crear: "Crear turno", mover: "Mover turno", cancelar: "Cancelar turno", notas: "Sumar ficha de salud" };
@@ -206,7 +206,11 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
           {review.map((r) => <li key={r.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
             <span className="min-w-0"><span className="font-medium text-brand-950">{r.patient ?? "Paciente"}</span> · {formatDateTime(r.starts_at, tz)}
               <ErrorText raw={r.smile_error} className="block text-brand-900/70" /></span>
-            {r.status === "pendiente" ? <span className="text-xs text-brand-900/70">Verificá el pedido en Smile Connect antes de confirmar.</span> : <form action={dismissSmileReviewAction}>
+            {r.status === "pendiente" ? <div className="space-y-2"><span className="text-xs text-brand-900/70">Verificá el pedido en Smile Connect antes de confirmar.</span>
+              {admin && <ActionForm action={retrySmileBookingAction} submit="Reintentar este pedido">
+                <input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={r.id} />
+              </ActionForm>}
+            </div> : <form action={dismissSmileReviewAction}>
               <input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={r.id} />
               <button className={smallButtonClass}>Ya lo resolví</button>
             </form>}
@@ -237,10 +241,11 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
               <span className="text-brand-900/60">{formatDateTime(c.created_at, tz)}</span>
             </div>
             {c.error && <div className="mt-1"><ErrorText raw={c.error} /></div>}
-            {(c.request != null || c.before != null) && <details className="mt-1">
+            {(c.request != null || c.before != null || c.result != null) && <details className="mt-1">
               <summary className="cursor-pointer text-brand-700">Detalle</summary>
               {c.before != null && <><p className="mt-1 font-medium">Cómo estaba en Smile Connect:</p><pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(c.before, null, 1)}</pre></>}
               {c.request != null && <><p className="mt-1 font-medium">Lo que se mandó:</p><pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(c.request, null, 1)}</pre></>}
+              {c.result != null && <><p className="mt-1 font-medium">Resultado de Smile Connect:</p><pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(c.result, null, 1)}</pre></>}
             </details>}
           </li>)}
         </ul>

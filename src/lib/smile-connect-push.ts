@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { syncPendingCalendar } from "./calendar/sync";
 import { queueAppointmentNotice, sendPendingNotices } from "./clinic-notices";
-import { json, sql, type TransactionSql } from "./db";
+import { json, pgErrorCode, retryTransaction, sql, type TransactionSql } from "./db";
 import { notifyN8n } from "./n8n";
 import { displayPhone } from "./phone";
 import {
@@ -46,7 +46,7 @@ import type { Appointment, Patient, SmileManagement } from "./types";
 // En modo «sombra», o sin SMILE_CONNECT_WRITES=on en el servidor, solo se registra lo que se haría.
 
 const MAX_ATTEMPTS = 5;
-const DEFERRED_ATTEMPTS = 3;
+const DEFERRED_ATTEMPTS = 8;
 const SMILE_RATE_LIMIT_WAIT_SECONDS = 60;
 const MAX_INLINE_RETRY_MS = 65_000;
 /** Más que esto en una hora no es normal en un consultorio: se frena la escritura y se avisa. */
@@ -91,7 +91,7 @@ type Row = {
 };
 
 type ManagedEffect = { before: Appointment; after: Appointment; request: SmileManagement };
-type Outcome = { status: "ok" | "revisar" | "error" | "sombra" | "nada"; message?: string; confirmed?: Row; managed?: ManagedEffect };
+type Outcome = { status: "ok" | "revisar" | "error" | "sombra" | "nada"; message?: string; retryAt?: string; confirmed?: Row; managed?: ManagedEffect };
 type RateLimited = { status: "espera"; retryAt: string };
 
 const scIdOf = (external: string | null) => {
@@ -562,7 +562,13 @@ async function finishDeferredBooking(tx: TransactionSql, row: Row, resolution: "
   const when = humanSlot(new Date(row.starts_at), row.timezone);
   const confirmed = resolution === "confirmed";
   if (confirmed) {
-    await tx`update appointments set status = 'confirmado', smile_sync = 'ok', smile_error = null where id = ${row.id}`;
+    await tx`update appointments set status = 'confirmado', smile_sync = 'ok', smile_error = null, smile_retry_at = null where id = ${row.id}`;
+    // Si se recuperó un pedido derivado, no mandar después un aviso viejo de que sigue pendiente.
+    await tx`update clinic_notices set status = 'vencido'
+      where appointment_id = ${row.id} and kind = 'smile_paciente' and status in ('pendiente', 'error')`;
+    await tx`update tasks set status = 'resuelta', resolved_at = now()
+      where clinic_id = ${row.clinic_id} and title = 'Revisar turno en Smile Connect'
+        and status in ('abierta', 'en_curso') and details like ${`Pedido ${row.id} %`}`;
     await tx`
       update waitlist set status = 'resuelta' where patient_id = ${row.patient_id}
         and appointment_type_id = (select appointment_type_id from appointments where id = ${row.id})
@@ -727,14 +733,16 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
   if (conn.api_retry_at && Date.parse(conn.api_retry_at) > Date.now()) return { reintentar_en: conn.api_retry_at };
   const pending = await sql<Array<{ id: string }>>`
     select id from appointments
-    where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error') and smile_attempts < ${MAX_ATTEMPTS}
+    where clinic_id = ${clinicId} and smile_sync in ('pendiente', 'error')
+      and smile_attempts < case when smile_deferred or smile_management is not null then ${DEFERRED_ATTEMPTS}::int else ${MAX_ATTEMPTS}::int end
+      and (smile_retry_at is null or smile_retry_at <= now())
       ${appointmentId ? sql`and id = ${appointmentId} and (smile_deferred or smile_management is not null)` : sql``}
       ${conn.api_writes_paused ? sql`and ((smile_deferred and status = 'pendiente') or smile_management is not null)` : sql``}
     order by ((smile_deferred and status = 'pendiente') or smile_management is not null) desc, created_at limit 20`;
   const result: { ok: number; sombra: number; revisar: number; error: number; frenado?: string } = { ok: 0, sombra: 0, revisar: 0, error: 0 };
   let pauseReason = conn.api_writes_paused;
   for (const { id } of pending) {
-    const outcome = await sql.begin(async (tx): Promise<Outcome | RateLimited | null> => {
+    const outcome = await retryTransaction(() => sql.begin(async (tx): Promise<Outcome | RateLimited | null> => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
       const current = await getSmileApiConnection(clinicId, tx);
       if (current?.api_mode !== conn.api_mode || current.api_key_encrypted !== conn.api_key_encrypted) return null;
@@ -754,6 +762,8 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
       await tx`select set_config('turnia.smile_quiet', 'on', true)`;
       const row = await pendingRow(tx, id, true);
       if (!row) return null;
+      const [due] = await tx`select 1 from appointments where id = ${id} and (smile_retry_at is null or smile_retry_at <= now())`;
+      if (!due) return null;
       const deferred = row.smile_deferred && row.status === "pendiente";
       const management = row.smile_management;
       if (pauseReason && !deferred && !management) return null;
@@ -775,6 +785,8 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
           where id = ${row.id}`;
         return out;
       } catch (e) {
+        // Un error SQL deja la transacción abortada. Se revierte y se reintenta entera afuera.
+        if (pgErrorCode(e)) throw e;
         // El proveedor pudo aplicar el cambio antes de limitar la lectura de verificación.
         // La espera es de la clínica y no consume un intento de la operación.
         if ((e instanceof SmileApiError && e.status === 429) || e instanceof SmileBudgetError) {
@@ -793,9 +805,20 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
         const review = e instanceof Review || (e instanceof SmileApiError && !e.transient)
           || ((deferred || management) && row.smile_attempts + 1 >= DEFERRED_ATTEMPTS);
         const message = (e instanceof Review ? e.message : smileErrorText(e)).slice(0, 300);
+        const transient = e instanceof SmileApiError && e.transient;
+        const retryAt = !review && transient
+          ? new Date(Date.now() + [3, 15, 60, 120, 300, 600, 600][Math.min(row.smile_attempts, 6)] * 1000).toISOString()
+          : null;
         await tx`
-          update appointments set smile_sync = ${review ? "revisar" : "error"}, smile_error = ${message}, smile_attempts = smile_attempts + 1
+          update appointments set smile_sync = ${review ? "revisar" : "error"}, smile_error = ${message}, smile_attempts = smile_attempts + 1,
+            smile_retry_at = ${retryAt}
           where id = ${row.id}`;
+        if (transient && !review) await logChange(tx, row,
+          management?.operation ?? (row.status === 'cancelado' ? 'cancelar' : row.external_id ? 'mover' : 'crear'), 'error',
+          { error: message, request: e.operation, result: { retry_at: retryAt, attempt: row.smile_attempts + 1 } });
+        if (transient && !review && row.smile_attempts === 2 && (deferred || management)) {
+          await noticeReview(tx, row, `Smile Connect sigue sin confirmar el pedido del ${describe(row)}. Turnia continuará reintentando y verificará si ya existe antes de escribir. ${message}`);
+        }
         if (review) {
           await logChange(tx, row, management?.operation ?? (row.status === "cancelado" ? "cancelar" : row.external_id ? "mover" : "crear"),
             "revisar", { error: message, ...(management && { request: management }) });
@@ -819,9 +842,9 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
             if (row.source !== "panel" && !(e instanceof SlotUnavailable)) await noticeReview(tx, row, message);
           } else await noticeReview(tx, row, message);
         }
-        return { status: review ? "revisar" : "error", message } as Outcome;
+        return { status: review ? "revisar" : "error", message, ...(retryAt && { retryAt }) } as Outcome;
       }
-    });
+    }));
     if (!outcome) continue;
     if (outcome.status === "espera") return { ...result, reintentar_en: outcome.retryAt };
     if (outcome.confirmed) await deferredConfirmationEffects(outcome.confirmed).catch((e) =>
@@ -832,6 +855,7 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
     if (outcome.status === "sombra") result.sombra++;
     if (outcome.status === "revisar") result.revisar++;
     if (outcome.status === "error") result.error++;
+    if (appointmentId && outcome.retryAt) return { ...result, reintentar_en: outcome.retryAt };
   }
   if (pauseReason) result.frenado = pauseReason;
   else if (!appointmentId) {
@@ -966,7 +990,7 @@ async function pushBooking(clinicId: string, appointmentId: string): Promise<Rec
   const retryIn = typeof outcome.reintentar_en === "string"
     ? Date.parse(outcome.reintentar_en) - Date.now()
     : outcome.error ? 3_000 : null;
-  if (retryIn !== null && retryIn <= MAX_INLINE_RETRY_MS) {
+  if (retryIn !== null && retryIn <= (outcome.error ? 5_000 : MAX_INLINE_RETRY_MS)) {
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, retryIn)));
     outcome = await pushPendingSmile(clinicId, appointmentId);
   }
@@ -983,6 +1007,26 @@ export function processSmileBookingLater(clinicId: string, appointmentId: string
   } catch {
     // Fuera de una petición, se procesa con la automatización de calendario.
   }
+}
+
+/** Reabre únicamente una reserva diferida para verificarla con las mismas claves idempotentes. */
+export async function retrySmileBooking(clinicId: string, appointmentId: string): Promise<boolean> {
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
+    const conn = await getSmileApiConnection(clinicId, tx);
+    if (!conn || !writesEnabledOnServer() || !isLiveSmileMode(conn.api_mode) || conn.api_writes_paused) {
+      throw new Error('La escritura de Smile Connect no está disponible. Revisá el estado de la conexión.');
+    }
+    const [row] = await tx`select status, smile_sync, smile_deferred, smile_management, starts_at from appointments
+      where id = ${appointmentId} and clinic_id = ${clinicId} for update`;
+    if (!row || row.status !== 'pendiente' || !row.smile_deferred || row.smile_management || Date.parse(row.starts_at) <= Date.now()) {
+      throw new Error('Solo se puede reintentar una reserva pendiente, futura y sin otra gestión en curso.');
+    }
+    if (!['error', 'revisar'].includes(row.smile_sync)) return false;
+    await tx`update appointments set smile_sync = 'pendiente', smile_attempts = 0, smile_retry_at = null
+      where id = ${appointmentId} and clinic_id = ${clinicId}`;
+    return true;
+  });
 }
 
 /**
@@ -1033,13 +1077,14 @@ export type SmileChange = {
   status: string;
   request: unknown;
   before: unknown;
+  result: unknown;
   error: string | null;
   created_at: string;
 };
 
 export async function recentSmileChanges(clinicId: string, limit = 15): Promise<SmileChange[]> {
   return [...(await sql<SmileChange[]>`
-    select id, appointment_id, action, status, request, before, error, created_at
+    select id, appointment_id, action, status, request, before, result, error, created_at
     from smile_connect_changes where clinic_id = ${clinicId} order by created_at desc limit ${limit}`)];
 }
 

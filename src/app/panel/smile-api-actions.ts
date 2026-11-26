@@ -19,7 +19,7 @@ import {
   WRITE_MODES,
   type SmileMode,
 } from "@/lib/smile-connect-link";
-import { dismissSmileReview, resumeSmileWrites } from "@/lib/smile-connect-push";
+import { dismissSmileReview, processSmileBookingLater, retrySmileBooking, resumeSmileWrites } from "@/lib/smile-connect-push";
 import type { FormState } from "./actions";
 
 // Configuración → Calendario → Smile Connect por API. La clave y el modo los cambia solo Turnia
@@ -31,6 +31,19 @@ const text = (form: FormData, key: string) => {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 };
 const failed = (e: unknown, fallback: string): FormState => ({ ok: false, message: e instanceof Error ? e.message : fallback });
+
+export async function retrySmileBookingAction(_previous: FormState, form: FormData): Promise<FormState> {
+  await requireAdmin();
+  try {
+    const clinic = await getPanelClinic(form);
+    const id = text(form, 'id');
+    if (!isUuid(id)) return { ok: false, message: 'No encontré el pedido.' };
+    await retrySmileBooking(clinic.id, id);
+    processSmileBookingLater(clinic.id, id);
+    revalidatePath(PAGE);
+    return { ok: true, message: 'El mismo pedido se está verificando de nuevo en Smile Connect. Se confirma únicamente después de comprobarlo allá.' };
+  } catch (e) { return failed(e, 'No se pudo reintentar la reserva.'); }
+}
 
 export async function saveSmileApiKeyAction(_previous: FormState, form: FormData): Promise<FormState> {
   await requireAdmin();

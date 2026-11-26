@@ -71,3 +71,13 @@ export async function closeDb(): Promise<void> {
 export function pgErrorCode(error: unknown): string | null {
   return error instanceof postgres.PostgresError ? error.code : null;
 }
+
+/** Postgres abortó la transacción: reintentarla entera, nunca seguir usándola. */
+export async function retryTransaction<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await run(); } catch (error) {
+      if (attempt >= 2 || !["40P01", "40001"].includes(pgErrorCode(error) ?? "")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50 * 2 ** attempt));
+    }
+  }
+}

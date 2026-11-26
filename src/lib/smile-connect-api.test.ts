@@ -7,6 +7,18 @@ const t = (hhmm: string) => Date.parse(`2026-12-02T${hhmm}:00Z`);
 const cell = (pro: number, a: string, b: string) => ({ start: `2026-12-02T${a}:00.000Z`, end: `2026-12-02T${b}:00.000Z`, professionalId: pro });
 
 describe("diagnóstico de un conflicto de Smile Connect", () => {
+  it("identifica la operación y la referencia de un 500 sin guardar la consulta ni las credenciales", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "internal_error", request_id: "req-ficticio-500" } }, { status: 500 })));
+    try {
+      let caught: unknown;
+      try { await smileClient("clave-ficticia").request("/appointments", { method: "POST", query: { paciente: "privado" }, body: {} }); } catch (e) { caught = e; }
+      expect(caught).toMatchObject({ status: 500, operation: { method: "POST", path: "/appointments" } });
+      const text = smileErrorText(caught);
+      expect(text).toContain("POST /appointments");
+      expect(text).toContain("req-ficticio-500");
+      expect(text).not.toMatch(/privado|clave-ficticia/);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it("conserva el código, el motivo y la referencia del proveedor al rechazar un cambio", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: { code: "slot_conflict", message: "The selected room is not available", request_id: "req-ficticio-123" } }, { status: 409 })));
     try {
