@@ -10,6 +10,8 @@ import { AgentSetupButton } from "./agent-setup";
 import { AudiosWeb } from "./audios-web";
 import { Canales } from "./canales";
 import { DemoLimitForm } from "./demo-limit";
+import { RadarCard } from "./radar-card";
+import { radarOverview } from "@/lib/infra-radar";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Sistema · Panel" };
@@ -30,7 +32,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 /** Canal, agente, integraciones y audios: lo general de Turnia, solo para el administrador. */
 export default async function SystemPage() {
   await requireAdmin();
-  const [main, messaging, audios, demo] = await Promise.all([getClinic(), messagingSettings(), estadoAudios(), demoStatus()]);
+  const [main, messaging, audios, demo, radar] = await Promise.all([getClinic(), messagingSettings(), estadoAudios(), demoStatus(), radarOverview().catch(() => null)]);
   const configured = isConfigured();
   const missingWaha = new Set(missingWahaEnv());
   const base = env.appUrl().replace(/\/$/, "");
@@ -89,6 +91,8 @@ export default async function SystemPage() {
         </div>
 
         <div className="space-y-6">
+          <RadarCard radar={radar} />
+
           <Card>
             <h2 className="mb-1 font-semibold text-brand-950">WhatsApp por WAHA</h2>
             <p className="mb-3 text-xs text-brand-900/60">

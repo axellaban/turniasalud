@@ -1,5 +1,41 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Radar de WhatsApp (WAHA) y del VPS — 26/11/2026
+
+Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detectar la próxima caída a tiempo.
+
+**Qué hay en el VPS (Easypanel, leído por API el 26/11):** un solo CPU, 3,9 GB de RAM y 47 GB de disco. Cuatro WAHA, todas NOWEB y CORE, con una sola sesión cada una:
+
+| Servicio | Línea | Estado 26/11 | Imagen |
+|---|---|---|---|
+| `n8n/waha` | 3765 (Guerra–Mininni, la activa) | WORKING | `waha:noweb` (corre 2026.10.1), sin tope de memoria |
+| `n8n/turnia-guerra-mininni-waha` | 3765 (la anterior) | FAILED, sin webhook | 2026.9.2 fijada, 768 MB |
+| `n8n/turnia-prospeccion-5483-waha` | 5483 (prospección, suspendida) | FAILED | 2026.9.2 fijada, 768 MB |
+| `n8n/turnia-waha` | general y demo | sin leer desde la nube (clave de la sesión vieja) | `waha:noweb`, 768 MB |
+
+**Hallazgos:**
+- **La RAM del VPS está entre 89 y 96 %** (el 25/11 a las 12:55 llegó a 3,77 de 3,9 GB). Más usan: n8n (590 MB), Chatwoot sidekiq (520), `turnia-waha` (460) y `n8n/waha` (370). Las dos WAHA en FAILED ocupan unos 600 MB sin dar servicio. A las 23 h el CPU llega al 100 % (coincide con la limpieza diaria de Docker de Easypanel).
+- **La caída del 3765 del 24/11 no fue un reinicio del contenedor:** `turnia-guerra-mininni-waha` corre sin reiniciarse desde el 19/11 09:53 (despliegue por cambio de variables). La sesión pasó a FAILED dentro del proceso. La causa exacta no se pudo leer: Easypanel no tiene prendido el guardado de logs y su visor solo entrega el arranque del contenedor y lo que pasa en vivo.
+- **`n8n/waha` tenía «zero downtime» prendido** (es lo que Easypanel trae por defecto). En un redespliegue, el contenedor nuevo arranca antes de que se apague el viejo y los dos usan la misma sesión de WhatsApp a la vez. Eso desvincula la línea. **Se apagó el 26/11 por API, sin redesplegar** (mismo arranque y sesión WORKING verificados). Las otras tres ya lo tenían apagado.
+- `n8n/waha` usa la etiqueta móvil `waha:noweb`: un redespliegue baja la última versión sin avisar. Conviene fijar el digest de la que corre (2026.10.1) antes del próximo despliegue.
+
+**Qué se construyó:**
+- `src/lib/infra-radar.ts`: cada diez minutos, con el cron `calendario`, lee por la API de Easypanel la RAM, el disco y el CPU del VPS, la memoria de cada contenedor y todas las WAHA (sesiones, arranque del contenedor y versión). La clave de cada WAHA la saca de Easypanel, así que no hace falta cargarla en Vercel. Avisa a Axel por WhatsApp (o por n8n si la línea general no anda) cuando:
+  - una sesión cae o vuelve;
+  - una WAHA se reinicia o deja de responder;
+  - la RAM pasa el 90 %, el disco el 85 % o un contenedor se acerca a su tope (avisa una vez cada tres horas).
+
+  Guarda estado, eventos y una muestra por corrida en `infra_radar_state`, `infra_radar_events` e `infra_radar_samples` (30 días). Nunca guarda claves ni teléfonos.
+- El webhook de WAHA guarda **en el momento** el aviso `session.status` (antes se descartaba) y avisa la caída sin esperar al cron. `n8n/waha` ya manda ese evento.
+- `scripts/waha-radar/radar.mjs`: lector de logs para el VPS (servicio `n8n/waha-radar`, imagen `node:22-alpine`, 96 MB). Escucha en vivo los logs de las cuatro WAHA y manda a `POST /api/infra/waha-logs` solo las advertencias, los errores y los cambios de estado, sin ruido, sin nombres ni números y sin volcados de claves. También los deja en el volumen `/data`, 30 días. Firma con una clave derivada del token de Easypanel: no necesita otra variable.
+- Panel → Sistema → «Radar de WhatsApp y VPS»: la última lectura y los últimos eventos.
+
+**Pendiente:**
+- [ ] **Axel: cargar en Vercel (Production) `EASYPANEL_API_URL` = `https://<panel>/api` y `EASYPANEL_API_TOKEN`.** Sin eso, el radar y la ruta de logs no hacen nada y el lector del VPS guarda las líneas y reintenta.
+- [ ] **Rotar el token de Easypanel y las cuatro `WAHA_API_KEY`**: pasaron por un chat el 26/11. Rotar las claves de WAHA obliga a redesplegar cada servicio, así que conviene hacerlo fuera del horario del consultorio y empezando por las que están en FAILED.
+- [ ] **Decidir con Axel** si se apagan `turnia-guerra-mininni-waha` y `turnia-prospeccion-5483-waha` (las dos en FAILED) para liberar unos 600 MB de RAM, y si se le pone tope de memoria a `n8n/waha`. Son cambios en el VPS: no se hicieron.
+- [ ] Fijar la imagen de `n8n/waha` en su digest actual (no redesplegar para eso en horario de atención).
+
 ## Modelo de Sofi por canal — 25/11/2026
 
 - Pedido de Facu: Opus 5.5 en el chat mientras se ajusta el prompt y Sonnet 5.5 en voz.

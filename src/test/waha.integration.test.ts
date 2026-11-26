@@ -676,6 +676,20 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     expect(fake.sent("channel")).toHaveLength(0);
   });
 
+  it("radar: el aviso session.status firmado se guarda al instante, sin pasar por el agente", async () => {
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([ownConnection]));
+    const ownInbound = (await import("@/app/api/waha/webhook/[connection]/route")).POST;
+    const context = { params: Promise.resolve({ connection: ownConnection.id }) };
+    const status = (value: string) => ({ event: "session.status", session: "default", timestamp: Date.parse("2026-11-26T15:00:00Z"), me: { id: `${ownConnection.phone}@c.us` }, payload: { status: value } });
+    expect((await ownInbound(wahaRequest(status("FAILED")), context)).status).toBe(401);
+    expect(await (await ownInbound(wahaRequest(status("WORKING"), { key: ownConnection.webhookHmac }), context)).json()).toEqual({ ok: true, radar: "WORKING" });
+    expect(await (await ownInbound(wahaRequest(status("FAILED"), { key: ownConnection.webhookHmac }), context)).json()).toEqual({ ok: true, radar: "FAILED" });
+    const events = await sql`select subject, detail from infra_radar_events where kind = 'webhook_status' and subject = ${ownConnection.id + "/default"} order by created_at`;
+    expect(events.map((e) => e.detail.to)).toEqual(["WORKING", "FAILED"]);
+    expect(JSON.stringify(events)).not.toContain(ownConnection.phone);
+    expect(fake.sent("channel")).toHaveLength(0);
+  });
+
   it("si Sofi ofreció horarios y el paciente no contesta, le vuelve a escribir con los que siguen libres (hasta 2 veces)", async () => {
     const service = await import("@/lib/agent/service");
     const { sendOfferFollowups } = await import("@/lib/followups");

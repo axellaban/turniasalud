@@ -2129,3 +2129,34 @@ alter table campaigns add constraint campaigns_pilot_size_check check (pilot_siz
 alter table campaign_recipients add column if not exists outcome text;
 alter table campaign_recipients drop constraint if exists campaign_recipients_outcome_check;
 alter table campaign_recipients add constraint campaign_recipients_outcome_check check (outcome is null or outcome in ('respondio', 'no_interesa', 'baja'));
+
+-- Radar de WhatsApp (WAHA) y del VPS: estado por instancia y sesión, eventos y una muestra cada diez
+-- minutos. Nunca claves; los logs se guardan sin teléfonos. Se borra lo que tiene más de 30 días.
+create table if not exists infra_radar_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+create table if not exists infra_radar_events (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null,
+  subject text not null,
+  detail jsonb not null default '{}'::jsonb,
+  dedupe text,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists infra_radar_events_dedupe_idx on infra_radar_events (dedupe) where dedupe is not null;
+create index if not exists infra_radar_events_created_idx on infra_radar_events (created_at desc);
+create table if not exists infra_radar_samples (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  memory_pct numeric,
+  disk_pct numeric,
+  cpu_pct numeric,
+  load1 numeric,
+  instances jsonb not null default '[]'::jsonb
+);
+create index if not exists infra_radar_samples_created_idx on infra_radar_samples (created_at desc);
+alter table infra_radar_state enable row level security;
+alter table infra_radar_events enable row level security;
+alter table infra_radar_samples enable row level security;

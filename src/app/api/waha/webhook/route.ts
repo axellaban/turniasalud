@@ -16,6 +16,7 @@ import { phoneFromJid } from "@/lib/waha";
 import { claimDocumentRead, isMuted } from "@/lib/chat-guard";
 import { DOCUMENTS_LIMIT_REPLY, LONG_AUDIO_REPLY, audioTooLong } from "@/lib/chat-limits";
 import { staffForPhone } from "@/lib/staff";
+import { recordSessionStatus } from "@/lib/infra-radar";
 
 export const dynamic = "force-dynamic";
 // La demo del lead magnet lee la web del interesado después de responder (after).
@@ -36,14 +37,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
   }
 
-  if (own ? !own.enabled : (await messagingSettings()).active_channel !== "whatsapp") return NextResponse.json({ ignored: "canal pausado" });
-
   let event: WahaEvent;
   try {
     event = JSON.parse(raw) as WahaEvent;
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
+  // Radar: el cambio de estado de la sesión se guarda en el momento, aunque el canal esté pausado.
+  if (event.event === "session.status") {
+    const status = (event.payload as { status?: unknown } | undefined)?.status;
+    if (typeof status !== "string") return NextResponse.json({ ignored: "estado sin datos" });
+    await recordSessionStatus({
+      line: own?.id ?? "general", session: event.session ?? "?", status,
+      phone: event.me?.id ?? null, at: typeof event.timestamp === "number" ? new Date(event.timestamp).toISOString() : null,
+    }).catch((e) => console.error("Radar: no se pudo guardar el estado de WAHA", e instanceof Error ? e.message : e));
+    console.info(JSON.stringify({ evento: "waha_session_status", conexion: own?.id ?? "general", sesion: event.session, estado: status }));
+    return NextResponse.json({ ok: true, radar: status });
+  }
+
+  if (own ? !own.enabled : (await messagingSettings()).active_channel !== "whatsapp") return NextResponse.json({ ignored: "canal pausado" });
   if (own && event.session !== own.session) return NextResponse.json({ ignored: "otra sesión" });
   if (own && event.me?.id && normalizePhone(phoneFromJid(event.me.id)) !== normalizePhone(own.phone)) return NextResponse.json({ ignored: "otro número" });
   // Mensaje propio de la línea de una clínica (WAHA lo avisa con `message.any`): si lo escribió el equipo

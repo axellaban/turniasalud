@@ -1,0 +1,24 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { ingestWahaLogs, verifyRadarSecret } from "@/lib/infra-radar";
+
+export const dynamic = "force-dynamic";
+
+// El lector de logs que corre en el VPS (servicio waha-radar de Easypanel) manda acá las líneas de
+// cada WAHA. Firma con una clave derivada de EASYPANEL_API_TOKEN. Se guardan solo advertencias,
+// errores y cambios de estado, sin teléfonos.
+const bodySchema = z.object({
+  service: z.string().regex(/^[a-z0-9_-]+\/[a-z0-9_-]+$/),
+  lines: z.array(z.object({
+    at: z.string().max(40).nullish(),
+    level: z.string().max(10).nullish(),
+    text: z.string().max(4000),
+  })).max(500),
+});
+
+export async function POST(request: Request) {
+  if (!verifyRadarSecret(request.headers.get("authorization"))) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+  return NextResponse.json({ ok: true, ...(await ingestWahaLogs(parsed.data.service, parsed.data.lines)) });
+}

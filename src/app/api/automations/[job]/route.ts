@@ -8,6 +8,7 @@ import { sendOfferFollowups } from "@/lib/followups";
 import { sendDueSummaries } from "@/lib/daily-summary";
 import { completePendingSummaries } from "@/lib/conversations-backfill";
 import { monitorClinicWhatsapps } from "@/lib/waha-health";
+import { runInfraRadar } from "@/lib/infra-radar";
 import { runSequences } from "@/lib/campaign-sequences";
 import type { CampaignType } from "@/lib/types";
 
@@ -54,7 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
       // Ya se dispara cada 10 minutos: el seguimiento de turnos ofrecidos va en la misma corrida,
       // sin pedir otro disparador en n8n. Si falla uno, el otro corre igual.
       const smileRun = job === "calendario" ? runSmileConnect() : Promise.resolve(null);
-      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp, sequences] = await Promise.allSettled([
+      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp, sequences, radar] = await Promise.allSettled([
         job === "calendario" ? syncPendingCalendar() : Promise.resolve(null),
         sendOfferFollowups(),
         job === "calendario" ? checkCalendarChanges() : Promise.resolve(null),
@@ -67,7 +68,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         job === "calendario" ? monitorClinicWhatsapps() : Promise.resolve(null),
         // Seguimientos de campañas a quien no respondió (solo clínicas con las secuencias prendidas).
         job === "calendario" ? runSequences() : Promise.resolve(null),
+        // Radar de las WAHA y del VPS (Easypanel): estado, reinicios, RAM y disco. Solo lee.
+        job === "calendario" ? runInfraRadar() : Promise.resolve(null),
       ]);
+      if (radar.status === "rejected") console.error("Radar de WhatsApp y VPS falló", radar.reason);
       if (sequences.status === "rejected") console.error("Secuencias de campañas fallaron", sequences.reason);
       if (whatsapp.status === "rejected") console.error("Control de WhatsApp falló", whatsapp.reason);
       if (talks.status === "rejected") console.error("Completar resúmenes de conversaciones falló", talks.reason);
@@ -81,6 +85,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         ok: true,
         job,
         ...(whatsapp.status === "fulfilled" && whatsapp.value && { whatsapp: whatsapp.value }),
+        ...(radar.status === "fulfilled" && radar.value && { radar: radar.value }),
         ...(calendar.value && { sincronizados: calendar.value.ok, errores: calendar.value.error }),
         seguimientos: followups.status === "fulfilled" ? followups.value : { error: String(followups.reason) },
         ...(changes.status === "fulfilled" && changes.value && { cambios_en_google: changes.value }),
