@@ -173,5 +173,12 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     expect(radar.verifyRadarSecret("Bearer " + secret)).toBe(true);
     expect(radar.verifyRadarSecret("Bearer " + TOKEN)).toBe(false);
     expect(radar.verifyRadarSecret(null)).toBe(false);
+    // Pegado con las comillas del archivo .env: da lo mismo.
+    vi.stubEnv("EASYPANEL_API_TOKEN", "'" + TOKEN + "'");
+    vi.stubEnv("EASYPANEL_API_URL", "\"" + PANEL + "/\"");
+    expect(radar.radarLogSecret()).toBe(secret);
+    expect(radar.easypanelConfig()).toMatchObject({ url: PANEL, host: "panel.test" });
+    vi.stubEnv("EASYPANEL_API_TOKEN", TOKEN);
+    vi.stubEnv("EASYPANEL_API_URL", PANEL);
   });
 });
