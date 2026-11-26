@@ -2,7 +2,9 @@ import Link from "next/link";
 import { ProfileSaveForm } from "./profile-save";
 import { retainClinic, revokeAccess } from "../../clinics-actions";
 import { getPanelClinic, getPanelUser, recentClinicChanges } from "@/lib/panel-clinic";
-import { clinicInfoText, getClinic } from "@/lib/clinic";
+import { clinicInfoText, getCatalog, getClinic } from "@/lib/clinic";
+import { hoursTextMismatch, scheduleSummary } from "@/lib/hours-summary";
+import { HoursSuggestion } from "./hours-suggestion";
 import { listClinicAccess } from "@/lib/clinic-access";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
@@ -18,20 +20,12 @@ export const metadata: Metadata = { title: "Consultorio · Panel" };
 
 
 
-/** Zonas horarias habituales (Argentina primero); se conserva la guardada aunque sea otra. */
+/**
+ * Zonas horarias habituales. En toda la Argentina es la misma hora (UTC−3): una sola opción. Se
+ * conserva la guardada aunque sea otra (por ejemplo, la de Córdoba de antes).
+ */
 const TIMEZONES: Array<[string, string]> = [
-  ["America/Argentina/Buenos_Aires", "Argentina · Buenos Aires y la mayoría de las provincias"],
-  ["America/Argentina/Cordoba", "Argentina · Córdoba"],
-  ["America/Argentina/Mendoza", "Argentina · Mendoza"],
-  ["America/Argentina/Salta", "Argentina · Salta"],
-  ["America/Argentina/Jujuy", "Argentina · Jujuy"],
-  ["America/Argentina/Tucuman", "Argentina · Tucumán"],
-  ["America/Argentina/Catamarca", "Argentina · Catamarca"],
-  ["America/Argentina/La_Rioja", "Argentina · La Rioja"],
-  ["America/Argentina/San_Juan", "Argentina · San Juan"],
-  ["America/Argentina/San_Luis", "Argentina · San Luis"],
-  ["America/Argentina/Rio_Gallegos", "Argentina · Santa Cruz"],
-  ["America/Argentina/Ushuaia", "Argentina · Tierra del Fuego"],
+  ["America/Argentina/Buenos_Aires", "Argentina"],
   ["America/Montevideo", "Uruguay"],
   ["America/Santiago", "Chile"],
   ["America/Asuncion", "Paraguay"],
@@ -44,20 +38,25 @@ const TIMEZONES: Array<[string, string]> = [
 ];
 function timezones(current: string): Array<{ value: string; label: string }> {
   const list = TIMEZONES.map(([value, label]) => ({ value, label }));
-  return list.some((z) => z.value === current) ? list : [{ value: current, label: current.replace(/_/g, " ") }, ...list];
+  if (list.some((z) => z.value === current)) return list;
+  const label = current.startsWith("America/Argentina/") ? `Argentina (${current.split("/").pop()!.replace(/_/g, " ")})` : current.replace(/_/g, " ");
+  return [{ value: current, label }, ...list];
 }
 
 export default async function SettingsPage() {
   const [user, clinic] = await Promise.all([getPanelUser(), getPanelClinic()]);
   const admin = user.role === "admin";
   const agent = clinic.agent_name || "Sofi";
-  const [accesses, changes, main, notices, conflicts] = await Promise.all([
+  const [accesses, changes, main, notices, conflicts, catalog] = await Promise.all([
     admin ? listClinicAccess(clinic.id) : [],
     recentClinicChanges(clinic.id),
     admin ? getClinic() : null,
     loadNoticeCard(clinic),
     loadConfigConflicts(clinic),
+    getCatalog(clinic.id),
   ]);
+  const agendaHours = scheduleSummary(catalog.schedules);
+  const hoursMismatch = hoursTextMismatch(clinic.hours_text, catalog.schedules);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
   const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
 
@@ -85,9 +84,10 @@ export default async function SettingsPage() {
               <Field label="Teléfono"><input name="phone" defaultValue={clinic.phone ?? ""} inputMode="tel" className={inputClass} /></Field>
               <div className={wide}><Field label="Dirección"><input name="address" defaultValue={clinic.address ?? ""} className={inputClass} /></Field></div>
               <div className={wide}>
-                <Field label="Horario de atención" hint="Cómo lo dice al paciente. Los turnos que ofrece salen de «Equipo y horarios».">
-                  <input name="hours_text" defaultValue={clinic.hours_text ?? ""} placeholder="Lunes a viernes de 9 a 18" className={inputClass} />
+                <Field label="Horario de atención" hint={`Cómo lo dice al paciente. Los turnos que ofrece salen de «Equipo y horarios». Vacío: ${agent} dice el armado con esos horarios.`}>
+                  <input name="hours_text" defaultValue={clinic.hours_text ?? ""} placeholder={agendaHours ?? "Lunes a viernes de 9 a 18"} className={inputClass} />
                 </Field>
+                {agendaHours && (hoursMismatch || !clinic.hours_text?.trim()) && <HoursSuggestion suggestion={agendaHours} mismatch={hoursMismatch} />}
               </div>
               <div className={wide}><Field label="Formas de pago" hint="Si ya están en Preguntas frecuentes, no hace falta repetirlas."><textarea name="payment_methods" rows={2} defaultValue={clinic.payment_methods ?? ""} placeholder="Efectivo, transferencia y tarjetas" className={inputClass} /></Field></div>
               <Field
@@ -101,14 +101,14 @@ export default async function SettingsPage() {
             </Section>
 
             <Section id="respuestas" title={`Lo que responde ${agent}`} description="Una idea por línea es más fácil de mantener. Los turnos, las coberturas y las urgencias tienen su pestaña: ahí se cargan como reglas que se cumplen siempre.">
-              <div className={wide}><Field label="Preguntas frecuentes" hint="Estacionamiento, qué traer, si atienden chicos… una por línea."><textarea name="faq" rows={6} defaultValue={clinic.faq ?? ""} className={inputClass} /></Field></div>
+              <div className={wide}><Field label="Sobre el consultorio y preguntas frecuentes" hint="Cómo es el consultorio, estacionamiento, qué traer, si atienden chicos… una idea por línea. Los precios van en Prestaciones y las condiciones de los turnos, en «Turnos y urgencias»."><textarea name="faq" rows={6} defaultValue={clinic.faq ?? ""} className={inputClass} /></Field></div>
               <Field label="Cómo trata a los pacientes" hint="De usted: en todos los mensajes, aunque el paciente tutee.">
                 <select name="tone" defaultValue={clinic.tone === "usted" ? "usted" : ""} className={inputClass}>
                   <option value="">De vos</option>
                   <option value="usted">De usted</option>
                 </select>
               </Field>
-              <div className={wide}><Field label="Instrucciones adicionales" hint="Cómo atender, qué preguntar, qué evitar y cualquier contexto propio del consultorio."><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
+              <div className={wide}><Field label="Instrucciones adicionales" hint={`Cómo atender, qué preguntar y qué evitar. El trato se elige arriba; las coberturas y sus excepciones, en Coberturas.`}><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
             </Section>
           </ProfileSaveForm>
         </div>
@@ -160,7 +160,7 @@ export default async function SettingsPage() {
             <details>
               <summary className="cursor-pointer font-semibold text-brand-950">Lo que sabe {agent} del consultorio</summary>
               <p className="mt-2 text-xs text-brand-900/65">Así le llega lo guardado en esta pestaña y en «Turnos y urgencias». Los profesionales, las prestaciones y las coberturas le llegan aparte.</p>
-              <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm text-brand-900/70">{clinicInfoText(clinic)}</pre>
+              <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm text-brand-900/70">{clinicInfoText(clinic, undefined, { schedules: catalog.schedules })}</pre>
             </details>
           </Card>
         </div>

@@ -2,7 +2,17 @@
 // que no dicen lo mismo. Sofi lee los dos, así que el paciente puede recibir dos respuestas.
 // Es puro (sin base) para poder probarlo; la Configuración lo muestra arriba de cada pestaña.
 
-export type ConfigConflict = { key: string; message: string; href: string };
+import { hoursTextMismatch, scheduleSummary, scheduledDays, weekdayName } from "./hours-summary";
+import type { Schedule } from "./types";
+
+/** `info`: no es una contradicción sino algo que conviene saber (por ejemplo, un día en que Sofi no da turnos a propósito). */
+export type ConfigConflict = { key: string; message: string; href: string; tone?: "warning" | "info" };
+
+/** Los horarios y la regla de días, para comparar con lo que dice el texto. */
+export type ConflictSchedules = {
+  schedules: Array<Pick<Schedule, "professional_id" | "weekday" | "start_time" | "end_time" | "urgent_only" | "appointment_type_ids">>;
+  professionals: Map<string, string>;
+};
 
 export type ConflictInput = {
   faq: string | null;
@@ -11,11 +21,22 @@ export type ConflictInput = {
   payment_methods: string | null;
   cancel_notice_hours: number | null;
   reschedule_notice_hours: number | null;
+  hours_text?: string | null;
+  tone?: string | null;
+  booking_weekdays?: number[] | null;
+  agent_name?: string | null;
 };
 
 const TURNOS = "/panel/configuracion/turnos#mover";
 const DATOS = "/panel/configuracion#datos";
 const PRESTACIONES = "/panel/configuracion/prestaciones";
+const DIAS = "/panel/configuracion/turnos#dias";
+const RESPUESTAS = "/panel/configuracion#respuestas";
+
+const USTED = /\btrat\w*\s+(?:siempre\s+)?de\s+usted\b|\bhabl\w*\s+(?:siempre\s+)?de\s+usted\b|\bde\s+usted\b/i;
+const VOS = /\btrat\w*\s+(?:siempre\s+)?de\s+vos\b|\btute\w*|\bde\s+vos\b/i;
+
+const list = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`);
 
 const hours = (n: number) => `${n} ${n === 1 ? "hora" : "horas"}`;
 
@@ -44,8 +65,9 @@ export function faqMentionsPayment(faq: string | null): boolean {
   return Boolean(faq && PAYMENT.test(faq));
 }
 
-export function configConflicts(clinic: ConflictInput, prices: number[]): ConfigConflict[] {
+export function configConflicts(clinic: ConflictInput, prices: number[], agenda?: ConflictSchedules): ConfigConflict[] {
   const out: ConfigConflict[] = [];
+  const agent = clinic.agent_name || "Sofi";
   const texts = [clinic.policies, clinic.faq, clinic.agent_context].filter(Boolean).join("\n");
 
   for (const [action, field, label] of [
@@ -79,6 +101,39 @@ export function configConflicts(clinic: ConflictInput, prices: number[]): Config
       message: `Las preguntas frecuentes dicen ${stray.map((a) => money.format(a)).join(", ")}, que no es el precio de ninguna prestación. Dejá los precios solo en Prestaciones para que Sofi no dé dos distintos.`,
       href: PRESTACIONES,
     });
+  }
+
+  // El trato: el selector manda, pero si el texto dice lo contrario Sofi recibe dos órdenes.
+  const instructions = [clinic.agent_context, clinic.faq, clinic.policies].filter(Boolean).join("\n");
+  if (clinic.tone !== "usted" && USTED.test(instructions)) {
+    out.push({ key: "trato", message: `Las instrucciones dicen de tratar de usted, pero «Cómo trata a los pacientes» está en «De vos». Elegí «De usted» en ese campo y sacá la frase del texto.`, href: RESPUESTAS });
+  } else if (clinic.tone === "usted" && VOS.test(instructions)) {
+    out.push({ key: "trato", message: `Las instrucciones dicen de tratar de vos, pero «Cómo trata a los pacientes» está en «De usted». Dejá uno solo: el campo es el que se cumple.`, href: RESPUESTAS });
+  }
+
+  if (agenda) {
+    // El horario que dice Sofi contra los horarios con los que da turnos.
+    if (hoursTextMismatch(clinic.hours_text, agenda.schedules)) {
+      out.push({
+        key: "horario",
+        message: `«Horario de atención» dice «${clinic.hours_text?.trim()}», pero según Equipo y horarios es «${scheduleSummary(agenda.schedules)}». ${agent} le puede dar al paciente un horario que no es. Usá el armado con los horarios.`,
+        href: DATOS,
+      });
+    }
+    // Días con horarios en los que Sofi no da turnos: está bien si es a propósito, pero conviene saberlo.
+    if (clinic.booking_weekdays != null) {
+      const days = scheduledDays(agenda.schedules, agenda.professionals);
+      const skipped = [...days.entries()].filter(([d]) => !clinic.booking_weekdays!.includes(d));
+      if (skipped.length) {
+        const detail = list(skipped.map(([d, names]) => `${weekdayName(d)} (${list(names)})`));
+        out.push({
+          key: "dias-sin-turnos",
+          tone: "info",
+          message: `Hay horarios cargados el ${detail} y ${agent} no da turnos ${skipped.length === 1 ? "ese día" : "esos días"}: al paciente le dice que ${skipped.length === 1 ? "ese día los coordina" : "esos días los coordina"} el equipo. Si querés que los dé, marcalo en «Días en que ${agent} da turnos».`,
+          href: DIAS,
+        });
+      }
+    }
   }
 
   if (clinic.payment_methods?.trim() && faqMentionsPayment(clinic.faq)) {

@@ -49,6 +49,9 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
       <ConfigHeader clinic={clinic} current="/panel/configuracion/calendario" />
       {result && <Notice tone={result.tone} className="mb-5">{result.text}</Notice>}
 
+      {/* Con la API en uso, Smile Connect es la fuente de la verdad: va primero. */}
+      {smileApiOn && <div className="mb-6"><SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} /></div>}
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <Card>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -137,12 +140,11 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
         </Card>
       </div>
 
-      {/* Con la API de Smile Connect en uso, va primero y el método anterior (importar y Tampermonkey) queda plegado. */}
+      {/* Con la API de Smile Connect en uso, el método anterior (importar y Tampermonkey) queda plegado y solo lo ve Turnia. */}
       {smileApiOn ? (
-        <>
-          <SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} />
+        user.role === "admin" && <>
           <details className="mt-6 rounded-2xl border border-brand-900/10 bg-white px-5 py-4">
-            <summary className="cursor-pointer text-sm font-semibold text-brand-950">Smile Connect: método anterior (importar el histórico y Tampermonkey)</summary>
+            <summary className="cursor-pointer text-sm font-semibold text-brand-950">Smile Connect: método anterior (importar el histórico y Tampermonkey) · Solo Turnia</summary>
             <p className="mt-2 text-xs text-brand-900/65">Con la API ya no hace falta la extensión. Queda acá para importar un histórico o volver atrás si hiciera falta.</p>
             <SmileConnectCard
               clinicId={clinic.id}

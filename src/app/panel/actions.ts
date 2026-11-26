@@ -21,6 +21,7 @@ import { missingWahaEnv } from "@/lib/env";
 import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, touchClinic } from "@/lib/panel-clinic";
 import { normalizeWebsite } from "@/lib/demo/website";
 import { createScheduleBlock } from "@/lib/schedule-blocks";
+import { fetchArgentineHolidays, holidaysToLoad } from "@/lib/holidays";
 import { PRICE_MODES, type PriceMode } from "@/lib/types";
 
 const requireSession = requirePanelSession;
@@ -745,12 +746,49 @@ export async function addScheduleBlock(_prev: FormState | undefined, form: FormD
   };
 }
 
+/**
+ * Carga los feriados nacionales que faltan (de hoy a un año) como bloqueos de toda la clínica, con su
+ * nombre. Los puentes turísticos, solo si se marcan. No repite los que ya se cargaron (`feriado:<fecha>`).
+ */
+export async function loadNationalHolidays(_prev: FormState, form: FormData): Promise<FormState> {
+  await requireSession();
+  const clinic = await getPanelClinic(form);
+  const now = new Date();
+  const today = localDateKey(now, clinic.timezone);
+  const year = Number(today.slice(0, 4));
+  const until = `${year + 1}${today.slice(4)}`;
+  let list;
+  try {
+    list = (await Promise.all([fetchArgentineHolidays(year), fetchArgentineHolidays(year + 1).catch(() => [])])).flat();
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "No se pudo leer el calendario de feriados." };
+  }
+  const loaded = new Set((await sql<Array<{ d: string }>>`
+    select substr(external_id, 9) as d from schedule_blocks where clinic_id = ${clinic.id} and external_id like 'feriado:%'`).map((r) => r.d));
+  const pending = holidaysToLoad(list, { today, until, loaded, bridges: form.get("bridges") === "on" });
+  if (!pending.length) return { ok: true, message: "Ya estaban todos los feriados del próximo año." };
+  const rows = pending.map((h) => {
+    const [y, m, d] = h.date.split("-").map(Number);
+    const start = zonedTimeToUtc(y, m, d, 0, 0, clinic.timezone);
+    const next = new Date(Date.UTC(y, m - 1, d + 1));
+    const end = zonedTimeToUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0, clinic.timezone);
+    return { clinic_id: clinic.id, professional_id: null, starts_at: start, ends_at: end, reason: h.name, external_id: `feriado:${h.date}` };
+  });
+  await sql`insert into schedule_blocks ${sql(rows)}`;
+  await touchClinic(clinic.id, "Feriados y bloqueos");
+  revalidatePath("/panel/configuracion", "layout");
+  revalidatePath("/panel/agenda");
+  return { ok: true, message: rows.length === 1 ? "Se cargó 1 feriado." : `Se cargaron ${rows.length} feriados.` };
+}
+
 export async function deleteScheduleBlock(form: FormData) {
   await requireSession();
-  const id = uuid(form, "id");
-  if (!id) return;
+  // Uno o varios (un período agrupado: todos los profesionales y días que lo forman).
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids = [...new Set(form.getAll("id").map(String).filter((v) => UUID.test(v)))].slice(0, 200);
+  if (!ids.length) return;
   const clinic = await getPanelClinic(form);
-  await sql`delete from schedule_blocks where id = ${id} and clinic_id = ${clinic.id}`;
+  await sql`delete from schedule_blocks where id = any(${ids}::uuid[]) and clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id, "Feriados y bloqueos");
   revalidatePath("/panel/configuracion", "layout");
   revalidatePath("/panel/agenda");

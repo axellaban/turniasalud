@@ -9,7 +9,7 @@ const parse = (value: string) => value.split(",").map((c) => c.trim()).filter(Bo
  * Coberturas como etiquetas que se agregan y quitan. Se envían igual que antes:
  * un campo `accepted_coverages` separado por comas.
  */
-export function CoverageInput({ name, defaultValue, list, label = "Agregar cobertura" }: { name: string; defaultValue: string[]; list?: string; label?: string }) {
+export function CoverageInput({ name, defaultValue, list, label = "Agregar cobertura", quick = [] }: { name: string; defaultValue: string[]; list?: string; label?: string; quick?: string[] }) {
   const [items, setItems] = useState(defaultValue);
   const [draft, setDraft] = useState("");
   const hidden = useRef<HTMLInputElement>(null);
@@ -56,6 +56,12 @@ export function CoverageInput({ name, defaultValue, list, label = "Agregar cober
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} onBlur={add} placeholder="Escribí una cobertura y tocá Enter (ej.: OSDE)" aria-label={label} list={list} className={inputClass} />
         <button type="button" onClick={add} className="shrink-0 rounded-xl px-3 text-sm font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-50">Agregar</button>
       </div>
+      {/* Atajos para lo que casi todos cargan (por ejemplo «Particular»), escrito siempre igual. */}
+      {quick.filter((q) => !items.some((i) => i.toLowerCase() === q.toLowerCase())).length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">
+        {quick.filter((q) => !items.some((i) => i.toLowerCase() === q.toLowerCase())).map((q) => (
+          <button key={q} type="button" onClick={() => update([...items, q])} className="rounded-full px-3 py-1 text-xs font-medium text-brand-700 border border-dashed border-brand-300 hover:bg-brand-50">+ {q}</button>
+        ))}
+      </div>}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { EditDetails } from "../edit-details";
 import { ActionForm } from "../action-form";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Clinic, Professional, ProfessionalType } from "@/lib/types";
+import { typeLabels } from "@/lib/type-labels";
 import { ConfigHeader, loadConfigConflicts } from "../header";
 import { RecallSelect } from "../../campanas/recall-select";
 import type { Metadata } from "next";
@@ -28,6 +29,7 @@ const PRICE_LABEL: Record<AppointmentType["price_mode"], string> = {
 
 /** Lo que Sofi hace con la prestación: los mismos campos al editar y al agregar. */
 function ProtocolFields({ type, others, clinic, agent }: { type?: AppointmentType; others: AppointmentType[]; clinic: Pick<Clinic, "move_panel_only">; agent: string }) {
+  const labels = typeLabels(others);
   return (
     <>
       <input type="hidden" name="protocol_fields" value="1" />
@@ -40,7 +42,7 @@ function ProtocolFields({ type, others, clinic, agent }: { type?: AppointmentTyp
       <Field label="Antes tiene que haber tenido" hint="Para reservarla, el paciente tiene que haber tenido (o tener reservada) esta otra.">
         <select name="requires_type_id" defaultValue={type?.requires_type_id ?? ""} className={inputClass}>
           <option value="">Nada</option>
-          {others.filter((o) => o.id !== type?.id).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          {others.filter((o) => o.id !== type?.id).map((o) => <option key={o.id} value={o.id}>{labels.get(o.id)}</option>)}
         </select>
       </Field>
       <div className="sm:col-span-2">
@@ -77,7 +79,7 @@ export default async function ServicesPage() {
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
   const active = professionals.filter((p) => p.active);
   const staffed = (t: AppointmentType) => active.some((p) => professionalDoes(p, t, [...links]));
-  const typeName = new Map(types.map((t) => [t.id, t.name]));
+  const typeName = typeLabels(types);
   const dental = isDentalSpecialty(clinic.specialty) || specialties.some(isDentalSpecialty);
   const agent = clinic.agent_name || "Sofi";
 

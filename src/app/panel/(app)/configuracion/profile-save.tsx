@@ -33,13 +33,15 @@ function subscribe(callback: () => void) {
  * sin guardar, pide confirmación antes de salir y, si algo falla al guardar,
  * conserva lo escrito. `scope` separa el borrador de cada pantalla.
  */
-export function ProfileSaveForm({ clinicId, revision, children, action: save = saveClinicWithFeedback, scope = "ficha", agentName = "Sofi" }: {
+export function ProfileSaveForm({ clinicId, revision, children, action: save = saveClinicWithFeedback, scope = "ficha", agentName = "Sofi", saves }: {
   clinicId: string;
   revision: number;
   children: ReactNode;
   action?: (previous: FormState, form: FormData) => Promise<FormState>;
   scope?: string;
   agentName?: string;
+  /** Qué guarda la barra, si en la pantalla hay otros bloques con su propio botón. */
+  saves?: string;
 }) {
   const [state, action, pending] = useActionState(save, {});
   const form = useRef<HTMLFormElement>(null);
@@ -111,11 +113,12 @@ export function ProfileSaveForm({ clinicId, revision, children, action: save = s
     </Notice>}
     <input type="hidden" name="clinic_id" value={clinicId} /><fieldset key={revision} className="min-w-0 space-y-6">{children}</fieldset>
     <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-900/10 bg-white/95 px-4 py-3 shadow-lg backdrop-blur md:bottom-4">
-      <p role="status" className={`text-sm font-medium ${tone}`}>{status}</p>
+      <p role="status" className={`text-sm font-medium ${tone}`}>{status}{saves && <span className="block text-xs font-normal text-brand-900/60">{saves}</span>}</p>
       <div className="flex flex-wrap gap-2">
         {dirty && !pending && <button type="button" onClick={discard} className={ghostButtonClass}>Descartar</button>}
         {!dirty && state.ok && <Link href="/panel/probar" className={ghostButtonClass}>Probar a {agentName} →</Link>}
-        <button disabled={pending} className={buttonClass}>{pending ? "Guardando…" : "Guardar cambios"}</button>
+        {/* Sin cambios no hay nada que guardar: el botón queda apagado. */}
+        <button disabled={pending || !dirty} title={!dirty && !pending ? "No hay cambios para guardar" : undefined} className={`${buttonClass} disabled:cursor-not-allowed`}>{pending ? "Guardando…" : "Guardar cambios"}</button>
       </div>
     </div>
   </form>;

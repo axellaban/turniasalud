@@ -1,3 +1,4 @@
+import { ErrorText } from "./error-text";
 import { NOTICE_KINDS, NOTICE_LABEL, listNoticePhones, noticeLine, recentNotices, type NoticePhone, type NoticeRow } from "@/lib/clinic-notices";
 import { listStaffPhones, type StaffPhone } from "@/lib/staff";
 import { SUMMARY_HOUR, summaryDaysLabel } from "@/lib/daily-summary";
@@ -197,7 +198,7 @@ export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line,
             <Badge tone={STATUS[n.status].tone}>{STATUS[n.status].label}</Badge>
             <span className="text-brand-950">{KIND[n.kind]}</span>
             <span className="text-brand-900/65">· {displayPhone(n.phone)} · {formatDateTime(n.created_at, clinic.timezone)}</span>
-            {n.error && n.status !== "enviado" && <span className="w-full text-red-700">{n.error}</span>}
+            {n.error && n.status !== "enviado" && <ErrorText raw={n.error} className="w-full text-red-700" />}
           </li>)}
         </ul>
       </div>}

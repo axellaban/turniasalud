@@ -1,3 +1,4 @@
+import { ErrorText } from "./error-text";
 import { sql } from "@/lib/db";
 import { READ_CAP, SMILE_MODE_LABEL, SMILE_MODES, WRITE_MODES, getSmileApiConnection, recentSmileRuns, smileDirectory, writesEnabledOnServer } from "@/lib/smile-connect-link";
 import { recentSmileChanges, smileReviewList } from "@/lib/smile-connect-push";
@@ -110,7 +111,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
       {hasKey && conn?.api_hours_note && <Notice tone={conn.api_hours_note.split("\n").some((l) => !l.startsWith("Horarios copiados")) ? "warning" : "info"} className="mt-3 whitespace-pre-line">
         {conn.api_hours_note}
       </Notice>}
-      {conn?.api_error && <Notice tone="error" className="mt-3">Último problema ({when(conn.api_error_at)}): {conn.api_error}</Notice>}
+      {conn?.api_error && <Notice tone="error" className="mt-3">Último problema ({when(conn.api_error_at)}): <ErrorText raw={conn.api_error} className="" /></Notice>}
       {conn?.api_retry_at && new Date(conn.api_retry_at) > now && (
         <Notice tone="warning" className="mt-3">Smile Connect pidió esperar hasta {when(conn.api_retry_at)}. Una sincronización manual exitosa permite retomar antes.</Notice>
       )}
@@ -203,7 +204,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
         <ul className="mt-2 divide-y divide-brand-900/5 text-sm">
           {review.map((r) => <li key={r.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
             <span className="min-w-0"><span className="font-medium text-brand-950">{r.patient ?? "Paciente"}</span> · {formatDateTime(r.starts_at, tz)}
-              <span className="block text-brand-900/70">{r.smile_error}</span></span>
+              <ErrorText raw={r.smile_error} className="block text-brand-900/70" /></span>
             {r.status === "pendiente" ? <span className="text-xs text-brand-900/70">Verificá el pedido en Smile Connect antes de confirmar.</span> : <form action={dismissSmileReviewAction}>
               <input type="hidden" name="clinic_id" value={clinic.id} /><input type="hidden" name="id" value={r.id} />
               <button className={smallButtonClass}>Ya lo resolví</button>
@@ -219,7 +220,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
             <Badge tone={r.ok ? "green" : "red"}>{r.ok ? "Bien" : "Error"}</Badge>
             <span className="font-medium text-brand-950">{RUN_LABEL[r.kind] ?? r.kind}</span>
             <span className="text-brand-900/60">{formatDateTime(r.started_at, tz)} · {(r.duration_ms / 1000).toFixed(1)} s · {r.reads} lecturas</span>
-            {r.ok ? <span className="text-brand-900/70">{runSummary(r.summary)}</span> : <span className="text-red-700">{r.error}</span>}
+            {r.ok ? <span className="text-brand-900/70">{runSummary(r.summary)}</span> : <ErrorText raw={r.error} />}
           </li>)}
         </ul>
       </details>}
@@ -234,7 +235,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
               <span className="font-medium text-brand-950">{ACTION[c.action] ?? c.action}</span>
               <span className="text-brand-900/60">{formatDateTime(c.created_at, tz)}</span>
             </div>
-            {c.error && <p className="mt-1 text-red-700">{c.error}</p>}
+            {c.error && <p className="mt-1"><ErrorText raw={c.error} /></p>}
             {(c.request != null || c.before != null) && <details className="mt-1">
               <summary className="cursor-pointer text-brand-700">Detalle</summary>
               {c.before != null && <><p className="mt-1 font-medium">Cómo estaba en Smile Connect:</p><pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(c.before, null, 1)}</pre></>}
