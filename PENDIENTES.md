@@ -7,13 +7,19 @@
 - La aceptación del webhook y la entrega del email son comprobaciones distintas. `notifyN8n` ahora devuelve si n8n aceptó el HTTP; un 401 o un 500 no se presenta como éxito. Los errores de n8n conservan el flujo clínico.
 - Sistema incorpora «Probar email de respaldo», solo para el administrador, con un código en el mensaje y un máximo de una solicitud por minuto. Debe comprobarse la entrega en Gmail, sin hacer fallar WAHA ni usar pacientes para probar.
 - Límite: n8n corre en el mismo VPS que WAHA. Este email cubre fallas de WhatsApp; una caída completa del VPS requiere un proveedor de correo externo a ese VPS. No describirlo como respaldo independiente del VPS.
-- La rama se publicó en n8n como versión `03e77dcb-171b-4dc0-a1cf-07576276cfd6`. La primera prueba alcanzó el nodo nuevo; Google rechazó el permiso guardado de `Gmail account` y pidió reconectarlo. La recepción debe verificarse después de esa autorización, con un código de prueba nuevo. La versión y las ejecuciones se consultan en el flujo real.
+- La rama se publicó en n8n como versión `03e77dcb-171b-4dc0-a1cf-07576276cfd6`. Después de reautorizar Gmail se verificó el recorrido desde Turnia en producción: código `TURNIA-EMAIL-8fd91a45`, ejecución n8n `56136` exitosa y mensaje `1a2187a5e81ca9ea` recibido en INBOX de Axel. El cliente de Google ya está en producción.
 - En la reconexión se detectó `redirect_uri_mismatch`: el cliente de Gmail conservaba solo el dominio anterior `fu6abb`. Se agregó y verificó en Google Cloud `https://n8n-n8n.b6mgbu.easypanel.host/rest/oauth2-credential/callback`, conservando las URI anteriores. Hay que iniciar una autorización nueva desde «Switch account»; la ventana del intento anterior no sirve.
 - No tratar una lista de workflows de la caché como prueba de autenticación vigente. Las lecturas de control usan `cache: no-store` y el identificador de navegador de la sesión.
 
 ## Radar de WhatsApp (WAHA) y del VPS — 26/11/2026
 
 Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detectar la próxima caída a tiempo.
+
+**Corrección de avisos (26/11):** Axel pidió recibir avisos solo por fallas actuales. Los dos «reinicios» del 19/11 y 7/11 fueron falsos positivos: `startTimestamp` cambió 1 ms entre consultas mientras `uptime` siguió creciendo. WAHA calcula ese valor con `Date.now() - uptime`; la comparación exacta era incorrecta. Docker confirmó que los contenedores seguían funcionando desde esas fechas. El radar no reinicia nada.
+
+- Solo avisan los servicios y sesiones usados por las conexiones habilitadas de Turnia o su transporte general. Las instancias anteriores siguen visibles para diagnóstico, sin avisos.
+- Las recuperaciones, los reinicios y el uso alto de RAM/disco se guardan en el panel, sin enviar avisos. Un cambio de arranque solo se registra si avanza más de cinco segundos; se ignoran diferencias mínimas, retrocesos y fechas futuras.
+- Los logs se guardan sin avisos: pueden ser históricos o reconexiones ya resueltas. Las caídas se confirman por estado/webhook; las restricciones que efectivamente frenan una línea en uso conservan su aviso. Los preavisos de cupo no lo generan.
 
 **Qué hay en el VPS (Easypanel, leído por API el 26/11):** un solo CPU, 3,9 GB de RAM y 47 GB de disco. Cuatro WAHA, todas NOWEB y CORE, con una sola sesión cada una:
 
@@ -31,10 +37,7 @@ Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detec
 - `n8n/waha` usa la etiqueta móvil `waha:noweb`: un redespliegue baja la última versión sin avisar. Conviene fijar el digest de la que corre (2026.10.1) antes del próximo despliegue.
 
 **Qué se construyó:**
-- `src/lib/infra-radar.ts`: cada diez minutos, con el cron `calendario`, lee por la API de Easypanel la RAM, el disco y el CPU del VPS, la memoria de cada contenedor y todas las WAHA (sesiones, arranque del contenedor y versión). La clave de cada WAHA la saca de Easypanel, así que no hace falta cargarla en Vercel. Avisa a Axel por WhatsApp (o por n8n si la línea general no anda) cuando:
-  - una sesión cae o vuelve;
-  - una WAHA se reinicia o deja de responder;
-  - la RAM pasa el 90 %, el disco el 85 % o un contenedor se acerca a su tope (avisa una vez cada tres horas).
+- `src/lib/infra-radar.ts`: cada diez minutos, con el cron `calendario`, lee por la API de Easypanel la RAM, el disco y el CPU del VPS, la memoria de cada contenedor y todas las WAHA (sesiones, arranque del contenedor y versión). La clave de cada WAHA la saca de Easypanel, así que no hace falta cargarla en Vercel. Avisa a Axel por WhatsApp (o por n8n si la línea general no anda) cuando una conexión en uso se cae, deja de responder o tiene una restricción que frena su operación. Si no puede consultar Easypanel también informa que perdió visibilidad. Los reinicios, las recuperaciones y los recursos altos quedan para consulta en el panel.
 
   Guarda estado, eventos y una muestra por corrida en `infra_radar_state`, `infra_radar_events` e `infra_radar_samples` (30 días). Nunca guarda claves ni teléfonos.
 - El webhook de WAHA guarda **en el momento** el aviso `session.status` (antes se descartaba) y avisa la caída sin esperar al cron. `n8n/waha` ya manda ese evento.

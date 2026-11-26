@@ -25,6 +25,7 @@ export function RadarCard({ radar }: { radar: RadarOverview | null }) {
   return (
     <Card>
       <h2 className="mb-1 font-semibold text-brand-950">Radar de WhatsApp y VPS</h2>
+      <p className="mb-3 text-xs text-brand-900/60">Los avisos son por fallas de las conexiones en uso. Los reinicios, las recuperaciones, los recursos y los logs se consultan acá.</p>
       {!radar.configured ? (
         <p className="text-sm text-brand-900/70">Falta cargar <code className="text-xs">EASYPANEL_API_URL</code> y <code className="text-xs">EASYPANEL_API_TOKEN</code> en Vercel.</p>
       ) : !s ? (

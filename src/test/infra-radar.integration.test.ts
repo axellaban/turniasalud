@@ -34,6 +34,7 @@ function fakeFetch(input: string | URL | Request, init: RequestInit = {}) {
       { projectName: "n8n", name: "waha", type: "app", enabled: true, source: { image: "devlikeapro/waha:noweb" } },
       { projectName: "n8n", name: "consultorio-waha", type: "app", enabled: true, source: { image: "devlikeapro/waha@sha256:abc" }, resources: { memoryLimit: 768 } },
       { projectName: "n8n", name: "n8n", type: "app", enabled: true, source: { image: "n8nio/n8n" } },
+      ...(lines["retired-waha"] ? [{ projectName: "n8n", name: "retired-waha", type: "app", enabled: true, source: { image: "devlikeapro/waha:noweb" } }] : []),
     ] });
     if (path === "inspectAppService") return Response.json({ env: "TZ=America/Argentina/Buenos_Aires\nWAHA_API_KEY=clave-" + u.searchParams.get("serviceName") });
     throw new Error("Easypanel inesperado: " + path);
@@ -69,6 +70,14 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     vi.stubGlobal("fetch", vi.fn(async (i: string | URL | Request, init?: RequestInit) => fakeFetch(i, init)));
   });
   beforeEach(async () => {
+    vi.stubEnv("WAHA_URL", "https://n8n-waha.panel.test");
+    vi.stubEnv("WAHA_SESSION", "default");
+    vi.stubEnv("WAHA_CONNECTION_TRANSPORTS", "{}");
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify([{
+      id: "guerra-mininni", clinicId: "00000000-0000-4000-8000-000000000111", phone: "5491100005483",
+      url: "https://n8n-consultorio-waha.panel.test", apiKey: "clave-ficticia-larga", webhookHmac: "firma-ficticia-larga",
+      session: "default", enabled: true, revision: 1,
+    }]));
     await sql`truncate infra_radar_state, infra_radar_events, infra_radar_samples`;
     mocks.alerts.mockClear();
     calls = [];
@@ -94,7 +103,7 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     expect(calls.every((c) => c.method === "GET")).toBe(true);
   });
 
-  it("avisa la caída, el reinicio y la vuelta de una sesión, una vez cada una", async () => {
+  it("avisa solo la caída; el reinicio y la recuperación quedan registrados sin otro aviso", async () => {
     await radar.runInfraRadar();
     lines.waha.status = "FAILED";
     await radar.runInfraRadar();
@@ -102,23 +111,20 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     expect(mocks.alerts).toHaveBeenCalledTimes(1);
     expect(mocks.alerts.mock.calls[0][0]).toContain("…3765) pasó de WORKING a FAILED en n8n/waha");
     lines.waha.status = "WORKING";
-    lines.waha.started = Date.parse("2026-11-26T15:00:00Z");
+    lines.waha.started = Date.now();
     await radar.runInfraRadar();
-    expect(mocks.alerts).toHaveBeenCalledTimes(2);
-    expect(mocks.alerts.mock.calls[1][0]).toMatch(/se reinició[\s\S]*volvió a WORKING/);
+    expect(mocks.alerts).toHaveBeenCalledTimes(1);
     expect((await sql`select kind, detail->>'to' as to from infra_radar_events where subject like 'n8n/waha%' order by created_at`).map((e) => e.kind + ":" + (e.to ?? "")))
-      .toEqual(["session:WORKING", "session:FAILED", "restart:2026-11-26T15:00:00.000Z", "session:WORKING"]);
+      .toEqual(["session:WORKING", "session:FAILED", "restart:" + new Date(lines.waha.started).toISOString(), "session:WORKING"]);
   });
 
-  it("avisa RAM alta del VPS y un contenedor cerca de su tope, con pausa entre avisos", async () => {
+  it("guarda RAM alta y memoria del contenedor para el panel sin mandar avisos", async () => {
     memoryPct = 95;
     containerMb = 700;
     await radar.runInfraRadar();
     await radar.runInfraRadar();
-    expect(mocks.alerts).toHaveBeenCalledTimes(1);
-    const text = mocks.alerts.mock.calls[0][0];
-    expect(text).toContain("RAM del VPS al 95 %");
-    expect(text).toContain("n8n/consultorio-waha usa 700 de 768 MB");
+    expect(mocks.alerts).not.toHaveBeenCalled();
+    expect((await sql`select kind from infra_radar_events where kind in ('memory', 'container_memory')`).map((e) => e.kind).sort()).toEqual(["container_memory", "memory"]);
   });
 
   it("si una WAHA deja de responder lo avisa, y no confunde eso con una sesión caída", async () => {
@@ -128,8 +134,8 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     expect(mocks.alerts.mock.calls[0][0]).toContain("n8n/consultorio-waha no responde (No respondió a tiempo)");
     lines["consultorio-waha"].reachable = true;
     await radar.runInfraRadar();
-    expect(mocks.alerts.mock.calls[1][0]).toContain("volvió a responder");
-    expect(mocks.alerts.mock.calls[1][0]).not.toContain("WORKING");
+    expect(mocks.alerts).toHaveBeenCalledTimes(1);
+    expect(await sql`select id from infra_radar_events where kind = 'reachable'`).toHaveLength(1);
   });
 
   it("si WhatsApp frena la línea (bloqueo temporal o tope), avisa que NO hay que reiniciar", async () => {
@@ -142,14 +148,62 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     lines.waha.lock = false;
     lines.waha.capping = "FIRST_WARNING";
     await radar.runInfraRadar();
-    expect(mocks.alerts.mock.calls[1][0]).toContain("primer aviso");
+    expect(mocks.alerts).toHaveBeenCalledTimes(1);
+    lines.waha.capping = "CAPPED";
+    await radar.runInfraRadar();
+    expect(mocks.alerts.mock.calls[1][0]).toContain("tope de contactos nuevos alcanzado");
     lines.waha.capping = "NONE";
     await radar.runInfraRadar();
-    expect(mocks.alerts.mock.calls[2][0]).toContain("ya puede escribir a contactos nuevos");
-    // Una sesión caída nunca se confunde con un bloqueo: el aviso de caída dice que se reinicie primero.
+    expect(mocks.alerts).toHaveBeenCalledTimes(2);
+    // La caída se informa sin sugerir automáticamente reiniciar una línea.
     lines.waha.status = "FAILED";
     await radar.runInfraRadar();
-    expect(mocks.alerts.mock.calls[3][0]).toContain("primero reiniciar");
+    expect(mocks.alerts.mock.calls[2][0]).toContain("La conexión no está operativa");
+  });
+
+  it("una diferencia de 1 ms en la hora calculada de arranque no es un reinicio", async () => {
+    await radar.runInfraRadar();
+    lines.waha.started += 1;
+    await radar.runInfraRadar();
+    lines.waha.started -= 1;
+    await radar.runInfraRadar();
+    expect(mocks.alerts).not.toHaveBeenCalled();
+    expect(await sql`select id from infra_radar_events where kind = 'restart'`).toHaveLength(0);
+  });
+
+  it("un reinicio real que sigue en WORKING solo queda en el panel; ignora fechas futuras o que retroceden", async () => {
+    await radar.runInfraRadar();
+    lines.waha.started = Date.now() + 60_000;
+    await radar.runInfraRadar();
+    lines.waha.started = Date.parse("2026-11-01T10:00:00Z");
+    await radar.runInfraRadar();
+    expect(await sql`select id from infra_radar_events where kind = 'restart'`).toHaveLength(0);
+    lines.waha.started = Date.now();
+    await radar.runInfraRadar();
+    expect(await sql`select id from infra_radar_events where kind = 'restart'`).toHaveLength(1);
+    expect(mocks.alerts).not.toHaveBeenCalled();
+  });
+
+  it("las instancias anteriores se registran sin avisos aunque cambien de estado o dejen de responder", async () => {
+    lines["retired-waha"] = { ...lines.waha };
+    await radar.runInfraRadar();
+    lines["retired-waha"].status = "FAILED";
+    lines["retired-waha"].started = Date.now();
+    await radar.runInfraRadar();
+    lines["retired-waha"].reachable = false;
+    await radar.runInfraRadar();
+    expect(mocks.alerts).not.toHaveBeenCalled();
+    expect(await sql`select id from infra_radar_events where subject like 'n8n/retired-waha%'`).toHaveLength(4);
+  });
+
+  it("no avisa las conexiones deshabilitadas ni otro servicio con el mismo número", async () => {
+    const rows = JSON.parse(process.env.WAHA_CONNECTIONS!);
+    rows[0].enabled = false;
+    vi.stubEnv("WAHA_CONNECTIONS", JSON.stringify(rows));
+    await radar.runInfraRadar();
+    lines["consultorio-waha"].status = "FAILED";
+    await radar.runInfraRadar();
+    expect(mocks.alerts).not.toHaveBeenCalled();
   });
 
   it("restrictionOf interpreta lo que devuelve WAHA", () => {
@@ -168,19 +222,28 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     expect(dump).not.toContain("5491100003765");
   });
 
-  it("el aviso session.status del webhook se guarda al instante y avisa la caída y la vuelta", async () => {
+  it("el webhook avisa la caída de una conexión habilitada, sin avisos de recuperación", async () => {
     const at = "2026-11-26T15:00:00.000Z";
     expect(await radar.recordSessionStatus({ line: "guerra-mininni", session: "default", status: "WORKING", phone: "5491100003765@c.us", at })).toBeNull();
     expect(await radar.recordSessionStatus({ line: "guerra-mininni", session: "default", status: "FAILED", phone: "5491100003765@c.us", at })).toContain("…3765) pasó a FAILED");
     expect(await radar.recordSessionStatus({ line: "guerra-mininni", session: "default", status: "FAILED", phone: "5491100003765@c.us", at })).toBeNull();
     expect(await radar.recordSessionStatus({ line: "guerra-mininni", session: "default", status: "STARTING", phone: null, at })).toBeNull();
-    expect(await radar.recordSessionStatus({ line: "guerra-mininni", session: "default", status: "WORKING", phone: "5491100003765@c.us", at })).toContain("volvió a WORKING");
-    expect(mocks.alerts).toHaveBeenCalledTimes(2);
+    expect(await radar.recordSessionStatus({ line: "guerra-mininni", session: "default", status: "WORKING", phone: "5491100003765@c.us", at })).toBeNull();
+    expect(mocks.alerts).toHaveBeenCalledTimes(1);
     expect((await sql`select detail->>'to' as to from infra_radar_events where kind = 'webhook_status' order by created_at`).map((e) => e.to))
       .toEqual(["WORKING", "FAILED", "STARTING", "WORKING"]);
   });
 
-  it("de los logs guarda solo lo importante, sin teléfonos ni repetidos, y avisa una vez", async () => {
+  it("el webhook registra una sesión o conexión fuera de uso sin mandar avisos", async () => {
+    for (const [line, session] of [["guerra-mininni", "otra"], ["retirada", "default"]]) {
+      await radar.recordSessionStatus({ line, session, status: "WORKING", phone: null, at: null });
+      expect(await radar.recordSessionStatus({ line, session, status: "FAILED", phone: null, at: null })).toBeNull();
+    }
+    expect(mocks.alerts).not.toHaveBeenCalled();
+    expect(await sql`select id from infra_radar_events where kind = 'webhook_status'`).toHaveLength(4);
+  });
+
+  it("los logs quedan para diagnóstico sin avisar por líneas históricas o ya recuperadas", async () => {
     const lines = [
       { at: "10:00:00", level: "INFO", text: "request completed {\"url\":\"/api/sendText\"}" },
       { at: "10:00:01", level: "INFO", text: "session:default - POST request was sent with status code: 200" },
@@ -190,8 +253,7 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     ];
     expect(await radar.ingestWahaLogs("n8n/waha", lines)).toEqual({ saved: 2, important: 2 });
     expect(await radar.ingestWahaLogs("n8n/waha", lines)).toEqual({ saved: 0, important: 0 });
-    expect(mocks.alerts).toHaveBeenCalledTimes(1);
-    expect(mocks.alerts.mock.calls[0][0]).toContain("logged out");
+    expect(mocks.alerts).not.toHaveBeenCalled();
     const dump = JSON.stringify(await sql`select detail from infra_radar_events where kind = 'log'`);
     expect(dump).not.toContain("5491100001234");
     expect(dump).toContain("…1234@c.us");

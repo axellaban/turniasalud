@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { sql, type TransactionSql as Tx } from "./db";
 import { notifyAxel } from "./chat-guard";
+import { wahaConnections } from "./waha-connections";
 
 // Radar de WhatsApp (WAHA) y del VPS donde corre. Solo lee: nunca reinicia, vincula ni cambia
 // una instancia. Lo dispara el cron de diez minutos y lo completa el aviso `session.status` que
@@ -12,7 +13,6 @@ export const DISK_ALERT_PCT = 85;
 /** Un contenedor de WAHA cerca de su tope de memoria: Docker lo mata y la sesión arranca de cero. */
 export const CONTAINER_ALERT_PCT = 90;
 const COOLDOWN_MS = 3 * 3600_000;
-const LOG_COOLDOWN_MS = 30 * 60_000;
 const KEEP_DAYS = 30;
 
 export type EasypanelConfig = { url: string; token: string; host: string };
@@ -214,6 +214,25 @@ async function cooled(tx: Tx, key: string, ms = COOLDOWN_MS): Promise<boolean> {
 
 type InstanceState = { reachable: boolean; startedAt: string | null; sessions: Record<string, string>; restrictions?: Record<string, string | null> };
 
+/** Solo avisan los transportes que Turnia usa: conserva el resto en el panel para diagnóstico. */
+function alertSessionsForService(service: string): Set<string> {
+  const config = easypanelConfig();
+  if (!config) return new Set();
+  const host = service.replace("/", "-") + "." + config.host;
+  const targets = wahaConnections().filter((c) => c.enabled).map((c) => ({ url: c.url, session: c.session }));
+  if (process.env.WAHA_URL) targets.push({ url: process.env.WAHA_URL, session: process.env.WAHA_SESSION || "default" });
+  return new Set(targets.filter((t) => {
+    try { return new URL(t.url).host === host; } catch { return false; }
+  }).map((t) => t.session));
+}
+
+/** WAHA calcula Date.now() - uptime en cada GET: una diferencia de milisegundos no es un reinicio. */
+function restarted(before: string | null, after: string | null): boolean {
+  if (!before || !after) return false;
+  const from = Date.parse(before), to = Date.parse(after);
+  return Number.isFinite(from) && Number.isFinite(to) && to > from + 5000 && to <= Date.now() + 5000;
+}
+
 /** Compara con la corrida anterior, guarda eventos y devuelve lo que hay que avisar. */
 export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
   return sql.begin(async (tx) => {
@@ -223,16 +242,15 @@ export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
       const key = "waha:" + inst.service;
       const prev = await state<InstanceState>(tx, key);
       const sessions = Object.fromEntries(inst.sessions.map((s) => [s.name, s.status]));
+      const alertSessions = alertSessionsForService(inst.service);
       if (prev && prev.reachable && !inst.reachable) {
         await event(tx, "unreachable", inst.service, { error: inst.error });
-        alerts.push("🔴 " + inst.service + " no responde (" + (inst.error ?? "sin detalle") + ").");
+        if (alertSessions.size) alerts.push("🔴 " + inst.service + " no responde (" + (inst.error ?? "sin detalle") + ").");
       } else if (prev && !prev.reachable && inst.reachable) {
         await event(tx, "reachable", inst.service, {});
-        alerts.push("🟢 " + inst.service + " volvió a responder.");
       }
-      if (inst.reachable && prev?.startedAt && inst.startedAt && prev.startedAt !== inst.startedAt) {
-        await event(tx, "restart", inst.service, { from: prev.startedAt, to: inst.startedAt, version: inst.version });
-        alerts.push("🔁 " + inst.service + " se reinició (" + new Date(inst.startedAt).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }) + ").");
+      if (inst.reachable && restarted(prev?.startedAt ?? null, inst.startedAt)) {
+        await event(tx, "restart", inst.service, { from: prev?.startedAt, to: inst.startedAt, version: inst.version });
       }
       if (inst.reachable) {
         for (const s of inst.sessions) {
@@ -240,11 +258,9 @@ export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
           if (before === s.status) continue;
           await event(tx, "session", inst.service + "/" + s.name, { from: before, to: s.status, phone: s.phone });
           // La primera vez que se ve una sesión no se avisa: es el punto de partida del radar.
-          if (before !== null) {
+          if (alertSessions.has(s.name) && (before === "WORKING" || before === "STARTING") && s.status !== "WORKING" && s.status !== "STARTING") {
             const line = s.phone ? " (…" + s.phone + ")" : "";
-            alerts.push(s.status === "WORKING"
-              ? "🟢 WhatsApp" + line + " volvió a WORKING en " + inst.service + "."
-              : "🔴 WhatsApp" + line + " pasó de " + before + " a " + s.status + " en " + inst.service + ". Según WAHA: primero reiniciar la sesión; si no vuelve, re-vincular. Revisar antes de reenviar avisos.");
+            alerts.push("🔴 WhatsApp" + line + " pasó de " + before + " a " + s.status + " en " + inst.service + ". La conexión no está operativa. Revisar su estado antes de intervenir o reenviar avisos.");
           }
         }
         for (const s of inst.sessions) {
@@ -254,27 +270,23 @@ export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
           if (before === now) continue;
           await event(tx, "restriction", inst.service + "/" + s.name, { from: before, to: now, phone: s.phone });
           const line = s.phone ? " (…" + s.phone + ")" : "";
-          alerts.push(now
-            ? "🟡 WhatsApp frenó la línea" + line + " en " + inst.service + ": " + now + ". NO reiniciar ni re-vincular (no lo levanta y empeora la línea). Frenar los mensajes a contactos nuevos; los pacientes que ya escribieron siguen recibiendo."
-            : "🟢 La línea" + line + " ya puede escribir a contactos nuevos otra vez (" + inst.service + ").");
+          if (alertSessions.has(s.name) && now && (!before || before.startsWith("aviso de tope")) && !now.startsWith("aviso de tope")) {
+            alerts.push("🔴 WhatsApp frenó la línea" + line + " en " + inst.service + ": " + now + ". NO reiniciar ni re-vincular (no lo levanta y empeora la línea). Frenar los mensajes a contactos nuevos; los pacientes que ya escribieron siguen recibiendo.");
+          }
         }
       }
       if (inst.memoryMb && inst.memoryLimitMb && inst.memoryMb >= inst.memoryLimitMb * CONTAINER_ALERT_PCT / 100 && await cooled(tx, "container:" + inst.service)) {
         await event(tx, "container_memory", inst.service, { mb: inst.memoryMb, limit: inst.memoryLimitMb });
-        alerts.push("🟠 " + inst.service + " usa " + inst.memoryMb + " de " + inst.memoryLimitMb + " MB: cerca del tope, Docker lo puede reiniciar.");
       }
       await setState(tx, key, inst.reachable
         ? { reachable: true, startedAt: inst.startedAt, sessions, restrictions: Object.fromEntries(inst.sessions.filter((x) => x.status === "WORKING").map((x) => [x.name, x.restriction ?? null])) }
         : { reachable: false, startedAt: prev?.startedAt ?? null, sessions: prev?.sessions ?? {}, restrictions: prev?.restrictions ?? {} });
     }
-    const top = snapshot.topMemory.map((t) => t.service + " " + t.mb + " MB").join(", ");
     if (snapshot.memoryPct !== null && snapshot.memoryPct >= RAM_ALERT_PCT && await cooled(tx, "memory")) {
       await event(tx, "memory", "vps", { pct: snapshot.memoryPct, freeMb: snapshot.memoryFreeMb, top: snapshot.topMemory });
-      alerts.push("🟠 RAM del VPS al " + snapshot.memoryPct + " % (" + snapshot.memoryFreeMb + " MB libres). Más usan: " + top + ".");
     }
     if (snapshot.diskPct !== null && snapshot.diskPct >= DISK_ALERT_PCT && await cooled(tx, "disk")) {
       await event(tx, "disk", "vps", { pct: snapshot.diskPct });
-      alerts.push("🟠 Disco del VPS al " + snapshot.diskPct + " %.");
     }
     await tx`insert into infra_radar_samples (memory_pct, disk_pct, cpu_pct, load1, instances)
       values (${snapshot.memoryPct}, ${snapshot.diskPct}, ${snapshot.cpuPct}, ${snapshot.load1}, ${tx.json(snapshot.instances.map((i) => ({
@@ -320,10 +332,14 @@ export async function recordSessionStatus(input: { line: string; session: string
     await setState(tx, "hook:" + subject, { status: input.status, at: input.at });
     if (prev?.status === input.status) return null;
     await event(tx, "webhook_status", subject, { from: prev?.status ?? null, to: input.status, phone: lastDigits(input.phone), at: input.at });
-    // STARTING es de paso: se avisa cuando se cae o cuando vuelve.
+    // STARTING es de paso; las recuperaciones se conservan en el panel sin mandar avisos.
     if (input.status === "STARTING" || !prev) return null;
     const line = input.phone ? " (…" + lastDigits(input.phone) + ")" : "";
-    if (input.status === "WORKING") return prev.status === "WORKING" ? null : "🟢 WhatsApp" + line + " volvió a WORKING (" + input.line + ").";
+    if (input.status === "WORKING") return null;
+    const enabled = input.line === "general"
+      ? Boolean(process.env.WAHA_URL) && input.session === (process.env.WAHA_SESSION || "default")
+      : wahaConnections().some((c) => c.enabled && c.id === input.line && c.session === input.session);
+    if (!enabled || (prev.status !== "WORKING" && prev.status !== "STARTING")) return null;
     return "🔴 WhatsApp" + line + " pasó a " + input.status + " (" + input.line + "). Ver radar en los logs.";
   });
   if (alert) await notifyAxel("⚠️ Turnia · WhatsApp\n" + alert);
@@ -360,13 +376,9 @@ export async function ingestWahaLogs(service: string, lines: LogLine[]) {
       saved++;
       if (IMPORTANT.test(l.text)) important++;
     }
-    const alert = important > 0 && await cooled(tx, "log:" + service, LOG_COOLDOWN_MS);
-    return { saved, important, alert };
+    return { saved, important };
   });
-  if (result.alert) {
-    const sample = kept.filter((l) => IMPORTANT.test(l.text)).slice(-2).map((l) => "· " + l.text.slice(0, 180)).join("\n");
-    await notifyAxel("⚠️ Turnia · log de " + service + "\n" + sample);
-  }
+  // Un log puede ser histórico o una reconexión ya resuelta. La caída la confirman el estado y el webhook.
   return { saved: result.saved, important: result.important };
 }
 
