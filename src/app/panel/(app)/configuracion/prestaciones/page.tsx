@@ -10,7 +10,7 @@ import { ActionForm } from "../action-form";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Clinic, Professional, ProfessionalType } from "@/lib/types";
 import { typeLabels } from "@/lib/type-labels";
-import { ConfigHeader, loadConfigConflicts } from "../header";
+import { ConfigHeader, loadConfigConflicts, loadSmileSource } from "../header";
 import { RecallSelect } from "../../campanas/recall-select";
 import type { Metadata } from "next";
 
@@ -85,7 +85,7 @@ export default async function ServicesPage() {
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion/prestaciones" conflicts={await loadConfigConflicts(clinic)} />
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/prestaciones" conflicts={await loadConfigConflicts(clinic)} />
       <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (cada cuánto vuelve el paciente) se elige acá al lado del precio: con él, <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link> muestra a quién le toca volver.</p>
       {dental && (
         <Card className="mb-6">

@@ -9,7 +9,7 @@ import { listClinicAccess } from "@/lib/clinic-access";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
 import { Badge, Card, Field, Notice, inputClass, secondaryButtonClass, smallButtonClass } from "@/components/ui";
-import { ConfigHeader, loadConfigConflicts } from "./header";
+import { ConfigHeader, loadConfigConflicts, loadSmileSource } from "./header";
 import { Section, wide } from "./section";
 import { AccessCreator } from "./access-manager";
 import { ClinicAgentSetup } from "./clinic-agent";
@@ -62,7 +62,7 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion" conflicts={conflicts} />
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion" conflicts={conflicts} />
       {!admin && <Notice tone="info" className="mb-6">
         <strong>Hola{user.label ? `, ${user.label}` : ""}.</strong> Acá cargás cómo atiende tu consultorio. Empezá por estos datos y seguí con las pestañas de arriba, en orden.
         Cada cambio lo usa {agent} desde el próximo mensaje.

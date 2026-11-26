@@ -6,7 +6,7 @@ import { DENTAL_PROTOCOL, DENTAL_PROTOCOL_VERSION, DENTAL_TEST_CASES } from "@/l
 import { Badge, Field, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
 import { BOOKING_WEEKDAYS, FIRST_SLOT_HOURS } from "@/lib/booking-rules";
-import { ConfigHeader, loadConfigConflicts } from "../header";
+import { ConfigHeader, loadConfigConflicts, loadSmileSource } from "../header";
 import { healthFormSheet, healthFormSheetText } from "@/lib/health-form";
 import { ProfileSaveForm } from "../profile-save";
 import { Section, wide } from "../section";
@@ -27,7 +27,7 @@ export default async function BookingRulesPage() {
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion/turnos" conflicts={await loadConfigConflicts(clinic)} />
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/turnos" conflicts={await loadConfigConflicts(clinic)} />
       <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveBookingRules} scope="turnos" agentName={agent}>
         <input type="hidden" name="rules_form" value="1" />
         <Section id="dias" title={`Días en que ${agent} da turnos`} description="Se aplica al ofrecer, reservar y elegir el nuevo día de una reprogramación. Los horarios de atención se conservan: el equipo puede seguir usando los otros días y la sincronización de la agenda no cambia esta regla.">

@@ -7,8 +7,9 @@ import { formatDateTime } from "@/lib/time";
 import { Badge, Card, Empty, Notice, buttonClass, secondaryButtonClass } from "@/components/ui";
 import { disconnectCalendar, syncCalendarNow } from "../../../calendar-actions";
 import { ProfessionalCalendarForm } from "../calendario-form";
-import { ConfigHeader } from "../header";
+import { ConfigHeader, loadSmileSource } from "../header";
 import { SmileConnectCard } from "../smile-connect-card";
+import { SmileLock } from "../smile-lock";
 import { SmileApiCard, loadSmileApiCard } from "../smile-api-card";
 
 export const metadata: Metadata = { title: "Agenda e integraciones · Panel" };
@@ -54,14 +55,14 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion/calendario" />
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/calendario" />
       {result && <Notice tone={result.tone} className="mb-5">{result.text}</Notice>}
 
       {/* Con la API en uso, Smile Connect es la fuente de la verdad: va primero. */}
       {smileApiOn && <div className="mb-6"><SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} /></div>}
 
       {/* Con Smile Connect como fuente, Google Calendar sería una segunda agenda: queda plegado si no está conectado. */}
-      {smileApiOn && !conn && <p className="mb-3 text-sm text-brand-900/60">Con Smile Connect no hace falta Google Calendar: lo ocupado y los turnos ya están allá.</p>}
+      {smileApiOn && !conn && <SmileLock title="Google Calendar" className="mb-3">No hace falta: lo ocupado y los turnos ya están en Smile Connect. Sumarlo sería una segunda agenda. Queda abajo, plegado, por si algún profesional lo necesita.</SmileLock>}
       <GoogleWrap folded={smileApiOn && !conn}>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <Card>
