@@ -43,7 +43,12 @@ export function verifyRadarSecret(header: string | null): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export type RadarSession = { name: string; status: string; phone: string | null };
+/**
+ * `restriction`: WhatsApp frena los mensajes a contactos nuevos aunque la sesión siga en WORKING
+ * (bloqueo temporal por escribir a muchos, error 463, o tope del ciclo, error 475). La doc de WAHA es
+ * clara: no reiniciar ni re-vincular, porque no lo levanta y empeora la línea. Se frena y se espera.
+ */
+export type RadarSession = { name: string; status: string; phone: string | null; restriction?: string | null };
 export type RadarInstance = {
   service: string;
   reachable: boolean;
@@ -96,6 +101,24 @@ function envValue(env: string, name: string): string | null {
   return null;
 }
 
+type MeInfo = {
+  reachoutTimelock?: { isActive?: boolean; timeEnforcementEnds?: string | number | null } | null;
+  messageCapping?: { cappingStatus?: string | null } | null;
+} | null;
+
+/** null si la línea puede escribir a contactos nuevos; si no, qué la frena. */
+export function restrictionOf(me: MeInfo): string | null {
+  const lock = me?.reachoutTimelock;
+  if (lock?.isActive) {
+    const ends = lock.timeEnforcementEnds ? new Date(typeof lock.timeEnforcementEnds === "number" && lock.timeEnforcementEnds < 1e12 ? lock.timeEnforcementEnds * 1000 : lock.timeEnforcementEnds) : null;
+    return "bloqueo temporal" + (ends && !Number.isNaN(ends.getTime()) ? " hasta " + ends.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+  }
+  const capping = me?.messageCapping?.cappingStatus;
+  if (capping === "CAPPED") return "tope de contactos nuevos alcanzado";
+  if (capping === "FIRST_WARNING" || capping === "SECOND_WARNING") return "aviso de tope de contactos nuevos (" + (capping === "FIRST_WARNING" ? "primer" : "segundo") + " aviso)";
+  return null;
+}
+
 async function readInstance(config: EasypanelConfig, service: ServiceRow, memory: Map<string, number>): Promise<RadarInstance> {
   const id = service.projectName + "/" + service.name;
   const base: RadarInstance = {
@@ -113,13 +136,17 @@ async function readInstance(config: EasypanelConfig, service: ServiceRow, memory
     const [sessions, status, version] = await Promise.all([get("/api/sessions?all=true"), get("/api/server/status"), get("/api/server/version")]);
     if (!sessions.ok) return { ...base, error: "WAHA HTTP " + sessions.status };
     const list = await sessions.json() as Array<{ name?: string; status?: string; me?: { id?: string } | null }>;
+    // Bloqueo temporal y tope de contactos nuevos: solo se pueden leer con la sesión funcionando.
+    const restrictions = await Promise.all(list.map(async (s) => s.status === "WORKING" && s.name
+      ? restrictionOf(await get("/api/sessions/" + encodeURIComponent(s.name) + "/me").then((r) => (r.ok ? r.json() : null)).catch(() => null))
+      : null));
     const started = status.ok ? (await status.json() as { startTimestamp?: number }).startTimestamp : null;
     return {
       ...base,
       reachable: true,
       startedAt: started ? new Date(started).toISOString() : null,
       version: version.ok ? (await version.json() as { version?: string }).version ?? null : null,
-      sessions: list.map((s) => ({ name: s.name ?? "?", status: s.status ?? "UNKNOWN", phone: lastDigits(s.me?.id) })),
+      sessions: list.map((s, i) => ({ name: s.name ?? "?", status: s.status ?? "UNKNOWN", phone: lastDigits(s.me?.id), restriction: restrictions[i] })),
     };
   } catch (e) {
     // Sin el texto crudo del proveedor: puede traer direcciones internas.
@@ -174,7 +201,7 @@ async function cooled(tx: Tx, key: string, ms = COOLDOWN_MS): Promise<boolean> {
   return true;
 }
 
-type InstanceState = { reachable: boolean; startedAt: string | null; sessions: Record<string, string> };
+type InstanceState = { reachable: boolean; startedAt: string | null; sessions: Record<string, string>; restrictions?: Record<string, string | null> };
 
 /** Compara con la corrida anterior, guarda eventos y devuelve lo que hay que avisar. */
 export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
@@ -206,8 +233,19 @@ export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
             const line = s.phone ? " (…" + s.phone + ")" : "";
             alerts.push(s.status === "WORKING"
               ? "🟢 WhatsApp" + line + " volvió a WORKING en " + inst.service + "."
-              : "🔴 WhatsApp" + line + " pasó de " + before + " a " + s.status + " en " + inst.service + ". Revisar antes de reenviar avisos.");
+              : "🔴 WhatsApp" + line + " pasó de " + before + " a " + s.status + " en " + inst.service + ". Según WAHA: primero reiniciar la sesión; si no vuelve, re-vincular. Revisar antes de reenviar avisos.");
           }
+        }
+        for (const s of inst.sessions) {
+          if (s.status !== "WORKING") continue;
+          const before = prev?.restrictions?.[s.name] ?? null;
+          const now = s.restriction ?? null;
+          if (before === now) continue;
+          await event(tx, "restriction", inst.service + "/" + s.name, { from: before, to: now, phone: s.phone });
+          const line = s.phone ? " (…" + s.phone + ")" : "";
+          alerts.push(now
+            ? "🟡 WhatsApp frenó la línea" + line + " en " + inst.service + ": " + now + ". NO reiniciar ni re-vincular (no lo levanta y empeora la línea). Frenar los mensajes a contactos nuevos; los pacientes que ya escribieron siguen recibiendo."
+            : "🟢 La línea" + line + " ya puede escribir a contactos nuevos otra vez (" + inst.service + ").");
         }
       }
       if (inst.memoryMb && inst.memoryLimitMb && inst.memoryMb >= inst.memoryLimitMb * CONTAINER_ALERT_PCT / 100 && await cooled(tx, "container:" + inst.service)) {
@@ -215,8 +253,8 @@ export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
         alerts.push("🟠 " + inst.service + " usa " + inst.memoryMb + " de " + inst.memoryLimitMb + " MB: cerca del tope, Docker lo puede reiniciar.");
       }
       await setState(tx, key, inst.reachable
-        ? { reachable: true, startedAt: inst.startedAt, sessions }
-        : { reachable: false, startedAt: prev?.startedAt ?? null, sessions: prev?.sessions ?? {} });
+        ? { reachable: true, startedAt: inst.startedAt, sessions, restrictions: Object.fromEntries(inst.sessions.filter((x) => x.status === "WORKING").map((x) => [x.name, x.restriction ?? null])) }
+        : { reachable: false, startedAt: prev?.startedAt ?? null, sessions: prev?.sessions ?? {}, restrictions: prev?.restrictions ?? {} });
     }
     const top = snapshot.topMemory.map((t) => t.service + " " + t.mb + " MB").join(", ");
     if (snapshot.memoryPct !== null && snapshot.memoryPct >= RAM_ALERT_PCT && await cooled(tx, "memory")) {
@@ -257,7 +295,7 @@ export async function runInfraRadar() {
   return {
     configured: true as const,
     ram: snapshot.memoryPct, disco: snapshot.diskPct,
-    instancias: snapshot.instances.map((i) => ({ servicio: i.service, ok: i.reachable, sesiones: i.sessions.map((s) => (s.phone ? "…" + s.phone + " " : "") + s.status) })),
+    instancias: snapshot.instances.map((i) => ({ servicio: i.service, ok: i.reachable, sesiones: i.sessions.map((s) => (s.phone ? "…" + s.phone + " " : "") + s.status + (s.restriction ? " (" + s.restriction + ")" : "")) })),
     avisos: alerts.length,
   };
 }

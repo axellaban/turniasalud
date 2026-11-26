@@ -6,7 +6,7 @@ import { agentVoiceId, sendChannelMessage, textToSpeech } from "./elevenlabs";
 import { updateCampaignRecipient } from "./conversations";
 import { notifyN8n } from "./n8n";
 import { isHealthFormText, splitHealthFormMessage } from "./health-form";
-import { wahaSendBubbles, wahaSendText, wahaSendVoice, wahaTyping } from "./waha";
+import { wahaSeen, wahaSendBubbles, wahaSendText, wahaSendVoice, wahaTyping } from "./waha";
 import { splitBubbles, toWhatsAppText } from "./whatsapp-style";
 import { announcePause, checkChatFuse, guardIncoming, isMuted, notifyAxel } from "./chat-guard";
 import { staffForPhone } from "./staff";
@@ -235,8 +235,11 @@ export async function forwardToAgent(
     }
     return { conversation_id: res.conversation_id, continued: Boolean(open?.elevenlabs_conversation_id) && !stale };
   });
-  // Mientras Sofi piensa, el paciente ve «escribiendo…», como con una persona.
-  if (!result.blocked && result.conversation_id) await wahaTyping(input.chatId);
+  // Visto y, mientras Sofi piensa, «escribiendo…», como con una persona.
+  if (!result.blocked && result.conversation_id) {
+    await wahaSeen(input.chatId);
+    await wahaTyping(input.chatId);
+  }
   if (result.blocked === "exceso") await announcePause(clinic, input.phone, input.chatId, wahaSendText);
   if (!result.blocked) await checkChatFuse(clinic).catch((e) => console.error("Fusible de chat: no se pudo revisar", e instanceof Error ? e.message : e));
   return result;

@@ -29,6 +29,11 @@ Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detec
 - El webhook de WAHA guarda **en el momento** el aviso `session.status` (antes se descartaba) y avisa la caída sin esperar al cron. `n8n/waha` ya manda ese evento.
 - `scripts/waha-radar/radar.mjs`: lector de logs para el VPS (servicio `n8n/waha-radar`, imagen `node:22-alpine`, 96 MB). Escucha en vivo los logs de las cuatro WAHA y manda a `POST /api/infra/waha-logs` solo las advertencias, los errores y los cambios de estado, sin ruido, sin nombres ni números y sin volcados de claves. También los deja en el volumen `/data`, 30 días. Firma con una clave derivada del token de Easypanel: no necesita otra variable.
 - Panel → Sistema → «Radar de WhatsApp y VPS»: la última lectura y los últimos eventos.
+- **Buenas prácticas de la doc oficial de WAHA (26/11, tanda A):**
+  - El radar lee `GET /api/sessions/{s}/me` y avisa si WhatsApp frena la línea aunque siga en WORKING: bloqueo temporal por escribir a muchos contactos nuevos (error 463) o tope del ciclo (`messageCapping`: `FIRST_WARNING`, `SECOND_WARNING` o `CAPPED`, error 475). En esos casos **no se reinicia ni se re-vincula**: no lo levanta y empeora la línea. Se frenan los mensajes a contactos nuevos y se espera.
+  - Ante FAILED, la doc indica primero reiniciar la sesión y, si no vuelve, re-vincular.
+  - Sofi marca como leído (`/api/sendSeen`) antes del «escribiendo…».
+  - `/api/infra/waha-logs` responde 503 si faltan las variables de Easypanel y 401 si la clave no coincide.
 
 **Pendiente:**
 - [ ] **Axel: cargar en Vercel (Production) `EASYPANEL_API_URL` = `https://<panel>/api` y `EASYPANEL_API_TOKEN`.** Sin eso, el radar y la ruta de logs no hacen nada y el lector del VPS guarda las líneas y reintenta.
