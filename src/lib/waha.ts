@@ -188,6 +188,24 @@ export async function wahaSendText(chatId: string, text: string, opts: { interna
   return { id };
 }
 
+/**
+ * Marca como leído el chat del paciente, como haría una persona antes de contestar (lo recomienda
+ * WAHA para que la línea no parezca un bot). Es cortesía: si falla, no frena nada.
+ */
+export async function wahaSeen(chatId: string): Promise<void> {
+  if (!isWhatsappChatId(chatId)) return;
+  try {
+    await waha("/api/sendSeen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: currentWahaConnection()?.session ?? env.wahaSession(), chatId }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // Sin el visto el mensaje se procesa igual.
+  }
+}
+
 /** «Escribiendo…» en el chat del paciente. Es solo cortesía: si falla, no frena nada. */
 export async function wahaTyping(chatId: string): Promise<void> {
   if (!isWhatsappChatId(chatId)) return;

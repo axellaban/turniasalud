@@ -85,6 +85,7 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     if (url === `${WAHA}/api/sendText`) return fake.failSendText ? json({ error: "session stopped" }, 500) : json({ id: "true_x@c.us_OUT" }, 201);
     if (url === `${WAHA}/api/sendVoice`) return json({ id: "true_x@c.us_VOICE" }, 201);
     if (url === `${WAHA}/api/startTyping`) return json({}, 201);
+    if (url === `${WAHA}/api/sendSeen`) return json({}, 201);
     if (url.startsWith(`${WAHA}/api/default/lids/`)) return json({ lid: "x@lid", pn: fake.lidPhone });
     if (url.startsWith(`${WAHA}/api/files/`) && url.endsWith(".jpeg")) return new Response(new Uint8Array(fake.photo!), { headers: { "Content-Type": "image/jpeg" } });
     if (url.startsWith(`${WAHA}/api/files/`)) return new Response(new Uint8Array([1, 2, 3, 4]), { headers: { "Content-Type": "audio/ogg" } });
@@ -219,6 +220,9 @@ describe.runIf(baseUrl)("WhatsApp por WAHA + Custom Channel", () => {
     }
     expect(body.dynamic_variables.patient_name).toBe("María González");
     expect(body.dynamic_variables.campaign_id).toBe("ninguna");
+    // Como una persona: visto y después «escribiendo…».
+    const courtesy = fake.calls.map((c) => c.url).filter((u) => u.endsWith("/api/sendSeen") || u.endsWith("/api/startTyping"));
+    expect(courtesy.slice(0, 2)).toEqual([`${WAHA}/api/sendSeen`, `${WAHA}/api/startTyping`]);
 
     // WAHA reintenta el mismo mensaje: no se manda dos veces al agente.
     expect(await (await inbound(wahaRequest(textMessage("m1", "Hola, quiero un turno")))).json()).toEqual({ duplicate: true });

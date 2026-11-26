@@ -12,7 +12,7 @@ const url = testDatabaseUrl();
 // Easypanel y dos WAHA simulados. Todo ficticio: ninguna clave ni número real.
 const TOKEN = "token-ficticio-easypanel";
 const PANEL = "https://panel.test/api";
-type Fake = { status: string; started: number; reachable: boolean; me: string };
+type Fake = { status: string; started: number; reachable: boolean; me: string; lock?: boolean; capping?: string };
 let lines: Record<string, Fake>;
 let memoryPct: number;
 let containerMb: number;
@@ -44,6 +44,11 @@ function fakeFetch(input: string | URL | Request, init: RequestInit = {}) {
   if (!fake.reachable) throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
   expect(headers.get("x-api-key")).toBe("clave-" + service);
   if (u.pathname === "/api/sessions") return Response.json([{ name: "default", status: fake.status, me: { id: fake.me + "@c.us" }, config: { webhooks: [] } }]);
+  if (u.pathname === "/api/sessions/default/me") return Response.json({
+    id: fake.me + "@c.us",
+    reachoutTimelock: { enforcementType: "DEFAULT", isActive: Boolean(fake.lock), timeEnforcementEnds: fake.lock ? "2026-11-27T18:00:00Z" : null },
+    messageCapping: { cappingStatus: fake.capping ?? "NONE", totalQuota: -1, usedQuota: 0 },
+  });
   if (u.pathname === "/api/server/status") return Response.json({ startTimestamp: fake.started, uptime: 1 });
   if (u.pathname === "/api/server/version") return Response.json({ version: "2026.9.2" });
   throw new Error("WAHA inesperado " + u.pathname);
@@ -125,6 +130,33 @@ describe.runIf(url)("radar de WAHA y del VPS con Easypanel simulado", () => {
     await radar.runInfraRadar();
     expect(mocks.alerts.mock.calls[1][0]).toContain("volvió a responder");
     expect(mocks.alerts.mock.calls[1][0]).not.toContain("WORKING");
+  });
+
+  it("si WhatsApp frena la línea (bloqueo temporal o tope), avisa que NO hay que reiniciar", async () => {
+    await radar.runInfraRadar();
+    lines.waha.lock = true;
+    await radar.runInfraRadar();
+    await radar.runInfraRadar();
+    expect(mocks.alerts).toHaveBeenCalledTimes(1);
+    expect(mocks.alerts.mock.calls[0][0]).toMatch(/frenó la línea \(…3765\)[\s\S]*bloqueo temporal hasta 27\/11[\s\S]*NO reiniciar/);
+    lines.waha.lock = false;
+    lines.waha.capping = "FIRST_WARNING";
+    await radar.runInfraRadar();
+    expect(mocks.alerts.mock.calls[1][0]).toContain("primer aviso");
+    lines.waha.capping = "NONE";
+    await radar.runInfraRadar();
+    expect(mocks.alerts.mock.calls[2][0]).toContain("ya puede escribir a contactos nuevos");
+    // Una sesión caída nunca se confunde con un bloqueo: el aviso de caída dice que se reinicie primero.
+    lines.waha.status = "FAILED";
+    await radar.runInfraRadar();
+    expect(mocks.alerts.mock.calls[3][0]).toContain("primero reiniciar");
+  });
+
+  it("restrictionOf interpreta lo que devuelve WAHA", () => {
+    expect(radar.restrictionOf(null)).toBeNull();
+    expect(radar.restrictionOf({ reachoutTimelock: { isActive: false }, messageCapping: { cappingStatus: "NONE" } })).toBeNull();
+    expect(radar.restrictionOf({ messageCapping: { cappingStatus: "CAPPED" } })).toBe("tope de contactos nuevos alcanzado");
+    expect(radar.restrictionOf({ reachoutTimelock: { isActive: true, timeEnforcementEnds: null } })).toBe("bloqueo temporal");
   });
 
   it("no guarda claves en la base", async () => {
