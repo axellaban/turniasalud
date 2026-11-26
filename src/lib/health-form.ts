@@ -255,7 +255,7 @@ export type HealthFormSheet = {
 };
 
 /**
- * La hoja de la clínica (Configuración → Turnos y urgencias), o null si no usa ficha de salud. Se lee
+ * La hoja de la clínica (Configuración → Consultorio), o null si no usa ficha de salud. Se lee
  * con cuidado: lo que no tenga la forma esperada cuenta como que no la usa.
  */
 export function healthFormSheet(clinic: { health_form?: unknown }): HealthFormSheet | null {

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { getCatalog } from "@/lib/clinic";
 import { sql } from "@/lib/db";
-import { addProfessional, addSchedule, deleteSchedule, saveProfessionalWithFeedback, toggleProfessional } from "../../../actions";
+import { addProfessional, addSchedule, deleteSchedule, saveProfessionalWithFeedback, toggleProfessional, updateSchedule } from "../../../actions";
 import { EditDetails } from "../edit-details";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Professional } from "@/lib/types";
@@ -78,15 +78,32 @@ export default async function TeamPage() {
                             const note = [s.urgent_only && "Solo urgencias", only.length && `Solo ${only.join(", ")}`].filter(Boolean).join(" · ");
                             const synced = fromSmile(p) && !s.urgent_only && !only.length;
                             const label = synced ? "Viene de Smile Connect: se cambia allá" : note || undefined;
+                            const chip = `inline-flex items-center justify-between gap-1 rounded-lg px-2 py-1 text-xs font-medium ${s.urgent_only ? "bg-red-50 text-red-800" : synced ? "bg-violet-50 text-violet-900 ring-1 ring-violet-200" : "bg-brand-50 text-brand-800"}`;
+                            const times = <span>{s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}{note && <span className="block font-normal opacity-80">{s.urgent_only ? "urgencias" : ""}{s.urgent_only && only.length ? " · " : ""}{only.length ? `solo ${only.length === 1 ? only[0] : `${only.length} prestaciones`}` : ""}</span>}</span>;
+                            // Los que vienen de Smile Connect, con candado; los de Turnia se tocan para cambiar las horas o quitarlos.
+                            if (synced) return (
+                              <span key={s.id} title={label} className={chip}>{times}<span aria-label="Viene de Smile Connect: se cambia allá" className="px-0.5 text-violet-600"><LockIcon className="h-3 w-3" /></span></span>
+                            );
                             return (
-                            <form key={s.id} action={deleteSchedule} title={label} className={`inline-flex items-center justify-between gap-1 rounded-lg px-2 py-1 text-xs font-medium ${s.urgent_only ? "bg-red-50 text-red-800" : synced ? "bg-violet-50 text-violet-900 ring-1 ring-violet-200" : "bg-brand-50 text-brand-800"}`}>
-                              <input type="hidden" name="clinic_id" value={clinic.id} />
-                              <input type="hidden" name="id" value={s.id} />
-                              <span>{s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}{note && <span className="block font-normal opacity-80">{s.urgent_only ? "urgencias" : ""}{s.urgent_only && only.length ? " · " : ""}{only.length ? `solo ${only.length === 1 ? only[0] : `${only.length} prestaciones`}` : ""}</span>}</span>
-                              {synced
-                                ? <span aria-label="Viene de Smile Connect: se cambia allá" className="px-0.5 text-violet-600"><LockIcon className="h-3 w-3" /></span>
-                                : <button title="Quitar este horario" aria-label={`Quitar ${WEEKDAYS[day]} ${s.start_time.slice(0, 5)}`} className="px-0.5 text-brand-900/65 hover:text-red-600">×</button>}
-                            </form>
+                            <details key={s.id} className="relative">
+                              <summary title={label ? `${label} · tocá para cambiarlo` : "Tocá para cambiarlo"} aria-label={`Cambiar ${WEEKDAYS[day]} ${s.start_time.slice(0, 5)}`} className={`${chip} cursor-pointer list-none hover:ring-1 hover:ring-brand-300 [&::-webkit-details-marker]:hidden`}>{times}<span aria-hidden className="px-0.5 text-brand-900/50">✎</span></summary>
+                              <div className="absolute left-0 z-20 mt-1 w-52 space-y-2 rounded-xl border border-brand-900/10 bg-white p-3 text-xs shadow-lg">
+                                <form action={updateSchedule} className="space-y-2">
+                                  <input type="hidden" name="clinic_id" value={clinic.id} />
+                                  <input type="hidden" name="id" value={s.id} />
+                                  <div className="flex gap-2">
+                                    <label className="flex-1 font-medium text-brand-900/70">Desde<input type="time" name="start_time" required defaultValue={s.start_time.slice(0, 5)} className="mt-1 block w-full rounded-lg border border-brand-900/15 px-1.5 py-1 text-sm" /></label>
+                                    <label className="flex-1 font-medium text-brand-900/70">Hasta<input type="time" name="end_time" required defaultValue={s.end_time.slice(0, 5)} className="mt-1 block w-full rounded-lg border border-brand-900/15 px-1.5 py-1 text-sm" /></label>
+                                  </div>
+                                  <button className={smallButtonClass}>Guardar</button>
+                                </form>
+                                <form action={deleteSchedule} className="border-t border-brand-900/5 pt-2">
+                                  <input type="hidden" name="clinic_id" value={clinic.id} />
+                                  <input type="hidden" name="id" value={s.id} />
+                                  <button className="font-medium text-red-700 hover:underline">Quitar este horario</button>
+                                </form>
+                              </div>
+                            </details>
                             );
                           })}
                           {!list.length && <span className="pt-1 text-xs text-brand-900/65 sm:pt-0">—</span>}

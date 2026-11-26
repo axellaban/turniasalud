@@ -22,6 +22,7 @@ import { getPanelClinic, logClinicChange, requireAdmin, requirePanelSession, tou
 import { normalizeWebsite } from "@/lib/demo/website";
 import { createScheduleBlock } from "@/lib/schedule-blocks";
 import { fetchArgentineHolidays, holidaysToLoad } from "@/lib/holidays";
+import { parseHealthFormSheet } from "@/lib/health-form";
 import { PRICE_MODES, type PriceMode } from "@/lib/types";
 
 const requireSession = requirePanelSession;
@@ -467,6 +468,7 @@ export async function saveClinic(form: FormData) {
     const tone = text(form, "tone");
     fields.tone = tone === "usted" || tone === "vos" || tone === "espejo" ? tone : null;
   }
+
   // El ayudante de postgres.js tiene que ir directo después de «set» (dentro de otro fragmento no
   // se arma bien), así que sin campos se marca la ficha sola.
   if (Object.keys(fields).length) {
@@ -475,6 +477,11 @@ export async function saveClinic(form: FormData) {
       where id = ${clinic.id}`;
   } else {
     await sql`update clinics set retained_at = coalesce(retained_at, now()), updated_at = now(), context_revision = context_revision + 1 where id = ${clinic.id}`;
+  }
+  // Ficha de salud (desde el 26/11 en la pestaña Consultorio): un profesional por bloque. Vacía: no se usa.
+  if (form.has("health_form_field")) {
+    const sheet = parseHealthFormSheet(text(form, "health_form_monogram"), text(form, "health_form_text"));
+    await sql`update clinics set health_form = ${sheet ? sql.json(sheet) : null} where id = ${clinic.id}`;
   }
   await logClinicChange(clinic.id, "Consultorio");
   revalidatePath("/panel/configuracion", "layout");
@@ -660,6 +667,22 @@ export async function addSchedule(form: FormData) {
     select p.id, w.weekday, ${start}::time, ${end}::time, ${urgentOnly}, ${typeIds.length ? typeIds : null}::uuid[]
     from professionals p, unnest(${weekdays}::smallint[]) as w(weekday)
     where p.id = ${professionalId} and p.clinic_id = ${clinic.id}`;
+  await touchClinic(clinic.id, "Horarios");
+  revalidatePath("/panel/configuracion", "layout");
+}
+
+/** Cambia las horas de un horario en el lugar (antes había que quitarlo y volver a cargarlo). */
+export async function updateSchedule(form: FormData) {
+  await requireSession();
+  const id = uuid(form, "id");
+  const start = parseClockTime(text(form, "start_time"));
+  const end = parseClockTime(text(form, "end_time"));
+  if (!id || !start || !end || end <= start) return;
+  const clinic = await getPanelClinic(form);
+  await sql`
+    update schedules s set start_time = ${start}::time, end_time = ${end}::time
+    from professionals p
+    where s.id = ${id} and p.id = s.professional_id and p.clinic_id = ${clinic.id}`;
   await touchClinic(clinic.id, "Horarios");
   revalidatePath("/panel/configuracion", "layout");
 }

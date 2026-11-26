@@ -95,45 +95,53 @@ export function NoticeCard({ clinic, admin, data: { phones, staff, recent, line,
               </form>}
             </div>
 
-            {m.notice ? (
-              <form action={setNoticeEvents} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                {hidden(clinic.id, { id: m.notice.id })}
-                <span className="text-xs font-medium text-brand-950">Avisos:</span>
-                {NOTICE_KINDS.map((k) => <label key={k} className="inline-flex items-center gap-1.5 text-xs text-brand-900/80">
-                  <input type="checkbox" name={`event_${k}`} defaultChecked={m.notice!.events.includes(k)} /> {NOTICE_LABEL[k]}
-                </label>)}
-                <button className={smallButtonClass}>Guardar</button>
-              </form>
-            ) : (
-              <ActionForm action={addNoticePhone} submit="Mandarle avisos de turnos" secondary className="flex flex-wrap items-center gap-2">
-                {hidden(clinic.id, { name: m.name, phone: m.phone, ...Object.fromEntries(NOTICE_KINDS.map((k) => [`event_${k}`, "on"])) })}
-                <span className="text-xs text-brand-900/65">Avisos: no recibe.</span>
-              </ActionForm>
-            )}
+            {/* Una fila por cosa que recibe: a la izquierda qué es, después cómo está y al final la acción. */}
+            <dl className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs">
+              <dt className="font-medium text-brand-950">Avisos de turnos</dt>
+              <dd>
+                {m.notice ? (
+                  <form action={setNoticeEvents} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {hidden(clinic.id, { id: m.notice.id })}
+                    {NOTICE_KINDS.map((k) => <label key={k} className="inline-flex items-center gap-1.5 text-brand-900/80">
+                      <input type="checkbox" name={`event_${k}`} defaultChecked={m.notice!.events.includes(k)} /> {NOTICE_LABEL[k]}
+                    </label>)}
+                    <button className={smallButtonClass}>Guardar</button>
+                  </form>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge>No recibe</Badge>
+                    <ActionForm action={addNoticePhone} submit="Mandarle avisos" secondary className="flex flex-wrap items-center gap-2">
+                      {hidden(clinic.id, { name: m.name, phone: m.phone, ...Object.fromEntries(NOTICE_KINDS.map((k) => [`event_${k}`, "on"])) })}
+                    </ActionForm>
+                  </div>
+                )}
+              </dd>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {m.staff ? (
-                <>
-                  <Badge tone="green">Acceso total</Badge>
-                  <span className="text-brand-900/70">{m.staff.daily_summary ? `Recibe el resumen de las ${SUMMARY_HOUR}` : "No recibe el resumen"}</span>
+              <dt className="font-medium text-brand-950">Acceso total</dt>
+              <dd className="flex flex-wrap items-center gap-2">
+                {m.staff ? <Badge tone="green">Sí</Badge> : <Badge>No</Badge>}
+                {!m.staff && (admin ? (
+                  <ActionForm action={addStaffPhone} submit="Dar acceso total" secondary className="flex flex-wrap items-center gap-2">
+                    {hidden(clinic.id, { name: m.name, phone: m.phone })}
+                  </ActionForm>
+                ) : <span className="text-brand-900/65">Lo habilita Turnia.</span>)}
+                {m.staff && !canRemove && <span className="text-brand-900/60">Para quitárselo, pedíselo a Turnia.</span>}
+              </dd>
+
+              {m.staff && <>
+                <dt className="font-medium text-brand-950">Resumen de las {SUMMARY_HOUR}</dt>
+                <dd className="flex flex-wrap items-center gap-2">
+                  <Badge tone={m.staff.daily_summary ? "green" : "gray"}>{m.staff.daily_summary ? "Lo recibe" : "No lo recibe"}</Badge>
                   <form action={toggleStaffSummary}>
                     {hidden(clinic.id, { id: m.staff.id, on: m.staff.daily_summary ? "0" : "1" })}
                     <button className={smallButtonClass} aria-label={`${m.staff.daily_summary ? "Dejar de mandarle" : "Mandarle"} el resumen a ${m.name}`}>
-                      {m.staff.daily_summary ? "Sacar el resumen" : "Mandarle el resumen"}
+                      {m.staff.daily_summary ? "Sacárselo" : "Mandárselo"}
                     </button>
                   </form>
-                </>
-              ) : admin ? (
-                <ActionForm action={addStaffPhone} submit="Dar acceso total" secondary className="flex flex-wrap items-center gap-2">
-                  {hidden(clinic.id, { name: m.name, phone: m.phone })}
-                  <span className="text-brand-900/65">Sin acceso total.</span>
-                </ActionForm>
-              ) : (
-                <span className="text-brand-900/65">Sin acceso total ni resumen: los habilita Turnia.</span>
-              )}
-            </div>
+                </dd>
+              </>}
+            </dl>
             {m.notice && <NoticeTestButton clinicId={clinic.id} phoneId={m.notice.id} name={m.name} />}
-            {!canRemove && <p className="text-xs text-brand-900/60">Para quitarle el acceso total, pedíselo a Turnia.</p>}
           </li>;
         })}
       </ul>}

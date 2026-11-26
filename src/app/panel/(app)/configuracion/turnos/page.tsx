@@ -7,7 +7,6 @@ import { Badge, Field, inputClass } from "@/components/ui";
 import { saveBookingRules } from "../../../protocol-actions";
 import { BOOKING_WEEKDAYS, FIRST_SLOT_HOURS } from "@/lib/booking-rules";
 import { ConfigHeader, loadConfigConflicts, loadSmileSource } from "../header";
-import { healthFormSheet, healthFormSheetText } from "@/lib/health-form";
 import { ProfileSaveForm } from "../profile-save";
 import { Section, wide } from "../section";
 
@@ -23,13 +22,19 @@ export default async function BookingRulesPage() {
   const agent = clinic.agent_name || "Sofi";
   const dental = isDentalClinic(clinic, await getCatalog(clinic.id));
   const active = clinic.dental_protocol && dental;
-  const sheet = healthFormSheet(clinic);
 
   return (
     <>
       <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/turnos" conflicts={await loadConfigConflicts(clinic)} />
       <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveBookingRules} scope="turnos" agentName={agent}>
         <input type="hidden" name="rules_form" value="1" />
+        {/* Índice: la pestaña tiene varias secciones y con esto se llega a cada una sin bajar. */}
+        <nav aria-label="Secciones de la pestaña" className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+          <span className="text-brand-900/60">En esta pestaña:</span>
+          {[["dias", "Días"], ["primer-turno", "Primer turno"], ["mover", "Mover y cancelar"], ["seguimiento", "Si no contesta"], ["urgencias", "Urgencias"], ["fuera-de-horario", "Fuera de horario"], ...(admin ? [["protocolo", "Protocolo"]] : [])].map(([id, label]) => (
+            <a key={id} href={`#${id}`} className="font-medium text-brand-700 hover:underline">{label}</a>
+          ))}
+        </nav>
         <Section id="dias" title={`Días en que ${agent} da turnos`} description="Se aplica al ofrecer, reservar y elegir el nuevo día de una reprogramación. Los horarios de atención se conservan: el equipo puede seguir usando los otros días y la sincronización de la agenda no cambia esta regla.">
           <input type="hidden" name="booking_weekdays_field" value="1" />
           <fieldset className={wide}>
@@ -110,18 +115,6 @@ export default async function BookingRulesPage() {
           <Field label="Liberar las horas de urgencia (horas antes)" hint="Si nadie las usó, desde cuántas horas antes se ofrecen para cualquier turno. Vacío: nunca.">
             <input name="urgent_release_hours" type="number" min={1} max={72} defaultValue={clinic.urgent_release_hours ?? ""} className={inputClass} />
           </Field>
-        </Section>
-
-        <Section id="ficha-salud" title="Ficha de salud" description={`Si la cargás, ${agent} le manda al paciente la ficha de salud para completar por WhatsApp cuando saca su primer turno, y en la Agenda se imprime con este encabezado. Vacía: el paciente la completa en el consultorio.`}>
-          <input type="hidden" name="health_form_field" value="1" />
-          <Field label="Iniciales del logo" hint="Hasta 3 letras, por ejemplo CG.">
-            <input name="health_form_monogram" maxLength={3} defaultValue={sheet?.monogram ?? ""} className={inputClass} />
-          </Field>
-          <div className={wide}>
-            <Field label="Profesionales del encabezado" hint="Uno por bloque: el nombre en la primera línea y debajo sus datos (título, matrícula, especialidad). Un renglón en blanco entre profesionales. Hasta 4.">
-              <textarea name="health_form_text" rows={6} defaultValue={healthFormSheetText(sheet)} placeholder={"DRA. ANA EJEMPLO\nODONTÓLOGA\nM. N. 00000"} className={inputClass} />
-            </Field>
-          </div>
         </Section>
 
         <Section id="fuera-de-horario" title="Fuera de horario y derivación">

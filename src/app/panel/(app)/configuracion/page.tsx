@@ -5,6 +5,7 @@ import { getPanelClinic, getPanelUser, recentClinicChanges } from "@/lib/panel-c
 import { clinicInfoText, getCatalog, getClinic } from "@/lib/clinic";
 import { hoursTextMismatch, scheduleSummary } from "@/lib/hours-summary";
 import { HoursSuggestion } from "./hours-suggestion";
+import { healthFormSheet, healthFormSheetText } from "@/lib/health-form";
 import { listClinicAccess } from "@/lib/clinic-access";
 import { formatDateTime } from "@/lib/time";
 import { env } from "@/lib/env";
@@ -56,6 +57,7 @@ export default async function SettingsPage() {
     getCatalog(clinic.id),
   ]);
   const agendaHours = scheduleSummary(catalog.schedules);
+  const sheet = healthFormSheet(clinic);
   const hoursMismatch = hoursTextMismatch(clinic.hours_text, catalog.schedules);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
   const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
@@ -110,6 +112,18 @@ export default async function SettingsPage() {
                 </select>
               </Field>
               <div className={wide}><Field label="Instrucciones adicionales" hint={`Cómo atender, qué preguntar y qué evitar. El trato se elige arriba; las coberturas y sus excepciones, en Coberturas.`}><textarea name="agent_context" rows={5} defaultValue={clinic.agent_context ?? ""} className={inputClass} /></Field></div>
+            </Section>
+
+            <Section id="ficha-salud" title="Ficha de salud" description={`Si la cargás, ${agent} le manda al paciente la ficha de salud para completar por WhatsApp cuando saca su primer turno, y en la Agenda se imprime con este encabezado. Vacía: el paciente la completa en el consultorio.`}>
+              <input type="hidden" name="health_form_field" value="1" />
+              <Field label="Iniciales del logo" hint="Hasta 3 letras, por ejemplo CG.">
+                <input name="health_form_monogram" maxLength={3} defaultValue={sheet?.monogram ?? ""} className={inputClass} />
+              </Field>
+              <div className={wide}>
+                <Field label="Profesionales del encabezado" hint="Uno por bloque: el nombre en la primera línea y debajo sus datos (título, matrícula, especialidad). Un renglón en blanco entre profesionales. Hasta 4.">
+                  <textarea name="health_form_text" rows={6} defaultValue={healthFormSheetText(sheet)} placeholder={"DRA. ANA EJEMPLO\nODONTÓLOGA\nM. N. 00000"} className={inputClass} />
+                </Field>
+              </div>
             </Section>
           </ProfileSaveForm>
         </div>
