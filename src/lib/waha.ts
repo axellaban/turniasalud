@@ -30,6 +30,7 @@ export function verifyWahaHmac(rawBody: string, signature: string | null, algori
 export type WahaEvent = {
   event?: string;
   session?: string;
+  timestamp?: number;
   me?: { id?: string };
   payload?: WahaMessagePayload;
 };

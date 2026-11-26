@@ -1,0 +1,337 @@
+import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { sql, type TransactionSql as Tx } from "./db";
+import { notifyAxel } from "./chat-guard";
+
+// Radar de WhatsApp (WAHA) y del VPS donde corre. Solo lee: nunca reinicia, vincula ni cambia
+// una instancia. Lo dispara el cron de diez minutos y lo completa el aviso `session.status` que
+// manda cada WAHA al webhook. Guarda estado, eventos y muestras, nunca claves ni mensajes.
+
+export const RAM_ALERT_PCT = 90;
+export const DISK_ALERT_PCT = 85;
+/** Un contenedor de WAHA cerca de su tope de memoria: Docker lo mata y la sesión arranca de cero. */
+export const CONTAINER_ALERT_PCT = 90;
+const COOLDOWN_MS = 3 * 3600_000;
+const LOG_COOLDOWN_MS = 30 * 60_000;
+const KEEP_DAYS = 30;
+
+export type EasypanelConfig = { url: string; token: string; host: string };
+
+export function easypanelConfig(): EasypanelConfig | null {
+  const url = process.env.EASYPANEL_API_URL?.trim().replace(/\/$/, "");
+  const token = process.env.EASYPANEL_API_TOKEN?.trim();
+  if (!url || !token) return null;
+  try {
+    return { url, token, host: new URL(url).host };
+  } catch {
+    return null;
+  }
+}
+
+/** La clave con la que el lector de logs del VPS firma lo que manda. Sale del token, sin otra variable. */
+export function radarLogSecret(config = easypanelConfig()): string | null {
+  return config ? createHmac("sha256", config.token).update("turnia-waha-radar").digest("hex") : null;
+}
+
+export function verifyRadarSecret(header: string | null): boolean {
+  const secret = radarLogSecret();
+  const given = header?.replace(/^Bearer\s+/i, "") ?? "";
+  if (!secret || !given) return false;
+  const a = Buffer.from(given), b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export type RadarSession = { name: string; status: string; phone: string | null };
+export type RadarInstance = {
+  service: string;
+  reachable: boolean;
+  startedAt: string | null;
+  version: string | null;
+  memoryMb: number | null;
+  memoryLimitMb: number | null;
+  sessions: RadarSession[];
+  error: string | null;
+};
+export type RadarSnapshot = {
+  memoryPct: number | null;
+  memoryFreeMb: number | null;
+  diskPct: number | null;
+  cpuPct: number | null;
+  load1: number | null;
+  instances: RadarInstance[];
+  topMemory: Array<{ service: string; mb: number }>;
+};
+
+const round = (n: number, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
+/** Últimos cuatro dígitos: alcanza para saber qué línea es sin guardar el número. */
+const lastDigits = (jid: string | undefined | null) => (jid ? jid.split("@")[0].split(":")[0].slice(-4) || null : null);
+
+async function easypanel<T>(config: EasypanelConfig, path: string, query?: Record<string, string>): Promise<T> {
+  const qs = query ? "?" + new URLSearchParams(query).toString() : "";
+  const res = await fetch(config.url + "/" + path + qs, {
+    headers: { Authorization: "Bearer " + config.token }, cache: "no-store", signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error("Easypanel HTTP " + res.status + " en " + path);
+  const body = await res.json() as T | { json: T };
+  return body && typeof body === "object" && "json" in (body as object) ? (body as { json: T }).json : body as T;
+}
+
+type ServiceRow = { projectName: string; name: string; type: string; enabled?: boolean; source?: { image?: string }; resources?: { memoryLimit?: number } | null };
+type MonitorRow = { projectName: string; serviceName: string; stats?: { memory?: { usage?: number } } };
+type SystemStats = {
+  cpuInfo?: { usedPercentage?: number; loadavg?: number[] };
+  diskInfo?: { usedPercentage?: string | number };
+  memInfo?: { usedMemPercentage?: number; freeMemMb?: number };
+};
+
+const isWaha = (s: ServiceRow) => s.type === "app" && (s.source?.image?.includes("devlikeapro/waha") || /waha/.test(s.name));
+
+function envValue(env: string, name: string): string | null {
+  for (const line of env.split("\n")) {
+    const i = line.indexOf("=");
+    if (i > 0 && line.slice(0, i).trim() === name) return line.slice(i + 1).trim().replace(/^['"]|['"]$/g, "") || null;
+  }
+  return null;
+}
+
+async function readInstance(config: EasypanelConfig, service: ServiceRow, memory: Map<string, number>): Promise<RadarInstance> {
+  const id = service.projectName + "/" + service.name;
+  const base: RadarInstance = {
+    service: id, reachable: false, startedAt: null, version: null,
+    memoryMb: memory.has(id) ? round(memory.get(id)! / 1048576, 0) : null,
+    memoryLimitMb: service.resources?.memoryLimit || null, sessions: [], error: null,
+  };
+  try {
+    const detail = await easypanel<{ env?: string }>(config, "inspectAppService", { projectName: service.projectName, serviceName: service.name });
+    const key = envValue(detail.env ?? "", "WAHA_API_KEY");
+    if (!key) return { ...base, error: "Sin WAHA_API_KEY" };
+    // El dominio que Easypanel le da a cada servicio. WAHA_BASE_URL puede ser una dirección interna.
+    const url = "https://" + service.projectName + "-" + service.name + "." + config.host;
+    const get = (path: string) => fetch(url + path, { headers: { "X-Api-Key": key }, cache: "no-store", signal: AbortSignal.timeout(6000) });
+    const [sessions, status, version] = await Promise.all([get("/api/sessions?all=true"), get("/api/server/status"), get("/api/server/version")]);
+    if (!sessions.ok) return { ...base, error: "WAHA HTTP " + sessions.status };
+    const list = await sessions.json() as Array<{ name?: string; status?: string; me?: { id?: string } | null }>;
+    const started = status.ok ? (await status.json() as { startTimestamp?: number }).startTimestamp : null;
+    return {
+      ...base,
+      reachable: true,
+      startedAt: started ? new Date(started).toISOString() : null,
+      version: version.ok ? (await version.json() as { version?: string }).version ?? null : null,
+      sessions: list.map((s) => ({ name: s.name ?? "?", status: s.status ?? "UNKNOWN", phone: lastDigits(s.me?.id) })),
+    };
+  } catch (e) {
+    // Sin el texto crudo del proveedor: puede traer direcciones internas.
+    return { ...base, error: e instanceof Error && e.name === "TimeoutError" ? "No respondió a tiempo" : "No se pudo consultar" };
+  }
+}
+
+export async function readRadar(config: EasypanelConfig): Promise<RadarSnapshot> {
+  const [system, monitor, all] = await Promise.all([
+    easypanel<SystemStats>(config, "getLegacyMonitorSystemStats").catch(() => null),
+    easypanel<MonitorRow[]>(config, "getMonitorTableData").catch(() => []),
+    easypanel<{ services: ServiceRow[] }>(config, "listProjectsAndServices"),
+  ]);
+  const memory = new Map<string, number>();
+  for (const row of monitor ?? []) {
+    const usage = row.stats?.memory?.usage;
+    if (typeof usage === "number") memory.set(row.projectName + "/" + row.serviceName, usage);
+  }
+  const instances = await Promise.all(all.services.filter((s) => s.enabled !== false && isWaha(s)).map((s) => readInstance(config, s, memory)));
+  const disk = Number(system?.diskInfo?.usedPercentage);
+  return {
+    memoryPct: typeof system?.memInfo?.usedMemPercentage === "number" ? round(system.memInfo.usedMemPercentage) : null,
+    memoryFreeMb: typeof system?.memInfo?.freeMemMb === "number" ? round(system.memInfo.freeMemMb, 0) : null,
+    diskPct: Number.isFinite(disk) ? round(disk) : null,
+    cpuPct: typeof system?.cpuInfo?.usedPercentage === "number" ? round(system.cpuInfo.usedPercentage) : null,
+    load1: system?.cpuInfo?.loadavg?.[0] ?? null,
+    instances: instances.sort((a, b) => a.service.localeCompare(b.service)),
+    topMemory: [...memory].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([service, bytes]) => ({ service, mb: round(bytes / 1048576, 0) })),
+  };
+}
+
+type Alert = string;
+
+async function state<T>(tx: Tx, key: string): Promise<T | null> {
+  const [row] = await tx<{ value: T }[]>`select value from infra_radar_state where key = ${key} for update`;
+  return row?.value ?? null;
+}
+async function setState(tx: Tx, key: string, value: unknown) {
+  await tx`insert into infra_radar_state (key, value, updated_at) values (${key}, ${tx.json(value as never)}, now())
+    on conflict (key) do update set value = excluded.value, updated_at = now()`;
+}
+async function event(tx: Tx, kind: string, subject: string, detail: Record<string, unknown>, dedupe: string | null = null) {
+  const rows = await tx`insert into infra_radar_events (kind, subject, detail, dedupe, created_at) values (${kind}, ${subject}, ${tx.json(detail as never)}, ${dedupe}, clock_timestamp())
+    on conflict (dedupe) where dedupe is not null do nothing returning id`;
+  return rows.length > 0;
+}
+/** Avisa una vez cada `ms` por tema: una RAM alta sostenida no tiene que llegar cada diez minutos. */
+async function cooled(tx: Tx, key: string, ms = COOLDOWN_MS): Promise<boolean> {
+  const last = await state<{ at: string }>(tx, "alert:" + key);
+  if (last && Date.parse(last.at) > Date.now() - ms) return false;
+  await setState(tx, "alert:" + key, { at: new Date().toISOString() });
+  return true;
+}
+
+type InstanceState = { reachable: boolean; startedAt: string | null; sessions: Record<string, string> };
+
+/** Compara con la corrida anterior, guarda eventos y devuelve lo que hay que avisar. */
+export async function recordRadar(snapshot: RadarSnapshot): Promise<Alert[]> {
+  return sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended('infra-radar', 0))`;
+    const alerts: Alert[] = [];
+    for (const inst of snapshot.instances) {
+      const key = "waha:" + inst.service;
+      const prev = await state<InstanceState>(tx, key);
+      const sessions = Object.fromEntries(inst.sessions.map((s) => [s.name, s.status]));
+      if (prev && prev.reachable && !inst.reachable) {
+        await event(tx, "unreachable", inst.service, { error: inst.error });
+        alerts.push("🔴 " + inst.service + " no responde (" + (inst.error ?? "sin detalle") + ").");
+      } else if (prev && !prev.reachable && inst.reachable) {
+        await event(tx, "reachable", inst.service, {});
+        alerts.push("🟢 " + inst.service + " volvió a responder.");
+      }
+      if (inst.reachable && prev?.startedAt && inst.startedAt && prev.startedAt !== inst.startedAt) {
+        await event(tx, "restart", inst.service, { from: prev.startedAt, to: inst.startedAt, version: inst.version });
+        alerts.push("🔁 " + inst.service + " se reinició (" + new Date(inst.startedAt).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }) + ").");
+      }
+      if (inst.reachable) {
+        for (const s of inst.sessions) {
+          const before = prev?.sessions?.[s.name] ?? null;
+          if (before === s.status) continue;
+          await event(tx, "session", inst.service + "/" + s.name, { from: before, to: s.status, phone: s.phone });
+          // La primera vez que se ve una sesión no se avisa: es el punto de partida del radar.
+          if (before !== null) {
+            const line = s.phone ? " (…" + s.phone + ")" : "";
+            alerts.push(s.status === "WORKING"
+              ? "🟢 WhatsApp" + line + " volvió a WORKING en " + inst.service + "."
+              : "🔴 WhatsApp" + line + " pasó de " + before + " a " + s.status + " en " + inst.service + ". Revisar antes de reenviar avisos.");
+          }
+        }
+      }
+      if (inst.memoryMb && inst.memoryLimitMb && inst.memoryMb >= inst.memoryLimitMb * CONTAINER_ALERT_PCT / 100 && await cooled(tx, "container:" + inst.service)) {
+        await event(tx, "container_memory", inst.service, { mb: inst.memoryMb, limit: inst.memoryLimitMb });
+        alerts.push("🟠 " + inst.service + " usa " + inst.memoryMb + " de " + inst.memoryLimitMb + " MB: cerca del tope, Docker lo puede reiniciar.");
+      }
+      await setState(tx, key, inst.reachable
+        ? { reachable: true, startedAt: inst.startedAt, sessions }
+        : { reachable: false, startedAt: prev?.startedAt ?? null, sessions: prev?.sessions ?? {} });
+    }
+    const top = snapshot.topMemory.map((t) => t.service + " " + t.mb + " MB").join(", ");
+    if (snapshot.memoryPct !== null && snapshot.memoryPct >= RAM_ALERT_PCT && await cooled(tx, "memory")) {
+      await event(tx, "memory", "vps", { pct: snapshot.memoryPct, freeMb: snapshot.memoryFreeMb, top: snapshot.topMemory });
+      alerts.push("🟠 RAM del VPS al " + snapshot.memoryPct + " % (" + snapshot.memoryFreeMb + " MB libres). Más usan: " + top + ".");
+    }
+    if (snapshot.diskPct !== null && snapshot.diskPct >= DISK_ALERT_PCT && await cooled(tx, "disk")) {
+      await event(tx, "disk", "vps", { pct: snapshot.diskPct });
+      alerts.push("🟠 Disco del VPS al " + snapshot.diskPct + " %.");
+    }
+    await tx`insert into infra_radar_samples (memory_pct, disk_pct, cpu_pct, load1, instances)
+      values (${snapshot.memoryPct}, ${snapshot.diskPct}, ${snapshot.cpuPct}, ${snapshot.load1}, ${tx.json(snapshot.instances.map((i) => ({
+        service: i.service, reachable: i.reachable, memoryMb: i.memoryMb, sessions: i.sessions,
+      })) as never)})`;
+    await tx`delete from infra_radar_samples where created_at < now() - make_interval(days => ${KEEP_DAYS})`;
+    await tx`delete from infra_radar_events where created_at < now() - make_interval(days => ${KEEP_DAYS})`;
+    return alerts;
+  });
+}
+
+/** Corrida del cron. Sin Easypanel configurado no hace nada (y lo dice). */
+export async function runInfraRadar() {
+  const config = easypanelConfig();
+  if (!config) return { configured: false as const };
+  let snapshot: RadarSnapshot;
+  try {
+    snapshot = await readRadar(config);
+  } catch (e) {
+    const alerts = await sql.begin(async (tx) => {
+      await event(tx, "easypanel_error", "vps", { error: e instanceof Error ? e.message : "error" });
+      return await cooled(tx, "easypanel", 3600_000) ? ["🔴 El radar no pudo leer Easypanel: el VPS puede estar caído."] : [];
+    });
+    if (alerts.length) await notifyAxel("⚠️ Turnia · radar\n" + alerts.join("\n"));
+    return { configured: true as const, error: "No se pudo leer Easypanel" };
+  }
+  const alerts = await recordRadar(snapshot);
+  if (alerts.length) await notifyAxel("⚠️ Turnia · radar de WhatsApp\n" + alerts.join("\n"));
+  return {
+    configured: true as const,
+    ram: snapshot.memoryPct, disco: snapshot.diskPct,
+    instancias: snapshot.instances.map((i) => ({ servicio: i.service, ok: i.reachable, sesiones: i.sessions.map((s) => (s.phone ? "…" + s.phone + " " : "") + s.status) })),
+    avisos: alerts.length,
+  };
+}
+
+/** El aviso `session.status` de WAHA, en el momento en que pasa (el cron lo vería hasta diez minutos después). */
+export async function recordSessionStatus(input: { line: string; session: string; status: string; phone: string | null; at: string | null }) {
+  const subject = input.line + "/" + input.session;
+  const alert = await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(hashtextextended(${"infra-radar-hook:" + subject}::text, 0))`;
+    const prev = await state<{ status: string }>(tx, "hook:" + subject);
+    await setState(tx, "hook:" + subject, { status: input.status, at: input.at });
+    if (prev?.status === input.status) return null;
+    await event(tx, "webhook_status", subject, { from: prev?.status ?? null, to: input.status, phone: lastDigits(input.phone), at: input.at });
+    // STARTING es de paso: se avisa cuando se cae o cuando vuelve.
+    if (input.status === "STARTING" || !prev) return null;
+    const line = input.phone ? " (…" + lastDigits(input.phone) + ")" : "";
+    if (input.status === "WORKING") return prev.status === "WORKING" ? null : "🟢 WhatsApp" + line + " volvió a WORKING (" + input.line + ").";
+    return "🔴 WhatsApp" + line + " pasó a " + input.status + " (" + input.line + "). Ver radar en los logs.";
+  });
+  if (alert) await notifyAxel("⚠️ Turnia · WhatsApp\n" + alert);
+  return alert;
+}
+
+/** Lo que importa de un log de WAHA para entender una caída. */
+const IMPORTANT = /logged ?out|logout|conflict|replaced|FAILED|SCAN_QR|stream errored|connection (closed|lost|failure)|restart required|bad ?session|unauthorized|ECONN|ETIMEDOUT|heap|out of memory|killed|status (code )?(401|403|408|411|428|440|500|503|515)/i;
+const NOISE = /request completed|POST request was sent with status code: 2\d\d|Sending POST|Closing session|SessionEntry|privKey|rootKey|<Buffer|Mapped \{|non-existent (message|contact)|failed to decrypt poll vote/i;
+
+/** Saca teléfonos y JIDs: un log puede traer el número de un paciente. */
+export function redactLogLine(text: string): string {
+  return text
+    .replace(/"(notify|pushName|verifiedName|name|subject)"\s*:\s*"[^"]*"/g, '"$1":"…"')
+    .replace(/\d{6,}(?=@|:\d+@)/g, (m) => "…" + m.slice(-4))
+    .replace(/\+?\d[\d\s-]{8,}\d/g, (m) => "…" + m.replace(/\D/g, "").slice(-4))
+    .slice(0, 1000);
+}
+
+export type LogLine = { at?: string | null; level?: string | null; text: string };
+
+/** Lo que manda el lector de logs del VPS. Guarda solo advertencias, errores y cambios de estado. */
+export async function ingestWahaLogs(service: string, lines: LogLine[]) {
+  const kept = lines
+    .filter((l) => l.text && !NOISE.test(l.text) && (/WARN|ERROR|FATAL/i.test(l.level ?? "") || IMPORTANT.test(l.text)))
+    .slice(0, 200)
+    .map((l) => ({ ...l, text: redactLogLine(l.text) }));
+  const result = await sql.begin(async (tx) => {
+    await setState(tx, "logs:" + service, { at: new Date().toISOString() });
+    let saved = 0, important = 0;
+    for (const l of kept) {
+      const key = service + ":" + createHmac("sha256", "radar").update(l.text).digest("hex").slice(0, 32);
+      if (!(await event(tx, "log", service, { at: l.at ?? null, level: l.level ?? null, text: l.text }, key))) continue;
+      saved++;
+      if (IMPORTANT.test(l.text)) important++;
+    }
+    const alert = important > 0 && await cooled(tx, "log:" + service, LOG_COOLDOWN_MS);
+    return { saved, important, alert };
+  });
+  if (result.alert) {
+    const sample = kept.filter((l) => IMPORTANT.test(l.text)).slice(-2).map((l) => "· " + l.text.slice(0, 180)).join("\n");
+    await notifyAxel("⚠️ Turnia · log de " + service + "\n" + sample);
+  }
+  return { saved: result.saved, important: result.important };
+}
+
+export type RadarOverview = {
+  configured: boolean;
+  sample: { created_at: string; memory_pct: number | null; disk_pct: number | null; cpu_pct: number | null; instances: Array<{ service: string; reachable: boolean; memoryMb: number | null; sessions: RadarSession[] }> } | null;
+  events: Array<{ kind: string; subject: string; detail: Record<string, unknown>; created_at: string }>;
+  logsSeenAt: string | null;
+};
+
+export async function radarOverview(): Promise<RadarOverview> {
+  const [[sample], events, logs] = await Promise.all([
+    sql<NonNullable<RadarOverview["sample"]>[]>`select created_at, memory_pct::float8 as memory_pct, disk_pct::float8 as disk_pct, cpu_pct::float8 as cpu_pct, instances
+      from infra_radar_samples order by created_at desc limit 1`,
+    sql<RadarOverview["events"]>`select kind, subject, detail, created_at from infra_radar_events order by created_at desc limit 40`,
+    sql<{ at: string }[]>`select max(value->>'at') as at from infra_radar_state where key like 'logs:%'`,
+  ]);
+  return { configured: Boolean(easypanelConfig()), sample: sample ?? null, events, logsSeenAt: logs[0]?.at ?? null };
+}
