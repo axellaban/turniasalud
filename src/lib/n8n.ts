@@ -15,12 +15,12 @@ async function isDemoClinic(clinicId: unknown): Promise<boolean> {
  * Manda un evento al webhook de n8n (si está configurado). Nunca rompe el flujo
  * principal: si n8n no responde, el turno igual queda reservado.
  */
-export async function notifyN8n(event: string, payload: Record<string, unknown>): Promise<void> {
+export async function notifyN8n(event: string, payload: Record<string, unknown>): Promise<boolean> {
   const url = env.n8nWebhookUrl();
-  if (!url) return;
+  if (!url) return false;
   try {
-    if (await isDemoClinic(payload.clinic_id)) return;
-    await fetch(url, {
+    if (await isDemoClinic(payload.clinic_id)) return false;
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -29,7 +29,10 @@ export async function notifyN8n(event: string, payload: Record<string, unknown>)
       body: JSON.stringify({ event, sent_at: new Date().toISOString(), ...payload }),
       signal: AbortSignal.timeout(4000),
     });
+    if (!response.ok) console.error(`n8n: HTTP ${response.status} al enviar ${event}`);
+    return response.ok;
   } catch (e) {
     console.error(`n8n: no se pudo enviar ${event}`, e);
+    return false;
   }
 }

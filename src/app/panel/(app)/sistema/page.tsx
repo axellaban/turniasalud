@@ -12,6 +12,8 @@ import { Canales } from "./canales";
 import { DemoLimitForm } from "./demo-limit";
 import { RadarCard } from "./radar-card";
 import { radarOverview } from "@/lib/infra-radar";
+import { testAxelEmail } from "../../alert-actions";
+import { ActionForm } from "../configuracion/action-form";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Sistema · Panel" };
@@ -92,6 +94,14 @@ export default async function SystemPage() {
 
         <div className="space-y-6">
           <RadarCard radar={radar} />
+
+          <Card>
+            <h2 className="mb-1 font-semibold text-brand-950">Avisos técnicos por email</h2>
+            <p className="mb-3 text-sm text-brand-900/70">Respaldo al correo configurado en n8n cuando falla el WhatsApp general. Depende de que n8n esté disponible.</p>
+            <ActionForm action={testAxelEmail} submit="Probar email de respaldo">
+              <p className="text-xs text-brand-900/60">El mensaje incluye un código para identificarlo en tu correo.</p>
+            </ActionForm>
+          </Card>
 
           <Card>
             <h2 className="mb-1 font-semibold text-brand-950">WhatsApp por WAHA</h2>
