@@ -148,6 +148,7 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean, opts: { dental
     clinic.payment_methods && `Formas de pago:\n${clinic.payment_methods}`,
     clinic.tone === "usted" && "Trato: de usted con todos los pacientes, en todos los mensajes y desde el primero.",
     clinic.tone === "vos" && "Trato: de vos.",
+    clinic.tone === "espejo" && "Trato: como escribe el paciente (de vos si vosea o tutea, de usted si usa usted).",
     bookingDaysText(clinic.booking_weekdays),
     rescheduleRulesText(clinic),
     clinic.dental_protocol && dental && DENTAL_PROTOCOL,
@@ -339,7 +340,7 @@ export async function patientContextText(clinic: Clinic, patient: Patient | null
     patient.coverage && !particular && `Número de afiliado: ${loaded(patient.member_number)}`,
     missing.length ? `Faltan en la ficha (pedilos antes de reservar): ${missing.join(", ")}` : "La ficha está completa.",
     last
-      ? `Ya se atendió en el consultorio. Última visita: ${formatDate(`${last.visited_at}T12:00:00Z`, "UTC")}${last.service ? ` (${last.service})` : ""}${last.visited_at < yearAgo ? ", hace más de un año" : ""}. No le preguntes si ya vino antes.`
+      ? `Ya se atendió en el consultorio. Última visita: ${formatDate(`${last.visited_at}T12:00:00Z`, "UTC")}${last.service ? ` (${last.service})` : ""}${last.visited_at < yearAgo ? ", hace más de un año" : ""}. Si el turno es para esta persona, no le preguntes si ya vino antes; si todavía no sabés para quién es, no lo menciones.`
       : "Todavía no tiene visitas registradas en el consultorio.",
     patient.preferences && `Preferencias: ${patient.preferences}`,
     patient.memory_summary &&
@@ -373,16 +374,19 @@ export async function findPatientByPhone(clinicId: string, phone: string): Promi
 export const INBOUND_CONTEXT = "El paciente inició la conversación.";
 
 /** Trato de la clínica: lo que eligió en el panel o, si no eligió, lo que piden sus instrucciones. */
-export function clinicTone(clinic: Pick<Clinic, "tone" | "agent_context">): "usted" | "vos" {
+export function clinicTone(clinic: Pick<Clinic, "tone" | "agent_context">): "usted" | "vos" | "espejo" {
   if (clinic.tone) return clinic.tone;
   return /\b(tratar|trato|trate)\b[^.\n]{0,30}\bde usted\b/i.test(clinic.agent_context ?? "") ? "usted" : "vos";
 }
 
 /** Va arriba de todo en el prompt ({{trato}}): así Sofi escribe en el trato correcto desde la primera palabra. */
 export function toneText(clinic: Pick<Clinic, "tone" | "agent_context">): string {
-  const tone = clinicTone(clinic) === "usted"
+  const chosen = clinicTone(clinic);
+  const tone = chosen === "usted"
     ? 'Tratás de usted a todos, pacientes y equipo ("usted", "tiene", "quiere", "le"), en cada mensaje desde la primera palabra, aunque te tuteen.'
-    : 'Tratás de vos, con voseo ("vos", "tenés", "querés", "te").';
+    : chosen === "espejo"
+      ? 'Tratás a cada persona como te escribe: si vosea o tutea, de vos con voseo rioplatense ("vos", "tenés", "querés", "te"); si usa usted, de usted. Si todavía no se nota (un "hola" solo), de usted.'
+      : 'Tratás de vos, con voseo ("vos", "tenés", "querés", "te").';
   return `${tone} Si alguna vez se te escapa el otro trato, seguí con el correcto sin pedir perdón ni repetir el mensaje.`;
 }
 

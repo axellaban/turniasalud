@@ -125,6 +125,11 @@ export async function saveBookingRules(_previous: FormState, form: FormData): Pr
     fields.move_panel_only = form.get("move_panel_only") === "on";
     fields.verify_appointment_access = form.get("verify_appointment_access") === "on";
   }
+  // Modo prueba: celulares de testers (solo Turnia).
+  if (user.role === "admin" && form.has("test_phones")) {
+    const phones = (text(form, "test_phones") ?? "").split(/[\n,;]+/).map((p) => normalizePhone(p)).filter((p) => /^\d{8,15}$/.test(p));
+    fields.test_phones = [...new Set(phones)].slice(0, 20);
+  }
   // Prender o apagar el protocolo odontológico es una decisión de Turnia.
   if (user.role === "admin" && form.has("dental_protocol_field")) fields.dental_protocol = form.get("dental_protocol") === "on";
   if (Object.keys(fields).length) await sql`update clinics set ${sql(fields)} where id = ${clinic.id}`;

@@ -320,6 +320,45 @@ export async function identifyPatient(
   });
 }
 
+export type AppointmentIdentification =
+  | { estado: "vinculado"; patient: Patient }
+  | { estado: "sin_turno" | "varios" | "sin_permiso" };
+
+/**
+ * Un familiar escribe por un turno ya dado («mi mamá Graciela tiene turno el jueves a las 10»): sin
+ * el DNI, alcanza con el nombre y apellido del paciente y el día del turno (y la hora, si la dijo).
+ * Solo si hay un único paciente con ese nombre y un turno vigente ese día da el mismo permiso temporal
+ * que buscar_paciente con para_turno_existente: gestionar turnos en esta charla, sin unir el número a
+ * la ficha ni ver otros datos. Si hay más de uno, hace falta el DNI. Requiere que la clínica use el
+ * permiso temporal (sin él, gestionar un turno desde otro número siempre pide el DNI).
+ */
+export async function identifyByAppointment(
+  clinicId: string,
+  phone: string,
+  input: { name: string; date: string; time?: string | null; conversationId?: string },
+): Promise<AppointmentIdentification> {
+  const accessKey = appointmentAccessKey({ clinicId, patientPhone: phone, conversationId: input.conversationId }, await appointmentAccessEnabled(clinicId));
+  if (!accessKey) return { estado: "sin_permiso" };
+  const time = input.time && /^\d{1,2}:\d{2}$/.test(input.time) ? input.time.padStart(5, "0") : null;
+  const rows = await sql<Array<Patient & { appointment_id: string }>>`
+    select p.*, a.id as appointment_id
+    from appointments a
+    join patients p on p.id = a.patient_id
+    join clinics c on c.id = a.clinic_id
+    where a.clinic_id = ${clinicId}
+      and a.status in ('confirmado', 'pendiente')
+      and a.starts_at > now()
+      and (a.starts_at at time zone c.timezone)::date = ${input.date}::date
+      ${time ? sql`and to_char(a.starts_at at time zone c.timezone, 'HH24:MI') = ${time}` : sql``}`;
+  const matches = new Map<string, Patient>();
+  for (const row of rows) if (namesMatch(input.name, row.full_name)) matches.set(row.id, row);
+  if (matches.size === 0) return { estado: "sin_turno" };
+  if (matches.size > 1) return { estado: "varios" };
+  const [patient] = [...matches.values()];
+  await sql.begin((tx) => grantAppointmentAccess(tx, accessKey, patient.id));
+  return { estado: "vinculado", patient };
+}
+
 /** Otras fichas de la clínica con el mismo DNI (para unificarlas desde el panel). */
 export async function duplicatesOf(patient: Pick<Patient, "id" | "clinic_id" | "dni">): Promise<Patient[]> {
   const dni = normalizeDni(patient.dni);

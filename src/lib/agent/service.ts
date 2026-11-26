@@ -1,7 +1,7 @@
 import "server-only";
 import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
-import { addHouseholdMember, findOrCreatePatientForPhone, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
+import { addHouseholdMember, findOrCreatePatientForPhone, identifyByAppointment, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
 import { computeSlots, expandBlocks, isOpenAt, isSlotFree, type BusyInterval, type ScheduleBlock, type SlotQuery } from "../slots";
 import { agentBookingDayAllowed, agentCanMove, agentSchedules, bookingDaysText, checkCoverage, coverageKey, durationPhrase, firstSlotOfDayBlocked, isParticular, parseTerms, professionalDoes, receptionOnlyTerm, schedulesForTypes } from "../booking-rules";
 import { env } from "../env";
@@ -37,6 +37,8 @@ export type ToolContext = {
    * de herramientas, nunca el modelo.
    */
   staff?: { name: string } | null;
+  /** Escribe un tester de la clínica (clinics.test_phones): nada le llega al equipo ni toca la agenda. */
+  testMode?: boolean;
 };
 
 export class ToolError extends Error {
@@ -315,7 +317,7 @@ export async function registerPatient(
 // ---------------------------------------------------------------------------
 export async function findPatientByDni(
   ctx: ToolContext,
-  input: { dni: string; fecha_nacimiento?: string; nombre_completo?: string; para_turno_existente?: boolean },
+  input: { dni?: string; fecha_turno?: string; hora_turno?: string; fecha_nacimiento?: string; nombre_completo?: string; para_turno_existente?: boolean },
 ) {
   const phone = normalizePhone(ctx.patientPhone);
   if (!phone || phone === "desconocido") throw new ToolError("No tengo el teléfono del paciente para identificarlo.");
@@ -323,6 +325,7 @@ export async function findPatientByDni(
     throw new ToolError("No pude verificar esta conversación para gestionar el turno. Ofrecé que recepción revise el pedido.");
   }
   await expireAppointmentAccess(ctx);
+  if (!input.dni) return findByAppointment(ctx, phone, input);
   const dni = normalizeDni(input.dni);
   if (!dni) return { ok: true, encontrado: false, mensaje: "Ese DNI no parece válido. Pedíselo de nuevo, solo números." };
   const result = await identifyPatient(ctx.clinicId, phone, {
@@ -349,6 +352,48 @@ export async function findPatientByDni(
       : "Es paciente del consultorio y quedó identificado: esta conversación ya usa su ficha. Llamalo por su nombre (sin volver a saludar), no le vuelvas a pedir los datos cargados y pedí solo los que faltan.",
     ficha: await patientContextText(await getClinic(ctx.clinicId), result.patient, phone),
   };
+}
+
+/** buscar_paciente sin DNI: un turno existente por el nombre del paciente y el día (y la hora) del turno. */
+async function findByAppointment(
+  ctx: ToolContext,
+  phone: string,
+  input: { fecha_turno?: string; hora_turno?: string; nombre_completo?: string; para_turno_existente?: boolean },
+): Promise<{ ok: true; encontrado: boolean | null; solo_turnos?: boolean; mensaje: string; ficha?: string }> {
+  const date = parseDateKey(input.fecha_turno);
+  if (!input.para_turno_existente || !input.nombre_completo || !date) {
+    return {
+      ok: true,
+      encontrado: null,
+      mensaje: input.para_turno_existente
+        ? "Para encontrar el turno necesito el nombre y apellido del paciente y el día del turno (o su DNI). Pedí solo lo que falte y volvé a buscar."
+        : "Para buscar la ficha necesito el DNI y el nombre y apellido. Pedí solo lo que falte y volvé a buscar.",
+    };
+  }
+  const result = await identifyByAppointment(ctx.clinicId, phone, {
+    name: input.nombre_completo,
+    date,
+    time: input.hora_turno,
+    conversationId: ctx.conversationId,
+  });
+  switch (result.estado) {
+    case "sin_permiso":
+    case "varios":
+      return { ok: true, encontrado: null, mensaje: "Para ubicar ese turno necesito también el DNI del paciente. Pedíselo y volvé a llamar a buscar_paciente con el DNI y el nombre (para_turno_existente=true)." };
+    case "sin_turno":
+      return {
+        ok: true,
+        encontrado: false,
+        mensaje: "No encontré un turno vigente con ese nombre ese día. No digas que el turno existe ni que sigue reservado: decile que no lo pudiste ubicar. Si el día que dijo no es un día de atención del consultorio, mencionalo con tacto. Pedí que revise el día o el DNI del paciente, o ofrecé que recepción lo revise.",
+      };
+    case "vinculado":
+      return {
+        ok: true,
+        encontrado: true,
+        solo_turnos: true,
+        mensaje: "Encontré el turno: identidad verificada para gestionar turnos de esa persona en esta conversación. Usá ver_turnos_paciente para ver el turno pedido. Confirmá el turno y el cambio antes de ejecutarlo. El permiso no incluye otros trámites ni datos de la ficha.",
+      };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1780,6 +1825,14 @@ export async function rescheduleClinicAppointment(
 // ---------------------------------------------------------------------------
 // crear_tarea (recetas, consultas clínicas, derivación a una persona, urgencias)
 // ---------------------------------------------------------------------------
+/** ¿Escribe un tester (Configuración → Turnos y urgencias → Modo prueba)? Lo que pide no le llega al equipo. */
+export async function isTesterPhone(clinicId: string, phone: string): Promise<boolean> {
+  const normalized = normalizePhone(phone);
+  if (!/^\d{8,15}$/.test(normalized)) return false;
+  const [row] = await sql<{ test_phones: string[] | null }[]>`select test_phones from clinics where id = ${clinicId}`;
+  return (row?.test_phones ?? []).some((p) => normalizePhone(p) === normalized);
+}
+
 export async function createTask(
   ctx: ToolContext,
   input: { tipo: TaskType; prioridad?: TaskPriority; titulo: string; detalle?: string },
@@ -1804,8 +1857,17 @@ export async function createTask(
       priority: input.prioridad ?? (input.tipo === "urgencia" ? "urgente" : "normal"),
       title: input.titulo,
       details: input.detalle ?? null,
+      ...(ctx.testMode && { is_test: true, status: "resuelta", resolved_at: new Date() }),
     })}
     returning *`;
+  if (ctx.testMode) {
+    return {
+      ok: true,
+      tarea_id: task.id,
+      modo_prueba: true,
+      mensaje: "MODO PRUEBA: la tarea quedó registrada como prueba y NO le llega al equipo. Respondé como lo harías con un paciente real.",
+    };
+  }
   // n8n avisa a recepción con el link al panel (derivación a una persona, urgencias, recetas…).
   await notifyN8n("tarea.creada", {
     clinic_id: clinic.id,
@@ -1819,6 +1881,45 @@ export async function createTask(
     mensaje: openNow
       ? "Tarea creada para el equipo. Avisale al paciente que lo van a contactar a la brevedad."
       : "Tarea creada para el equipo. Ahora estamos fuera del horario de atención: avisale al paciente que lo contactan apenas abramos, y si es urgente repetí las indicaciones de urgencia.",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// anular_tarea: dejar sin efecto un pedido que Sofi hizo en esta misma charla
+// ---------------------------------------------------------------------------
+export async function voidTask(ctx: ToolContext, input: { tarea_id?: string; motivo?: string }) {
+  if (!ctx.conversationId) throw new ToolError("No puedo identificar esta conversación para anular el pedido. Ofrecé que recepción lo revise.");
+  if (input.tarea_id && !isUuid(input.tarea_id)) throw new ToolError("Ese tarea_id no es válido: usá el que devolvió crear_tarea, o no lo mandes para anular todos los pedidos de esta charla.");
+  const own = await sql<Task[]>`
+    select * from tasks
+    where clinic_id = ${ctx.clinicId} and conversation_id = ${ctx.conversationId} and voided_at is null
+      ${input.tarea_id ? sql`and id = ${input.tarea_id}` : sql``}
+    order by created_at desc`;
+  if (!own.length) {
+    return {
+      ok: false,
+      error: "No hay pedidos de esta conversación para anular (solo se pueden anular los que hiciste en esta misma charla). No digas que lo anulaste: ofrecé avisarle a recepción con crear_tarea.",
+    };
+  }
+  const note = `[Sin efecto${input.motivo ? `: ${input.motivo.slice(0, 300)}` : ""}]`;
+  const voided = await sql<Task[]>`
+    update tasks set
+      voided_at = now(),
+      status = 'resuelta',
+      resolved_at = coalesce(resolved_at, now()),
+      details = trim(both from coalesce(details, '') || ' ' || ${note}::text)
+    where id = any(${own.map((t) => t.id)}::uuid[])
+    returning *`;
+  // Si el pedido ya le había llegado al equipo, n8n avisa que quedó sin efecto.
+  const notified = voided.filter((t) => !t.is_test);
+  if (notified.length) {
+    const clinic = await getClinic(ctx.clinicId);
+    for (const task of notified) await notifyN8n("tarea.anulada", { clinic_id: clinic.id, task, motivo: input.motivo ?? null });
+  }
+  return {
+    ok: true,
+    anuladas: voided.map((t) => ({ tarea_id: t.id, titulo: t.title })),
+    mensaje: `${voided.length === 1 ? "El pedido quedó" : `Los ${voided.length} pedidos quedaron`} sin efecto en el panel del consultorio. Decíselo en una línea, sin decir que avisaste a nadie más.`,
   };
 }
 

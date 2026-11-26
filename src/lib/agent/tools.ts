@@ -48,15 +48,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "buscar_paciente",
     description:
-      "Con un paciente (no con el equipo: para eso es equipo_buscar_pacientes). Busca la ficha de quien te escribe y dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
+      "Con un paciente (no con el equipo: para eso es equipo_buscar_pacientes). Busca la ficha de quien te escribe y dice (o da a entender) que ya es paciente, cuando el contexto no trae su ficha: escribe desde otro número o por la web. Necesitás su DNI y su nombre y apellido: si ya te los dijo, usala enseguida sin volver a pedírselos. Solo si hace falta te va a pedir la fecha de nacimiento. Para un turno existente (también si escribe un familiar) alcanza con el nombre y apellido del paciente y el día del turno (fecha_turno, y hora_turno si la dijo), sin DNI: pedí el DNI solo si la herramienta lo pide. Para un turno existente mandá para_turno_existente=true en cada intento. Si devuelve solo_turnos, continuá con ver_turnos_paciente y gestioná solo el turno pedido.",
     params: {
-      dni: { type: "string", description: "DNI, solo números.", required: true },
+      dni: { type: "string", description: "DNI, solo números. Para un turno existente puede faltar si mandás nombre_completo y fecha_turno." },
+      fecha_turno: { type: "string", description: `Solo para un turno existente sin DNI: el día del turno que dijo el paciente. ${isoDate}` },
+      hora_turno: { type: "string", description: "Solo con fecha_turno: la hora del turno que dijo, HH:MM en 24 h." },
       fecha_nacimiento: { type: "string", description: isoDate },
       para_turno_existente: { type: "boolean", description: "true si busca confirmar, mover o cancelar un turno que ya existe. Repetilo si te pide verificar otro dato." },
       nombre_completo: { type: "string", description: "Nombre y apellido, si te lo dijo." },
     },
     schema: z.object({
-      dni: z.string().min(1),
+      dni: z.string().min(1).optional(),
+      fecha_turno: z.string().optional(),
+      hora_turno: z.string().optional(),
       fecha_nacimiento: z.string().optional(),
       para_turno_existente: z.boolean().optional(),
       nombre_completo: z.string().optional(),
@@ -214,6 +218,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       titulo: z.string().min(1),
       detalle: z.string().optional(),
     }),
+  },
+  {
+    name: "anular_tarea",
+    description:
+      "Deja sin efecto un pedido al equipo (crear_tarea) que hiciste en esta misma charla: el paciente se arrepiente, ya lo resolvió o avisa que era una prueba. Sin tarea_id, anula todos los pedidos de esta charla. Solo decí que quedó sin efecto si devuelve ok.",
+    params: {
+      tarea_id: { type: "string", description: "tarea_id que devolvió crear_tarea. Vacío: todos los de esta charla." },
+      motivo: { type: "string", description: "Por qué queda sin efecto, en pocas palabras." },
+    },
+    schema: z.object({ tarea_id: z.string().optional(), motivo: z.string().optional() }),
   },
   {
     name: "anotar_lista_espera",

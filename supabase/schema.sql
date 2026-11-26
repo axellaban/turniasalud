@@ -2189,3 +2189,34 @@ begin
     insert into data_migrations (name) values ('2026-11-26-configuracion-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Hallazgos de la sesión de pruebas de Sofi (26/11/2026).
+-- * tasks.voided_at: Sofi puede dejar sin efecto un pedido que hizo en la misma charla (anular_tarea).
+-- * tasks.is_test y clinics.test_phones: modo prueba. Lo que pide Sofi desde el número de un tester no
+--   le llega al equipo (la tarea queda cerrada y marcada) y la agenda no se toca (reservas, cambios,
+--   cancelaciones y lista de espera se simulan).
+-- * clinics.tone 'espejo': trata al paciente como escribe él (de vos o de usted).
+-- ---------------------------------------------------------------------------
+alter table tasks add column if not exists voided_at timestamptz;
+alter table tasks add column if not exists is_test boolean not null default false;
+alter table clinics add column if not exists test_phones text[] not null default '{}';
+alter table clinics drop constraint if exists clinics_tone_check;
+alter table clinics add constraint clinics_tone_check check (tone in ('vos', 'usted', 'espejo'));
+
+-- Guerra–Mininni (26/11/2026, pedido de Facundo después de probar a Sofi): contención ante el miedo o el
+-- dolor y los diferenciales del consultorio en las consultas de tratamientos. Se agrega una sola vez al
+-- final de sus instrucciones; si después las editan desde el panel, el deploy no las pisa.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-26-contencion-diferenciales-guerra-mininni') then
+    update clinics set
+      agent_context = agent_context
+        || E'\n- Si el paciente (o quien escribe por él) cuenta que tiene miedo o ansiedad de ir al dentista, en ese mismo mensaje y antes de seguir con el turno, tranquilizalo en una o dos frases con lo que hace el consultorio: la primera consulta es tranquila, se le explica todo en pantalla antes de hacer nada, lo sigue el mismo profesional en cada visita y los consultorios tienen vista al jardín.'
+        || E'\n- Diferenciales del consultorio, para consultas de implantes, blanqueamiento, prótesis, coronas o carillas: escáner intraoral e impresión 3D, planificación digital, más de 55 años de trayectoria y el mismo profesional hace el seguimiento. Nombralos en una sola línea, invitá a ver casos con antes y después en odontoaraoz.com.ar y cerrá ofreciendo la consulta de evaluación.',
+      context_revision = context_revision + 1,
+      updated_at = now()
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36' and agent_context is not null;
+    insert into data_migrations (name) values ('2026-11-26-contencion-diferenciales-guerra-mininni');
+  end if;
+end $$;

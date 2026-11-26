@@ -63,7 +63,10 @@ export type Clinic = {
   /** Sofi mueve también los turnos de prestaciones que da solo el consultorio. */
   move_panel_only: boolean;
   /** Cómo trata a los pacientes. Vacío: de vos, o lo que digan las instrucciones de la clínica. */
-  tone: "vos" | "usted" | null;
+  /** espejo: como escribe el paciente (de vos si vosea o tutea; de usted si usa usted). */
+  tone: "vos" | "usted" | "espejo" | null;
+  /** Modo prueba: celulares de testers. */
+  test_phones?: string[];
   /** Usa el protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). */
   dental_protocol: boolean;
   /** Horas antes del turno en que las horas reservadas para urgencias quedan libres para todo. */
@@ -289,6 +292,10 @@ export type Task = {
   responded_at: string | null;
   created_at: string;
   resolved_at: string | null;
+  /** Sofi lo dejó sin efecto en la misma charla (anular_tarea). */
+  voided_at?: string | null;
+  /** Lo pidió un tester (modo prueba): no le llegó al equipo. */
+  is_test?: boolean;
 };
 
 export type WaitlistEntry = {

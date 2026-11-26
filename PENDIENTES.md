@@ -1,5 +1,21 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Hallazgos de la sesión de pruebas de Sofi (26/11/2026)
+
+Facundo probó a Sofi simulando pacientes de Guerra–Mininni y encontró 11 problemas. Hecho en el repositorio (llega a ElevenLabs con «Actualizar a Sofi»):
+- [x] Prompt general: ningún estado de turno sin herramienta en esa charla y nunca «ya avisé» sin herramienta; día pedido contra días de atención; primero para quién es el turno; derivación ofrecida y con el sí del paciente (salvo urgencia), con datos mínimos y una tarea por pedido; responder cada pregunta (también el precio); respetar la franja pedida y ofrecer lo más cercano y la lista de espera; palabras del paciente; contención ante miedo o dolor; diferenciales en consultas de tratamientos.
+- [x] Protocolo odontológico `2026-11-26.1`: señales de alarma (cara hinchada con fiebre, dificultad para tragar o respirar, golpe fuerte, sangrado que no para) → guardia ya, sin «si considera que es un riesgo para su vida»; precios sin saltear la pregunta.
+- [x] `buscar_paciente` sin DNI para un turno existente: nombre y apellido + día (y hora) del turno. Solo con el permiso temporal de la clínica y si hay un único paciente; si no, pide el DNI.
+- [x] Herramienta nueva `anular_tarea` (pedidos de la misma charla) y evento n8n `tarea.anulada`.
+- [x] Modo prueba: Configuración → Turnos y urgencias → «Modo prueba» (solo admin), `clinics.test_phones`. Tareas cerradas y marcadas (`tasks.is_test`), sin aviso; reservas, cambios, cancelaciones, confirmaciones y lista de espera simulados.
+- [x] Trato «Como escribe el paciente» (`clinics.tone = 'espejo'`).
+- [x] Guerra–Mininni (migración `2026-11-26-contencion-diferenciales-guerra-mininni`): contención y diferenciales agregados a sus instrucciones.
+- [x] Batería `probar-sofi`: 10 casos nuevos (los que usan `anular_tarea` se saltean hasta «Actualizar a Sofi»).
+- [ ] **«Actualizar a Sofi»** en Panel → Sistema y correr la batería (`npm run probar-sofi -- --agente <id> --clinica "Guerra"`).
+- [ ] Decidir con Mariano si Guerra–Mininni pasa al trato «Como escribe el paciente» y si Sofi puede decir «limpieza» (hoy sus instrucciones lo prohíben, pedido del 18/11).
+- [ ] TODO_CONFIG de Guerra–Mininni: valor de la consulta particular (en Prestaciones o Preguntas frecuentes), precio «desde» o rango de implante, blanqueamiento y otros tratamientos (Prestaciones → precio y modo), en cuánto tiempo los contacta el consultorio ante una urgencia (Turnos y urgencias → «Qué hacer ante una urgencia»), y si hay un turno de urgencia en la agenda (prestación «Es un turno de urgencia»). Cargar los celulares de testers en «Modo prueba».
+- [ ] n8n `Turnia · Eventos`: sumar una rama para `tarea.anulada` si recepción tiene que enterarse de que un pedido quedó sin efecto (hoy el evento llega y no hace nada).
+
 ## Email de respaldo para los avisos técnicos — 26/11/2026
 
 - Axel autorizó enviar los avisos técnicos a `axellaban@gmail.com`.
