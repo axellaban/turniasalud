@@ -7,7 +7,7 @@ export function ErrorText({ raw, className = "text-red-700" }: { raw: string | n
   return (
     <span className={className}>
       {e.text}
-      {e.detail && <details className="mt-0.5 text-xs text-brand-900/60"><summary className="cursor-pointer">Detalle</summary><code className="break-all">{e.detail}</code></details>}
+      {e.detail && <details className="mt-0.5 text-xs text-brand-900/60"><summary className="cursor-pointer">Ver el error técnico</summary><code className="break-all">{e.detail}</code></details>}
     </span>
   );
 }

@@ -60,8 +60,9 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
    - Si una frase dice un plazo distinto al del campo, no la borres: frená y preguntá.
    - Si el campo está vacío y la frase dice un plazo, cargá ese número en el campo y recién después borrá la frase.
 3. Borrá también **solo** las frases que nombran coberturas («atendemos OSDE, Swiss Medical, Apsot…»), siempre que todas esas coberturas estén en la pestaña «Coberturas» → «Coberturas que acepta el consultorio». Si falta alguna, no la borres: anotala y preguntá.
-4. Dejá todo lo demás: tolerancia, seña, qué pasa si no avisa.
-5. Apretá «Guardar cambios».
+4. Si hay un teléfono distinto de los de los campos «Teléfono» (pestaña «Consultorio») y «Teléfono para pasar llamadas», por ejemplo «(011) 4804-1151, de lunes a jueves de 12 a 17 h», **no lo borres**. Anotalo y preguntá cuál es el correcto y para qué es: puede ser el horario telefónico de recepción.
+5. Dejá todo lo demás: tolerancia, seña, qué pasa si no avisa.
+6. Apretá «Guardar cambios».
 
 ### Paso 2 · Conductos por obra social → una excepción (pestaña «Coberturas»)
 El texto dice algo como «No hacemos tratamientos de conducto por obra social». Como excepción, Sofi lo cumple siempre: no ofrece esos turnos por obra social y ofrece atenderse como particular.

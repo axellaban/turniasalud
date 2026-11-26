@@ -110,16 +110,28 @@ describe.runIf(url)("Configuración del consultorio", () => {
     equipo = await render("equipo/");
     bloqueos = await render("bloqueos/");
     const turnos = await render("turnos/");
-    for (const html of [equipo, bloqueos, turnos]) {
-      expect(html).toContain("Conectado a Smile Connect: la agenda se maneja allá");
-      expect(html).toContain("Crear, mover y cancelar");
-    }
+    // Entero en las pestañas que traen datos de allá; en una línea en las de Sofi.
+    for (const html of [equipo, bloqueos]) expect(html).toContain("Conectado a Smile Connect: la agenda se maneja allá");
+    expect(turnos).not.toContain("Conectado a Smile Connect: la agenda se maneja allá");
+    expect(turnos).toContain("Esta pestaña es de Sofi y se configura acá");
+    for (const html of [equipo, bloqueos, turnos]) expect(html).toContain("Crear, mover y cancelar");
     expect(equipo).not.toContain("Agregar profesional</button>");
     expect(equipo).toContain("Se maneja en Smile Connect");
     expect(bloqueos).not.toContain("Cargar feriados");
     expect(bloqueos).toContain("Frenar a Sofi");
+    expect(bloqueos).toContain("Frenar a Sofi esos días");
     // Apagada: vuelve a ser de Turnia.
     await sql`update smile_connect_connections set api_mode = 'apagada' where clinic_id = ${clinicId}`;
     expect(await render("equipo/")).toContain("Agregar profesional</button>");
+  });
+  it("cada aviso se muestra entero en la pestaña donde se corrige y, en las demás, en una línea plegada", async () => {
+    const render = async (path: string) => renderToStaticMarkup((await (await import(`@/app/panel/(app)/configuracion/${path}page`)).default()) as React.ReactElement);
+    await sql`update clinics set tone = null, agent_context = 'Tratá de usted a todos.' where id = ${clinicId}`;
+    const consultorio = await render("");
+    const prestaciones = await render("prestaciones/");
+    expect(consultorio).toContain("Las instrucciones dicen de tratar de usted");
+    expect(prestaciones).toContain("1 cosa para revisar en otra pestaña");
+    expect(prestaciones).not.toContain("Hay un dato que se contradice");
+    await sql`update clinics set agent_context = null where id = ${clinicId}`;
   });
 });

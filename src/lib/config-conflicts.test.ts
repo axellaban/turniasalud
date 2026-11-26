@@ -71,6 +71,15 @@ describe("configConflicts con la agenda", () => {
   it("marca el trato del texto que contradice el selector", () => {
     expect(configConflicts({ ...base, agent_context: "Tratá siempre de usted." }, [])[0].key).toBe("trato");
     expect(configConflicts({ ...base, tone: "usted", agent_context: "Tratá siempre de usted." }, [])).toEqual([]);
-    expect(configConflicts({ ...base, tone: "usted", faq: "Tuteá a los chicos." }, [])[0].key).toBe("trato");
+    expect(configConflicts({ ...base, tone: "usted", faq: "Tuteá a los pacientes." }, [])[0].key).toBe("trato");
+  });
+
+  it("no marca el matiz condicional del mismo trato (el falso positivo de la segunda revisión)", () => {
+    const agent_context = "Tratar siempre de usted, en todos los mensajes. Solo tutear si el paciente lo pide.";
+    expect(configConflicts({ ...base, tone: "usted", agent_context }, [])).toEqual([]);
+    expect(configConflicts({ ...base, tone: "usted", agent_context: "Tratá de vos si es un chico." }, [])).toEqual([]);
+    expect(configConflicts({ ...base, tone: "vos", agent_context: "Hablá de usted cuando el paciente es mayor." }, [])).toEqual([]);
+    // Lo que no es una orden de trato tampoco cuenta.
+    expect(configConflicts({ ...base, tone: "usted", faq: "Atendemos de vos a vos, sin intermediarios." }, [])).toEqual([]);
   });
 });

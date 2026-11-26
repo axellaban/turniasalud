@@ -96,9 +96,10 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
         </form>}
       </Notice>}
       {hasKey && conn?.api_events_status === 403 && <Notice tone="warning" className="mt-3">
-        Smile Connect rechazó la lectura de los bloqueos de agenda (403). Revisá el permiso <code>events:read</code> en Smile Connect.
-        Si la clave ya lo tiene, pedile a Smile Connect que revise ese rechazo. Sofi verifica cada horario en vivo; los bloqueos todavía no
-        se pueden mostrar en la Agenda de Turnia. «Sincronizar ahora» vuelve a comprobarlo con la misma clave.
+        <strong>Smile Connect no deja leer los bloqueos de agenda</strong> (vacaciones, días cerrados). No cambia lo que ofrece {clinic.agent_name || "Sofi"}: verifica cada horario en vivo en Smile Connect. Lo único que falta es verlos en la Agenda de Turnia.
+        <details className="mt-1 text-xs"><summary className="cursor-pointer">Qué hacer</summary>
+          A la clave le falta el permiso de bloqueos (<code>events:read</code>) o Smile Connect lo rechaza (error 403). Si la clave ya lo tiene, hay que pedirle a Smile Connect que lo revise. «Sincronizar ahora» lo vuelve a probar con la misma clave.
+        </details>
       </Notice>}
       {hasKey && conn?.api_events_status === 404 && <Notice tone="warning" className="mt-3">
         La ruta de bloqueos de Smile Connect respondió 404. Turnia volverá a probarla automáticamente. Sofi verifica cada horario en vivo;
@@ -235,7 +236,7 @@ export function SmileApiCard({ clinic, admin, data: { conn, pros, changes, revie
               <span className="font-medium text-brand-950">{ACTION[c.action] ?? c.action}</span>
               <span className="text-brand-900/60">{formatDateTime(c.created_at, tz)}</span>
             </div>
-            {c.error && <p className="mt-1"><ErrorText raw={c.error} /></p>}
+            {c.error && <div className="mt-1"><ErrorText raw={c.error} /></div>}
             {(c.request != null || c.before != null) && <details className="mt-1">
               <summary className="cursor-pointer text-brand-700">Detalle</summary>
               {c.before != null && <><p className="mt-1 font-medium">Cómo estaba en Smile Connect:</p><pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(c.before, null, 1)}</pre></>}

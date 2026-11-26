@@ -353,6 +353,8 @@ export type ScheduleBlock = {
   ends_at: string;
   reason: string | null;
   created_at: string;
+  /** «sc:…» si vino de Smile Connect; «feriado:AAAA-MM-DD» si es un feriado nacional cargado. */
+  external_id?: string | null;
 };
 
 export type CampaignRecipient = {
