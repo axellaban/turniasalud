@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { easypanelConfig, ingestWahaLogs, verifyRadarSecret } from "@/lib/infra-radar";
+import { easypanelConfig, ingestWahaLogs, radarTokenFingerprint, verifyRadarSecret } from "@/lib/infra-radar";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,8 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   // Distingue «falta cargar la variable en Vercel» de «la clave no coincide».
   if (!easypanelConfig()) return NextResponse.json({ error: "Radar sin configurar: faltan EASYPANEL_API_URL o EASYPANEL_API_TOKEN" }, { status: 503 });
-  if (!verifyRadarSecret(request.headers.get("authorization"))) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  // Con el largo y la huella del token se ve si el de Vercel es el mismo que el del lector, sin mostrarlo.
+  if (!verifyRadarSecret(request.headers.get("authorization"))) return NextResponse.json({ error: "No autorizado", token: radarTokenFingerprint() }, { status: 401 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   return NextResponse.json({ ok: true, ...(await ingestWahaLogs(parsed.data.service, parsed.data.lines)) });
