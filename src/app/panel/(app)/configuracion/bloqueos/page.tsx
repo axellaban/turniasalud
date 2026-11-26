@@ -43,10 +43,12 @@ export default async function BlocksPage() {
                 </span>
                 {g.fromSmile
                   ? <span title="Viene de Smile Connect: se quita allá y llega sola." className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-900 ring-1 ring-violet-200"><LockIcon className="h-3 w-3" />De Smile Connect</span>
-                  : <form action={deleteScheduleBlock}><input type="hidden" name="clinic_id" value={clinic.id} />
+                  : <span className="flex items-center gap-2">
+                    {fromSmileConnect && <span title={`Cargado en Turnia: frena solo a ${clinic.agent_name || "Sofi"}; la agenda de Smile Connect no cambia.`} className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800 ring-1 ring-brand-200">Solo {clinic.agent_name || "Sofi"}</span>}
+                    <form action={deleteScheduleBlock}><input type="hidden" name="clinic_id" value={clinic.id} />
                     {g.ids.map((id) => <input key={id} type="hidden" name="id" value={id} />)}
                     <button className={smallButtonClass}>{g.ids.length > 1 ? `Quitar (${g.ids.length})` : "Quitar"}</button>
-                  </form>}
+                  </form></span>}
               </li>
             ))}
           </ul>
@@ -62,6 +64,7 @@ export default async function BlocksPage() {
             clinicId={clinic.id}
             professionals={professionals.filter((p) => p.active).map((p) => ({ id: p.id, name: p.full_name }))}
             today={localDateKey(now, clinic.timezone)}
+            onlyAgent={fromSmileConnect}
           />
           {fromSmileConnect ? <SmileLock title="Feriados nacionales" className="mt-6">No hace falta cargarlos: la disponibilidad de Smile Connect ya los descuenta y {clinic.agent_name || "Sofi"} solo ofrece lo libre allá.</SmileLock> : <div className="mt-6 border-t border-brand-900/10 pt-5">
             <h3 className="font-semibold text-brand-950">Feriados nacionales</h3>

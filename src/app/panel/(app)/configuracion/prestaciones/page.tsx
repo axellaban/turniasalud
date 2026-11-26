@@ -80,32 +80,18 @@ export default async function ServicesPage() {
   const active = professionals.filter((p) => p.active);
   const staffed = (t: AppointmentType) => active.some((p) => professionalDoes(p, t, [...links]));
   const typeName = typeLabels(types);
+  const offered = types.filter((t) => t.active && !t.panel_only);
+  const panelOnly = types.filter((t) => t.active && t.panel_only);
+  const inactive = types.filter((t) => !t.active);
   const dental = isDentalSpecialty(clinic.specialty) || specialties.some(isDentalSpecialty);
   const agent = clinic.agent_name || "Sofi";
 
-  return (
-    <>
-      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/prestaciones" conflicts={await loadConfigConflicts(clinic)} />
-      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (cada cuánto vuelve el paciente) se elige acá al lado del precio: con él, <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link> muestra a quién le toca volver.</p>
-      {dental && (
-        <Card className="mb-6">
-          <h2 className="font-semibold text-brand-950">Plantilla odontológica</h2>
-          <p className="mt-1 text-sm text-brand-900/60">
-            Suma las prestaciones comunes de un consultorio odontológico que todavía no tengas (primera consulta, urgencia, limpieza, conducto, implantes, ortodoncia y más), con duraciones de punto de partida. No cambia las que ya están.
-          </p>
-          <ActionForm action={loadDentalTemplate} submit="Sumar las que faltan" secondary className="mt-3 flex flex-wrap items-center gap-3">
-            <input type="hidden" name="clinic_id" value={clinic.id} />
-          </ActionForm>
-        </Card>
-      )}
-      <Card className="p-0">
-        <ul className="divide-y divide-brand-900/5">
-          {types.map((x) => (
+  const item = (x: AppointmentType) => (
             <li key={x.id} className={`px-5 py-3 ${x.active ? "" : "opacity-60"}`}>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-brand-950">
-                    {x.name} {x.is_first_visit && <Badge tone="blue">primera vez</Badge>} {x.is_urgent && <Badge tone="red">urgencia</Badge>} {x.panel_only && <Badge>solo el consultorio</Badge>}{" "}
+                    {typeName.get(x.id) ?? x.name} {x.is_first_visit && <Badge tone="blue">primera vez</Badge>} {x.is_urgent && <Badge tone="red">urgencia</Badge>} {x.panel_only && <Badge>solo el consultorio</Badge>}{" "}
                     {!agentCanMove(x, clinic) && !x.panel_only && <Badge>la mueve recepción</Badge>} {!x.active && <Badge>Inactiva</Badge>}
                   </p>
                   <p className="text-sm text-brand-900/65">
@@ -139,10 +125,37 @@ export default async function ServicesPage() {
                   <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="panel_only" defaultChecked={x.panel_only} className="mt-1" /> <span>Solo la da el consultorio <span className={hint}>{agent} no la ofrece ni la reserva (y no la mueve, salvo que lo permitas en «Turnos y urgencias»). El turno se da desde la Agenda.</span></span></label>
               </EditDetails>
             </li>
-          ))}
-        </ul>
+  );
+  return (
+    <>
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/prestaciones" conflicts={await loadConfigConflicts(clinic)} />
+      <p className="mb-4 max-w-3xl text-sm text-brand-900/60">Los tipos de turno que puede dar {agent}. Cada una la atienden los profesionales de su especialidad, o los que la tengan marcada en Equipo y horarios. El control periódico de cada una (cada cuánto vuelve el paciente) se elige acá al lado del precio: con él, <Link href="/panel/campanas" className="font-medium text-brand-700 hover:underline">Campañas</Link> muestra a quién le toca volver.</p>
+      {dental && (
+        <Card className="mb-6">
+          <h2 className="font-semibold text-brand-950">Plantilla odontológica</h2>
+          <p className="mt-1 text-sm text-brand-900/60">
+            Suma las prestaciones comunes de un consultorio odontológico que todavía no tengas (primera consulta, urgencia, limpieza, conducto, implantes, ortodoncia y más), con duraciones de punto de partida. No cambia las que ya están.
+          </p>
+          <ActionForm action={loadDentalTemplate} submit="Sumar las que faltan" secondary className="mt-3 flex flex-wrap items-center gap-3">
+            <input type="hidden" name="clinic_id" value={clinic.id} />
+          </ActionForm>
+        </Card>
+      )}
+      {/* Primero las que ofrece Sofi; las que da solo el consultorio y las inactivas, plegadas. */}
+      <Card className="p-0">
+        <h2 className="px-5 pt-4 text-sm font-semibold text-brand-950">Las que ofrece {agent} <span className="font-normal text-brand-900/60">({offered.length})</span></h2>
+        <ul className="mt-2 divide-y divide-brand-900/5 border-t border-brand-900/5">{offered.map(item)}</ul>
         {!types.length && <div className="p-5"><Empty>Todavía no hay prestaciones. Agregá la primera abajo{dental ? " o sumá la plantilla odontológica" : ""}.</Empty></div>}
+        {types.length > 0 && !offered.length && <p className="px-5 py-4 text-sm text-sun-700">{agent} no ofrece ninguna: todas son solo del consultorio o están inactivas.</p>}
       </Card>
+      {panelOnly.length > 0 && <details className="mt-4 rounded-2xl border border-brand-900/10 bg-white">
+        <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-brand-950">Solo el consultorio <span className="font-normal text-brand-900/60">({panelOnly.length}) · {agent} no las ofrece; se dan desde la Agenda</span></summary>
+        <ul className="divide-y divide-brand-900/5 border-t border-brand-900/5">{panelOnly.map(item)}</ul>
+      </details>}
+      {inactive.length > 0 && <details className="mt-4 rounded-2xl border border-brand-900/10 bg-white">
+        <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-brand-950">Inactivas <span className="font-normal text-brand-900/60">({inactive.length})</span></summary>
+        <ul className="divide-y divide-brand-900/5 border-t border-brand-900/5">{inactive.map(item)}</ul>
+      </details>}
 
       <Card className="mt-6">
         <h2 className="mb-4 font-semibold text-brand-950">Agregar prestación</h2>

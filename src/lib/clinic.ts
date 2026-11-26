@@ -260,7 +260,10 @@ export function catalogText(
     const who = b.professional_id ? (names.get(b.professional_id) ?? "un profesional") : "toda la clínica";
     const from = formatDateTime(b.starts_at, timeZone);
     const to = formatDateTime(b.ends_at, timeZone);
-    return `- ${who}: del ${from} al ${to}${b.reason ? ` (${b.reason})` : ""}`;
+    // El motivo de un bloqueo de Smile Connect es interno del consultorio («Día cancelado manualmente»):
+    // Sofi no lo repite; solo sabe que ese día no se atiende.
+    const reason = b.reason && !b.external_id?.startsWith("sc:") ? b.reason : null;
+    return `- ${who}: del ${from} al ${to}${reason ? ` (${reason})` : ""}`;
   });
   const coverage = ruleLines.length
     ? `\n\nCOBERTURAS (consultar_disponibilidad y reservar_turno ya las aplican; usalas para contestar preguntas):\n${ruleLines.join("\n")}`

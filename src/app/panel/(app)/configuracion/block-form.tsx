@@ -5,16 +5,20 @@ import { submitKeepingValues } from "@/components/keep-form";
 import { addScheduleBlock } from "../../actions";
 import { Field, buttonClass, inputClass } from "@/components/ui";
 
-export function ScheduleBlockForm({ professionals, today, clinicId, agent = "Sofi" }: { clinicId?: string; professionals: Array<{ id: string; name: string }>; today: string; agent?: string }) {
+/**
+ * Bloquear la agenda. Con Smile Connect como fuente (`onlyAgent`), la agenda real se cierra allá: esto solo
+ * frena a Sofi, y el formulario lo dice en cada campo y en el botón.
+ */
+export function ScheduleBlockForm({ professionals, today, clinicId, agent = "Sofi", onlyAgent = false }: { clinicId?: string; professionals: Array<{ id: string; name: string }>; today: string; agent?: string; onlyAgent?: boolean }) {
   const [state, action, pending] = useActionState(addScheduleBlock, undefined);
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => { if (state?.ok) form.current?.reset(); }, [state]);
   return (
     <form ref={form} onSubmit={submitKeepingValues(action)} className="grid gap-3 sm:grid-cols-2">
       {clinicId && <input type="hidden" name="clinic_id" value={clinicId} />}
-      <Field label="Quién no atiende">
+      <Field label={onlyAgent ? `Con quién no da turnos ${agent}` : "Quién no atiende"}>
         <select name="professional_id" className={inputClass} defaultValue="">
-          <option value="">Toda la clínica (feriado, cierre)</option>
+          <option value="">{onlyAgent ? "Con ningún profesional" : "Toda la clínica (feriado, cierre)"}</option>
           {professionals.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -39,7 +43,7 @@ export function ScheduleBlockForm({ professionals, today, clinicId, agent = "Sof
       </Field>
       <div className="sm:col-span-2">
         <button disabled={pending} className={buttonClass}>
-          {pending ? "Guardando…" : "Bloquear agenda"}
+          {pending ? "Guardando…" : onlyAgent ? `Frenar a ${agent} esos días` : "Bloquear agenda"}
         </button>
         {state?.message && <p className={`mt-2 text-sm ${state.ok ? "text-brand-700" : "text-red-600"}`}>{state.message}</p>}
       </div>

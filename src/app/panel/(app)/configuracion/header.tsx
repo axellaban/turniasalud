@@ -50,26 +50,35 @@ function ConflictList({ items, action = "Corregir →" }: { items: ConfigConflic
 /** Pestañas cuyo contenido, con Smile Connect como fuente, viene (en todo o en parte) de allá. */
 const FROM_SMILE = new Set(["/panel/configuracion/equipo", "/panel/configuracion/bloqueos", "/panel/configuracion/calendario"]);
 
-/**
- * Regla para toda clínica con Smile Connect conectado (cualquier modo menos «Apagada»): Smile Connect
- * es la fuente de la verdad de la agenda. Se dice arriba de cada pestaña, las pestañas que traen datos
- * de allá llevan la etiqueta y lo que no se puede cambiar acá aparece con candado.
- */
 /** El modo de Smile Connect si es la fuente de la verdad de la clínica; null si no está conectado. */
 export async function loadSmileSource(clinicId: string): Promise<SmileMode | null> {
   const smile = await getSmileApiConnection(clinicId).catch(() => null);
   return smileIsSource(smile) ? smile!.api_mode : null;
 }
 
+/** La pestaña donde se corrige cada aviso (y las que también lo muestran entero). */
+const pathOf = (href: string) => href.split("#")[0];
+const showsHere = (c: ConfigConflict, current: string) => pathOf(c.href) === current || (c.alsoOn ?? []).includes(current);
+
+/**
+ * Regla para toda clínica con Smile Connect conectado (cualquier modo menos «Apagada»): Smile Connect
+ * es la fuente de la verdad de la agenda. En las pestañas que traen datos de allá se explica entero; en
+ * las demás, en una línea. Las que traen datos de allá llevan un candado y lo que no se puede cambiar
+ * acá aparece con candado. Los avisos de datos que se contradicen se muestran enteros en la pestaña donde
+ * se corrigen; en las demás, una línea plegada con el total.
+ */
 export function ConfigHeader({ clinic, current, conflicts = [], smileMode = null }: { clinic: Clinic; current: string; conflicts?: ConfigConflict[]; smileMode?: SmileMode | null }) {
-  const warnings = conflicts.filter((c) => c.tone !== "info");
-  const infos = conflicts.filter((c) => c.tone === "info");
+  const here = conflicts.filter((c) => showsHere(c, current));
+  const elsewhere = conflicts.filter((c) => !showsHere(c, current));
+  const warnings = here.filter((c) => c.tone !== "info");
+  const infos = here.filter((c) => c.tone === "info");
   const fromSmile = smileMode !== null;
+  const smileTab = FROM_SMILE.has(current);
   const agent = clinic.agent_name || "Sofi";
-  const tabs = fromSmile ? TABS.map((t) => (FROM_SMILE.has(t.href) ? { ...t, tag: "Smile", tagTitle: "Viene de Smile Connect" } : t)) : TABS;
+  const tabs = fromSmile ? TABS.map((t) => (FROM_SMILE.has(t.href) ? { ...t, icon: <LockIcon className="h-3 w-3 text-violet-600" />, iconTitle: "Viene de Smile Connect" } : t)) : TABS;
   return <>
     <PageHeader title="Configuración" description={`${clinic.name}. Lo que cambies acá lo usa ${agent} desde el próximo mensaje.`} />
-    {fromSmile && (
+    {fromSmile && (smileTab ? (
       <div className="mb-4 flex gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
         <LockIcon className="mt-0.5 h-5 w-5 shrink-0 text-violet-700" />
         <div>
@@ -83,7 +92,12 @@ export function ConfigHeader({ clinic, current, conflicts = [], smileMode = null
           </p>
         </div>
       </div>
-    )}
+    ) : (
+      <p className="mb-3 flex items-center gap-2 rounded-xl bg-violet-50 px-3 py-1.5 text-xs text-violet-900">
+        <LockIcon className="h-3.5 w-3.5 shrink-0 text-violet-700" />
+        <span><strong>Conectado a Smile Connect</strong> ({SMILE_MODE_LABEL[smileMode!].label}): la agenda se maneja allá. Esta pestaña es de {agent} y se configura acá.</span>
+      </p>
+    ))}
     <Tabs items={tabs} current={current} />
     {warnings.length > 0 && (
       <Notice tone="warning" className="mb-6">
@@ -95,6 +109,14 @@ export function ConfigHeader({ clinic, current, conflicts = [], smileMode = null
       <Notice tone="info" className="mb-6">
         <ConflictList items={infos} action="Cambiar →" />
       </Notice>
+    )}
+    {elsewhere.length > 0 && (
+      <details className="mb-6 rounded-xl border border-brand-900/10 bg-white px-3 py-1.5 text-sm">
+        <summary className="cursor-pointer text-brand-900/70">
+          {elsewhere.length === 1 ? "1 cosa para revisar en otra pestaña" : `${elsewhere.length} cosas para revisar en otras pestañas`}
+        </summary>
+        <ConflictList items={elsewhere} action="Ir →" />
+      </details>
     )}
   </>;
 }

@@ -69,7 +69,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 }
 
 /** Pestañas de una sección (cada una es su propia ruta: se pueden compartir y recargar). */
-export function Tabs({ items, current }: { items: Array<{ href: string; label: string; count?: number; tag?: string; tagTitle?: string }>; current: string }) {
+export function Tabs({ items, current }: { items: Array<{ href: string; label: string; count?: number; icon?: ReactNode; iconTitle?: string }>; current: string }) {
   const id = `tabs-${items[0]?.href.replace(/[^a-z]/g, "")}`;
   return (
     <nav id={id} aria-label="Secciones" className="relative -mx-4 mb-6 overflow-x-auto border-b border-brand-900/10 px-4 sm:mx-0 sm:px-0 data-[fade=right]:[mask-image:linear-gradient(to_right,black_calc(100%-48px),transparent)] data-[fade=left]:[mask-image:linear-gradient(to_left,black_calc(100%-48px),transparent)] data-[fade=both]:[mask-image:linear-gradient(to_right,transparent,black_48px,black_calc(100%-48px),transparent)]">
@@ -82,13 +82,13 @@ export function Tabs({ items, current }: { items: Array<{ href: string; label: s
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition ${
+                className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-2.5 py-2.5 text-sm font-medium transition ${
                   active ? "border-brand-600 text-brand-700" : "border-transparent text-brand-900/60 hover:text-brand-900"
                 }`}
               >
                 {item.label}
                 {item.count !== undefined && <span className="rounded-full bg-brand-50 px-1.5 text-xs text-brand-700">{item.count}</span>}
-                {item.tag && <span title={item.tagTitle} className="rounded-full bg-violet-100 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800">{item.tag}</span>}
+                {item.icon && <span title={item.iconTitle} aria-label={item.iconTitle}>{item.icon}</span>}
               </Link>
             </li>
           );

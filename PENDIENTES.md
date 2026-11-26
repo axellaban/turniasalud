@@ -191,6 +191,16 @@ Hecho en el código (todos los consultorios):
 
 - **Regla: con Smile Connect como fuente (cualquier modo menos «Apagada»), lo que se maneja allá se ve con candado** (`smileIsSource`). Arriba de cada pestaña, un aviso violeta dice qué se cambia en Smile Connect y qué se configura acá; las pestañas que traen datos de allá llevan la etiqueta «Smile», y cada bloque que no se toca en Turnia aparece con candado y «Se maneja en Smile Connect»: «Agregar profesional» (llegan de Smile Connect y se vinculan solos), «Cargar feriados» (la disponibilidad de allá ya los descuenta) y Google Calendar, que queda plegado si no estaba conectado. El bloqueo manual pasa a «Frenar a Sofi»: sirve para días en que Sofi no tiene que dar turnos aunque allá haya lugar. Lo demás de la Configuración sigue, porque es cómo atiende Sofi y Smile Connect no lo tiene: prestaciones, coberturas, reglas de turnos, urgencias, textos y avisos.
 
+**Segunda revisión (26/11):**
+- Corregido el falso positivo del trato: «Tratar siempre de usted… Solo tutear si el paciente lo pide» ya no se marca. Solo cuentan las órdenes generales, no lo condicional.
+- Cada aviso se muestra entero en la pestaña donde se corrige (el horario y los días, también en Equipo); en las demás, una línea plegada con el total.
+- El aviso de Smile Connect va entero en sus pestañas y en una línea en las de Sofi. Las pestañas llevan un candado chico en lugar de la etiqueta «SMILE», y se cortan de un solo lado.
+- «Ver el error técnico» en lugar de un segundo «Detalle». También se corrigió un error de render que causaba ese desplegable dentro de un párrafo.
+- Con Smile Connect: el formulario de bloqueos es «Frenar a Sofi» de punta a punta, y los bloqueos cargados en Turnia dicen «Solo Sofi». Sofi ya no repite el motivo interno de un bloqueo de Smile Connect («Día cancelado manualmente»).
+- Prestaciones agrupadas: «Las que ofrece Sofi» y, plegadas, «Solo el consultorio» e «Inactivas». Los nombres repetidos también se distinguen en la lista.
+- El 403 de bloqueos se explica sin código; el detalle técnico queda en «Qué hacer».
+- No se tocó: la ficha de salud y el fuera de horario siguen en «Turnos y urgencias», y tampoco Equipo por WhatsApp. El aviso de cambios sin guardar funciona: se comprobó en local que pide confirmar al cambiar de pestaña.
+
 Ya estaba: el aviso de cambios sin guardar (pide confirmar al cambiar de pestaña y guarda un borrador) y el aviso de precios o plazos que no coinciden.
 
 No se hizo (por ahora): pasar la ficha de salud a la pestaña Consultorio (es otro formulario y otra acción de guardado), editar un horario en el lugar (hoy se quita y se vuelve a cargar), agrupar las prestaciones «solo el consultorio» en las listas, y unir los tres campos de texto libre en uno.

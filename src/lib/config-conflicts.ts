@@ -6,7 +6,15 @@ import { hoursTextMismatch, scheduleSummary, scheduledDays, weekdayName } from "
 import type { Schedule } from "./types";
 
 /** `info`: no es una contradicción sino algo que conviene saber (por ejemplo, un día en que Sofi no da turnos a propósito). */
-export type ConfigConflict = { key: string; message: string; href: string; tone?: "warning" | "info" };
+export type ConfigConflict = {
+  key: string;
+  message: string;
+  /** Dónde se corrige: ahí se muestra entero. */
+  href: string;
+  tone?: "warning" | "info";
+  /** Otras pestañas donde también se muestra entero (por ejemplo, el horario también en Equipo). */
+  alsoOn?: string[];
+};
 
 /** Los horarios y la regla de días, para comparar con lo que dice el texto. */
 export type ConflictSchedules = {
@@ -33,8 +41,18 @@ const PRESTACIONES = "/panel/configuracion/prestaciones";
 const DIAS = "/panel/configuracion/turnos#dias";
 const RESPUESTAS = "/panel/configuracion#respuestas";
 
-const USTED = /\btrat\w*\s+(?:siempre\s+)?de\s+usted\b|\bhabl\w*\s+(?:siempre\s+)?de\s+usted\b|\bde\s+usted\b/i;
-const VOS = /\btrat\w*\s+(?:siempre\s+)?de\s+vos\b|\btute\w*|\bde\s+vos\b/i;
+// Solo una orden general de trato: «tratá de usted», «hablá siempre de vos», «tuteá a los pacientes».
+// Lo condicional no cuenta («solo tutear si el paciente lo pide», «de vos si es un chico»): es un
+// matiz del trato elegido, no lo contrario.
+// (Con letras acentuadas: «tratá», «tuteá».)
+const USTED = /\b(?:trat|habl)[a-záéíóú]*\s+(?:siempre\s+|a\s+todos\s+|a\s+los\s+pacientes\s+)?de\s+usted(?![a-zñ])/i;
+const VOS = /\b(?:trat|habl)[a-záéíóú]*\s+(?:siempre\s+|a\s+todos\s+|a\s+los\s+pacientes\s+)?de\s+vos(?![a-zñ])|\btute(?:á|a|ar|e)(?![a-zñ])/i;
+const CONDITIONAL = /\bsi\b|\bsalvo\b|\bcuando\b|\bsolo\b|\bsólo\b|\bexcepto\b/i;
+
+/** ¿Alguna oración ordena ese trato sin condiciones? */
+function ordersTone(text: string, re: RegExp): boolean {
+  return text.split(/(?<=[.!?\n])\s*/).some((sentence) => re.test(sentence) && !CONDITIONAL.test(sentence));
+}
 
 const list = (items: string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`);
 
@@ -105,9 +123,9 @@ export function configConflicts(clinic: ConflictInput, prices: number[], agenda?
 
   // El trato: el selector manda, pero si el texto dice lo contrario Sofi recibe dos órdenes.
   const instructions = [clinic.agent_context, clinic.faq, clinic.policies].filter(Boolean).join("\n");
-  if (clinic.tone !== "usted" && USTED.test(instructions)) {
+  if (clinic.tone !== "usted" && ordersTone(instructions, USTED)) {
     out.push({ key: "trato", message: `Las instrucciones dicen de tratar de usted, pero «Cómo trata a los pacientes» está en «De vos». Elegí «De usted» en ese campo y sacá la frase del texto.`, href: RESPUESTAS });
-  } else if (clinic.tone === "usted" && VOS.test(instructions)) {
+  } else if (clinic.tone === "usted" && ordersTone(instructions, VOS)) {
     out.push({ key: "trato", message: `Las instrucciones dicen de tratar de vos, pero «Cómo trata a los pacientes» está en «De usted». Dejá uno solo: el campo es el que se cumple.`, href: RESPUESTAS });
   }
 
@@ -116,6 +134,7 @@ export function configConflicts(clinic: ConflictInput, prices: number[], agenda?
     if (hoursTextMismatch(clinic.hours_text, agenda.schedules)) {
       out.push({
         key: "horario",
+        alsoOn: ["/panel/configuracion/equipo"],
         message: `«Horario de atención» dice «${clinic.hours_text?.trim()}», pero según Equipo y horarios es «${scheduleSummary(agenda.schedules)}». ${agent} le puede dar al paciente un horario que no es. Usá el armado con los horarios.`,
         href: DATOS,
       });
@@ -129,6 +148,7 @@ export function configConflicts(clinic: ConflictInput, prices: number[], agenda?
         out.push({
           key: "dias-sin-turnos",
           tone: "info",
+          alsoOn: ["/panel/configuracion/equipo"],
           message: `Hay horarios cargados el ${detail} y ${agent} no da turnos ${skipped.length === 1 ? "ese día" : "esos días"}: al paciente le dice que ${skipped.length === 1 ? "ese día los coordina" : "esos días los coordina"} el equipo. Si querés que los dé, marcalo en «Días en que ${agent} da turnos».`,
           href: DIAS,
         });

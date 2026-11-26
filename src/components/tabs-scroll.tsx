@@ -10,7 +10,11 @@ export function ScrollActiveTab({ id }: { id: string }) {
     const bar = document.getElementById(id);
     if (!bar) return;
     const active = bar.querySelector<HTMLElement>("[aria-current=page]");
-    if (active && bar.scrollWidth > bar.clientWidth) bar.scrollLeft = active.offsetLeft - bar.clientWidth / 2 + active.clientWidth / 2;
+    // Lo justo para que se vea la activa (no centrada): así las pestañas se cortan de un solo lado.
+    if (active && bar.scrollWidth > bar.clientWidth) {
+      const right = active.offsetLeft + active.clientWidth + 16;
+      if (right > bar.clientWidth) bar.scrollLeft = right - bar.clientWidth;
+    }
     const mark = () => {
       const left = bar.scrollLeft > 4;
       const right = bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 4;
