@@ -184,4 +184,25 @@ describe.runIf(base)("migraciones sobre una agenda ya sincronizada", () => {
     expect((await db`select api_mode from smile_connect_connections where clinic_id = ${mininni}`)[0].api_mode).toBe("apagada");
     await db`delete from clinics where id = ${mininni}`;
   }, 60000);
+  it("corrige una sola vez la configuración de Guerra–Mininni: horario de la agenda, sin la web de prueba y con Particular", async () => {
+    const mininni = "67c3954a-8df8-46c2-a604-f818832bee36";
+    const schema = readFileSync("supabase/schema.sql", "utf8");
+    await db`insert into clinics (id, name, hours_text, website, accepted_coverages)
+      values (${mininni}, 'Guerra–Mininni ficticia', 'Lunes de 10 a 17:30', 'https://lab-orpin-five.vercel.app/consultorio/', '{OSDE,"Swiss Medical"}')`;
+    await db`delete from data_migrations where name = '2026-11-26-configuracion-guerra-mininni'`;
+    await db.unsafe(schema);
+    const [after] = await db`select hours_text, website, accepted_coverages from clinics where id = ${mininni}`;
+    expect(after).toEqual({ hours_text: null, website: null, accepted_coverages: ["OSDE", "Swiss Medical", "Particular"] });
+    expect((await db`select actor, area from clinic_changes where clinic_id = ${mininni}`)[0]).toEqual({ actor: "Turnia", area: "Consultorio y coberturas" });
+    // Una sola vez: lo que se cargue después desde el panel no se pisa.
+    await db`update clinics set hours_text = 'Lunes a viernes de 9 a 18', website = 'https://consultorio.example' where id = ${mininni}`;
+    await db.unsafe(schema);
+    expect((await db`select hours_text, website from clinics where id = ${mininni}`)[0]).toEqual({ hours_text: "Lunes a viernes de 9 a 18", website: "https://consultorio.example" });
+    // Con una web propia y «Particular» ya cargado, esos dos no cambian.
+    await db`update clinics set accepted_coverages = '{OSDE,"particular"}' where id = ${mininni}`;
+    await db`delete from data_migrations where name = '2026-11-26-configuracion-guerra-mininni'`;
+    await db.unsafe(schema);
+    expect((await db`select website, accepted_coverages from clinics where id = ${mininni}`)[0]).toEqual({ website: "https://consultorio.example", accepted_coverages: ["OSDE", "particular"] });
+    await db`delete from clinics where id = ${mininni}`;
+  }, 60000);
 });

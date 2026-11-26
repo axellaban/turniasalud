@@ -190,7 +190,8 @@ Ya estaba: el aviso de cambios sin guardar (pide confirmar al cambiar de pestañ
 
 No se hizo (por ahora): pasar la ficha de salud a la pestaña Consultorio (es otro formulario y otra acción de guardado), editar un horario en el lugar (hoy se quita y se vuelve a cargar), agrupar las prestaciones «solo el consultorio» en las listas, y unir los tres campos de texto libre en uno.
 
-- [ ] **Datos de Guerra–Mininni para corregir en su configuración** (no se tocan sin el consultorio): «Horario de atención» viejo (dice 10 y Coldeira empieza a las 9: usar «Usar este texto»); «Otras condiciones» repite los plazos y las coberturas; «No hacemos tratamientos de conducto por obra social» debería ser una excepción en Coberturas; la web apunta a una demo (`…vercel.app`); dos prestaciones «Turno Smile Connect» (ver si sobra una); el precio repetido en las preguntas frecuentes; «Particular» sin cargar en Coberturas.
+- [x] **Datos de Guerra–Mininni corregidos** (migración `2026-11-26-configuracion-guerra-mininni`, una vez): «Horario de atención» vacío (Sofi dice el armado con la agenda de Smile Connect, siempre al día), sin la web de prueba (`lab-orpin-five…`, otro proyecto en la raíz) y «Particular» sumado a las coberturas del consultorio.
+- [ ] **Falta en Guerra–Mininni (hay que ver el texto actual, que no se lee desde una sesión sin acceso al panel):** sacar de «Otras condiciones» los plazos y coberturas que ya son campos; pasar «No hacemos tratamientos de conducto por obra social» a una excepción en Coberturas (prestación de conductos · «No la acepta»); sacar el precio de las preguntas frecuentes; sacar «Tratá siempre de usted» de las instrucciones si el selector ya dice «De usted»; ver si sobra una de las dos «Turno Smile Connect». Ninguno contradice hoy a otro dato: si uno cambia, el panel avisa.
 
 ## Smile Connect: ficha completa del paciente nuevo (26/11/2026)
 
