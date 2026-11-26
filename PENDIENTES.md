@@ -8,6 +8,7 @@
 - Sistema incorpora «Probar email de respaldo», solo para el administrador, con un código en el mensaje y un máximo de una solicitud por minuto. Debe comprobarse la entrega en Gmail, sin hacer fallar WAHA ni usar pacientes para probar.
 - Límite: n8n corre en el mismo VPS que WAHA. Este email cubre fallas de WhatsApp; una caída completa del VPS requiere un proveedor de correo externo a ese VPS. No describirlo como respaldo independiente del VPS.
 - La rama se publicó en n8n como versión `03e77dcb-171b-4dc0-a1cf-07576276cfd6`. La primera prueba alcanzó el nodo nuevo; Google rechazó el permiso guardado de `Gmail account` y pidió reconectarlo. La recepción debe verificarse después de esa autorización, con un código de prueba nuevo. La versión y las ejecuciones se consultan en el flujo real.
+- En la reconexión se detectó `redirect_uri_mismatch`: el cliente de Gmail conservaba solo el dominio anterior `fu6abb`. Se agregó y verificó en Google Cloud `https://n8n-n8n.b6mgbu.easypanel.host/rest/oauth2-credential/callback`, conservando las URI anteriores. Hay que iniciar una autorización nueva desde «Switch account»; la ventana del intento anterior no sirve.
 - No tratar una lista de workflows de la caché como prueba de autenticación vigente. Las lecturas de control usan `cache: no-store` y el identificador de navegador de la sesión.
 
 ## Radar de WhatsApp (WAHA) y del VPS — 26/11/2026
