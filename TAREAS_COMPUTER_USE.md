@@ -16,7 +16,7 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 | Prioridad | Tarea | Estado (19/11) | Acción restante |
 | --- | --- | --- | --- |
-| **P1** | 11. Guerra–Mininni: limpiar los textos repetidos de la configuración | Pendiente (26/11). | Hacerla entera. |
+| — | 11. Guerra–Mininni: limpiar los textos repetidos de la configuración | Hecha el 26/11 por otra IA con computer use (aviso de Axel). | Ninguna. |
 | **P1** | 12. Guerra–Mininni: verificar la primera ficha completa en Smile Connect | Pendiente (26/11): espera al primer paciente nuevo que agende Sofi. | Hacerla cuando haya uno. |
 | **P0** | 10. Guerra–Mininni: control de la integración con Smile Connect en producción | Revisado el 19/11: escritura activa, sincronizaciones y copia correctas, alta preexistente cotejada. Axel confirmó recepción de un aviso. `/events` respondió 403 con la misma clave. | Revisar ese rechazo con Smile Connect. |
 | — | 9. Guerra–Mininni: horarios de Smile Connect y feedback del 18/11 | Hecha el 18/11. | Ninguna. |
@@ -37,7 +37,7 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 ---
 
-## Tarea 11 (P1) · Guerra–Mininni: limpiar los textos repetidos de la configuración
+## Tarea 11 (hecha el 26/11) · Guerra–Mininni: limpiar los textos repetidos de la configuración
 
 **Contexto.** Una auditoría del 26/11 encontró datos escritos dos veces: en un campo con su regla y además en un texto libre. Hoy no se contradicen, pero si alguien cambia uno, Sofi recibe dos versiones. Ya se corrigió por código el horario de atención (vacío: Sofi dice el de la agenda de Smile Connect), la web de prueba y «Particular» en las coberturas. Falta esto, que necesita leer el texto actual. Detalle en `PENDIENTES.md` → «Configuración: auditoría de otra IA (26/11/2026)».
 
