@@ -8,6 +8,7 @@
 - **Inicios y duración (19/11):** Sofi consulta la disponibilidad con la duración completa y ofrece solo los inicios exactos que devuelve Smile Connect. Las celdas de 5 minutos sirven para representar cobertura, pero unirlas no autoriza cualquier inicio de un turno más largo. Antes de escribir se vuelve a comprobar duración y consultorio. Si el proveedor rechaza un destino ocupado, se comprueba que el original siga intacto antes de ofrecer buscar otra opción.
 - **Visitas combinadas** (dos prácticas seguidas) **y turnos con dos profesionales:** al darlos, moverlos o cancelarlos, siguen yendo a recepción, con una tarea.
 - **Motivo del turno:** Turnia lo manda en cuanto detecta que la API acepta notas. Desde el 18/11 lo revisa cada 6 horas, no solo con la copia diaria.
+- **Ficha completa del paciente nuevo (26/11, aviso de Smile Connect):** cuando Sofi da un turno a alguien que no está en Smile Connect, la ficha se crea con nombre, DNI, mail, celular, fecha de nacimiento, sexo, domicilio y obra social con plan y afiliado (la del turno o, si no, la de la ficha de Turnia). Lo que no es válido se deja afuera. Si Smile Connect rechaza la ficha completa, el paciente se crea con lo básico, el turno sale igual y queda anotado qué rechazó (`smile_connect_changes.result.ficha_rechazada`). La API no deja editar una ficha que ya existe: lo que el paciente da después sigue yendo en la nota del turno.
 - **Nota completa del turno (20/11, pedido de Axel):** cada turno que da Sofi lleva en las notas de Smile Connect la prestación, la obra social con plan y afiliado, el motivo y lo importante de la ficha de salud. Si el paciente completa la ficha después, se suma sola a la nota. Ver «Qué va en la nota del turno», abajo.
 
 **Bloqueos:** la clave de la sesión de QA no tiene el permiso `events:read`, pero puede no ser la misma que está cargada en Turnia. Turnia lo prueba sola en cada sincronización. Si en la tarjeta «Bloqueos» dice «Por la API», ya llegan y la tarea 10 no hace falta. Si dice «Falta el permiso events:read», hay que cargar una clave nueva. Mientras tanto, Sofi los respeta igual, porque verifica cada horario en vivo.
@@ -26,10 +27,10 @@ La documentación OpenAPI es pública: `GET https://app.smileconnect.pro/api/v1/
 - las prestaciones con precio;
 - la **disponibilidad por día**: ya descuenta turnos, bloqueos y feriados, y se puede pedir en celdas de 5 minutos;
 - los **turnos**: hora, profesional, consultorio, paciente, asistencia y si está cancelado (los cancelados se siguen viendo);
-- los **pacientes**: nombre, apellido, DNI, mail y teléfono.
+- los **pacientes**: nombre, apellido, DNI, mail y teléfono (desde el 26/11, también nacimiento, sexo, domicilio, obra social, plan, afiliado, CUIT, cómo llegó y profesionales).
 
 **Se puede escribir:**
-- crear un paciente;
+- crear un paciente, con la ficha completa desde el 26/11 (`POST /patients`, permiso `patients:create`; no acepta campos fuera del OpenAPI);
 - crear un turno (un profesional y un consultorio);
 - mover un turno (fecha, hora, profesional o consultorio; nunca el paciente);
 - cancelar un turno (baja lógica).
@@ -64,7 +65,7 @@ Turnia ya usa las tres:
 
 ## Qué va en la nota del turno
 
-La ficha del paciente de Smile Connect no tiene obra social ni plan: la API solo acepta nombre, apellido, DNI, mail y celular. Por eso esos datos van en las notas del turno, que aceptan hasta 2.000 caracteres (`src/lib/smile-connect-note.ts`). Ejemplo:
+Desde el 26/11 la ficha de un paciente nuevo ya lleva obra social, plan y afiliado, pero la API no deja editar una ficha existente y la cobertura puede cambiar de un turno a otro. Por eso esos datos siguen yendo en las notas del turno, que aceptan hasta 2.000 caracteres (`src/lib/smile-connect-note.ts`). Ejemplo:
 
 ```
 Consulta de implantes · Lo dio Sofi (Turnia)
@@ -132,7 +133,7 @@ La escritura real necesita, además, **`SMILE_CONNECT_WRITES=on` en Vercel**. Si
 - **Mover = mover el mismo turno de Smile Connect**, nunca cancelar y crear otro. Al reprogramar, `appointments.replaced_by` liga el turno viejo con el nuevo.
 - **Pacientes:**
   - se busca por DNI y después por celular, nunca por nombre solo;
-  - si no está, se crea, sin modificar nunca uno existente.
+  - si no está, se crea con la ficha completa (con lo básico, si Smile Connect la rechaza), sin modificar nunca uno existente.
 - **Sin duplicados:** `Idempotency-Key` por turno y por paciente.
 - **Registro:** cada cambio queda en `smile_connect_changes`, con cómo estaba antes. Se ve en el panel, en «Detalle».
 - **Freno automático:** con más de 15 cambios en una hora se frena la escritura y hay que reanudarla desde el panel.

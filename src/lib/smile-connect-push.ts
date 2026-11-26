@@ -14,18 +14,23 @@ import {
   scCancelAppointment,
   scCreateAppointment,
   scCreatePatient,
+  SC_BASIC_PATIENT_FIELDS,
+  smileBirthDay,
   smileEmail,
   smileIdNumber,
+  smileSex,
+  smileText,
   scRescheduleAppointment,
   SmileApiError,
   smileErrorText,
   smilePhone,
   splitName,
   type ScAppointment,
+  type ScNewPatient,
   type SmileClient,
 } from "./smile-connect-api";
 import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, SmilePatientReview, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
-import { healthLineOf, healthNoteLine, matchSmileService, smileAppointmentNote, withHealthLine, type SmileNoteHealth } from "./smile-connect-note";
+import { healthLineOf, healthNoteLine, matchSmileService, smileAppointmentNote, smileCoverage, withHealthLine, type SmileNoteHealth } from "./smile-connect-note";
 import { humanSlot, localDateKey } from "./time";
 import { confirmationBubbles } from "./whatsapp-style";
 import type { Appointment, Patient, SmileManagement } from "./types";
@@ -154,6 +159,50 @@ async function createInSmile(client: SmileClient, request: Parameters<typeof scC
   }
 }
 
+type SmilePatientSource = {
+  full_name: string | null;
+  phone: string | null;
+  dni: string | null;
+  email: string | null;
+  birth_date: string | null;
+  sex: string | null;
+  address: string | null;
+  coverage: string | null;
+  coverage_plan: string | null;
+  member_number: string | null;
+};
+
+/**
+ * La ficha nueva de Smile Connect con todo lo que Turnia sabe del paciente: nombre, DNI, mail, celular,
+ * nacimiento, sexo, domicilio y la obra social con plan y afiliado (la del turno o, si no, la de la
+ * ficha). Lo que Smile Connect no aceptaría se deja afuera: si no, rechaza el alta y el turno no se escribe.
+ */
+export function smileNewPatientBody(p: SmilePatientSource | undefined, turnCoverage: string | null, professionalId: number | null): ScNewPatient {
+  const coverage = smileCoverage(turnCoverage, p ?? null);
+  const fields: Partial<ScNewPatient> = {
+    id_number: smileIdNumber(p?.dni),
+    email: smileEmail(p?.email),
+    ...(smilePhone(p?.phone) ?? {}),
+    birth_day: smileBirthDay(p?.birth_date),
+    sex: smileSex(p?.sex),
+    address: smileText(p?.address, 200),
+    medical_insurance_name: smileText(coverage?.name, 200),
+    medical_insurance_plan: smileText(coverage?.plan, 200),
+    medical_insurance_number: smileText(coverage?.member, 100),
+    ...(professionalId && { professional_ids: [professionalId] }),
+  };
+  const body: ScNewPatient = { ...splitName(p?.full_name) };
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined) (body as Record<string, unknown>)[k] = v;
+  return body;
+}
+
+/** El alta con lo mínimo, por si Smile Connect rechaza algún dato de la ficha completa. */
+function basicPatientBody(body: ScNewPatient): ScNewPatient {
+  const out: Record<string, unknown> = {};
+  for (const k of SC_BASIC_PATIENT_FIELDS) if (body[k] !== undefined) out[k] = body[k];
+  return out as ScNewPatient;
+}
+
 /** Paciente de Smile Connect para este paciente de Turnia: vinculado, buscado por DNI o celular, o nuevo. */
 async function smilePatientId(tx: TransactionSql, client: SmileClient, row: Row, real: boolean): Promise<number | null> {
   const [linked] = await tx<Array<{ external_id: string }>>`
@@ -161,8 +210,9 @@ async function smilePatientId(tx: TransactionSql, client: SmileClient, row: Row,
     where clinic_id = ${row.clinic_id} and patient_id = ${row.patient_id} and external_id ~ '^sc:[0-9]+$'
     order by created_at desc limit 1`;
   if (linked) return scIdOf(linked.external_id);
-  const [p] = await tx<Array<{ full_name: string | null; phone: string | null; dni: string | null; email: string | null }>>`
-    select full_name, phone, dni, email from patients where id = ${row.patient_id}`;
+  const [p] = await tx<Array<SmilePatientSource>>`
+    select full_name, phone, dni, email, birth_date::text as birth_date, sex, address, coverage, coverage_plan, member_number
+    from patients where id = ${row.patient_id}`;
   let found;
   try {
     found = await findSmilePatient(client, { dni: p?.dni ?? null, phone: p?.phone ?? null, name: p?.full_name ?? null });
@@ -176,24 +226,28 @@ async function smilePatientId(tx: TransactionSql, client: SmileClient, row: Row,
       on conflict (clinic_id, external_id) do nothing`;
     return found.patient_id;
   }
-  const phone = smilePhone(p?.phone);
-  const body = {
-    ...splitName(p?.full_name),
-    // Lo que Smile Connect no acepta se deja afuera: si no, rechaza el alta y el turno no se escribe.
-    ...(smileIdNumber(p?.dni) && { id_number: smileIdNumber(p?.dni) }),
-    ...(smileEmail(p?.email) && { email: smileEmail(p?.email) }),
-    ...(phone ?? {}),
-    ...(row.smile_professional_id && { professional_ids: [row.smile_professional_id] }),
-  };
+  const body = smileNewPatientBody(p, row.coverage, row.smile_professional_id);
   if (!real) {
     await logChange(tx, row, "crear_paciente", "sombra", { request: body });
     return null;
   }
-  const created = await scCreatePatient(client, body, `turnia-paciente-${row.patient_id}`);
+  let sent = body;
+  let created;
+  try {
+    created = await scCreatePatient(client, body, `turnia-paciente-${row.patient_id}`);
+  } catch (e) {
+    // Si rechaza un dato de la ficha completa, el alta va con lo básico: el turno no se frena por eso.
+    if (!(e instanceof SmileApiError) || ![400, 422].includes(e.status)) throw e;
+    const basic = basicPatientBody(body);
+    if (Object.keys(basic).length === Object.keys(body).length) throw e;
+    sent = basic;
+    created = await scCreatePatient(client, basic, `turnia-paciente-${row.patient_id}-basico`);
+  }
   await tx`
     insert into patient_external_ids (clinic_id, external_id, patient_id) values (${row.clinic_id}, ${`sc:${created.patient_id}`}, ${row.patient_id})
     on conflict (clinic_id, external_id) do nothing`;
-  await logChange(tx, row, "crear_paciente", "hecho", { request: body, result: created });
+  // Si fue con lo básico, queda anotada la ficha que rechazó, para ver qué dato no le gustó.
+  await logChange(tx, row, "crear_paciente", "hecho", { request: sent, result: sent === body ? created : { ...created, ficha_rechazada: body } });
   return created.patient_id;
 }
 

@@ -59,7 +59,9 @@ const cells = (from: string, to: string) => {
 };
 /** El horario de siempre de los profesionales simulados: todos los días de 9 a 18 (igual que la disponibilidad). */
 const allWeek = () => Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [String(d), cells("09:00", "18:00")]));
-type Pat = { patient_id: number; name: string; surname: string; id_number: string | null; email: string | null; phone_country_code: string | null; phone_number: string | null };
+type Pat = { patient_id: number; name: string; surname: string; id_number: string | null; email: string | null; phone_country_code: string | null; phone_number: string | null; [field: string]: unknown };
+/** Lo que acepta POST /patients (el OpenAPI no admite otros campos). */
+const PATIENT_FIELDS = new Set(["name", "surname", "id_number", "email", "phone_country_code", "phone_number", "birth_day", "address", "sex", "medical_insurance_name", "medical_insurance_plan", "medical_insurance_number", "cuit", "referral_source", "referral_source_other", "professional_ids"]);
 const fake = {
   appointments: new Map<number, Appt>(),
   patients: new Map<number, Pat>(),
@@ -68,6 +70,8 @@ const fake = {
   idem: new Map<string, unknown>(),
   nextAppt: 90000,
   nextPatient: 7000,
+  /** Campo de la ficha que Smile Connect rechaza al crear un paciente (para probar el alta básica). */
+  rejectPatientField: null as string | null,
   status: 200,
   /** Días (YYYY-MM-DD) en que /availability falla, como si Smile Connect tardara de más. */
   failDates: new Set<string>(),
@@ -193,7 +197,8 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     return ok({ data: slice, next_cursor: rows.length > limit ? slice[slice.length - 1].patient_id : null });
   }
   if (path === "/patients" && method === "POST") {
-    const p: Pat = { patient_id: fake.nextPatient++, name: body.name, surname: body.surname, id_number: body.id_number ?? null, email: body.email ?? null, phone_country_code: body.phone_country_code ?? null, phone_number: body.phone_number ?? null };
+    if (Object.keys(body).some((k) => !PATIENT_FIELDS.has(k)) || (fake.rejectPatientField && fake.rejectPatientField in body)) return err(400, "invalid_request");
+    const p: Pat = { id_number: null, email: null, phone_country_code: null, phone_number: null, ...body, patient_id: fake.nextPatient++ };
     fake.patients.set(p.patient_id, p);
     fake.idem.set(`${method}${path}${idem}`, { patient_id: p.patient_id });
     return ok({ data: { patient_id: p.patient_id }, replayed: false }, 201);
@@ -480,7 +485,9 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       const other = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(5, "11:00") }, newPhone);
       expect(other.ok).toBe(true);
       const lucia = [...fake.patients.values()].find((p) => p.id_number === "30999000");
-      expect(lucia).toMatchObject({ name: "Lucía Nueva", surname: "Inventada", phone_country_code: "54", phone_number: "1100006002" });
+      // La ficha nueva va completa: nacimiento y obra social, además de nombre, DNI y celular.
+      expect(lucia).toMatchObject({ name: "Lucía Nueva", surname: "Inventada", phone_country_code: "54", phone_number: "1100006002", birth_day: "1985-01-02", medical_insurance_name: "Particular", professional_ids: [334] });
+      expect(lucia).not.toHaveProperty("medical_insurance_number");
       const otherRow = await smileSync(other.turno_id!);
       expect(fake.appointments.get(Number(otherRow.external_id.slice(3)))!.patient_id).toBe(lucia!.patient_id);
       const actions = await sql`select action, status from smile_connect_changes where status = 'hecho' order by created_at`;
@@ -663,6 +670,30 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
           service_id: 13,
           notes: "Consulta · Lo dio Sofi (Turnia)\nObra social: OSDE · Plan: 310 · Afiliado: 61234567801\nMotivo: Se le movió un implante",
         });
+        // La ficha nueva del paciente ya lleva la obra social, el plan y el afiliado.
+        const patient = writes().find((w) => w.method === "POST" && w.path === "/patients")!;
+        expect(patient.body).toMatchObject({ name: "Carla Prueba", surname: "Cobertura", id_number: "30555666", medical_insurance_name: "OSDE", medical_insurance_plan: "310", medical_insurance_number: "61234567801" });
+      });
+
+      it("si Smile Connect rechaza un dato de la ficha completa, crea al paciente con lo básico y el turno sale igual", async () => {
+        const other = "5491100006078";
+        await tool("registrar_paciente", { nombre_completo: "Rita Prueba Basica", dni: "30555777", cobertura: "OSDE", plan: "210", fecha_nacimiento: "1970-03-04" }, other);
+        fake.rejectPatientField = "birth_day";
+        fake.calls.length = 0;
+        const booked = await tool("reservar_turno", { tipo_turno_id: consult, profesional_id: pro, inicio: at(9, "12:00") }, other);
+        expect(booked.ok).toBe(true);
+        await push.pushPendingSmile(clinicId);
+        fake.rejectPatientField = null;
+        const posts = writes().filter((w) => w.method === "POST" && w.path === "/patients");
+        expect(posts).toHaveLength(2);
+        expect(posts[0].body).toMatchObject({ birth_day: "1970-03-04", medical_insurance_name: "OSDE" });
+        expect(posts[1].body).toEqual({ name: "Rita Prueba", surname: "Basica", id_number: "30555777", phone_country_code: "54", phone_number: "1100006078", professional_ids: [334] });
+        expect(posts[1].idem).toMatch(/-basico$/);
+        expect(await smileSync(booked.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:\d+$/) });
+        const [change] = await sql`select result from smile_connect_changes where action = 'crear_paciente' and status = 'hecho' order by created_at desc limit 1`;
+        expect(change.result.ficha_rechazada).toMatchObject({ birth_day: "1970-03-04" });
+        await sql`update appointments set status = 'cancelado', cancelled_at = now() where id = ${booked.turno_id!}`;
+        await push.pushPendingSmile(clinicId);
       });
 
       it("si Smile Connect rechaza la prestación, el turno se crea igual, sin ella", async () => {

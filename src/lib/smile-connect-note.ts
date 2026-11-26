@@ -1,9 +1,10 @@
 import { coverageKey, isParticular, normalizeLabel } from "./booking-rules";
 import { positiveAnswers, type HealthFormData } from "./health-form";
 
-// Lo que Turnia escribe en las notas de un turno de Smile Connect. La ficha del paciente de Smile
-// Connect no tiene obra social ni plan (la API solo acepta nombre, DNI, mail y celular), así que
-// van en la nota del turno, para que recepción los tenga a mano. Este archivo no toca la base.
+// Lo que Turnia escribe en las notas de un turno de Smile Connect. Desde el 26/11 la ficha de un
+// paciente nuevo ya lleva obra social, plan y afiliado, pero la API no deja editar una ficha que ya
+// existe: por eso la cobertura de cada turno sigue yendo en su nota, para que recepción la tenga a
+// mano. Este archivo no toca la base.
 
 /** Lo que acepta Smile Connect en las notas de un turno. */
 export const SMILE_NOTES_MAX = 2000;
@@ -35,20 +36,29 @@ function sameAsPatient(coverage: string, patientCoverage: string | null): boolea
   return a === b || a.startsWith(`${b} `) || b.startsWith(`${a} `);
 }
 
+/**
+ * La cobertura con la que va el paciente: la del turno o, si no tiene, la de la ficha. El plan y el
+ * afiliado salen de la ficha, solo si es la misma cobertura. null si no la dio.
+ */
+export function smileCoverage(coverage: string | null, patient: SmileNotePatient | null): { name: string; plan: string | null; member: string | null; particular: boolean } | null {
+  const cov = clean(coverage) ?? clean(patient?.coverage);
+  if (!cov) return null;
+  if (isParticular(cov)) return { name: "Particular", plan: null, member: null, particular: true };
+  const same = sameAsPatient(cov, clean(patient?.coverage));
+  return { name: cov, plan: same ? clean(patient?.coverage_plan) : null, member: same ? clean(patient?.member_number) : null, particular: false };
+}
+
 /** «Obra social: OSDE · Plan: 310 · Afiliado: 61234567801», «Obra social: Particular» o «Obra social: no la dio». */
 export function coverageNoteLine(coverage: string | null, patient: SmileNotePatient | null): string {
-  const cov = clean(coverage) ?? clean(patient?.coverage);
-  if (!cov) return "Obra social: no la dio";
-  if (isParticular(cov)) return "Obra social: Particular";
-  const same = sameAsPatient(cov, clean(patient?.coverage));
-  const plan = same ? clean(patient?.coverage_plan) : null;
-  const member = same ? clean(patient?.member_number) : null;
+  const c = smileCoverage(coverage, patient);
+  if (!c) return "Obra social: no la dio";
+  if (c.particular) return "Obra social: Particular";
   // «OSDE 210» ya trae el plan: no se pide aparte.
-  const planInName = /\d/.test(cov);
+  const planInName = /\d/.test(c.name);
   return [
-    `Obra social: ${cov}`,
-    plan ? `Plan: ${plan}` : planInName ? null : "Plan: no lo dio",
-    `Afiliado: ${member ?? "no lo dio"}`,
+    `Obra social: ${c.name}`,
+    c.plan ? `Plan: ${c.plan}` : planInName ? null : "Plan: no lo dio",
+    `Afiliado: ${c.member ?? "no lo dio"}`,
   ].filter(Boolean).join(" · ");
 }
 
