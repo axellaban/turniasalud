@@ -610,6 +610,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ error: 1 });
       expect(await smileSync(booked.turno_id!)).toMatchObject({ smile_sync: "error" });
       fake.status = 200;
+      await sql`update appointments set smile_retry_at = now() - interval '1 second' where id = ${booked.turno_id!}`;
       expect(await push.pushPendingSmile(clinicId)).toMatchObject({ ok: 1 });
 
       await sql`
@@ -790,6 +791,9 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       clinic_id: gm, profesional_id: gmPro, tipo_turno_id: gmConsult, inicio: at(offset, "10:00"),
     });
     const send = async () => (await import("@/lib/clinic-notices")).sendPendingNotices(gm);
+    const retryDue = async (id: string) => {
+      await sql`update appointments set smile_retry_at = now() - interval '1 second' where id = ${id}`;
+    };
 
     beforeAll(async () => {
       vi.stubEnv("SMILE_CONNECT_WRITES", "on");
@@ -926,6 +930,8 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await push.pushPendingSmile(gm, a.turno_id)).toMatchObject({ error: 1 });
       expect(await smileSync(a.turno_id!)).toMatchObject({ status: "pendiente", smile_sync: "error" });
       expect(fake.whatsapps).toHaveLength(0);
+      expect(await push.pushPendingSmile(gm, a.turno_id)).toMatchObject({ ok: 0, error: 0 });
+      await retryDue(a.turno_id!);
       const outcomes = await Promise.all([push.pushPendingSmile(gm, a.turno_id), push.pushPendingSmile(gm, a.turno_id)]);
       expect(outcomes.reduce((n, o) => n + Number(o.ok), 0)).toBe(1);
       expect(await smileSync(a.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok", external_id: expect.stringMatching(/^sc:/) });
@@ -937,6 +943,59 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(texts[0]).toMatch(/^Listo, quedó confirmado el turno de .+ para el \S+ \d+\/\d+ a las \d{2}:\d{2} con .+\.$/);
       expect(texts.at(-1)).toMatch(/^Nos vemos el \S+ 🙂$/);
       expect(texts.filter((t) => t.includes("quedó confirmado"))).toHaveLength(1);
+    });
+
+    it("recupera un 500 al crear el turno después del alta completa de un paciente nuevo", async () => {
+      const phone = '5491100006179';
+      await tool('registrar_paciente', { clinic_id: gm, nombre_completo: 'Paciente Nueva Ficticia', dni: '30111779',
+        cobertura: 'OSDE', plan: '310', numero_afiliado: 'afiliado-ficticio', fecha_nacimiento: '1990-05-20' }, phone);
+      const booking = await tool('reservar_turno', { clinic_id: gm, profesional_id: gmPro,
+        tipo_turno_id: gmConsult, inicio: at(79, '10:00') }, phone);
+      const countBefore = fake.patients.size;
+      fake.calls.length = 0;
+      fake.createStatus = 500;
+      try {
+        expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ error: 1, reintentar_en: expect.any(String) });
+      } finally { fake.createStatus = 201; }
+      expect(fake.patients.size).toBe(countBefore + 1);
+      const [failure] = await sql`select error, request from smile_connect_changes where appointment_id = ${booking.turno_id!}
+        and status = 'error' order by created_at desc limit 1`;
+      expect(failure.error).toContain('POST /appointments');
+      expect(failure.request).toEqual({ method: 'POST', path: '/appointments' });
+      await retryDue(booking.turno_id!);
+      expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+      expect(fake.patients.size).toBe(countBefore + 1);
+      expect(writes().filter((w) => w.path === '/patients')).toHaveLength(1);
+      const attempts = writes().filter((w) => w.path === '/appointments');
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0].idem).toBe(attempts[1].idem);
+      expect(await smileSync(booking.turno_id!)).toMatchObject({ status: 'confirmado', smile_sync: 'ok' });
+      fake.whatsapps.length = 0;
+      await send();
+      expect(fake.whatsapps.filter((w) => w.text.includes('quedó confirmado'))).toHaveLength(1);
+      await sql`update smile_connect_changes set created_at = now() - interval '2 hours' where appointment_id = ${booking.turno_id!}`;
+    });
+
+    it("revierte y reintenta una transacción abortada después de escribir, sin duplicar el turno remoto", async () => {
+      const booking = await book(78);
+      await sql.unsafe(`create sequence qa_smile_deadlock_once;
+        create function qa_smile_deadlock() returns trigger language plpgsql as $$ begin
+          if new.action = 'crear' and new.status = 'hecho' and nextval('qa_smile_deadlock_once') = 1 then
+            raise exception 'deadlock simulado' using errcode = '40P01';
+          end if;
+          return new;
+        end $$;
+        create trigger qa_smile_deadlock before insert on smile_connect_changes for each row execute function qa_smile_deadlock()`);
+      fake.calls.length = 0;
+      try {
+        expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+        expect(await smileSync(booking.turno_id!)).toMatchObject({ status: 'confirmado', smile_sync: 'ok' });
+        expect(writes().filter((w) => w.path === '/appointments')).toHaveLength(1);
+      } finally {
+        await sql.unsafe('drop trigger qa_smile_deadlock on smile_connect_changes; drop function qa_smile_deadlock(); drop sequence qa_smile_deadlock_once');
+      }
+      await send();
+      await sql`update smile_connect_changes set created_at = now() - interval '2 hours' where appointment_id = ${booking.turno_id!}`;
     });
 
     it("si recepción se adelanta, libera el pedido local y avisa que puede buscar otro horario", async () => {
@@ -952,11 +1011,14 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(fake.whatsapps.at(-1)?.text).toContain("ya no está disponible");
     });
 
-    it("si vence el tercer intento, deja una sola tarea de recepción y el turno sin confirmar", async () => {
+    it("espacia los errores transitorios, deriva tras ocho intentos y recupera el mismo pedido sin avisos viejos", async () => {
       const pending = await book(22);
       fake.status = 503;
       try {
-        for (let i = 0; i < 4; i++) await push.pushPendingSmile(gm, pending.turno_id);
+        for (let i = 0; i < 8; i++) {
+          await retryDue(pending.turno_id!);
+          await push.pushPendingSmile(gm, pending.turno_id);
+        }
       } finally {
         fake.status = 200;
       }
@@ -964,8 +1026,21 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       const [tasks] = await sql`select count(*)::int as n from tasks where clinic_id = ${gm}
         and details like ${`%${pending.turno_id}%`}`;
       expect(tasks.n).toBe(1);
+      // Ni una clínica ajena ni un turno ya confirmado se pueden reabrir con esta acción.
+      await expect(push.retrySmileBooking(clinicId, pending.turno_id!)).rejects.toThrow();
+      expect(await push.retrySmileBooking(gm, pending.turno_id!)).toBe(true);
+      expect(await push.retrySmileBooking(gm, pending.turno_id!)).toBe(false);
+      expect(await push.pushPendingSmile(gm, pending.turno_id)).toMatchObject({ ok: 1 });
+      expect(await smileSync(pending.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "ok" });
+      expect((await sql`select count(*)::int as n from tasks where clinic_id = ${gm}
+        and details like ${`%${pending.turno_id}%`} and status <> 'resuelta'`)[0].n).toBe(0);
+      expect((await sql`select status from clinic_notices where appointment_id = ${pending.turno_id!}
+        and kind = 'smile_paciente'`)[0].status).toBe('vencido');
+      fake.whatsapps.length = 0;
       await send();
-      expect(fake.whatsapps.at(-1)?.text).toContain("sigue pendiente");
+      expect(fake.whatsapps.some((w) => w.text.includes('sigue pendiente'))).toBe(false);
+      expect(fake.whatsapps.filter((w) => w.text.includes('quedó confirmado'))).toHaveLength(1);
+      await expect(push.retrySmileBooking(gm, pending.turno_id!)).rejects.toThrow();
     });
 
     it("no ofrece ni escribe un inicio que solo sirve para celdas de 5 minutos, pero no para el turno completo", async () => {
@@ -1094,6 +1169,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ error: 1 });
       expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "confirmado", smile_sync: "error" });
       expect(fake.whatsapps).toHaveLength(0);
+      await retryDue(booking.turno_id!);
       expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
       const [moved] = await sql`select id, starts_at, status from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
       expect(moved).toMatchObject({ starts_at: at(23, "11:00"), status: "confirmado" });
@@ -1108,6 +1184,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       fake.dropCancelReply = true;
       expect(await push.pushPendingSmile(gm, moved.id)).toMatchObject({ error: 1 });
       expect(await smileSync(moved.id)).toMatchObject({ status: "confirmado" });
+      await retryDue(moved.id);
       expect(await push.pushPendingSmile(gm, moved.id)).toMatchObject({ ok: 1 });
       expect(await smileSync(moved.id)).toMatchObject({ status: "cancelado", external_id: before.external_id });
       expect(fake.appointments.get(remoteId)?.cancelled).toBe(true);

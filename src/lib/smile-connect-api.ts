@@ -20,6 +20,7 @@ export class SmileApiError extends Error {
     readonly code: string | null = null,
     readonly retryAfter: number | null = null,
     readonly requestId: string | null = null,
+    readonly operation: { method: string; path: string } | null = null,
   ) {
     super(message);
   }
@@ -43,7 +44,9 @@ export function smileErrorText(e: unknown): string {
   }
   if (e.status === 429) return "Smile Connect pidió esperar: se superó el límite de pedidos.";
   if (e.status === 0) return "No se pudo conectar con Smile Connect.";
-  return `Smile Connect respondió ${e.status}${e.code ? ` (${e.code})` : ""}.`;
+  const operation = e.operation ? ` · ${e.operation.method} ${e.operation.path}` : "";
+  const ref = e.requestId?.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 80);
+  return `Smile Connect respondió ${e.status}${e.code ? ` (${e.code})` : ""}${operation}${ref ? ` · ref. ${ref}` : ""}.`;
 }
 
 export type SmileRequest = {
@@ -82,7 +85,7 @@ export function smileClient(apiKey: string, opts: { onReserve?: (n: number) => P
           signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000),
         });
       } catch (e) {
-        throw new SmileApiError(`Sin conexión con Smile Connect: ${e instanceof Error ? e.message : e}`, 0);
+        throw new SmileApiError(`Sin conexión con Smile Connect: ${e instanceof Error ? e.message : e}`, 0, null, null, null, { method: req.method ?? "GET", path: path.split("?")[0] });
       }
       const data = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string; request_id?: string } } | null;
       if (!res.ok) {
@@ -96,6 +99,7 @@ export function smileClient(apiKey: string, opts: { onReserve?: (n: number) => P
           data?.error?.code ?? null,
           Number.isSafeInteger(retry) && retry >= 0 && retry <= 365 * 86_400 ? retry : null,
           typeof data?.error?.request_id === "string" ? data.error.request_id : null,
+          { method: req.method ?? "GET", path: path.split("?")[0] },
         );
       }
       return data as T;

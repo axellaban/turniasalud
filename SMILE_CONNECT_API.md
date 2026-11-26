@@ -212,6 +212,10 @@ Si el WhatsApp no sale, se reintenta una vez por hora. **Ojo:** salen por la lí
 
 ### Pedido a Smile Connect para el 10/10 (actualizado el 26/11)
 
+**Recuperación de pedidos ante errores transitorios (26/11).** Un 500, timeout o caída temporal se guarda con método, ruta y referencia del proveedor, sin consultas ni credenciales. Cada pedido tiene su propia espera en `appointments.smile_retry_at`: 3, 15, 60, 120, 300 y luego 600 segundos, hasta ocho intentos. El primer reintento corto se hace en la petición; los siguientes los recoge la automatización de calendario de cada diez minutos. No se bloquean otros pedidos por el 500 de uno. Los 429 conservan la espera y el cupo del proveedor. En el tercer fallo se avisa al consultorio; al agotarse los intentos queda una tarea de revisión y el paciente recibe un aviso sin prometer confirmación.
+
+En «Para revisar en Smile Connect», el administrador puede **Reintentar este pedido**: reabre solo una reserva futura y pendiente, de la clínica seleccionada, con las mismas claves idempotentes. Antes de crear se concilia el paciente, profesional, inicio y fin exactos con Smile Connect; una confirmación exige leer el turno y verificar que no se superpone. Si se recupera, se resuelve la tarea y vence el aviso pendiente antiguo para no mandar después «sigue pendiente». Las transacciones abortadas por deadlock o serialización se revierten y se reintentan completas; nunca se continúa en una transacción abortada.
+
 Lo que falta depende de Smile Connect. El OpenAPI del 26/11 confirma que hoy no existe ninguna de estas cinco cosas. Texto para mandarles (lo puede mandar Axel o Mininni):
 
 > Hola, equipo de Smile Connect. ¡Gracias por sumar los campos nuevos al alta de pacientes! Ya los estamos usando: cada paciente nuevo que agenda Sofi entra con nacimiento, obra social, plan y afiliado. Para que la integración quede completa les pedimos, por orden de importancia:

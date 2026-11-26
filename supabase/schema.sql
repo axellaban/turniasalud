@@ -1676,6 +1676,8 @@ alter table appointments add constraint appointments_smile_sync_check
   check (smile_sync is null or smile_sync in ('pendiente', 'ok', 'error', 'revisar'));
 alter table appointments add column if not exists smile_error text;
 alter table appointments add column if not exists smile_attempts integer not null default 0;
+-- Espera por pedido: un error pasajero no consume tres intentos seguidos ni frena a toda la clínica.
+alter table appointments add column if not exists smile_retry_at timestamptz;
 alter table appointments add column if not exists replaced_by uuid references appointments(id) on delete set null;
 create index if not exists appointments_smile_pending_idx on appointments (clinic_id) where smile_sync in ('pendiente', 'error');
 
@@ -1770,6 +1772,7 @@ begin
     if new.external_id is null and new.source <> 'smile_connect' and new.status in ('confirmado', 'pendiente') and new.ends_at > now() then
       new.smile_sync := 'pendiente';
       new.smile_attempts := 0;
+      new.smile_retry_at := null;
       new.smile_error := null;
     end if;
   elsif (new.status is distinct from old.status or new.starts_at is distinct from old.starts_at
@@ -1777,6 +1780,7 @@ begin
         and (new.external_id like 'sc:%' or new.smile_sync is not null) then
     new.smile_sync := 'pendiente';
     new.smile_attempts := 0;
+    new.smile_retry_at := null;
     new.smile_error := null;
   end if;
   return new;
