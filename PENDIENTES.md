@@ -1,5 +1,15 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Email de respaldo para los avisos técnicos — 26/11/2026
+
+- Axel autorizó enviar los avisos técnicos a `axellaban@gmail.com`.
+- El flujo real `Turnia · Eventos (avisos al equipo)` (`PEaOkLPBrLIfFE0Q`) está publicado y ya tiene una conexión `Gmail account` usada para `lead.nuevo`. Ese envío de pedidos de demo se conserva. La rama nueva procesa únicamente `axel.aviso` y usa esa misma conexión para el email técnico.
+- La aceptación del webhook y la entrega del email son comprobaciones distintas. `notifyN8n` ahora devuelve si n8n aceptó el HTTP; un 401 o un 500 no se presenta como éxito. Los errores de n8n conservan el flujo clínico.
+- Sistema incorpora «Probar email de respaldo», solo para el administrador, con un código en el mensaje y un máximo de una solicitud por minuto. Debe comprobarse la entrega en Gmail, sin hacer fallar WAHA ni usar pacientes para probar.
+- Límite: n8n corre en el mismo VPS que WAHA. Este email cubre fallas de WhatsApp; una caída completa del VPS requiere un proveedor de correo externo a ese VPS. No describirlo como respaldo independiente del VPS.
+- La rama se publicó en n8n como versión `03e77dcb-171b-4dc0-a1cf-07576276cfd6`. La primera prueba alcanzó el nodo nuevo; Google rechazó el permiso guardado de `Gmail account` y pidió reconectarlo. La recepción debe verificarse después de esa autorización, con un código de prueba nuevo. La versión y las ejecuciones se consultan en el flujo real.
+- No tratar una lista de workflows de la caché como prueba de autenticación vigente. Las lecturas de control usan `cache: no-store` y el identificador de navegador de la sesión.
+
 ## Radar de WhatsApp (WAHA) y del VPS — 26/11/2026
 
 Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detectar la próxima caída a tiempo.
@@ -31,7 +41,7 @@ Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detec
 - Panel → Sistema → «Radar de WhatsApp y VPS»: la última lectura y los últimos eventos.
 
 **Pendiente:**
-- [ ] **Axel: cargar en Vercel (Production) `EASYPANEL_API_URL` = `https://<panel>/api` y `EASYPANEL_API_TOKEN`.** Sin eso, el radar y la ruta de logs no hacen nada y el lector del VPS guarda las líneas y reintenta.
+- [x] **Variables del radar cargadas en Vercel Production el 26/11.** `EASYPANEL_API_URL=https://b6mgbu.easypanel.host/api` y token como secreto. Se redesplegó la misma versión publicada (`4da0746`); el endpoint de logs aceptó la firma derivada del token y `/api/health` respondió 200 con la base operativa.
 - [ ] **Rotar el token de Easypanel y las cuatro `WAHA_API_KEY`**: pasaron por un chat el 26/11. Rotar las claves de WAHA obliga a redesplegar cada servicio, así que conviene hacerlo fuera del horario del consultorio y empezando por las que están en FAILED.
 - [ ] **Decidir con Axel** si se apagan `turnia-guerra-mininni-waha` y `turnia-prospeccion-5483-waha` (las dos en FAILED) para liberar unos 600 MB de RAM, y si se le pone tope de memoria a `n8n/waha`. Son cambios en el VPS: no se hicieron.
 - [ ] Fijar la imagen de `n8n/waha` en su digest actual (no redesplegar para eso en horario de atención).

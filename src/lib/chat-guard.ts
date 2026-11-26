@@ -144,7 +144,8 @@ function logLimit(tipo: string, clinicId: string, extra: Record<string, unknown>
 
 /**
  * Le escribe a Axel desde la línea de Turnia (nunca desde la línea de una clínica), aunque la demo pública
- * esté pausada. Si el WhatsApp no sale, el aviso va igual a n8n (`axel.aviso`) para que no se pierda.
+ * esté pausada. Si el WhatsApp no sale, envía `axel.aviso` a n8n para el respaldo por email.
+ * La aceptación del webhook no confirma la entrega: esa ejecución de Gmail puede fallar.
  */
 export async function notifyAxel(text: string): Promise<boolean> {
   try {

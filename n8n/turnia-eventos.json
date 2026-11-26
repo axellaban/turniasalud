@@ -214,6 +214,56 @@
               },
               "renameOutput": true,
               "outputKey": "Tarea resuelta"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "f2dce73f-0c49-481b-8640-6aa9aa8d1335",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "lead.nuevo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pedido de demo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "5cf8a35c-0f00-409c-a88b-2b9f5a9bd7ab",
+                    "leftValue": "={{ $json.body.event }}",
+                    "rightValue": "axel.aviso",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Aviso técnico a Axel"
             }
           ]
         },
@@ -319,6 +369,59 @@
         920,
         800
       ]
+    },
+    {
+      "parameters": {
+        "sendTo": "axellaban@gmail.com",
+        "subject": "Turnia Salud · Nuevo pedido de demo",
+        "emailType": "text",
+        "message": "Entró un nuevo pedido de demo en Turnia Salud.  Abrí la bandeja para ver los datos de contacto y hacer seguimiento: https://turniasalud.vercel.app/panel/demos  Turnia Salud",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        992
+      ],
+      "id": "67b436e6-1c5e-4f5f-b5b1-9d184e49f2a1",
+      "name": "Send a message",
+      "webhookId": "d376b0ac-5a6b-4b3d-9e99-7b419fbd08b4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "SELECCIONAR_CREDENCIAL_gmailOAuth2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "axellaban@gmail.com",
+        "subject": "Turnia · Aviso técnico",
+        "emailType": "text",
+        "message": "={{ $json.body.texto }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        1232
+      ],
+      "id": "24165e7f-63e2-4d24-b0f6-7cdc5722a562",
+      "name": "Email técnico a Axel",
+      "webhookId": "d376b0ac-5a6b-4b3d-9e99-7b419fbd08b4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "SELECCIONAR_CREDENCIAL_gmailOAuth2",
+          "name": "Gmail account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     }
   ],
   "connections": {
@@ -395,6 +498,20 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email técnico a Axel",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     }
@@ -403,5 +520,6 @@
     "executionOrder": "v1",
     "timezone": "America/Argentina/Buenos_Aires"
   },
-  "pinData": {}
+  "pinData": {},
+  "active": false
 }
