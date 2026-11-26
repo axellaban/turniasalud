@@ -10,8 +10,14 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 
 > Leé el control del 19/11 en `QA_TURNIA.md` y el principio de `PENDIENTES.md`. Continuá solo sus comprobaciones pendientes. El 403 de `/events` se confirmó con la clave vigente y el usuario pidió conservarla. No generar ni revocar claves por iniciativa propia. «Sincronizar ahora» permite volver a probar cuando Smile Connect revise ese rechazo.
 
+**Prompt para las tareas 11 y 12 (26/11)** (copiar tal cual):
+
+> Leé `TAREAS_COMPUTER_USE.md` en el repositorio turniasalud y hacé la tarea 11 (limpiar los textos repetidos de la configuración de Guerra–Mininni) siguiendo cada paso y sus reglas. Después hacé la tarea 12 (verificar la primera ficha completa en Smile Connect); si todavía no hay un paciente nuevo agendado por Sofi desde el 26/11, decilo y no hagas nada más. No reserves, muevas ni canceles turnos y no compartas datos de pacientes. Si algo no coincide con lo que dice un paso, frená y preguntame.
+
 | Prioridad | Tarea | Estado (19/11) | Acción restante |
 | --- | --- | --- | --- |
+| **P1** | 11. Guerra–Mininni: limpiar los textos repetidos de la configuración | Pendiente (26/11). | Hacerla entera. |
+| **P1** | 12. Guerra–Mininni: verificar la primera ficha completa en Smile Connect | Pendiente (26/11): espera al primer paciente nuevo que agende Sofi. | Hacerla cuando haya uno. |
 | **P0** | 10. Guerra–Mininni: control de la integración con Smile Connect en producción | Revisado el 19/11: escritura activa, sincronizaciones y copia correctas, alta preexistente cotejada. Axel confirmó recepción de un aviso. `/events` respondió 403 con la misma clave. | Revisar ese rechazo con Smile Connect. |
 | — | 9. Guerra–Mininni: horarios de Smile Connect y feedback del 18/11 | Hecha el 18/11. | Ninguna. |
 | — | 7. Smile Connect por API y resumen diario (Guerra–Mininni) | Etapa D activa desde el 18/11: «Crear, mover y cancelar», con `SMILE_CONNECT_WRITES=on`. Las visitas combinadas siguen yendo a recepción. | Ninguna: mirar los primeros cambios y cancelaciones en «Registro de cambios en Smile Connect». |
@@ -30,6 +36,114 @@ Cada tarea se puede copiar entera como prompt. Van en orden de prioridad: **P0**
 - Al terminar cada tarea, contestá: qué quedó hecho en cada paso, qué no se pudo y por qué, y el resultado de la verificación.
 
 ---
+
+## Tarea 11 (P1) · Guerra–Mininni: limpiar los textos repetidos de la configuración
+
+**Contexto.** Una auditoría del 26/11 encontró datos escritos dos veces: en un campo con su regla y además en un texto libre. Hoy no se contradicen, pero si alguien cambia uno, Sofi recibe dos versiones. Ya se corrigió por código el horario de atención (vacío: Sofi dice el de la agenda de Smile Connect), la web de prueba y «Particular» en las coberturas. Falta esto, que necesita leer el texto actual. Detalle en `PENDIENTES.md` → «Configuración: auditoría de otra IA (26/11/2026)».
+
+**Reglas**
+- Es la configuración real de un consultorio en producción. **Cambiá solo las frases que dice cada paso.** No reescribas los textos ni corrijas estilo.
+- **No reserves, muevas ni canceles turnos.** No toques nada de lo que tiene candado («Se maneja en Smile Connect»).
+- **No borres ni desactives prestaciones.**
+- Si algo no coincide con lo que dice el paso (otro número, otra frase, una cobertura que no está en la lista), **frená y preguntá**.
+
+**Dónde:** panel de Turnia (`https://turniasalud.app/panel`) con la clínica **Guerra–Mininni** elegida arriba → Configuración.
+
+### Paso 0 · Cómo está antes
+1. En la pestaña «Consultorio», abajo a la derecha, abrí **«Lo que sabe Sofi del consultorio»**.
+2. Sacá una captura de todo el texto (lo vas a comparar al final).
+3. Copiá en tu respuesta el recuadro de arriba («Hay N datos que se contradicen»), si aparece.
+
+### Paso 1 · «Otras condiciones» (pestaña «Turnos y urgencias»)
+1. Anotá qué dicen los campos «Aviso mínimo para mover (horas)» y «Aviso mínimo para cancelar (horas)».
+2. En «Otras condiciones», borrá **solo** las frases que repiten esos plazos, por ejemplo «Avisar 24 horas antes…».
+   - Si una frase dice un plazo distinto al del campo, no la borres: frená y preguntá.
+   - Si el campo está vacío y la frase dice un plazo, cargá ese número en el campo y recién después borrá la frase.
+3. Borrá también **solo** las frases que nombran coberturas («atendemos OSDE, Swiss Medical, Apsot…»), siempre que todas esas coberturas estén en la pestaña «Coberturas» → «Coberturas que acepta el consultorio». Si falta alguna, no la borres: anotala y preguntá.
+4. Dejá todo lo demás: tolerancia, seña, qué pasa si no avisa.
+5. Apretá «Guardar cambios».
+
+### Paso 2 · Conductos por obra social → una excepción (pestaña «Coberturas»)
+El texto dice algo como «No hacemos tratamientos de conducto por obra social». Como excepción, Sofi lo cumple siempre: no ofrece esos turnos por obra social y ofrece atenderse como particular.
+1. En «Prestaciones», buscá la de conductos (endodoncia o tratamiento de conducto) que da Sofi, es decir, que no dice «solo el consultorio».
+   - Si no hay ninguna, o la única es «Turno Smile Connect (Endodoncia)», **no crees excepciones**: anotalo y seguí con el paso 3.
+2. En «Coberturas» → «Excepciones» → «+ Agregar una excepción», agregá una por cada obra social o prepaga de la lista del consultorio, salvo «Particular»:
+   - Obra social: la de la lista, escrita igual (por ejemplo «OSDE»).
+   - Plan: vacío.
+   - Prestación: la de conductos del punto 1.
+   - Profesional: vacío.
+   - Qué pasa: **«No la acepta (ofrecer particular)»**.
+3. Recién con las excepciones cargadas, borrá esa frase del texto donde esté («Otras condiciones», «Sobre el consultorio y preguntas frecuentes» o «Instrucciones adicionales»).
+4. Si estaba en un texto de la pestaña «Consultorio» o «Turnos y urgencias», guardá en esa pestaña.
+
+### Paso 3 · Precio repetido (pestaña «Consultorio» → «Sobre el consultorio y preguntas frecuentes»)
+1. Buscá el precio que está en el texto (por ejemplo «Consulta particular: $48.000»).
+2. Fijate en «Prestaciones» que esa prestación tenga el mismo precio.
+   - Si es el mismo, borrá **solo el monto** de la frase (o la frase, si no dice otra cosa). Las formas de pago que estén en la misma línea se dejan.
+   - Si es distinto, no lo borres: frená y preguntá cuál es el correcto.
+3. Apretá «Guardar cambios».
+
+### Paso 4 · Trato (pestaña «Consultorio»)
+1. Mirá «Cómo trata a los pacientes».
+   - Si dice «De usted»: en «Instrucciones adicionales», borrá **solo** la frase «Tratá siempre de usted» (o la que diga lo mismo).
+   - Si dice «De vos»: cambialo a «De usted» y después borrá esa frase.
+2. Apretá «Guardar cambios».
+
+### Paso 5 · Dos «Turno Smile Connect» (pestaña «Prestaciones») · solo mirar
+1. **No las borres ni las desactives**: las creó la sincronización con Smile Connect.
+2. Anotá de cada una:
+   - la especialidad y la duración;
+   - si Sofi la ofrece o si es «solo el consultorio»;
+   - si tiene profesionales.
+
+### Paso 6 · Verificación
+1. Volvé a abrir «Lo que sabe Sofi del consultorio» y sacá otra captura.
+2. El recuadro «Hay N datos que se contradicen» no tiene que aparecer, o no tiene que haber sumado nada.
+3. En «Probar a Sofi» → «Empezar la prueba», hacé dos pruebas y cerrá cada una sin contestar más:
+   - Escribí «¿Hacen tratamiento de conducto por OSDE?» (con una obra social de la lista). Tiene que decir que por obra social no y ofrecer atenderse como particular.
+   - Escribí «¿Cuánto sale la consulta?». Tiene que dar un solo precio.
+4. Al terminar, contestá:
+   - qué frases borraste y de qué campo;
+   - qué excepciones creaste;
+   - lo que anotaste en el paso 5;
+   - el resultado de las pruebas;
+   - las dos capturas, antes y después.
+
+## Tarea 12 (P1) · Guerra–Mininni: verificar la primera ficha completa en Smile Connect
+
+**Contexto.** Desde el 26/11, cuando Sofi agenda un turno de alguien que no está en Smile Connect, crea su ficha con todo lo que sabe:
+- nombre, DNI, mail y celular;
+- fecha de nacimiento, sexo y domicilio;
+- obra social con plan y afiliado.
+
+Si Smile Connect rechaza algún dato, crea la ficha con lo básico y anota qué rechazó. Esta tarea comprueba la primera ficha real. Detalle en `SMILE_CONNECT_API.md` → «Ficha completa del paciente nuevo».
+
+**Cuándo:** cuando Sofi ya haya dado un turno a un paciente nuevo, es decir, después del 26/11. Si todavía no hubo ninguno, contestá eso y no hagas nada más.
+
+**Reglas**
+- **Solo mirar.** No cambies nada en Turnia ni en Smile Connect.
+- **Sin nombres, teléfonos, DNI ni números de afiliado** en la respuesta ni en las capturas. Tapalos o describilos («tiene obra social cargada: sí»).
+
+### Paso 1 · En Turnia
+1. Entrá al panel de Turnia (`https://turniasalud.app/panel`) con **Guerra–Mininni** elegida arriba.
+2. Andá a Configuración → Agenda e integraciones → tarjeta «Smile Connect por API» → «Registro de cambios en Smile Connect».
+3. Buscá el **«Crear paciente»** más reciente con estado **«Hecho»** y fecha del 26/11 o posterior. Abrí su «Detalle».
+4. Anotá, sin copiar los valores:
+   - qué campos se mandaron (`birth_day`, `sex`, `address`, `medical_insurance_name`, `medical_insurance_plan`, `medical_insurance_number`);
+   - el número de paciente de Smile Connect (`patient_id` en el resultado);
+   - si en el resultado aparece **`ficha_rechazada`**. Si aparece, anotá qué campos tiene: es lo que Smile Connect no aceptó.
+
+### Paso 2 · En Smile Connect (`https://app.smileconnect.pro`, solo si el usuario tiene la sesión iniciada)
+1. Abrí la ficha de ese paciente (buscalo por su número o desde su turno).
+2. Comprobá que tenga cargados los mismos datos que se mandaron: obra social, plan, afiliado, fecha de nacimiento y, si se mandaron, sexo y domicilio.
+
+### Al terminar, contestá
+- la fecha del alta;
+- qué campos se mandaron;
+- cuáles se ven en la ficha de Smile Connect;
+- si hubo `ficha_rechazada` y con qué campos.
+
+Si algún dato se mandó y no aparece en la ficha, o si hubo `ficha_rechazada`, avisalo: hay que revisarlo con Smile Connect.
 
 ## Tarea 10 (P0) · Guerra–Mininni: control de la integración con Smile Connect en producción
 
