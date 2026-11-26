@@ -86,6 +86,8 @@ export type Professional = {
   bio: string | null;
   accepted_coverages: string[] | null;
   active: boolean;
+  /** Su id en Smile Connect, si el consultorio está conectado por la API. */
+  smile_professional_id?: number | null;
 };
 
 export type AppointmentType = {

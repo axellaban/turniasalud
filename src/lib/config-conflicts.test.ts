@@ -46,3 +46,31 @@ describe("configConflicts", () => {
     expect(configConflicts({ ...base, faq }, [])).toEqual([]);
   });
 });
+
+describe("configConflicts con la agenda", () => {
+  const r = (professional_id: string, weekday: number, start: string, end: string) => ({ professional_id, weekday, start_time: `${start}:00`, end_time: `${end}:00`, urgent_only: false, appointment_type_ids: null });
+  const agenda = {
+    schedules: [r("c", 1, "09:00", "17:30"), r("m", 1, "10:00", "17:30"), r("m", 4, "10:00", "18:30"), r("m", 5, "11:00", "17:30")],
+    professionals: new Map([["c", "Coldeira"], ["m", "Mininni"]]),
+  };
+
+  it("avisa si el horario que dice Sofi quedó viejo contra la agenda", () => {
+    const [c] = configConflicts({ ...base, hours_text: "Lunes de 10 a 17:30, jueves de 10 a 18:30 y viernes de 11 a 17:30" }, [], agenda);
+    expect(c).toMatchObject({ key: "horario", href: "/panel/configuracion#datos" });
+    expect(c.message).toContain("Lunes de 9 a 17:30, jueves de 10 a 18:30 y viernes de 11 a 17:30»");
+    expect(configConflicts({ ...base, hours_text: "Lunes de 9 a 17:30, jueves de 10 a 18:30 y viernes de 11 a 17:30" }, [], agenda)).toEqual([]);
+  });
+
+  it("cuenta, como dato y no como error, el día con horarios en que Sofi no da turnos (el viernes de la auditoría)", () => {
+    const [c] = configConflicts({ ...base, booking_weekdays: [1, 2, 3, 4] }, [], agenda);
+    expect(c).toMatchObject({ key: "dias-sin-turnos", tone: "info" });
+    expect(c.message).toContain("viernes (Mininni)");
+    expect(configConflicts({ ...base, booking_weekdays: null }, [], agenda)).toEqual([]);
+  });
+
+  it("marca el trato del texto que contradice el selector", () => {
+    expect(configConflicts({ ...base, agent_context: "Tratá siempre de usted." }, [])[0].key).toBe("trato");
+    expect(configConflicts({ ...base, tone: "usted", agent_context: "Tratá siempre de usted." }, [])).toEqual([]);
+    expect(configConflicts({ ...base, tone: "usted", faq: "Tuteá a los chicos." }, [])[0].key).toBe("trato");
+  });
+});

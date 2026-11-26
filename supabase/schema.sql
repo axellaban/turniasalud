@@ -2160,3 +2160,32 @@ create index if not exists infra_radar_samples_created_idx on infra_radar_sample
 alter table infra_radar_state enable row level security;
 alter table infra_radar_events enable row level security;
 alter table infra_radar_samples enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Configuración de Guerra–Mininni (26/11/2026, pedido de Axel después de una auditoría). Una sola vez:
+--   * «Horario de atención» había quedado viejo (decía 10 y la agenda de Smile Connect empieza a las 9).
+--     Vacío, Sofi dice el horario armado con los horarios de los profesionales, que se copian de Smile
+--     Connect: queda siempre al día.
+--   * La web era la de prueba de «Completar con la web» (otro proyecto en la raíz): se saca para que
+--     Sofi no se la pase a un paciente.
+--   * «Particular» se suma a las coberturas del consultorio: sus condiciones dicen que atienden sin
+--     cobertura. Las listas de cada profesional no se tocan.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-26-configuracion-guerra-mininni') then
+    update clinics set
+      hours_text = null,
+      website = case when website ilike '%lab-orpin-five.vercel.app%' then null else website end,
+      accepted_coverages = case
+        when exists (select 1 from unnest(accepted_coverages) c where c ilike 'particular%') then accepted_coverages
+        else accepted_coverages || array['Particular'] end,
+      context_revision = context_revision + 1,
+      updated_at = now()
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    if found then
+      insert into clinic_changes (clinic_id, actor, area) values ('67c3954a-8df8-46c2-a604-f818832bee36', 'Turnia', 'Consultorio y coberturas');
+    end if;
+    insert into data_migrations (name) values ('2026-11-26-configuracion-guerra-mininni');
+  end if;
+end $$;

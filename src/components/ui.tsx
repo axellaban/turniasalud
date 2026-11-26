@@ -72,7 +72,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 export function Tabs({ items, current }: { items: Array<{ href: string; label: string; count?: number }>; current: string }) {
   const id = `tabs-${items[0]?.href.replace(/[^a-z]/g, "")}`;
   return (
-    <nav id={id} aria-label="Secciones" className="relative -mx-4 mb-6 overflow-x-auto border-b border-brand-900/10 px-4 sm:mx-0 sm:px-0">
+    <nav id={id} aria-label="Secciones" className="relative -mx-4 mb-6 overflow-x-auto border-b border-brand-900/10 px-4 sm:mx-0 sm:px-0 data-[fade=right]:[mask-image:linear-gradient(to_right,black_calc(100%-48px),transparent)] data-[fade=left]:[mask-image:linear-gradient(to_left,black_calc(100%-48px),transparent)] data-[fade=both]:[mask-image:linear-gradient(to_right,transparent,black_48px,black_calc(100%-48px),transparent)]">
       <ScrollActiveTab id={id} />
       <ul className="flex min-w-max gap-1">
         {items.map((item) => {

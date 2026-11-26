@@ -1,9 +1,11 @@
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { getScheduleBlocks } from "@/lib/clinic";
 import { sql } from "@/lib/db";
-import { formatDateTime, localDateKey } from "@/lib/time";
-import { deleteScheduleBlock } from "../../../actions";
-import { Card, Empty, smallButtonClass } from "@/components/ui";
+import { localDateKey } from "@/lib/time";
+import { groupBlocks } from "@/lib/block-groups";
+import { deleteScheduleBlock, loadNationalHolidays } from "../../../actions";
+import { ActionForm } from "../action-form";
+import { Badge, Card, Empty, smallButtonClass } from "@/components/ui";
 import type { Professional } from "@/lib/types";
 import { ScheduleBlockForm } from "../block-form";
 import { ConfigHeader } from "../header";
@@ -19,6 +21,7 @@ export default async function BlocksPage() {
     getScheduleBlocks(clinic.id, now, new Date(now.getTime() + 365 * 86400_000)),
   ]);
   const proName = new Map(professionals.map((p) => [p.id, p.full_name]));
+  const groups = groupBlocks(blocks, proName, clinic.timezone);
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion/bloqueos" />
@@ -27,22 +30,24 @@ export default async function BlocksPage() {
           <h2 className="font-semibold text-brand-950">Próximos bloqueos</h2>
           <p className="mt-1 text-sm text-brand-900/60">En estos períodos {clinic.agent_name || "Sofi"} no ofrece turnos y avisa que no se atiende. Los turnos ya dados no se cancelan solos.</p>
           <ul className="mt-4 space-y-2 text-sm">
-            {blocks.map((b) => (
-              <li key={b.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50/60 px-3 py-2">
+            {groups.map((g) => (
+              <li key={g.ids[0]} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50/60 px-3 py-2">
                 <span className="min-w-0">
-                  <span className="font-medium text-brand-950">{b.professional_id ? proName.get(b.professional_id) ?? "Profesional" : "Toda la clínica"}</span>
-                  <span className="block text-brand-900/60">{formatDateTime(b.starts_at, clinic.timezone)} → {formatDateTime(b.ends_at, clinic.timezone)}{b.reason ? ` · ${b.reason}` : ""}</span>
+                  <span className="font-medium text-brand-950">{g.when}</span>
+                  <span className="block text-brand-900/60">{g.who}{g.reason ? ` · ${g.reason}` : ""}</span>
                 </span>
-                <form action={deleteScheduleBlock}><input type="hidden" name="clinic_id" value={clinic.id} />
-                  <input type="hidden" name="id" value={b.id} />
-                  <button className={smallButtonClass}>Quitar</button>
-                </form>
+                {g.fromSmile
+                  ? <span title="Viene de Smile Connect: se quita allá y llega sola."><Badge>De Smile Connect</Badge></span>
+                  : <form action={deleteScheduleBlock}><input type="hidden" name="clinic_id" value={clinic.id} />
+                    {g.ids.map((id) => <input key={id} type="hidden" name="id" value={id} />)}
+                    <button className={smallButtonClass}>{g.ids.length > 1 ? `Quitar (${g.ids.length})` : "Quitar"}</button>
+                  </form>}
               </li>
             ))}
           </ul>
           {!blocks.length && <div className="mt-4"><Empty>No hay feriados ni bloqueos cargados.</Empty></div>}
         </Card>
-        <Card>
+        <Card className="self-start lg:sticky lg:top-4">
           <h2 className="mb-4 font-semibold text-brand-950">Bloquear la agenda</h2>
           <ScheduleBlockForm
             agent={clinic.agent_name || "Sofi"}
@@ -50,6 +55,17 @@ export default async function BlocksPage() {
             professionals={professionals.filter((p) => p.active).map((p) => ({ id: p.id, name: p.full_name }))}
             today={localDateKey(now, clinic.timezone)}
           />
+          <div className="mt-6 border-t border-brand-900/10 pt-5">
+            <h3 className="font-semibold text-brand-950">Feriados nacionales</h3>
+            <p className="mt-1 text-sm text-brand-900/60">Carga los del próximo año como días sin atención de toda la clínica, con su nombre. Los que ya están no se repiten; si un año atienden un feriado, quitalo de la lista.</p>
+            <ActionForm action={loadNationalHolidays} submit="Cargar feriados" pendingLabel="Cargando…" secondary className="mt-3 space-y-3">
+              <input type="hidden" name="clinic_id" value={clinic.id} />
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" name="bridges" className="mt-1" />
+                <span>También los puentes turísticos<span className="block text-xs text-brand-900/60">Son no laborables: muchos consultorios atienden igual.</span></span>
+              </label>
+            </ActionForm>
+          </div>
         </Card>
       </div>
     </>

@@ -6,6 +6,7 @@ import { formatDate, formatDateTime } from "./time";
 import { householdOf, patientForPhone } from "./patients";
 import { agentCanMove, bookingDaysText, coverageRuleText, durationPhrase, parseTerms, receptionOnlyTerm } from "./booking-rules";
 import { DENTAL_PROTOCOL, isDentalSpecialty } from "./agent/modules/odontologia";
+import { hoursTextMismatch, scheduleSummary } from "./hours-summary";
 import { wahaConnections } from "./waha-connections";
 import { staffContextText, staffForPhone } from "./staff";
 import type { Appointment, AppointmentType, Clinic, CoverageRule, Patient, Professional, ProfessionalType, Schedule, ScheduleBlock, Task } from "./types";
@@ -118,18 +119,29 @@ export function isDentalClinic(clinic: Pick<Clinic, "specialty">, catalog?: Pick
  * Texto con la información fija de la clínica que el agente usa para responder. `dental`: si la
  * clínica es odontológica (por defecto, por su especialidad), para sumar el protocolo odontológico.
  */
-export function clinicInfoText(clinic: Clinic, openNow?: boolean, opts: { dental?: boolean } = {}): string {
+export function clinicInfoText(clinic: Clinic, openNow?: boolean, opts: { dental?: boolean; schedules?: Schedule[] } = {}): string {
   const dental = opts.dental ?? isDentalSpecialty(clinic.specialty);
+  // El horario que escribió el consultorio. Sin texto, el armado con la agenda; si el texto quedó viejo,
+  // también el de la agenda, para que Sofi no le dé al paciente un horario que no es.
+  const agendaHours = opts.schedules ? scheduleSummary(opts.schedules) : null;
+  const hoursLines = !clinic.hours_text?.trim()
+    ? [agendaHours && `Horario de atención: ${agendaHours}`]
+    : [
+      `Horario de atención: ${clinic.hours_text}`,
+      agendaHours && opts.schedules && hoursTextMismatch(clinic.hours_text, opts.schedules) &&
+        `Horario según la agenda de turnos: ${agendaHours}. Si no coincide con el de arriba, vale este.`,
+    ];
+  const samePhone = Boolean(clinic.phone && clinic.handoff_phone && clinic.phone.replace(/\D/g, "") === clinic.handoff_phone.replace(/\D/g, ""));
   return [
     `Nombre: ${clinic.name}`,
     `Especialidad: ${clinic.specialty}`,
     clinic.website && `Web: ${clinic.website}`,
-    clinic.handoff_phone && `Teléfono de recepción para derivaciones: ${clinic.handoff_phone}`,
+    clinic.handoff_phone && !samePhone && `Teléfono de recepción para derivaciones: ${clinic.handoff_phone}`,
     openNow !== undefined &&
       `Ahora mismo: ${openNow ? "dentro del horario de atención (hay profesionales atendiendo)" : "fuera del horario de atención"}`,
     clinic.address && `Dirección: ${clinic.address}`,
-    clinic.phone && `Teléfono: ${clinic.phone}`,
-    clinic.hours_text && `Horario de atención: ${clinic.hours_text}`,
+    clinic.phone && `Teléfono: ${clinic.phone}${samePhone ? " (es también el de recepción para derivaciones)" : ""}`,
+    ...hoursLines,
     clinic.accepted_coverages.length && `Coberturas aceptadas: ${clinic.accepted_coverages.join(", ")}`,
     clinic.faq && `Preguntas frecuentes:\n${clinic.faq}`,
     clinic.policies && `Políticas:\n${clinic.policies}`,
@@ -394,7 +406,7 @@ export async function buildDynamicVariables(
     clinic_name: clinic.name,
     agent_name: clinic.agent_name,
     trato: toneText(clinic),
-    clinic_info: clinicInfoText(clinic, openNow, { dental: isDentalClinic(clinic, catalog) }),
+    clinic_info: clinicInfoText(clinic, openNow, { dental: isDentalClinic(clinic, catalog), schedules: catalog.schedules }),
     clinic_catalog: catalogText(catalog, blocks, clinic.timezone, clinic),
     urgency_instructions: clinic.after_hours_instructions
       ? `${urgency}\nFuera del horario de atención: ${clinic.after_hours_instructions}`

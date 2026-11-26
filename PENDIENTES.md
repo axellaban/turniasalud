@@ -176,6 +176,26 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 - [ ] **Bloqueos: rechazo real 403 de Smile Connect.** Después del [PR #238](https://github.com/axellaban/turniasalud/pull/238) se ejecutó una única sincronización manual a las 10:16 con la misma clave vigente: turnos y horarios correctos, pero `/events` devuelve 403. El usuario indicó que esa clave ya tenía todos los permisos y pidió conservarla. Revisar con Smile Connect la habilitación de `events:read` para esa clave; no generar otra ni revocarla por iniciativa propia. El arreglo distingue 403 de 404 y permite volver a probar desde «Sincronizar ahora» sin cambiar la clave. Sofi sigue verificando la disponibilidad en vivo.
 - [x] **Recepción de un aviso de integración confirmada por Axel el 19/11.** Indicó que recibió un mensaje de «Turnia · Smile Connect» en su WhatsApp personal. No se revisó el contenido ni se envió otro aviso para esta confirmación.
 
+## Configuración: auditoría de otra IA (26/11/2026)
+
+Hecho en el código (todos los consultorios):
+- **Horario que dice Sofi contra la agenda real:** si «Horario de atención» no coincide con Equipo y horarios, se avisa arriba y bajo el campo, con «Usar este texto» (el armado con los horarios). Sofi recibe además el de la agenda y sabe que vale ese. Vacío: dice el armado.
+- **Días con horarios en que Sofi no da turnos** (el viernes de Guerra–Mininni): aviso informativo, no error, porque es a propósito. Sofi ya le dice al paciente que esos días los coordina el equipo.
+- **Trato contradictorio** (selector «De vos» y el texto «tratá de usted», o al revés): aviso.
+- **Smile Connect como fuente:** en Equipo y horarios, los horarios comunes que vienen de allá dicen «SC» y no se pueden borrar (los vuelve a poner la copia); los de urgencias y de algunas prestaciones siguen siendo de Turnia. En Feriados y bloqueos, los de Smile Connect dicen «De Smile Connect». En Agenda e integraciones, Smile Connect va primero y el método anterior (Tampermonkey) lo ve solo Turnia.
+- **Feriados y bloqueos:** agrupados por período y profesionales («del mar 1 dic al jue 3 dic · todo el día · …»), «Quitar» de a varios, el formulario fijo al costado y **«Cargar feriados»** (los nacionales del próximo año, de ArgentinaDatos; los puentes, si se marcan).
+- **Guardar:** apagado sin cambios; en Coberturas dice qué guarda. Pestañas con el borde desvanecido cuando hay más para deslizar.
+- **Errores legibles** (WAHA, Smile Connect): «No se pudo enviar: la línea de WhatsApp estaba desconectada», con el original en «Detalle».
+- **Prestaciones con el mismo nombre** (dos «Turno Smile Connect»): en los selectores se distinguen por especialidad y duración. «+ Particular» con un toque en Coberturas. Una sola zona horaria para la Argentina. «Preguntas frecuentes» pasa a «Sobre el consultorio y preguntas frecuentes».
+- **Mismo teléfono para el paciente y para derivar:** Sofi lo recibe en una sola línea.
+
+Ya estaba: el aviso de cambios sin guardar (pide confirmar al cambiar de pestaña y guarda un borrador) y el aviso de precios o plazos que no coinciden.
+
+No se hizo (por ahora): pasar la ficha de salud a la pestaña Consultorio (es otro formulario y otra acción de guardado), editar un horario en el lugar (hoy se quita y se vuelve a cargar), agrupar las prestaciones «solo el consultorio» en las listas, y unir los tres campos de texto libre en uno.
+
+- [x] **Datos de Guerra–Mininni corregidos** (migración `2026-11-26-configuracion-guerra-mininni`, una vez): «Horario de atención» vacío (Sofi dice el armado con la agenda de Smile Connect, siempre al día), sin la web de prueba (`lab-orpin-five…`, otro proyecto en la raíz) y «Particular» sumado a las coberturas del consultorio.
+- [ ] **Falta en Guerra–Mininni (hay que ver el texto actual, que no se lee desde una sesión sin acceso al panel):** sacar de «Otras condiciones» los plazos y coberturas que ya son campos; pasar «No hacemos tratamientos de conducto por obra social» a una excepción en Coberturas (prestación de conductos · «No la acepta»); sacar el precio de las preguntas frecuentes; sacar «Tratá siempre de usted» de las instrucciones si el selector ya dice «De usted»; ver si sobra una de las dos «Turno Smile Connect». Ninguno contradice hoy a otro dato: si uno cambia, el panel avisa.
+
 ## Smile Connect: ficha completa del paciente nuevo (26/11/2026)
 
 Smile Connect avisó que `POST /patients` ahora acepta más campos (ver su OpenAPI).

@@ -1,3 +1,4 @@
+import { typeLabels } from "@/lib/type-labels";
 import type { Metadata } from "next";
 import { getPanelClinic } from "@/lib/panel-clinic";
 import { sql } from "@/lib/db";
@@ -30,7 +31,8 @@ const MODE_TONE: Record<CoverageRule["mode"], "green" | "yellow" | "blue" | "red
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const amountInput = (value: string | null) => (value ? String(Number(value)).replace(".", ",") : "");
 
-function RuleFields({ rule, types, pros }: { rule?: CoverageRule; types: Array<Pick<AppointmentType, "id" | "name">>; pros: Array<Pick<Professional, "id" | "full_name">> }) {
+function RuleFields({ rule, types, pros }: { rule?: CoverageRule; types: Array<Pick<AppointmentType, "id" | "name" | "specialty" | "duration_min">>; pros: Array<Pick<Professional, "id" | "full_name">> }) {
+  const labels = typeLabels(types);
   return (
     <>
       <Field label="Obra social, prepaga o «Particular»">
@@ -42,7 +44,7 @@ function RuleFields({ rule, types, pros }: { rule?: CoverageRule; types: Array<P
       <Field label="Prestación (opcional)">
         <select name="appointment_type_id" defaultValue={rule?.appointment_type_id ?? ""} className={inputClass}>
           <option value="">Todas</option>
-          {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {types.map((t) => <option key={t.id} value={t.id}>{labels.get(t.id)}</option>)}
         </select>
       </Field>
       <Field label="Profesional (opcional)">
@@ -77,21 +79,21 @@ export default async function CoveragePage() {
   const agent = clinic.agent_name || "Sofi";
   const [rules, types, pros] = await Promise.all([
     sql<CoverageRule[]>`select * from coverage_rules where clinic_id = ${clinic.id} order by coverage, plan nulls first, created_at`,
-    sql<Array<Pick<AppointmentType, "id" | "name">>>`select id, name from appointment_types where clinic_id = ${clinic.id} and active order by name`,
+    sql<Array<Pick<AppointmentType, "id" | "name" | "specialty" | "duration_min">>>`select id, name, specialty, duration_min from appointment_types where clinic_id = ${clinic.id} and active order by name`,
     sql<Array<Pick<Professional, "id" | "full_name" | "accepted_coverages">>>`select id, full_name, accepted_coverages from professionals where clinic_id = ${clinic.id} and active order by full_name`,
   ]);
-  const typeName = new Map(types.map((t) => [t.id, t.name]));
+  const typeName = typeLabels(types);
   const proName = new Map(pros.map((p) => [p.id, p.full_name]));
   const suggestions = [...new Set([...COMMON, ...clinic.accepted_coverages, ...pros.flatMap((p) => p.accepted_coverages ?? [])])];
 
   return (
     <>
       <ConfigHeader clinic={clinic} current="/panel/configuracion/coberturas" />
-      <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveCoverageLists} scope="coberturas" agentName={agent}>
+      <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveCoverageLists} scope="coberturas" agentName={agent} saves="Guarda las coberturas del consultorio y de cada profesional. Cada excepción, abajo, tiene su botón.">
         <Section id="consultorio" title="Coberturas que acepta el consultorio" description={`Lo que ${agent} contesta cuando preguntan «¿atienden por…?».`}>
           <div className={wide}>
-            <CoverageInput name="accepted_coverages" defaultValue={clinic.accepted_coverages} list="coverages" label="Agregar una cobertura del consultorio" />
-            <p className="mt-1 text-xs text-brand-900/65">Agregá «Particular» si atienden sin cobertura.</p>
+            <CoverageInput name="accepted_coverages" defaultValue={clinic.accepted_coverages} list="coverages" label="Agregar una cobertura del consultorio" quick={["Particular"]} />
+            <p className="mt-1 text-xs text-brand-900/65">«Particular»: atienden sin cobertura.</p>
           </div>
         </Section>
         {pros.length > 0 && (
@@ -99,7 +101,7 @@ export default async function CoveragePage() {
             {pros.map((p) => (
               <div key={p.id} className={wide}>
                 <p className="mb-1 text-sm font-medium text-brand-950">{p.full_name}</p>
-                <CoverageInput name={`pro:${p.id}`} defaultValue={p.accepted_coverages ?? []} list="coverages" label={`Agregar una cobertura de ${p.full_name}`} />
+                <CoverageInput name={`pro:${p.id}`} defaultValue={p.accepted_coverages ?? []} list="coverages" label={`Agregar una cobertura de ${p.full_name}`} quick={["Particular"]} />
               </div>
             ))}
             <p className={`${wide} text-xs text-brand-900/65`}>Si tiene lista y atiende sin cobertura, sumá «Particular».</p>
