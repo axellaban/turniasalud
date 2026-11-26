@@ -178,7 +178,8 @@ Hecho: el plan está en su página privada `/pricing/consultorio`, a US$ 99 (ver
 Smile Connect avisó que `POST /patients` ahora acepta más campos (ver su OpenAPI).
 - [x] Cuando Sofi da un turno a alguien que no está en Smile Connect, la ficha se crea con nombre, DNI, mail, celular, nacimiento, sexo, domicilio y obra social con plan y afiliado. Si la rechaza, se crea con lo básico y el turno sale igual. Detalle en `SMILE_CONNECT_API.md`.
 - [ ] **Verificar el primer alta real:** abrir en Smile Connect la ficha del próximo paciente nuevo que agende Sofi y confirmar que trae la obra social y el nacimiento. Si en «Detalle» aparece `ficha_rechazada`, revisar qué campo rechazó.
-- [ ] **Traer a Turnia los datos nuevos de Smile Connect** (nacimiento, sexo, obra social de las fichas que carga recepción). Hoy la lectura solo usa nombre, DNI, mail y celular. Sin hacer: hay que decidir qué manda si Turnia y Smile Connect dicen distinto.
+- [x] **Traer a Turnia los datos nuevos de Smile Connect:** la copia completa los vacíos (nacimiento, sexo, domicilio, obra social, plan y afiliado) y, desde ahí, cada cambio que haga recepción allá pasa a Turnia. La primera vez no se pisa lo que Turnia ya sabe.
+- [ ] **Mandar el pedido a Smile Connect para el 10/10** (texto en `SMILE_CONNECT_API.md` → «Pedido a Smile Connect para el 10/10»): editar pacientes, `updated_since` o webhook, marcar la confirmación, turnos con dos profesionales y el 403 de `events:read`. Reemplaza el pedido de `updated_since` de abajo.
 - CUIT y «cómo llegó» no se mandan: Turnia no los pide.
 
 ## Sofi confirma en el mismo mensaje, prompt más corto y batería de pruebas (25/11/2026)

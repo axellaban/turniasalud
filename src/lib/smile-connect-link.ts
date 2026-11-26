@@ -846,25 +846,51 @@ export async function syncSmileHours(clinicId: string): Promise<{ cambiados: str
   return { cambiados, revisar };
 }
 
-type SmileSeen = { name: string; surname: string; id_number: string | null; email: string | null; phone: string | null };
-const seenOf = (p: ScPatient): SmileSeen => ({
-  name: p.name?.trim() ?? "",
-  surname: p.surname?.trim() ?? "",
-  id_number: p.id_number?.trim() || null,
-  email: p.email?.trim().toLowerCase() || null,
-  phone: [p.phone_country_code, p.phone_number].map((x) => x?.trim() ?? "").join(" ").trim() || null,
-});
+/** Los datos de la ficha que se agregaron en noviembre de 2026: se comparan solo si Smile Connect los manda. */
+const FICHA_FIELDS = ["birth_day", "sex", "address", "medical_insurance_name", "medical_insurance_plan", "medical_insurance_number"] as const;
+type FichaField = (typeof FICHA_FIELDS)[number];
+type SmileSeen = { name: string; surname: string; id_number: string | null; email: string | null; phone: string | null } & Partial<Record<FichaField, string | null>>;
+const seenOf = (p: ScPatient): SmileSeen => {
+  const seen: SmileSeen = {
+    name: p.name?.trim() ?? "",
+    surname: p.surname?.trim() ?? "",
+    id_number: p.id_number?.trim() || null,
+    email: p.email?.trim().toLowerCase() || null,
+    phone: [p.phone_country_code, p.phone_number].map((x) => x?.trim() ?? "").join(" ").trim() || null,
+  };
+  for (const f of FICHA_FIELDS) if (f in p) seen[f] = (p[f] as string | null | undefined)?.trim() || null;
+  return seen;
+};
+/** ¿Cambió en Smile Connect? Un dato que antes no se miraba no cuenta como cambio: solo se anota. */
+const changed = (before: SmileSeen, now: SmileSeen, f: FichaField) => f in before && f in now && before[f] !== now[f];
+
+type ParsedSmilePatient = {
+  externalId: string;
+  fullName: string | null;
+  dni: string | null;
+  phone: string | null;
+  email: string | null;
+  birthDate?: string | null;
+  sex?: string | null;
+  address?: string | null;
+  coverage?: string | null;
+  coveragePlan?: string | null;
+  memberNumber?: string | null;
+};
 
 /**
  * Pasa a Turnia lo que cambió de cada paciente en Smile Connect desde la última vez que se vio: nombre,
- * DNI, mail y celular. La primera vez solo se anota cómo está (lo que Turnia ya sabe, por ejemplo el
- * WhatsApp desde el que escribe, no se pisa con datos viejos). Si el celular cambia, el anterior queda
- * vinculado para que Sofi lo siga reconociendo. Una ficha de Turnia unida a dos de Smile Connect no se toca.
+ * DNI, mail, celular y, desde el 26/11, nacimiento, sexo, domicilio y obra social con plan y afiliado.
+ * La primera vez solo se anota cómo está (lo que Turnia ya sabe, por ejemplo el WhatsApp desde el que
+ * escribe o la obra social que le dio a Sofi, no se pisa con datos viejos; los vacíos los completa la
+ * copia). Si cambia la obra social, el plan y el afiliado viejos se reemplazan por los de Smile Connect:
+ * eran de la otra. Un dato que se borró allá no borra el de Turnia. Si el celular cambia, el anterior
+ * queda vinculado para que Sofi lo siga reconociendo. Una ficha de Turnia unida a dos de Smile Connect no se toca.
  */
 export async function applySmilePatientChanges(
   clinicId: string,
   raw: ScPatient[],
-  parsed: Array<{ externalId: string; fullName: string | null; dni: string | null; phone: string | null; email: string | null }>,
+  parsed: ParsedSmilePatient[],
 ): Promise<{ actualizados: number }> {
   if (!raw.length) return { actualizados: 0 };
   const norm = new Map(parsed.map((p) => [p.externalId, p]));
@@ -876,7 +902,12 @@ export async function applySmilePatientChanges(
     where x.clinic_id = ${clinicId} and x.external_id = any(${raw.map((p) => `sc:${p.patient_id}`)}::text[])`;
   const byExt = new Map(rows.map((r) => [r.external_id, r]));
   const seenRows: Array<{ external_id: string; smile_data: SmileSeen }> = [];
-  const updates: Array<{ id: string; full_name: string | null; dni: string | null; email: string | null; phone: string | null }> = [];
+  type Update = {
+    id: string; full_name: string | null; dni: string | null; email: string | null; phone: string | null;
+    birth_date: string | null; sex: string | null; address: string | null;
+    coverage: string | null; coverage_plan: string | null; member_number: string | null; coverage_changed: boolean;
+  };
+  const updates: Update[] = [];
   const oldPhones: Array<{ clinic_id: string; phone: string; patient_id: string }> = [];
   for (const p of raw) {
     const ext = `sc:${p.patient_id}`;
@@ -889,14 +920,23 @@ export async function applySmilePatientChanges(
     if (!before || row.links !== 1) continue;
     const n = norm.get(ext);
     if (!n) continue;
-    const u = {
+    const coverageChanged = changed(before, now, "medical_insurance_name") && Boolean(n.coverage);
+    const u: Update = {
       id: row.patient_id,
       full_name: before.name !== now.name || before.surname !== now.surname ? n.fullName : null,
       dni: before.id_number !== now.id_number ? n.dni : null,
       email: before.email !== now.email ? n.email : null,
       phone: before.phone !== now.phone ? n.phone : null,
+      birth_date: changed(before, now, "birth_day") ? (n.birthDate ?? null) : null,
+      sex: changed(before, now, "sex") ? (n.sex ?? null) : null,
+      address: changed(before, now, "address") ? (n.address ?? null) : null,
+      coverage: coverageChanged ? n.coverage! : null,
+      coverage_plan: coverageChanged || changed(before, now, "medical_insurance_plan") ? (n.coveragePlan ?? null) : null,
+      member_number: coverageChanged || changed(before, now, "medical_insurance_number") ? (n.memberNumber ?? null) : null,
+      coverage_changed: coverageChanged,
     };
-    if (!u.full_name && !u.dni && !u.email && !u.phone) continue;
+    const fields = [u.full_name, u.dni, u.email, u.phone, u.birth_date, u.sex, u.address, u.coverage, u.coverage_plan, u.member_number];
+    if (!u.coverage_changed && fields.every((v) => !v)) continue;
     updates.push(u);
     if (u.phone && row.phone && row.phone !== u.phone) oldPhones.push({ clinic_id: clinicId, phone: row.phone, patient_id: row.patient_id });
   }
@@ -914,8 +954,17 @@ export async function applySmilePatientChanges(
           full_name = coalesce(u.full_name, p.full_name),
           dni = coalesce(u.dni, p.dni),
           email = coalesce(u.email, p.email),
-          phone = coalesce(u.phone, p.phone)
-        from json_to_recordset(${json(updates.slice(i, i + 400))}::json) as u(id uuid, full_name text, dni text, email text, phone text)
+          phone = coalesce(u.phone, p.phone),
+          birth_date = coalesce(u.birth_date, p.birth_date),
+          sex = coalesce(u.sex, p.sex),
+          address = coalesce(u.address, p.address),
+          coverage = coalesce(u.coverage, p.coverage),
+          -- Con otra obra social, el plan y el afiliado viejos no sirven: van los de Smile Connect.
+          coverage_plan = case when u.coverage_changed then u.coverage_plan else coalesce(u.coverage_plan, p.coverage_plan) end,
+          member_number = case when u.coverage_changed then u.member_number else coalesce(u.member_number, p.member_number) end
+        from json_to_recordset(${json(updates.slice(i, i + 400))}::json) as u(
+          id uuid, full_name text, dni text, email text, phone text, birth_date date, sex text, address text,
+          coverage text, coverage_plan text, member_number text, coverage_changed boolean)
         where p.id = u.id and p.clinic_id = ${clinicId}`;
     }
     if (oldPhones.length) await tx`insert into patient_phones ${tx(oldPhones)} on conflict (clinic_id, phone) do nothing`;

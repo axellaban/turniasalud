@@ -1510,6 +1510,10 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       fake.patients.set(5003, { patient_id: 5003, name: "Lucía", surname: "Nueva", id_number: "30111444", email: null, phone_country_code: "AR", phone_number: "1100006011" });
       // Lo que Sofi sabe de Juana (su WhatsApp) no se pisa con el dato viejo de Smile Connect la primera vez.
       await link.pullSmileConnect(T, "cerca");
+      // Smile Connect empieza a mandar la ficha completa. Pedro le dijo a Sofi que va por IOMA; la ficha
+      // de allá, vieja, dice OSDE. La primera vez gana lo que ya sabe Turnia; lo vacío se completa.
+      await sql`update patients set coverage = 'IOMA', coverage_plan = 'Plan A', member_number = '999', birth_date = null where id = ${pedro.patient_id}`;
+      fake.patients.set(5002, { ...fake.patients.get(5002)!, birth_day: "1980-06-15", sex: "male", medical_insurance_name: "OSDE", medical_insurance_plan: "210", medical_insurance_number: "61234567801" });
       const status = async (ext: string) => (await sql`select status from appointments where clinic_id = ${T} and external_id = ${ext}`)[0]?.status;
 
       await link.backupSmileConnect(T);
@@ -1519,11 +1523,14 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await status("sc:95021")).toBe("confirmado");
       const [lucia] = await sql`select p.full_name, p.dni from patient_external_ids x join patients p on p.id = x.patient_id where x.clinic_id = ${T} and x.external_id = 'sc:5003'`;
       expect(lucia).toEqual({ full_name: "Lucía Nueva", dni: "30111444" });
+      expect((await sql`select coverage, coverage_plan, member_number, birth_date::text as birth_date from patients where id = ${pedro.patient_id}`)[0])
+        .toEqual({ coverage: "IOMA", coverage_plan: "Plan A", member_number: "999", birth_date: "1980-06-15" });
 
       // Recepción le cambia el apellido y el celular a Pedro en Smile Connect.
       const [before] = await sql`select full_name, phone from patients where id = ${pedro.patient_id}`;
       const saved = fake.patients.get(5002)!;
-      fake.patients.set(5002, { ...saved, surname: "Inventado Gómez", phone_number: "1100006012" });
+      // También le cambia la obra social: el plan y el afiliado de IOMA ya no sirven.
+      fake.patients.set(5002, { ...saved, surname: "Inventado Gómez", phone_number: "1100006012", medical_insurance_name: "Swiss Medical", medical_insurance_plan: "SMG20", medical_insurance_number: null });
       // Los cambios de los pacientes que ya existían llegan con la lista completa (dos veces por semana).
       await sql`update smile_connect_connections set api_patients_full_at = now() - interval '4 days' where clinic_id = ${T}`;
       await link.backupSmileConnect(T);
@@ -1531,6 +1538,8 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(second.pacientes).toMatchObject({ actualizados: 1 });
       const [after] = await sql`select full_name, phone from patients where id = ${pedro.patient_id}`;
       expect(after).toEqual({ full_name: "Pedro Inventado Gómez", phone: before.phone.replace(/6009$/, "6012") });
+      expect((await sql`select coverage, coverage_plan, member_number, sex from patients where id = ${pedro.patient_id}`)[0])
+        .toEqual({ coverage: "Swiss Medical", coverage_plan: "SMG20", member_number: null, sex: "masculino" });
       // El celular anterior lo sigue identificando cuando escribe.
       expect((await sql`select patient_id from patient_phones where clinic_id = ${T} and phone = ${before.phone}`)[0]?.patient_id).toBe(pedro.patient_id);
       expect((await link.getSmileApiConnection(T))!.api_mirror_at).not.toBeNull();
