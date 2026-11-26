@@ -7,7 +7,7 @@ import type { AppointmentType, CoverageRule, Professional } from "@/lib/types";
 import { addCoverageRule, deleteCoverageRule, saveCoverageLists, saveCoverageRule } from "../../../protocol-actions";
 import { ActionForm } from "../action-form";
 import { EditDetails } from "../edit-details";
-import { ConfigHeader } from "../header";
+import { ConfigHeader, loadSmileSource } from "../header";
 import { CoverageInput } from "../coverage-input";
 import { ProfileSaveForm } from "../profile-save";
 import { Section, wide } from "../section";
@@ -88,7 +88,7 @@ export default async function CoveragePage() {
 
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion/coberturas" />
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion/coberturas" />
       <ProfileSaveForm key={clinic.id} clinicId={clinic.id} revision={clinic.context_revision} action={saveCoverageLists} scope="coberturas" agentName={agent} saves="Guarda las coberturas del consultorio y de cada profesional. Cada excepción, abajo, tiene su botón.">
         <Section id="consultorio" title="Coberturas que acepta el consultorio" description={`Lo que ${agent} contesta cuando preguntan «¿atienden por…?».`}>
           <div className={wide}>

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 // Configuración: feriados nacionales en un toque, quitar un período agrupado de una vez y el horario
@@ -94,5 +95,31 @@ describe.runIf(url)("Configuración del consultorio", () => {
     const phones = clinicInfoText({ ...clinic, phone: "223 555-0000", handoff_phone: "2235550000" });
     expect(phones).toContain("Teléfono: 223 555-0000 (es también el de recepción para derivaciones)");
     expect(phones).not.toContain("Teléfono de recepción para derivaciones");
+  });
+  it("regla: con Smile Connect como fuente, lo que se maneja allá aparece con candado en todas las pestañas", async () => {
+    const render = async (path: string) => renderToStaticMarkup((await (await import(`@/app/panel/(app)/configuracion/${path}page`)).default()) as React.ReactElement);
+    // Sin Smile Connect: se carga todo en Turnia.
+    let equipo = await render("equipo/");
+    let bloqueos = await render("bloqueos/");
+    expect(equipo).toContain("Agregar profesional</button>");
+    expect(bloqueos).toContain("Cargar feriados");
+    expect(equipo).not.toContain("la agenda se maneja allá");
+    // Conectado (cualquier modo menos «Apagada»): aviso arriba, etiqueta en las pestañas y candados.
+    await sql`insert into smile_connect_connections (clinic_id, token_hash, token_hint, encrypted_token, api_key_encrypted, api_mode, api_hours_at)
+      values (${clinicId}, 'hash-ficticio-config', 'abcd', 'cifrado-ficticio', 'clave-cifrada-ficticia', 'completa', now())`;
+    equipo = await render("equipo/");
+    bloqueos = await render("bloqueos/");
+    const turnos = await render("turnos/");
+    for (const html of [equipo, bloqueos, turnos]) {
+      expect(html).toContain("Conectado a Smile Connect: la agenda se maneja allá");
+      expect(html).toContain("Crear, mover y cancelar");
+    }
+    expect(equipo).not.toContain("Agregar profesional</button>");
+    expect(equipo).toContain("Se maneja en Smile Connect");
+    expect(bloqueos).not.toContain("Cargar feriados");
+    expect(bloqueos).toContain("Frenar a Sofi");
+    // Apagada: vuelve a ser de Turnia.
+    await sql`update smile_connect_connections set api_mode = 'apagada' where clinic_id = ${clinicId}`;
+    expect(await render("equipo/")).toContain("Agregar profesional</button>");
   });
 });

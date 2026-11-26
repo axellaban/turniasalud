@@ -189,6 +189,8 @@ Hecho en el código (todos los consultorios):
 - **Prestaciones con el mismo nombre** (dos «Turno Smile Connect»): en los selectores se distinguen por especialidad y duración. «+ Particular» con un toque en Coberturas. Una sola zona horaria para la Argentina. «Preguntas frecuentes» pasa a «Sobre el consultorio y preguntas frecuentes».
 - **Mismo teléfono para el paciente y para derivar:** Sofi lo recibe en una sola línea.
 
+- **Regla: con Smile Connect como fuente (cualquier modo menos «Apagada»), lo que se maneja allá se ve con candado** (`smileIsSource`). Arriba de cada pestaña, un aviso violeta dice qué se cambia en Smile Connect y qué se configura acá; las pestañas que traen datos de allá llevan la etiqueta «Smile», y cada bloque que no se toca en Turnia aparece con candado y «Se maneja en Smile Connect»: «Agregar profesional» (llegan de Smile Connect y se vinculan solos), «Cargar feriados» (la disponibilidad de allá ya los descuenta) y Google Calendar, que queda plegado si no estaba conectado. El bloqueo manual pasa a «Frenar a Sofi»: sirve para días en que Sofi no tiene que dar turnos aunque allá haya lugar. Lo demás de la Configuración sigue, porque es cómo atiende Sofi y Smile Connect no lo tiene: prestaciones, coberturas, reglas de turnos, urgencias, textos y avisos.
+
 Ya estaba: el aviso de cambios sin guardar (pide confirmar al cambiar de pestaña y guarda un borrador) y el aviso de precios o plazos que no coinciden.
 
 No se hizo (por ahora): pasar la ficha de salud a la pestaña Consultorio (es otro formulario y otra acción de guardado), editar un horario en el lugar (hoy se quita y se vuelve a cargar), agrupar las prestaciones «solo el consultorio» en las listas, y unir los tres campos de texto libre en uno.

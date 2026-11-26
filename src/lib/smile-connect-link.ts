@@ -315,6 +315,14 @@ export async function setSmileMode(clinicId: string, mode: SmileMode): Promise<v
 
 export const isLiveSmileMode = (mode: SmileMode) => mode === "crear" || mode === "completa";
 
+/**
+ * ¿Smile Connect es la fuente de la verdad de esta clínica? Con la clave cargada y cualquier modo menos
+ * «Apagada», los profesionales, sus horarios comunes, los bloqueos y los feriados llegan de allá y Sofi
+ * ofrece solo lo libre allá. La Configuración esconde o marca lo que ya no tiene sentido cargar en Turnia.
+ */
+export const smileIsSource = (conn: Pick<SmileApiConnection, "api_key_encrypted" | "api_mode"> | null | undefined) =>
+  Boolean(conn?.api_key_encrypted && conn.api_mode !== "apagada");
+
 /** Quita la clave y apaga todo. Lo pendiente de escribir en Smile Connect se descarta. */
 export async function removeSmileApiKey(clinicId: string): Promise<void> {
   await sql.begin(async (tx) => {

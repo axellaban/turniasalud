@@ -6,7 +6,7 @@ import { discardImport } from "../../../clinics-actions";
 import { ImportReview, ReadWebsite } from "../../clinicas/forms";
 import Link from "next/link";
 import { Badge, Card, Empty, smallButtonClass } from "@/components/ui";
-import { ConfigHeader, WEEKDAYS } from "../header";
+import { ConfigHeader, WEEKDAYS, loadSmileSource } from "../header";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Completar con la web · Panel" };
@@ -25,7 +25,7 @@ export default async function WebsitePage() {
   const reading = imports.some((item) => item.status === "reading");
   return (
     <>
-      <ConfigHeader clinic={clinic} current="/panel/configuracion" />
+      <ConfigHeader smileMode={await loadSmileSource(clinic.id)} clinic={clinic} current="/panel/configuracion" />
       <Link href="/panel/configuracion" className="mb-4 inline-block text-sm font-medium text-brand-700 hover:underline">← Volver a Consultorio</Link>
       <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <Card className="h-fit">
