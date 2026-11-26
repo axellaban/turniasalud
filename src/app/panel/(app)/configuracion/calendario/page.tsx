@@ -25,6 +25,14 @@ const RESULT: Record<string, { tone: "success" | "warning" | "error"; text: stri
 
 type Pro = { id: string; full_name: string; specialty: string; active: boolean; google_calendar_id: string | null; google_calendar_name: string | null };
 
+function GoogleWrap({ folded, children }: { folded: boolean; children: React.ReactNode }) {
+  if (!folded) return <>{children}</>;
+  return <details className="rounded-2xl border border-brand-900/10 bg-white px-5 py-4">
+    <summary className="cursor-pointer text-sm font-semibold text-brand-950">Google Calendar (opcional)</summary>
+    <div className="mt-4">{children}</div>
+  </details>;
+}
+
 export default async function CalendarPage({ searchParams }: PageProps<"/panel/configuracion/calendario">) {
   const [clinic, user, params] = await Promise.all([getPanelClinic(), getPanelUser(), searchParams]);
   const result = typeof params.google === "string" ? RESULT[params.google] : undefined;
@@ -52,6 +60,9 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
       {/* Con la API en uso, Smile Connect es la fuente de la verdad: va primero. */}
       {smileApiOn && <div className="mb-6"><SmileApiCard clinic={clinic} admin={user.role === "admin"} data={smileApi} /></div>}
 
+      {/* Con Smile Connect como fuente, Google Calendar sería una segunda agenda: queda plegado si no está conectado. */}
+      {smileApiOn && !conn && <p className="mb-3 text-sm text-brand-900/60">Con Smile Connect no hace falta Google Calendar: lo ocupado y los turnos ya están allá.</p>}
+      <GoogleWrap folded={smileApiOn && !conn}>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <Card>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -139,6 +150,8 @@ export default async function CalendarPage({ searchParams }: PageProps<"/panel/c
           )}
         </Card>
       </div>
+
+      </GoogleWrap>
 
       {/* Con la API de Smile Connect en uso, el método anterior (importar y Tampermonkey) queda plegado y solo lo ve Turnia. */}
       {smileApiOn ? (

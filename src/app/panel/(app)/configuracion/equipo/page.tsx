@@ -7,7 +7,7 @@ import { EditDetails } from "../edit-details";
 import { Badge, Card, Empty, Field, buttonClass, inputClass, smallButtonClass } from "@/components/ui";
 import type { AppointmentType, Professional } from "@/lib/types";
 import { ConfigHeader, WEEKDAYS, loadConfigConflicts } from "../header";
-import { getSmileApiConnection } from "@/lib/smile-connect-link";
+import { getSmileApiConnection, smileIsSource } from "@/lib/smile-connect-link";
 import { typeLabels } from "@/lib/type-labels";
 import { formatDateTime } from "@/lib/time";
 import { Notice } from "@/components/ui";
@@ -29,7 +29,8 @@ export default async function TeamPage() {
   ]);
   // Con Smile Connect conectado, los horarios comunes de sus profesionales se copian de allá: editarlos
   // acá no sirve (la próxima copia los vuelve a poner). Los de urgencias o de algunas prestaciones, sí.
-  const smileHours = Boolean(smile?.api_key_encrypted && smile.api_mode !== "apagada" && smile.api_hours_at);
+  const fromSmileConnect = smileIsSource(smile);
+  const smileHours = fromSmileConnect && Boolean(smile?.api_hours_at);
   const fromSmile = (p: Professional) => smileHours && p.smile_professional_id != null;
   const specialties = [...new Set([...professionals.map((p) => p.specialty), ...types.map((x) => x.specialty)])];
   const activeTypes = types.filter((t) => t.active);
@@ -162,7 +163,8 @@ export default async function TeamPage() {
         })}
         {!professionals.length && <Empty>Todavía no hay profesionales. Agregá el primero abajo.</Empty>}
 
-        <Card>
+        {/* Con Smile Connect, los profesionales llegan de allá: uno cargado acá no existe en su agenda y Sofi no podría darle turnos. */}
+        {fromSmileConnect ? <p className="text-sm text-brand-900/60">Los profesionales vienen de Smile Connect: para sumar uno, cargalo allá y aparece acá solo. Después, cargale los horarios que quieras que ofrezca {clinic.agent_name || "Sofi"}.</p> : <Card>
           <h2 className="mb-4 font-semibold text-brand-950">Agregar profesional</h2>
           <form action={addProfessional} className="grid gap-3 sm:grid-cols-2"><input type="hidden" name="clinic_id" value={clinic.id} />
             <Field label="Nombre"><input name="full_name" required placeholder="Dra. Ana López" className={inputClass} /></Field>
@@ -170,7 +172,7 @@ export default async function TeamPage() {
             <Field label="Descripción breve"><input name="bio" className={inputClass} /></Field>
             <div className="sm:col-span-2"><button className={buttonClass}>Agregar profesional</button></div>
           </form>
-        </Card>
+        </Card>}
       </div>
       <datalist id="specialties">{specialties.map((s) => <option key={s} value={s} />)}</datalist>
     </>
