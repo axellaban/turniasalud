@@ -113,7 +113,7 @@ const PANEL_SECTIONS = ["prospeccion", "agenda", "conversaciones", "tareas", "pa
 export function safeNext(value: unknown): string {
   const next = typeof value === "string" ? value : "";
   if (next === "/demo" || next === "/panel") return next;
-  const section = /^\/panel\/([a-z]+)(?:[/?]|$)/.exec(next)?.[1];
+  const section = /^\/panel\/([a-z]+(?:-[a-z]+)*)(?:[/?]|$)/.exec(next)?.[1];
   return section && PANEL_SECTIONS.includes(section) ? next : "/panel";
 }
 
