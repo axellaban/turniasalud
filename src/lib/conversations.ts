@@ -7,6 +7,7 @@ import { env } from "./env";
 import { readAppointmentAccess } from "./agent/appointment-access";
 import { findOrCreatePatientForPhone } from "./patients";
 import { normalizePhone } from "./phone";
+import { isTesterPhone } from "./testers";
 import { formatDate } from "./time";
 import { mergeMemory } from "./memory";
 import { notifyN8n } from "./n8n";
@@ -162,6 +163,7 @@ export async function recordConversation(data: PostCallPayload, { quiet = false 
       evaluation: data.analysis?.evaluation_criteria_results ?? {},
       sentimiento: collected(data, "sentimiento"),
     },
+    is_test: await isTesterPhone(clinicId, phone),
   };
   // ElevenLabs puede reenviar el webhook: la conversación se guarda una sola vez.
   const values = { ...row, transcript: json(row.transcript), analysis: json(row.analysis) };
@@ -175,7 +177,8 @@ export async function recordConversation(data: PostCallPayload, { quiet = false 
       outcome = excluded.outcome, call_successful = excluded.call_successful, satisfaction = excluded.satisfaction,
       transcript = coalesce((select cc.transcript from channel_conversations cc
         where cc.elevenlabs_conversation_id = excluded.elevenlabs_conversation_id and cc.clinic_id = excluded.clinic_id), excluded.transcript),
-      analysis = coalesce(conversations.analysis, '{}'::jsonb) || excluded.analysis`;
+      analysis = coalesce(conversations.analysis, '{}'::jsonb) || excluded.analysis,
+      is_test = conversations.is_test or excluded.is_test`;
 
   if (quiet) return;
   if (campaignId && patient) await updateCampaignRecipient(campaignId, patient.id, data);

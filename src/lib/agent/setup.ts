@@ -6,6 +6,7 @@ import { getClinic } from "../clinic";
 import { CALL_LIMITS, CALL_LIMIT_MESSAGE } from "../chat-limits";
 import { CONTEXT_PARAMS, TOOL_DEFINITIONS, type ToolDefinition } from "./tools";
 import { FIRST_MESSAGE, SYSTEM_PROMPT } from "./prompt";
+import { effectivePrompt, recordPromptVersion } from "../lab/prompt";
 import type { Clinic } from "../types";
 
 // Crea (o actualiza) en ElevenLabs las herramientas y el agente de la clínica,
@@ -131,7 +132,7 @@ export function agentLlm(general: boolean): string {
   return general ? env.agentChatLlm() : env.agentVoiceLlm();
 }
 
-function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, baseUrl: string, secret: string, general: boolean) {
+function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, baseUrl: string, secret: string, general: boolean, prompt: string = SYSTEM_PROMPT) {
   const handoffPhone = handoffNumber(clinic.handoff_phone);
   return {
     name: `Turnia · ${clinic.name}`,
@@ -142,7 +143,7 @@ function agentBody(clinic: Clinic, toolIds: string[], voiceId: string | null, ba
         language: "es",
         ...(!general && { max_conversation_duration_message: CALL_LIMIT_MESSAGE }),
         prompt: {
-          prompt: SYSTEM_PROMPT,
+          prompt,
           llm: agentLlm(general),
           temperature: 0.3,
           timezone: clinic.timezone,
@@ -253,7 +254,12 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
     if (main.id !== clinic.id && main.elevenlabs_agent_id) voiceId = await agentVoiceId(main.elevenlabs_agent_id);
     voiceId ||= process.env.ELEVENLABS_VOICE_ID || (await pickArgentineVoice());
   }
-  const body = agentBody(clinic, toolIds, voiceId, baseUrl, secret, main.id === clinic.id);
+  // El prompt del repositorio con las mejoras aprobadas en el Laboratorio de Sofi (src/lib/lab/prompt.ts).
+  const version = await effectivePrompt().catch((e) => {
+    console.error("Laboratorio: no se pudieron leer las mejoras aprobadas; va el prompt del repositorio", e instanceof Error ? e.message : e);
+    return null;
+  });
+  const body = agentBody(clinic, toolIds, voiceId, baseUrl, secret, main.id === clinic.id, version?.prompt ?? SYSTEM_PROMPT);
 
   let agentId = clinic.elevenlabs_agent_id;
   if (agentId) {
@@ -278,5 +284,9 @@ export async function setupAgent(clinic: Clinic): Promise<{ agentId: string; cre
   await sql`
     update clinics set elevenlabs_agent_id = ${agentId}, elevenlabs_voice_id = coalesce(${voiceId ?? null}, elevenlabs_voice_id)
     where id = ${clinic.id}`;
+  if (version) {
+    await recordPromptVersion(version).catch((e) =>
+      console.error("Laboratorio: no se pudo registrar la versión del prompt", e instanceof Error ? e.message : e));
+  }
   return { agentId, created, voiceId, toolIds };
 }

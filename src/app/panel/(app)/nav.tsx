@@ -22,6 +22,7 @@ const ADMIN: Item[] = [
   { href: "/panel/follow-up", label: "Follow-up", icon: "followup" },
   { href: "/panel/comercial", label: "Comercial", icon: "comercial" },
   { href: "/panel/clinicas", label: "Clínicas", icon: "clinicas" },
+  { href: "/panel/laboratorio", label: "Laboratorio de Sofi", short: "Laboratorio", icon: "laboratorio" },
   { href: "/panel/demos", label: "Pedidos de demo", icon: "demos" },
   { href: "/panel/sistema", label: "Sistema", icon: "sistema" },
 ];

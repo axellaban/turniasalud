@@ -10,6 +10,7 @@ import { wahaSeen, wahaSendBubbles, wahaSendText, wahaSendVoice, wahaTyping } fr
 import { splitBubbles, toWhatsAppText } from "./whatsapp-style";
 import { announcePause, checkChatFuse, guardIncoming, isMuted, notifyAxel } from "./chat-guard";
 import { staffForPhone } from "./staff";
+import { isTesterPhone } from "./testers";
 import { chatIsActive, requireActiveWhatsapp, ChannelPausedError } from "./messaging-settings";
 import type { Clinic } from "./types";
 import { currentWahaConnection, wahaConnectionById, wahaConnections, withWahaConnection } from "./waha-connections";
@@ -456,10 +457,13 @@ async function savePanelConversation(conv: ChannelConversation, ended: boolean):
     started_at: conv.created_at,
     status: ended ? "done" : "in-progress",
     transcript: json(transcript),
+    // Modo prueba: la charla de un tester queda marcada (fuera del resumen diario y de las métricas).
+    is_test: await isTesterPhone(conv.clinic_id, conv.phone),
   };
   await sql`
     insert into conversations ${sql(row)}
     on conflict (elevenlabs_conversation_id) do update set
+      is_test = conversations.is_test or excluded.is_test,
       patient_id = case when ${Boolean(temporaryAccess)} then null else coalesce(conversations.patient_id, excluded.patient_id) end,
       campaign_id = case when ${Boolean(temporaryAccess)} then null else conversations.campaign_id end,
       status = case when conversations.status = 'failed' or conversations.summary is not null then conversations.status else excluded.status end,

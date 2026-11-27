@@ -1,5 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Laboratorio de Sofi (27/11/2026)
+
+En producción: Panel → Turnia → **Laboratorio de Sofi** ([`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md)). Batería nocturna con 18 casos × 3, puntaje de 1 a 100, revisión de las charlas reales, propuestas diarias de Claude, experimentos (versión actual contra la variante) y publicación con un clic. Guerra–Mininni arranca con el laboratorio y el resumen por WhatsApp prendidos.
+- [ ] Mirar la primera batería nocturna (28/11, de 2 a 6) y la primera tanda de propuestas. Si el juez se equivoca, sumar criterios en la pestaña Criterios.
+- [x] Criterio cargado (migración): en Guerra–Mininni se ofrece primero al Dr. Mininni y no se pregunta por profesional al inicio; si el paciente pide otro (o «una mujer»), se respeta.
+- [ ] `consultar_disponibilidad` busca dos semanas por defecto (`src/lib/agent/tools.ts`): es la causa probable del «no hay hasta mediados de enero». La simulación no lo ve porque las herramientas devuelven datos fijos; corregirlo en el código (o aprobar la mejora si el laboratorio la propone).
+- [ ] Pasar al repositorio (`src/lib/agent/prompt.ts`) las mejoras de prompt aprobadas en el laboratorio cada tanto; el procedimiento está en el plan.
+- [ ] Próximas fases, en este orden: consultorio de laboratorio con agenda sintética y herramientas reales; modo prueba completo (pacientes ficticios, ficha simulada, números con vencimiento, `#prueba`, archivar chats); prueba automática en producción con una línea de prueba; calibración semanal del juez. Fase 2: escrituras reales en Smile Connect, solo con un profesional de prueba acordado con Mariano.
+
 ## Hallazgos de la sesión de pruebas de Sofi (26/11/2026)
 
 Facundo probó a Sofi simulando pacientes de Guerra–Mininni y encontró 11 problemas. Hecho en el repositorio (llega a ElevenLabs con «Actualizar a Sofi»):
