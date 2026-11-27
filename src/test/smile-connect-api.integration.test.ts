@@ -1693,7 +1693,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       fake.patients.delete(lastId + 1);
     });
 
-    it("a Axel le llegan por WhatsApp los problemas de la integración, una vez cada uno", async () => {
+    it("solo avisa indisponibilidades comprobadas; los avisos informativos quedan en el panel", async () => {
       const keys = async () => (await sql`select key from channel_events where key like ${`smile-axel:%:${T}`} order by key`).map((r) => r.key.split(":")[1]);
       await sql`delete from channel_events where key like ${`smile-axel:%:${T}`}`;
       mocks.axel.length = 0;
@@ -1703,14 +1703,16 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       // La agenda lleva más de 3 horas sin sincronizarse, y la clave no tiene el permiso de bloqueos.
       await sql`update smile_connect_connections set api_near_pull_at = now() - interval '4 hours', api_checked_at = now() - interval '2 days',
         api_backup_at = now(), api_events_ok = false, api_error = 'Smile Connect respondió 503.' where clinic_id = ${T}`;
-      const sent = await link.checkSmileHealth(T);
-      // Horarios: el último cambio copiado (informativo) y los dos para revisar.
-      expect(sent.sort()).toEqual(["agenda", "bloqueos", "horarios", "horarios", "horarios"]);
-      expect(mocks.axel.filter((t) => t.startsWith("ℹ️") && t.includes("Horarios copiados de Smile Connect"))).toHaveLength(1);
-      expect(mocks.axel.find((t) => t.includes("la agenda no se sincroniza"))).toContain("Smile Connect respondió 503.");
-      expect(mocks.axel.some((t) => t.includes("Dra. Ya No Está ya no figura en Smile Connect"))).toBe(true);
-      expect(mocks.axel.some((t) => t.includes("Dr. Mariano Prueba: atiende en Smile Connect"))).toBe(true);
-      expect(mocks.axel.some((t) => t.includes("events:read"))).toBe(true);
+      // Un error viejo no prueba una caída: Smile Connect responde ahora y Sofi sigue operativa.
+      expect(await link.checkSmileHealth(T)).toEqual([]);
+      expect(mocks.axel).toEqual([]);
+      expect((await link.getSmileApiConnection(T))!.api_hours_note).toContain('ya no figura');
+      fake.status = 503;
+      try {
+        expect(await link.checkSmileHealth(T)).toEqual(['api']);
+        expect(await link.checkSmileHealth(T)).toEqual([]);
+      } finally { fake.status = 200; }
+      expect(mocks.axel[0]).toContain('dos comprobaciones actuales');
       // En la vuelta siguiente, el mismo problema no se repite.
       expect(await link.checkSmileHealth(T)).toEqual([]);
       // Si el WhatsApp no sale (la línea de Turnia pausada), se reintenta una vez por hora, no en cada vuelta.
@@ -1721,9 +1723,9 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(await link.checkSmileHealth(T)).toEqual([]);
       await sql`delete from channel_events where key like ${`smile-axel:escritura:%:${T}:fallo:%`}`;
       expect(await link.checkSmileHealth(T)).toEqual(["escritura"]);
-      // A los 6 meses de cargada, se recuerda renovar la clave (una vez por clave).
+      // La antigüedad de la clave tampoco es una caída.
       await sql`update smile_connect_connections set api_key_saved_at = now() - interval '181 days' where clinic_id = ${T}`;
-      expect(await link.checkSmileHealth(T)).toEqual(["clave-vieja"]);
+      expect(await link.checkSmileHealth(T)).toEqual([]);
       expect(await link.checkSmileHealth(T)).toEqual([]);
       await sql`update smile_connect_connections set api_key_saved_at = now() where clinic_id = ${T}`;
       // La clave rechazada también le llega a Axel (además de al consultorio).

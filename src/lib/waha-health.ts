@@ -41,12 +41,15 @@ export async function lastClinicWhatsappHealth(clinicId: string): Promise<Stored
 export async function monitorClinicWhatsapps() {
   const results: Array<{ connection: string; status: string }> = [];
   for (const connection of wahaConnections().filter((c) => c.enabled)) {
-    const health = await readWahaHealth(connection);
+    let health = await readWahaHealth(connection);
+    if (!health.ready) health = await readWahaHealth(connection);
     const alert = await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${"waha-health:" + connection.id}::text, 0))`;
       const [previous] = await tx`select * from waha_connection_health where connection_id = ${connection.id}`;
       const changed = previous?.status !== health.status;
-      const due = !health.ready && (!previous?.alerted_at || Date.parse(previous.alerted_at) < Date.now() - 3600_000);
+      const stopped = !health.ready && (health.status !== 'STARTING'
+        || (previous?.failure_at && Date.parse(previous.failure_at) < Date.now() - 120_000));
+      const due = stopped && !previous?.alerted_at;
       await tx`
         insert into waha_connection_health (connection_id, clinic_id, status, checked_at, last_working_at, failure_at, error, alerted_at)
         values (${connection.id}, ${connection.clinicId}, ${health.status}, now(),
@@ -61,15 +64,21 @@ export async function monitorClinicWhatsapps() {
         const log = health.ready ? console.info : console.warn;
         log(JSON.stringify({ evento: "estado_whatsapp", conexion: connection.id, estado: health.status, motivo: health.reason }));
       }
-      if (!health.ready && (!previous || previous.status === "WORKING")) {
+      if (due) {
         await tx`insert into tasks (clinic_id, type, priority, title, details)
-          values (${connection.clinicId}, 'administrativo', 'alta', 'Revisar conexión de WhatsApp',
-            ${"La línea propia no está operativa (" + health.status + "). Revisar WAHA y las confirmaciones pendientes. No reenviar avisos antiguos sin comprobar la agenda."})`;
+          select ${connection.clinicId}, 'administrativo', 'alta', 'Revisar conexión de WhatsApp',
+            ${"La línea propia no está operativa (" + health.status + "). Revisar WAHA y las confirmaciones pendientes. No reenviar avisos antiguos sin comprobar la agenda."}
+          where not exists (select 1 from tasks where clinic_id = ${connection.clinicId}
+            and title = 'Revisar conexión de WhatsApp' and status in ('abierta', 'en_curso'))`;
       }
       return due;
     });
-    if (alert) await notifyAxel("⚠️ Turnia · WhatsApp " + connection.id + ": " + health.status +
-      ". La línea del consultorio no está lista para enviar o recibir. Revisar WAHA y confirmaciones pendientes.");
+    if (alert) {
+      const accepted = await notifyAxel("⚠️ Turnia · WhatsApp " + connection.id + ": " + health.status +
+        ". La línea del consultorio no está lista para enviar o recibir. Revisar WAHA y confirmaciones pendientes.");
+      if (!accepted) await sql`update waha_connection_health set alerted_at = null
+        where connection_id = ${connection.id} and status <> 'WORKING'`;
+    }
     results.push({ connection: connection.id, status: health.status });
   }
   return results;

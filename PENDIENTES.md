@@ -29,6 +29,10 @@ Facundo probó a Sofi simulando pacientes de Guerra–Mininni y encontró 11 pro
 
 ## Radar de WhatsApp (WAHA) y del VPS — 26/11/2026
 
+**Política de avisos técnicos (26/11, noche): solo indisponibilidades operativas.** Los emails horarios repetían dos datos que no eran caídas: horarios copiados y falta de `events:read`. Quedan en el panel junto con los recordatorios de clave, copias y uso alto. `checkSmileHealth` avisa una escritura frenada o una API que falla en dos comprobaciones actuales; no deduce una caída de un error antiguo ni de una copia atrasada. El monitor de WhatsApp reconsulta antes de avisar, ignora un `STARTING` reciente y no repite el aviso mientras sigue el mismo incidente. No poder leer Easypanel queda en diagnóstico: no prueba una caída del VPS.
+
+**Causa de la repetición:** `notifyAxel` devolvía `false` después de que n8n aceptara el correo porque había fallado WhatsApp; se borraba la deduplicación y se reenviaba cada hora. Ahora devuelve aceptación por cualquiera de los dos canales. Esto no afirma que Gmail ya lo entregó; conserva la distinción entre aceptación y entrega final. Si ambos canales rechazan el aviso, se permite reintentar. No volver a agregar avisos informativos al canal técnico.
+
 Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detectar la próxima caída a tiempo.
 
 **Corrección de avisos (26/11):** Axel pidió recibir avisos solo por fallas actuales. Los dos «reinicios» del 19/11 y 7/11 fueron falsos positivos: `startTimestamp` cambió 1 ms entre consultas mientras `uptime` siguió creciendo. WAHA calcula ese valor con `Date.now() - uptime`; la comparación exacta era incorrecta. Docker confirmó que los contenedores seguían funcionando desde esas fechas. El radar no reinicia nada.
@@ -53,7 +57,7 @@ Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detec
 - `n8n/waha` usa la etiqueta móvil `waha:noweb`: un redespliegue baja la última versión sin avisar. Conviene fijar el digest de la que corre (2026.10.1) antes del próximo despliegue.
 
 **Qué se construyó:**
-- `src/lib/infra-radar.ts`: cada diez minutos, con el cron `calendario`, lee por la API de Easypanel la RAM, el disco y el CPU del VPS, la memoria de cada contenedor y todas las WAHA (sesiones, arranque del contenedor y versión). La clave de cada WAHA la saca de Easypanel, así que no hace falta cargarla en Vercel. Avisa a Axel por WhatsApp (o por n8n si la línea general no anda) cuando una conexión en uso se cae, deja de responder o tiene una restricción que frena su operación. Si no puede consultar Easypanel también informa que perdió visibilidad. Los reinicios, las recuperaciones y los recursos altos quedan para consulta en el panel.
+- `src/lib/infra-radar.ts`: cada diez minutos, con el cron `calendario`, lee por la API de Easypanel la RAM, el disco y el CPU del VPS, la memoria de cada contenedor y todas las WAHA (sesiones, arranque del contenedor y versión). La clave de cada WAHA la saca de Easypanel, así que no hace falta cargarla en Vercel. Avisa a Axel por WhatsApp (o por n8n si la línea general no anda) cuando una conexión en uso se cae, deja de responder o tiene una restricción que frena su operación. Si no puede consultar Easypanel guarda el diagnóstico sin afirmar una caída. Los reinicios, las recuperaciones y los recursos altos quedan para consulta en el panel.
 
   Guarda estado, eventos y una muestra por corrida en `infra_radar_state`, `infra_radar_events` e `infra_radar_samples` (30 días). Nunca guarda claves ni teléfonos.
 - El webhook de WAHA guarda **en el momento** el aviso `session.status` (antes se descartaba) y avisa la caída sin esperar al cron. `n8n/waha` ya manda ese evento.

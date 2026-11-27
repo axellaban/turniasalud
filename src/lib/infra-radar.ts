@@ -176,7 +176,10 @@ export async function readRadar(config: EasypanelConfig): Promise<RadarSnapshot>
     const usage = row.stats?.memory?.usage;
     if (typeof usage === "number") memory.set(row.projectName + "/" + row.serviceName, usage);
   }
-  const instances = await Promise.all(all.services.filter((s) => s.enabled !== false && isWaha(s)).map((s) => readInstance(config, s, memory)));
+  const instances = await Promise.all(all.services.filter((s) => s.enabled !== false && isWaha(s)).map(async (s) => {
+    const first = await readInstance(config, s, memory);
+    return first.reachable ? first : readInstance(config, s, memory);
+  }));
   const disk = Number(system?.diskInfo?.usedPercentage);
   return {
     memoryPct: typeof system?.memInfo?.usedMemPercentage === "number" ? round(system.memInfo.usedMemPercentage) : null,
@@ -306,11 +309,10 @@ export async function runInfraRadar() {
   try {
     snapshot = await readRadar(config);
   } catch (e) {
-    const alerts = await sql.begin(async (tx) => {
+    await sql.begin(async (tx) => {
       await event(tx, "easypanel_error", "vps", { error: e instanceof Error ? e.message : "error" });
-      return await cooled(tx, "easypanel", 3600_000) ? ["🔴 El radar no pudo leer Easypanel: el VPS puede estar caído."] : [];
     });
-    if (alerts.length) await notifyAxel("⚠️ Turnia · radar\n" + alerts.join("\n"));
+    // No poder consultar el monitor no demuestra que el VPS ni WhatsApp estén caídos.
     return { configured: true as const, error: "No se pudo leer Easypanel" };
   }
   const alerts = await recordRadar(snapshot);

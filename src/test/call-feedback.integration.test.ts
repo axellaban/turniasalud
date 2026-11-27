@@ -154,10 +154,11 @@ describe.runIf(url)("llamadas y conexión de WhatsApp con proveedores simulados"
     expect(await sql`select id from tasks where clinic_id = ${clinic}`).toHaveLength(1);
     expect(calls.every((c) => c.method === "GET")).toBe(true);
   }, 15000);
-  it("detecta caída aunque no entren mensajes, registra transiciones y avisa una vez por hora", async () => {
+  it("detecta una caída confirmada y no la repite aunque pasen horas; vuelve a avisar ante otra caída", async () => {
     await health.monitorClinicWhatsapps();
     state = "FAILED";
     await health.monitorClinicWhatsapps();
+    await sql`update waha_connection_health set alerted_at = now() - interval '2 hours' where clinic_id = ${clinic}`;
     await health.monitorClinicWhatsapps();
     expect(mocks.alerts).toHaveBeenCalledTimes(1);
     expect(await sql`select id from tasks where clinic_id = ${clinic}`).toHaveLength(1);
@@ -167,7 +168,21 @@ describe.runIf(url)("llamadas y conexión de WhatsApp con proveedores simulados"
       .toEqual(["WORKING", "FAILED", "WORKING"]);
     expect((await sql`select status, failure_at, alerted_at from waha_connection_health where clinic_id = ${clinic}`)[0])
       .toEqual({ status: "WORKING", failure_at: null, alerted_at: null });
+    state = 'FAILED';
+    await health.monitorClinicWhatsapps();
+    expect(mocks.alerts).toHaveBeenCalledTimes(2);
     expect(calls.every((c) => c.method === "GET")).toBe(true);
+  });
+  it('no avisa por un timeout que se recupera en la segunda comprobación ni por un STARTING reciente', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('timeout simulado'));
+    await health.monitorClinicWhatsapps();
+    expect(mocks.alerts).not.toHaveBeenCalled();
+    state = 'STARTING';
+    await health.monitorClinicWhatsapps();
+    expect(mocks.alerts).not.toHaveBeenCalled();
+    await sql`update waha_connection_health set failure_at = now() - interval '3 minutes' where clinic_id = ${clinic}`;
+    await health.monitorClinicWhatsapps();
+    expect(mocks.alerts).toHaveBeenCalledTimes(1);
   });
   it("rechaza una cuenta distinta y guarda errores sin credenciales", async () => {
     account = "5491100008003";

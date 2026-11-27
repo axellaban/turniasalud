@@ -181,16 +181,9 @@ El consultorio no carga ni marca nada en Turnia. Lo que cambia en Smile Connect 
   - si falla, queda el error en el panel y se prueba con la copia del día siguiente.
 - **Agenda del panel:** con Smile Connect prendido ya no pide marcar asistencia. Dice cuántos turnos pasados siguen sin marca en Smile Connect y cuántos de Turnia no aparecen allá (por ejemplo, un turno de Sofi que recepción no copió).
 
-**Avisos a Axel por WhatsApp.** El consultorio no mira el panel, así que los problemas de la integración le llegan a Axel desde la línea de Turnia (`checkSmileHealth`, en cada vuelta). Llega un aviso por problema, no uno por intento:
-- la agenda lleva más de 3 horas sin sincronizarse, con el motivo (error de Smile Connect o cupo agotado);
-- la escritura quedó frenada;
-- la copia diaria lleva más de 30 horas sin hacerse, o no se pudo pasar entera a Turnia;
-- un horario para revisar: un profesional nuevo sin horarios en Turnia, o uno que ya no figura en Smile Connect;
-- el último cambio de horarios que se copió (informativo);
-- la clave rechazada;
-- la clave sin `events:read` (una vez por clave).
+**Avisos técnicos a Axel (26/11): solo indisponibilidades operativas.** Se avisa cuando la escritura queda frenada, se rechaza la clave necesaria para operar o la API falla en dos comprobaciones actuales. Una copia atrasada o un error histórico no bastan para afirmar una caída.
 
-Si el WhatsApp no sale, se reintenta una vez por hora. **Ojo:** salen por la línea general de Turnia, y con esa línea pausada no llegan, igual que el aviso de Google.
+Los horarios copiados, los profesionales para revisar, las copias diarias, la antigüedad de la clave y el permiso opcional `events:read` se consultan en el panel; no generan WhatsApp ni email técnico. Si WhatsApp falla, se usa n8n como respaldo. La aceptación de n8n conserva la deduplicación y no causa otro email cada hora; no se confunde con una entrega confirmada de Gmail. Solo se reintenta el aviso si ningún canal lo aceptó.
 
 **Comparación con buenas prácticas (18/11/2026).** Se revisaron guías de integraciones por consulta periódica de una API y de sincronización en los dos sentidos con un sistema que manda: Merge, Truto, Jenifer Ciuciu-Kiss («Incremental API Sync») y cómo lo hacen Weave y NexHealth con los sistemas de los consultorios.
 
