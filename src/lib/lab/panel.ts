@@ -71,6 +71,8 @@ export async function labOverview(clinicId: string): Promise<Overview> {
       from lab_proposals where clinic_id = ${clinicId}`,
   ]);
   const latest = batteries[0] ?? null;
+  // Solo se comparan baterías del mismo modelo (Haiku en el laboratorio; la primera fue con Opus).
+  const sameModel = batteries.filter((b) => (b.agent_llm ?? null) === (latest?.agent_llm ?? null));
   const failing = new Map<string, { text: string; dim: Dimension; count: number; cases: Set<string> }>();
   if (latest) {
     const results = await sql<Array<Pick<LabResult, "case_id" | "conditions" | "checks">>>`
@@ -96,9 +98,9 @@ export async function labOverview(clinicId: string): Promise<Overview> {
   }
   return {
     latest,
-    previous: batteries[1] ?? null,
+    previous: sameModel[1] ?? null,
     running: running ?? null,
-    history: batteries.slice().reverse(),
+    history: sameModel.slice().reverse(),
     real: asAggregate(reviews.filter((r) => !r.is_test)),
     tests: asAggregate(reviews.filter((r) => r.is_test)),
     pending: counts?.pending ?? 0,

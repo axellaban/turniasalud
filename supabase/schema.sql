@@ -2498,3 +2498,6 @@ create table if not exists lab_access_tokens (
   revoked_at timestamptz
 );
 alter table lab_access_tokens enable row level security;
+
+-- Laboratorio con Haiku (27/11/2026): el modelo con que respondió Sofi en cada corrida (null: el del agente).
+alter table lab_runs add column if not exists agent_llm text;

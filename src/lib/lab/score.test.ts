@@ -205,3 +205,13 @@ describe("mapa de cobertura", () => {
     for (const c of referenceCases()) expect(isValidCell(c.intent, c.situation), c.id).toBe(true);
   });
 });
+
+describe("modelo de Sofi en el laboratorio", () => {
+  it("usa el Haiku pedido si está, si no el Haiku más nuevo de la lista", async () => {
+    const { pickLabLlm, llmIds } = await import("./runs");
+    expect(pickLabLlm(["claude-opus-5-5", "claude-haiku-5-5"])).toBe("claude-haiku-5-5");
+    expect(pickLabLlm(["claude-opus-5-5", "claude-haiku-4-5@20251001", "claude-haiku-3-5"])).toBe("claude-haiku-4-5@20251001");
+    expect(pickLabLlm(["claude-opus-5-5"])).toBeNull();
+    expect(llmIds({ llms: [{ llm: "claude-haiku-4-5" }, { llm: "gemini-2.5-flash" }, { other: "x" }] }).sort()).toEqual(["claude-haiku-4-5", "gemini-2.5-flash"]);
+  });
+});

@@ -8,7 +8,9 @@ import type { Dims, Verdict } from "./score";
 // El juez y el que propone mejoras del Laboratorio de Sofi: Claude con salida estructurada. Sin
 // ANTHROPIC_API_KEY el laboratorio corre las simulaciones pero no puede puntuarlas (lo dice el panel).
 
-const MODEL = () => process.env.LAB_LLM || "claude-opus-5-5";
+// Todo el laboratorio corre con Haiku (pedido de Axel, 27/11): el juez, las propuestas y el armado de casos.
+// Las charlas reales las atiende Sofi con su modelo de producción; el laboratorio no lo cambia.
+const MODEL = () => process.env.LAB_LLM || "claude-haiku-5-5";
 
 export const labJudgeConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
@@ -77,8 +79,8 @@ async function parse<T extends z.ZodType>(schema: T, system: string, user: strin
   const response = await client().beta.messages.parse({
     model: MODEL(),
     max_tokens: maxTokens,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
+    // Haiku no tiene respaldo del lado del servidor; Opus y Sonnet sí.
+    ...(/haiku/.test(MODEL()) ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
     output_config: { effort, format: betaZodOutputFormat(schema) },
     system,
     messages: [{ role: "user", content: user }],

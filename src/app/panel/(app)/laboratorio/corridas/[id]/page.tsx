@@ -10,7 +10,7 @@ import { getRun, runResults } from "@/lib/lab/runs";
 import { normalizeTranscript } from "@/lib/lab/transcript";
 import { labAdvance, labProposeFromResult, labSaveCase } from "../../../../lab-actions";
 import { LabForm } from "../../lab-form";
-import { BandBadge, DimBars, Findings, KIND_LABEL, LabHeader, RUN_STATUS, ScoreRing, Transcript, Verdicts, fmtScore, scoreTone } from "../../lab-ui";
+import { BandBadge, DimBars, Findings, KIND_LABEL, LabHeader, RUN_STATUS, ScoreRing, Transcript, Verdicts, fmtScore, modelLabel, scoreTone } from "../../lab-ui";
 
 export const metadata: Metadata = { title: "Corrida · Laboratorio de Sofi" };
 export const maxDuration = 300;
@@ -37,7 +37,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
       <LabHeader
         current="/panel/laboratorio/corridas"
         title={run.label}
-        description={`${KIND_LABEL[run.kind]} · ${run.cases.length} caso${run.cases.length === 1 ? "" : "s"} × ${run.repeat_count} · empezó el ${formatDateTime(run.created_at, clinic.timezone)}${run.created_by ? ` · ${run.created_by}` : ""}`}
+        description={`${KIND_LABEL[run.kind]} · ${modelLabel(run.agent_llm)} · ${run.cases.length} caso${run.cases.length === 1 ? "" : "s"} × ${run.repeat_count} · empezó el ${formatDateTime(run.created_at, clinic.timezone)}${run.created_by ? ` · ${run.created_by}` : ""}`}
         actions={<Badge tone={RUN_STATUS[run.status]?.tone}>{RUN_STATUS[run.status]?.label}</Badge>}
       />
       {run.error && <Notice tone="error" className="mb-5">{run.error}</Notice>}

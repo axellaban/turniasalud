@@ -40,6 +40,7 @@ vi.mock("@/lib/elevenlabs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/elevenlabs")>()),
   elevenlabs: vi.fn(async (path: string, init: RequestInit = {}) => {
     const body = init.body ? JSON.parse(String(init.body)) : null;
+    if (path === "/v1/convai/llm/list") return { llms: [{ llm: "claude-opus-5-5" }, { llm: "claude-haiku-5-5" }] };
     if (path === "/v1/convai/agents/agent_lab") return { conversation_config: { agent: { prompt: { tool_ids: ["t1", "t2", "t3"] } } } };
     if (path.startsWith("/v1/convai/tools")) {
       return { tools: [{ id: "t1", tool_config: { name: "consultar_disponibilidad" } }, { id: "t2", tool_config: { name: "reservar_turno" } }, { id: "t3", tool_config: { name: "registrar_paciente" } }] };
@@ -189,6 +190,9 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     expect(woman.dynamic_variables.clinic_name).toBe("Consultorio Lab");
     expect(el.runs[0].repeat_count).toBe(2);
     expect((el.runs[0] as { agent_config_override: { conversation_config: { agent: { prompt: { prompt: string } } } } }).agent_config_override.conversation_config.agent.prompt.prompt).toBe(SYSTEM_PROMPT);
+    // El laboratorio responde con Haiku, sin tocar el modelo del agente real.
+    expect((el.runs[0] as { agent_config_override: { conversation_config: { agent: { prompt: { llm: string } } } } }).agent_config_override.conversation_config.agent.prompt.llm).toBe("claude-haiku-5-5");
+    expect((await runs.getRun(batteryId))?.agent_llm).toBe("claude-haiku-5-5");
   });
 
   it("trae las simulaciones, las puntúa y calcula el puntaje", async () => {
