@@ -1286,7 +1286,8 @@ export async function checkSmileHealth(clinicId: string, run: Record<string, unk
   if (!conn?.api_key_encrypted || conn.api_mode === "apagada") return [];
   const clinic = await getClinic(clinicId);
   const head = axelHead(clinic.name);
-  const connectedFor = minutesSince(conn.api_checked_at);
+  const age = (at: string | null) => at ? (now.getTime() - Date.parse(at)) / 60_000 : Infinity;
+  const connectedFor = age(conn.api_checked_at);
   const sent: string[] = [];
   const alert = async (key: string, text: string) => {
     if (await alertAxelOnce(`smile-axel:${key}:${clinicId}`, text)) sent.push(key.split(":")[0]);
@@ -1296,7 +1297,7 @@ export async function checkSmileHealth(clinicId: string, run: Record<string, unk
   const lastFresh = conn.api_supports_delta && conn.api_delta_at ? conn.api_delta_at : conn.api_near_pull_at;
   const staleAfter = conn.api_supports_delta ? STALE_DELTA_MIN : STALE_NEAR_MIN;
   if (typeof run.error === 'string' || typeof run.error_cambios === 'string'
-    || (connectedFor > staleAfter && minutesSince(lastFresh) > staleAfter)) {
+    || (connectedFor > staleAfter && age(lastFresh) > staleAfter)) {
     // Una copia atrasada no significa que Sofi esté caída. Confirmar con dos consultas actuales.
     let failure: unknown = null;
     for (let attempt = 0; attempt < 2; attempt++) {
