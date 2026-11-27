@@ -8,6 +8,7 @@ import { chatIdForPhone, wahaSendText } from "../waha";
 import { withGeneralWaha } from "../waha-connections";
 import { labJudgeConfigured } from "./judge";
 import { generateProposals } from "./proposals";
+import { effectivePrompt, recordPromptVersion } from "./prompt";
 import { fillCoverage } from "./coverage";
 import { reviewRecentConversations } from "./reviews";
 import { advanceRun, allCases, openRuns, startRun } from "./runs";
@@ -43,6 +44,13 @@ export async function runLab(budgetMs = 110_000): Promise<Record<string, unknown
   const left = () => budgetMs - (Date.now() - started);
   const report: Record<string, unknown> = {};
   const clinics = await sql<LabClinic[]>`select * from clinics where lab_enabled and not is_demo`;
+
+  // Sin ninguna versión registrada (el prompt se cargó directo en ElevenLabs): se toma el actual.
+  const [anyVersion] = await sql`select 1 from lab_versions limit 1`;
+  if (!anyVersion) {
+    const current = await effectivePrompt();
+    await recordPromptVersion({ hash: current.hash, applied: current.applied, failed: [] });
+  }
 
   // 1. La batería nocturna.
   for (const clinic of clinics) {

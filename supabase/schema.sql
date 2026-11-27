@@ -2501,3 +2501,15 @@ alter table lab_access_tokens enable row level security;
 
 -- Laboratorio con Haiku (27/11/2026): el modelo con que respondió Sofi en cada corrida (null: el del agente).
 alter table lab_runs add column if not exists agent_llm text;
+
+-- Laboratorio (27/11/2026): las charlas reales revisadas antes de corregir la rúbrica (la «¿» contaba como
+-- falla) y con Opus se vuelven a revisar con la rúbrica nueva y Haiku. Una sola vez.
+-- También se registra como versión el prompt que ya está en ElevenLabs (lo cargó el PR #289 directo, sin
+-- «Actualizar a Sofi»): queda con la fecha de hoy.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-27-laboratorio-revisar-de-nuevo') then
+    delete from lab_reviews where reviewed_at < '2026-11-27 21:00:00+00';
+    insert into data_migrations (name) values ('2026-11-27-laboratorio-revisar-de-nuevo');
+  end if;
+end $$;

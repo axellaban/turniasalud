@@ -239,3 +239,14 @@ export async function labRevokeToken(_prev: LabFormState, form: FormData): Promi
   return done("Clave revocada.");
 }
 
+
+/** Marca una charla como prueba (de alguien del equipo): sale del puntaje de charlas reales y de las métricas. */
+export async function labMarkTest(_prev: LabFormState, form: FormData): Promise<LabFormState> {
+  const clinic = await adminClinic(form);
+  const id = text(form, "conversacion");
+  if (!isUuid(id)) return { ok: false, message: "Falta la charla." };
+  const test = form.get("prueba") !== "no";
+  await sql`update conversations set is_test = ${test} where id = ${id} and clinic_id = ${clinic.id}`;
+  await sql`update lab_reviews set is_test = ${test} where conversation_id = ${id}`;
+  return done(test ? "Marcada como prueba: ya no cuenta como charla real." : "Vuelve a contar como charla real.");
+}
