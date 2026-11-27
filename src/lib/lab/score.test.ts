@@ -215,3 +215,17 @@ describe("modelo de Sofi en el laboratorio", () => {
     expect(llmIds({ llms: [{ llm: "claude-haiku-4-5" }, { llm: "gemini-2.5-flash" }, { other: "x" }] }).sort()).toEqual(["claude-haiku-4-5", "gemini-2.5-flash"]);
   });
 });
+
+describe("consumo de las corridas", () => {
+  it("junta créditos, costos y tokens de cualquier forma de respuesta", async () => {
+    const { usageNumbers } = await import("./runs");
+    expect(usageNumbers({ metadata: { cost: 120, charging: { llm_price: 0.02, llm_usage: { tokens: 900 } } }, other: { name: "x" } })).toEqual({
+      "metadata.cost": 120, "metadata.charging.llm_price": 0.02, "metadata.charging.llm_usage.tokens": 900,
+    });
+  });
+  it("calcula el costo del juez con los precios de lista", async () => {
+    const { judgeCost } = await import("./judge");
+    expect(judgeCost("claude-haiku-5-5", 1_000_000, 100_000)).toBe(0.15);
+    expect(judgeCost("claude-opus-5-5", 10_000, 1_000)).toBe(0.06);
+  });
+});

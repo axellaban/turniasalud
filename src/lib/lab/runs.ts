@@ -55,6 +55,8 @@ export type LabRun = {
   spread: number | null;
   dims: Dims | null;
   critical_count: number;
+  /** Consumo: { elevenlabs: { creditos, llm_usd, … }, juez: { usd, tokens_entrada, tokens_salida, llamadas } }. */
+  usage: { elevenlabs?: { simulaciones: number; con_datos: number; creditos: number; llm_usd: number; ejemplo: Record<string, number> }; juez?: { usd: number; tokens_entrada: number; tokens_salida: number; llamadas: number } } | null;
   error: string | null;
   created_by: string | null;
   created_at: string;
@@ -419,10 +421,66 @@ async function collect(run: LabRun): Promise<void> {
   } else {
     await sql`update lab_runs set status = 'puntuando' where id = ${run.id} and status = 'corriendo'`;
   }
-  // Las simulaciones quedan guardadas acá: las pruebas de ElevenLabs ya no hacen falta.
-  for (const testId of Object.keys(run.test_ids)) {
-    await elevenlabs(`/v1/convai/agent-testing/${testId}`, { method: "DELETE" }).catch(() => {});
+  // Las pruebas quedan en ElevenLabs (Agents → Tests, «Turnia Lab · …») para poder ver su consumo allá.
+  await recordElevenLabsUsage(run.id, testRuns);
+}
+
+/** Números de consumo que traiga una respuesta de ElevenLabs (créditos, costo, tokens), tenga la forma que tenga. Puro. */
+export function usageNumbers(body: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  const walk = (v: unknown, path: string) => {
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, `${path}[${i}]`));
+    if (!v || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v)) {
+      const p = path ? `${path}.${k}` : k;
+      if (typeof x === "number" && /cost|credit|price|charg|token|usage/i.test(p)) out[p] = x;
+      else if (typeof x === "object") walk(x, p);
+    }
+  };
+  walk(body, "");
+  return out;
+}
+
+/**
+ * Consumo de ElevenLabs de la corrida: lo que venga en cada simulación y, si trae conversation_id, el
+ * detalle de esa conversación (metadata.cost son créditos; metadata.charging, el LLM). Se guarda crudo en
+ * lab_runs.usage para no depender de una forma exacta, y el panel suma créditos y USD de LLM.
+ */
+async function recordElevenLabsUsage(runId: string, testRuns: TestRun[]): Promise<void> {
+  let credits = 0;
+  let llmUsd = 0;
+  let withData = 0;
+  const sample: Record<string, number> = {};
+  for (const r of testRuns.slice(0, 200)) {
+    let numbers = usageNumbers(r);
+    const conversationId = (r as { conversation_id?: string; agent_conversation_id?: string }).conversation_id
+      ?? (r as { agent_conversation_id?: string }).agent_conversation_id;
+    if (conversationId) {
+      const detail = await elevenlabs<unknown>(`/v1/convai/conversations/${encodeURIComponent(conversationId)}`).catch(() => null);
+      if (detail) numbers = { ...numbers, ...usageNumbers({ metadata: (detail as { metadata?: unknown }).metadata }) };
+    }
+    if (!Object.keys(numbers).length) continue;
+    withData++;
+    if (!Object.keys(sample).length) Object.assign(sample, numbers);
+    credits += numbers["metadata.cost"] ?? 0;
+    for (const [k, v] of Object.entries(numbers)) if (/llm_price|llm_charge|llm_cost/i.test(k)) llmUsd += v;
   }
+  await sql`
+    update lab_runs set usage = coalesce(usage, '{}'::jsonb) || ${json({
+      elevenlabs: { simulaciones: testRuns.length, con_datos: withData, creditos: credits, llm_usd: Math.round(llmUsd * 10000) / 10000, ejemplo: sample },
+    })}
+    where id = ${runId}`;
+}
+
+/** Suma lo que costó el juez de la corrida. */
+async function addJudgeUsage(runId: string, usd: number, input: number, output: number): Promise<void> {
+  await sql`
+    update lab_runs set usage = jsonb_set(coalesce(usage, '{}'::jsonb), '{juez}', jsonb_build_object(
+      'usd', coalesce((usage->'juez'->>'usd')::numeric, 0) + ${usd},
+      'tokens_entrada', coalesce((usage->'juez'->>'tokens_entrada')::bigint, 0) + ${input},
+      'tokens_salida', coalesce((usage->'juez'->>'tokens_salida')::bigint, 0) + ${output},
+      'llamadas', coalesce((usage->'juez'->>'llamadas')::int, 0) + 1))
+    where id = ${runId}`;
 }
 
 async function criteriaFor(clinicId: string): Promise<string[]> {
@@ -474,6 +532,7 @@ async function judgeResult(run: LabRun, result: LabResult, clinicContext: string
       clinicContext,
       criteria,
     });
+    if (verdict.usage) await addJudgeUsage(run.id, verdict.usage.usd, verdict.usage.input_tokens, verdict.usage.output_tokens);
     const scored = conversationScore({ verdicts: [...verdict.verdicts, ...checks], judge: verdict.judge, judgeCritical: verdict.judgeCritical });
     const findings = verdict.judgeCritical && verdict.criticalReason
       ? [{ problema: verdict.criticalReason, cita: "", dimension: "seguridad" as const, gravedad: "alta" as const, mejora: "" }, ...verdict.findings]

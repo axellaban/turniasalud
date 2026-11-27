@@ -49,7 +49,7 @@ export async function GET(request: Request) {
     });
   }
   const [runs, proposals, criteria, reviews] = await Promise.all([
-    sql`select id, clinic_id, kind, status, label, prompt_hash, repeat_count, score, spread, dims, critical_count, error,
+    sql`select id, clinic_id, kind, status, label, prompt_hash, repeat_count, score, spread, dims, critical_count, error, agent_llm, usage,
           jsonb_array_length(cases) as casos, created_at, started_at, finished_at
         from lab_runs order by created_at desc limit 30`,
     sql`select id, clinic_id, level, layer, dimension, title, why, evidence, change, status, experiment_run_id, decision_reason, apply_error, created_at

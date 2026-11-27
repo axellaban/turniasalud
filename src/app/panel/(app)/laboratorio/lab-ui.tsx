@@ -201,3 +201,17 @@ export function RunLink({ id, children }: { id: string; children: ReactNode }) {
 /** Con qué modelo respondió Sofi en la corrida. */
 export const modelLabel = (llm: string | null | undefined) =>
   !llm ? "Opus (modelo de producción)" : /haiku/i.test(llm) ? `Haiku (${llm})` : llm;
+
+/** El consumo de una corrida en una línea, con lo que haya informado ElevenLabs y el juez. */
+export function usageText(usage: { elevenlabs?: { simulaciones: number; con_datos: number; creditos: number; llm_usd: number }; juez?: { usd: number; llamadas: number } } | null | undefined): string | null {
+  if (!usage) return null;
+  const parts: string[] = [];
+  const el = usage.elevenlabs;
+  if (el) {
+    parts.push(el.con_datos
+      ? `ElevenLabs: ${Math.round(el.creditos).toLocaleString("es-AR")} créditos${el.llm_usd ? ` · LLM USD ${el.llm_usd.toFixed(2)}` : ""} (${el.con_datos} de ${el.simulaciones} simulaciones informaron consumo)`
+      : `ElevenLabs: el resultado no trae el consumo (${el.simulaciones} simulaciones); se ve en ElevenLabs → Agents → Tests, «Turnia Lab · …»`);
+  }
+  if (usage.juez) parts.push(`Juez: USD ${Number(usage.juez.usd).toFixed(3)} (${usage.juez.llamadas} evaluaciones)`);
+  return parts.length ? parts.join(" · ") : null;
+}
