@@ -69,6 +69,8 @@ export type Clinic = {
   test_phones?: string[];
   /** Usa el protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). */
   dental_protocol: boolean;
+  /** Pedir y guardar el motivo antes de que Sofi reserve un turno. */
+  collect_visit_reason?: boolean;
   /** Horas antes del turno en que las horas reservadas para urgencias quedan libres para todo. */
   urgent_release_hours: number | null;
   /**
@@ -222,6 +224,9 @@ export type Appointment = {
   notes: string | null;
   /** Nombre propio del turno («Consulta de implantes»); vacío, se llama como su prestación. */
   title?: string | null;
+  consultation_reason?: string | null;
+  consultation_categories?: string[];
+  patient_first_visit?: boolean | null;
   reminder_sent_at: string | null;
   confirmed_at: string | null;
   survey_sent_at: string | null;

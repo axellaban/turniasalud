@@ -1,4 +1,5 @@
 import "server-only";
+import { CONSULTATION_INSTRUCTIONS } from './consultation-reason';
 import { sql } from "./db";
 import { env } from "./env";
 import { expandBlocks, isOpenAt } from "./slots";
@@ -151,6 +152,7 @@ export function clinicInfoText(clinic: Clinic, openNow?: boolean, opts: { dental
     clinic.tone === "espejo" && "Trato: como escribe el paciente (de vos si vosea o tutea, de usted si usa usted).",
     bookingDaysText(clinic.booking_weekdays),
     rescheduleRulesText(clinic),
+    clinic.collect_visit_reason && `Motivo del turno (obligatorio al reservar): ${CONSULTATION_INSTRUCTIONS}`,
     clinic.dental_protocol && dental && DENTAL_PROTOCOL,
     clinic.agent_context && `Instrucciones de esta clínica:\n${clinic.agent_context}`,
   ]

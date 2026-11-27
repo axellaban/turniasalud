@@ -74,6 +74,7 @@ export async function saveBookingRules(_previous: FormState, form: FormData): Pr
   const clinic = await panelClinicOr(form);
   if (isFormState(clinic)) return clinic;
   const fields: Record<string, unknown> = {};
+  if (form.has("collect_visit_reason_field")) fields.collect_visit_reason = form.has("collect_visit_reason");
   if (form.has("booking_weekdays_field")) {
     const raw = form.getAll("booking_weekday");
     if (!raw.length || raw.some((v) => typeof v !== "string" || !/^[0-6]$/.test(v))) {

@@ -30,7 +30,7 @@ import {
   type SmileClient,
 } from "./smile-connect-api";
 import { clientFor, findSmilePatient, getSmileApiConnection, isLiveSmileMode, SmileBudgetError, SmilePatientReview, writesEnabledOnServer, WRITE_MODES, type SmileApiConnection } from "./smile-connect-link";
-import { healthLineOf, healthNoteLine, matchSmileService, smileAppointmentNote, smileCoverage, withHealthLine, type SmileNoteHealth } from "./smile-connect-note";
+import { healthLineOf, healthNoteLine, matchSmileService, smileAppointmentNote, smileCoverage, withBookingNote, withHealthLine, type SmileNoteHealth } from "./smile-connect-note";
 import { humanSlot, localDateKey } from "./time";
 import { confirmationBubbles } from "./whatsapp-style";
 import type { Appointment, Patient, SmileManagement } from "./types";
@@ -66,6 +66,12 @@ type Row = {
   status: string;
   source: string;
   notes: string | null;
+  consultation_reason: string | null;
+  consultation_categories: string[];
+  patient_first_visit: boolean | null;
+  smile_booking_notes: string | null;
+  smile_booking_notes_pending: boolean;
+  smile_booking_notes_attempts: number;
   title: string | null;
   external_id: string | null;
   external_status: string | null;
@@ -471,7 +477,9 @@ async function processDeferredBooking(tx: TransactionSql, client: SmileClient, c
       id = result.appointment_id;
       createdByTurnia = !recovered;
       if (!recovered) await logChange(tx, row, "crear", "hecho", { request: sent, result });
-      await tx`update appointments set external_id = ${`sc:${id}`} where id = ${row.id}`;
+      await tx`update appointments set external_id = ${`sc:${id}`},
+        smile_booking_notes = ${request.notes && (!sent.notes || recovered) ? request.notes : null},
+        smile_booking_notes_pending = ${Boolean(request.notes && (!sent.notes || recovered))} where id = ${row.id}`;
     }
   }
   await verifyNewAppointment(tx, client, row, id, patientId, createdByTurnia);
@@ -519,7 +527,9 @@ async function noticeReview(tx: TransactionSql, row: Row, message: string) {
 async function pendingRow(tx: TransactionSql, id: string, skipLocked = false, notesRefresh = false) {
   const [row] = await tx<Row[]>`
     select a.id, a.clinic_id, a.patient_id, a.appointment_type_id, a.coverage, a.professional_id, a.second_professional_id, a.starts_at, a.ends_at, a.status, a.source,
-           a.notes, a.title, a.external_id, a.external_status, a.replaced_by, a.smile_attempts,
+           a.notes, a.consultation_reason, a.consultation_categories, a.patient_first_visit,
+           a.smile_booking_notes, a.smile_booking_notes_pending, a.smile_booking_notes_attempts,
+           a.title, a.external_id, a.external_status, a.replaced_by, a.smile_attempts,
            a.smile_deferred, a.smile_reply_phone, a.smile_management, coalesce(a.title, t.name) as type_name, t.instructions,
            t.name as base_type_name, pt.coverage as patient_coverage, pt.coverage_plan, pt.member_number, a.smile_notes_refresh,
            p.smile_professional_id, p.smile_box_id, p.full_name as professional, c.timezone, c.agent_name, c.address
@@ -528,7 +538,7 @@ async function pendingRow(tx: TransactionSql, id: string, skipLocked = false, no
       join professionals p on p.id = a.professional_id
       join clinics c on c.id = a.clinic_id
       left join patients pt on pt.id = a.patient_id
-    where a.id = ${id} and ${notesRefresh ? tx`a.smile_notes_refresh and a.smile_sync = 'ok'` : tx`a.smile_sync in ('pendiente', 'error')`}
+    where a.id = ${id} and ${notesRefresh ? tx`(a.smile_notes_refresh or a.smile_booking_notes_pending) and a.smile_sync = 'ok'` : tx`a.smile_sync in ('pendiente', 'error')`}
     for update of a ${skipLocked ? tx`skip locked` : tx``}`;
   return row;
 }
@@ -718,10 +728,13 @@ async function processSmileManagement(tx: TransactionSql, client: SmileClient, r
       external_id = null, smile_management = null, smile_sync = 'ok', smile_error = null where id = ${row.id}`;
   const [after] = await tx<Appointment[]>`
     insert into appointments (clinic_id, patient_id, appointment_type_id, professional_id, starts_at, ends_at, status,
-      source, notes, title, coverage, external_id, external_status, smile_sync, smile_reply_phone)
+      source, notes, title, coverage, external_id, external_status, smile_sync, smile_reply_phone,
+      consultation_reason, consultation_categories, patient_first_visit, smile_booking_notes, smile_booking_notes_pending)
     values (${row.clinic_id}, ${row.patient_id}, ${row.appointment_type_id}, ${request.professionalId}, ${request.startsAt}, ${request.endsAt},
       'confirmado', ${request.replyPhone ? request.via : row.source}, ${row.notes}, ${row.title}, ${request.coverage},
-      ${row.external_id}, ${row.external_status}, 'ok', ${request.replyPhone}) returning *`;
+      ${row.external_id}, ${row.external_status}, 'ok', ${request.replyPhone},
+      ${row.consultation_reason}, ${row.consultation_categories}, ${row.patient_first_visit},
+      ${row.smile_booking_notes}, ${row.smile_booking_notes_pending}) returning *`;
   await tx`update appointments set replaced_by = ${after.id} where id = ${row.id}`;
   await tx`update waitlist set appointment_id = ${after.id} where appointment_id = ${row.id} and status in ('activa', 'ofrecida')`;
   await logChange(tx, row, "mover", "hecho", { request: { appointment_id: id, ...payload }, before: remote });
@@ -879,10 +892,93 @@ export async function pushPendingSmile(clinicId: string, appointmentId?: string)
   }
   if (pauseReason) result.frenado = pauseReason;
   else if (!appointmentId) {
+    // La confirmación al paciente sale antes del trabajo opcional sobre notas.
+    await sendPendingNotices(clinicId);
+    await refreshBookingNotes(clinicId);
     const waiting = await refreshHealthNotes(clinicId, result);
     if (waiting) return { ...result, reintentar_en: waiting.retryAt };
   }
   return result;
+}
+
+/**
+ * Recupera notas omitidas por un alta básica. Cola propia: sus fallos no vuelven a reservar,
+ * no cambian la confirmación y no generan alertas técnicas ni mensajes al paciente.
+ */
+async function refreshBookingNotes(clinicId: string) {
+  const pending = await sql<Array<{ id: string }>>`
+    select id from appointments where clinic_id = ${clinicId} and smile_booking_notes_pending
+      and smile_booking_notes_attempts < ${MAX_ATTEMPTS} and smile_sync = 'ok' and smile_management is null
+      and (smile_booking_notes_retry_at is null or smile_booking_notes_retry_at <= now())
+      and source <> 'smile_connect' and external_id ~ '^sc:[0-9]+$' and status = 'confirmado' and starts_at > now()
+    order by created_at limit 3`;
+  for (const { id } of pending) {
+    await sql.begin(async tx => {
+      await tx`select pg_advisory_xact_lock(hashtextextended(${`smile-connect:${clinicId}`}, 0))`;
+      const conn = await getSmileApiConnection(clinicId, tx);
+      if (!conn?.api_key_encrypted || conn.api_mode !== 'completa' || !conn.api_supports_notes
+        || conn.api_writes_paused || !writesEnabledOnServer()) return;
+      if (conn.api_retry_at && Date.parse(conn.api_retry_at) > Date.now()) return;
+      const row = await pendingRow(tx, id, true, true);
+      if (!row || !row.smile_booking_notes_pending || row.status !== 'confirmado' || row.smile_management
+        || row.smile_booking_notes_attempts >= MAX_ATTEMPTS) return;
+      // El lock de clínica serializa trabajadores; revalidar también el plazo bajo ese lock.
+      const [due] = await tx`select 1 from appointments where id = ${id}
+        and (smile_booking_notes_retry_at is null or smile_booking_notes_retry_at <= now())`;
+      if (!due) return;
+      const done = () => tx`update appointments set smile_booking_notes_pending = false,
+        smile_booking_notes_error = null, smile_booking_notes_retry_at = null where id = ${id}`;
+      const scId = scIdOf(row.external_id);
+      if (!scId || !row.smile_booking_notes) { await done(); return; }
+      const client = clientFor(conn, undefined, tx, { forWrites: true });
+      try {
+        const sc = await scAppointment(client, scId);
+        if (cancelledInSmile(sc)) { await done(); return; }
+        if (!sameInstant(sc.start_date, row.starts_at) || !sameInstant(sc.end_date, row.ends_at)) {
+          throw new Error('El turno cambió en Smile Connect. Se espera a la sincronización antes de completar la nota.');
+        }
+        if (!(await belongsToPatient(tx, row, sc)) || sc.professional_ids.length !== 1
+          || sc.professional_ids[0] !== row.smile_professional_id || sc.box_id !== row.smile_box_id) {
+          throw new Review('Los datos del turno cambiaron en Smile Connect. La nota no se tocó.');
+        }
+        let notes: string;
+        try { notes = withBookingNote(sc.notes ?? null, row.smile_booking_notes); }
+        catch (e) { throw new Review(e instanceof Error ? e.message : 'La nota necesita revisión.'); }
+        if (notes === (sc.notes ?? '')) { await done(); return; }
+        const [{ n }] = await tx<Array<{ n: number }>>`select count(*)::int as n from smile_connect_changes
+          where clinic_id = ${clinicId} and status = 'hecho' and created_at > now() - interval '1 hour'`;
+        if (n >= MAX_WRITES_PER_HOUR) return;
+        // La API exige los horarios incluso al editar una nota. No reenviar una foto vieja:
+        // comprobar otra vez justo antes, y verificar la escritura después. No hay CAS en SC.
+        const fresh = await scAppointment(client, scId);
+        const snapshot = (a: ScAppointment) => JSON.stringify([a.patient_id, a.professional_ids, a.box_id,
+          a.start_date, a.end_date, a.notes ?? '', a.service_id ?? null, cancelledInSmile(a)]);
+        if (snapshot(fresh) !== snapshot(sc)) throw new Error('El turno cambió mientras se completaba la nota. Se reintentará con los datos actuales.');
+        const body = { professional_id: sc.professional_ids[0], box_id: sc.box_id!,
+          start_date: sc.start_date, end_date: sc.end_date, notes,
+          ...(sc.service_id != null && { service_id: sc.service_id }) };
+        const changed = await scRescheduleAppointment(client, scId, body);
+        const verified = await scAppointment(client, scId);
+        if (!matchesNewAppointment(verified, row, sc.patient_id) || cancelledInSmile(verified)
+          || verified.notes !== notes) throw new Error('Smile Connect todavía no confirmó la nota con el mismo turno. Se verificará de nuevo.');
+        await logChange(tx, row, 'notas', 'hecho', { request: { appointment_id: scId, ...body }, before: sc, result: changed });
+        await done();
+      } catch (e) {
+        if (e instanceof SmileBudgetError || (e instanceof SmileApiError && e.status === 429)) {
+          const retryAt = new Date();
+          if (e instanceof SmileBudgetError) retryAt.setUTCHours(24, 0, 0, 0);
+          else retryAt.setTime(retryAt.getTime() + Math.max(1, e.retryAfter ?? SMILE_RATE_LIMIT_WAIT_SECONDS) * 1000);
+          await tx`update smile_connect_connections set api_retry_at = ${retryAt} where clinic_id = ${clinicId}`;
+          return;
+        }
+        const attempts = e instanceof Review ? MAX_ATTEMPTS : row.smile_booking_notes_attempts + 1;
+        const message = (e instanceof Review ? e.message : smileErrorText(e)).slice(0, 600);
+        await tx`update appointments set smile_booking_notes_attempts = ${attempts}, smile_booking_notes_error = ${message},
+          smile_booking_notes_retry_at = ${new Date(Date.now() + Math.min(60, 5 * 2 ** (attempts - 1)) * 60000)} where id = ${id}`;
+        if (attempts >= MAX_ATTEMPTS) await logChange(tx, row, 'notas', 'revisar', { error: message });
+      }
+    });
+  }
 }
 
 /** La línea de la ficha de salud que Turnia mandó por última vez en la nota de ese turno. */
@@ -1019,6 +1115,7 @@ async function pushBooking(clinicId: string, appointmentId: string): Promise<Rec
 
 async function afterBooking(clinicId: string, outcome: Record<string, number | string>) {
   await Promise.allSettled([sendPendingNotices(clinicId), ...(outcome.ok ? [syncPendingCalendar(clinicId)] : [])]);
+  await refreshBookingNotes(clinicId);
 }
 
 export function processSmileBookingLater(clinicId: string, appointmentId: string): void {
