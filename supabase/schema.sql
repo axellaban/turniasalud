@@ -2224,3 +2224,24 @@ begin
     insert into data_migrations (name) values ('2026-11-26-contencion-diferenciales-guerra-mininni');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Preferencias del paciente al buscar turno (27/11/2026, charla real con Guerra–Mininni: pidió «con una
+-- mujer» y «después de las 17», y dos mensajes después Sofi le ofreció a un profesional hombre).
+-- * professionals.gender: «mujer» u «hombre». Sin dato, sale del «Dra.»/«Dr.» del nombre.
+-- * agent_search_preferences: lo que el paciente pidió (profesional mujer u hombre, un profesional,
+--   desde/hasta qué hora, franja). consultar_disponibilidad lo aplica en cada búsqueda de esa charla
+--   hasta que el paciente lo cambie, y vence a las 12 horas.
+-- ---------------------------------------------------------------------------
+alter table professionals add column if not exists gender text;
+alter table professionals drop constraint if exists professionals_gender_check;
+alter table professionals add constraint professionals_gender_check check (gender is null or gender in ('mujer', 'hombre'));
+
+create table if not exists agent_search_preferences (
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  patient_phone text not null,
+  preferences jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (clinic_id, patient_phone)
+);
+alter table agent_search_preferences enable row level security;

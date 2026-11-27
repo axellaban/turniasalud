@@ -10,6 +10,7 @@ import { hoursTextMismatch, scheduleSummary } from "./hours-summary";
 import { wahaConnections } from "./waha-connections";
 import { staffContextText, staffForPhone } from "./staff";
 import type { Appointment, AppointmentType, Clinic, CoverageRule, Patient, Professional, ProfessionalType, Schedule, ScheduleBlock, Task } from "./types";
+import { professionalGender } from "./professional-gender";
 
 const WEEKDAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
@@ -239,7 +240,9 @@ export function catalogText(
     const own = links.filter((l) => l.professional_id === p.id).map((l) => typeName.get(l.appointment_type_id)).filter(Boolean);
     const does = own.length ? ` | Hace solo: ${own.join(", ")}` : "";
     const coverages = p.accepted_coverages?.length ? ` | Solo atiende: ${p.accepted_coverages.join(", ")}` : "";
-    return `- ${p.full_name} (${p.specialty}) id=${p.id} | Atiende: ${days || "sin horarios cargados"}${does}${coverages}${p.bio ? ` | ${p.bio}` : ""}`;
+    const gender = professionalGender(p);
+    const who = gender ? ` | ${gender === "mujer" ? "Profesional mujer" : "Profesional hombre"}` : "";
+    return `- ${p.full_name} (${p.specialty}) id=${p.id}${who} | Atiende: ${days || "sin horarios cargados"}${does}${coverages}${p.bio ? ` | ${p.bio}` : ""}`;
   });
   const typeLines = catalog.appointmentTypes.map(
     (t) =>

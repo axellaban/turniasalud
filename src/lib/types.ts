@@ -91,6 +91,8 @@ export type Professional = {
   active: boolean;
   /** Su id en Smile Connect, si el consultorio está conectado por la API. */
   smile_professional_id?: number | null;
+  /** «mujer» u «hombre», para cuando el paciente pide uno u otro. Sin dato, sale del «Dra.»/«Dr.» del nombre. */
+  gender?: "mujer" | "hombre" | null;
 };
 
 export type AppointmentType = {

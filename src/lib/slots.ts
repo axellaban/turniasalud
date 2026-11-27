@@ -42,6 +42,9 @@ export type SlotQuery = {
   minLeadMinutes?: number;
   partOfDay?: "manana" | "tarde" | "cualquiera";
   startTime?: string; // "HH:MM" local, comprobada antes de aplicar los límites de la oferta.
+  /** Primer y último inicio aceptado ("HH:MM" local), por ejemplo «después de las 17». */
+  earliestStart?: string;
+  latestStart?: string;
   limit?: number;
   perDayPerProfessional?: number;
   /** Filtro extra. Recibe el horario del que sale la opción. */
@@ -57,6 +60,8 @@ export function computeSlots(q: SlotQuery): Slot[] {
   const earliest = q.now.getTime() + lead * 60_000;
   const step = q.stepMin ?? q.durationMin;
   const exactMinute = q.startTime === undefined ? null : timeToMinutes(q.startTime);
+  const minMinute = q.earliestStart === undefined ? null : timeToMinutes(q.earliestStart);
+  const maxMinute = q.latestStart === undefined ? null : timeToMinutes(q.latestStart);
 
   const busyByProfessional = new Map<string, Array<[number, number]>>();
   for (const b of [...q.busy, ...(q.blocked ?? [])]) {
@@ -84,6 +89,8 @@ export function computeSlots(q: SlotQuery): Slot[] {
         if (exactMinute !== null && minute !== exactMinute) continue;
         if (q.partOfDay === "manana" && minute >= AFTERNOON_START_MIN) continue;
         if (q.partOfDay === "tarde" && minute < AFTERNOON_START_MIN) continue;
+        if (minMinute !== null && minute < minMinute) continue;
+        if (maxMinute !== null && minute > maxMinute) continue;
 
         const start = zonedTimeToUtc(y, m, d, Math.floor(minute / 60), minute % 60, q.timeZone);
         const startMs = start.getTime();

@@ -99,7 +99,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "consultar_disponibilidad",
     description:
-      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios. Si el paciente pide una hora concreta, pasá hora_exacta y usá hora_solicitada.disponible para saber si se puede ofrecer. Filtra por cobertura, y con un turno de urgencia busca hoy y mañana. Si trae aviso_cobertura, decíselo antes de ofrecer. Si trae preguntar_antes, preguntalo antes de reservar.",
+      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios. Si el paciente pide una hora concreta, pasá hora_exacta y usá hora_solicitada.disponible para saber si se puede ofrecer. Lo que pidió el paciente (profesional mujer u hombre, franja, desde_hora, hasta_hora) queda guardado y se aplica solo en las búsquedas siguientes de la charla: mandalo una vez cuando lo dice y volvé a mandarlo solo si lo cambia. 'buscado' dice entre qué días se buscó: nunca digas que no hay más allá de esa fecha. Si trae seguir_buscando, llamá de nuevo con esas fechas antes de responder. Filtra por cobertura, y con un turno de urgencia busca hoy y mañana. Si trae aviso_cobertura, decíselo antes de ofrecer. Si trae preguntar_antes, preguntalo antes de reservar.",
     params: {
       tipo_turno_id: { type: "string", description: "Para reservar: id del tipo de turno, copiado del catálogo." },
       turno_id: { type: "string", description: "Para reprogramar: turno_id del turno existente (si son dos prácticas seguidas, usá el de la primera)." },
@@ -108,7 +108,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       desde: { type: "string", description: `Primer día a buscar. ${isoDate} Por defecto, hoy.` },
       hasta: { type: "string", description: `Último día a buscar. ${isoDate} Por defecto, dos semanas después de 'desde'.` },
       hora_exacta: { type: "string", description: "Hora concreta que pidió el paciente, en hora local (HH:MM, 24 h), por ejemplo 15:00. Si pidió un día específico, mandá ese mismo día en desde y hasta." },
-      franja: { type: "string", description: "Franja horaria preferida.", enum: ["manana", "tarde", "cualquiera"] },
+      franja: { type: "string", description: "Franja horaria que pidió el paciente. «cualquiera» borra la preferencia de horario guardada.", enum: ["manana", "tarde", "cualquiera"] },
+      desde_hora: { type: "string", description: "Si pidió desde cierta hora («después de las 17»): la primera hora de inicio que le sirve (HH:MM, 24 h), por ejemplo 17:00." },
+      hasta_hora: { type: "string", description: "Si pidió hasta cierta hora («antes de las 12»): la última hora de inicio que le sirve (HH:MM, 24 h)." },
+      profesional_genero: {
+        type: "string",
+        description: "Si pidió que lo atienda una mujer o un hombre. «cualquiera» borra esa preferencia (solo si el paciente aceptó otro profesional).",
+        enum: ["mujer", "hombre", "cualquiera"],
+      },
       cobertura: {
         type: "string",
         description: "Solo si el paciente se va a atender con otra cobertura que la de su ficha (por ejemplo, 'Particular'). Si no, se usa la de la ficha.",
@@ -125,6 +132,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       hasta: z.string().optional(),
       hora_exacta: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
       franja: z.enum(["manana", "tarde", "cualquiera"]).optional(),
+      desde_hora: z.string().trim().regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/).optional(),
+      hasta_hora: z.string().trim().regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/).optional(),
+      profesional_genero: z.enum(["mujer", "hombre", "cualquiera"]).optional(),
       cobertura: z.string().optional(),
     }).refine((input) => Boolean(input.tipo_turno_id) !== Boolean(input.turno_id), "Usá tipo_turno_id para reservar o turno_id para reprogramar."),
   },
