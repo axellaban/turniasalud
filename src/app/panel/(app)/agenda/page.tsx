@@ -442,7 +442,7 @@ function AppointmentDetail({ row: a, healthForm, pro, tz, closeHref, clinicId, t
     ["Teléfono", displayPhone(a.phone)],
     ["Lo dio", CHANNEL_LABEL[a.source] ?? a.source],
     ["Nota", a.notes],
-    ["Nota en Smile Connect", a.smile_booking_notes_pending ? "Pendiente de completar. El turno está confirmado y el motivo se conserva en Turnia. Si hace falta, recepción puede copiar la nota de arriba en Smile Connect." : null],
+    ["Nota en Smile Connect", a.smile_booking_notes_pending ? "Pendiente de completar. El motivo se conserva en Turnia. Si hace falta, recepción puede copiar la nota de arriba en Smile Connect." : null],
     [
       "Ficha de salud",
       healthForm &&
