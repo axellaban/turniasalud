@@ -8,7 +8,11 @@ Falta:
 - [ ] **Prestaciones:** en el panel, elegir la clínica → Configuración → Prestaciones → «Sumar las que faltan» (plantilla odontológica). Revisar duraciones y precios.
 - [ ] **Agente propio:** Configuración → «Crear/actualizar agente». Sin agente propio usa el general; para la línea propia tiene que tener el suyo.
 - [ ] **Google Calendar:** Configuración → Calendario, con la cuenta de Google del usuario.
-- [ ] **Línea de WhatsApp:** chip nuevo, un WAHA nuevo en Easypanel (WAHA Core admite una sola sesión; no tocar la de Mininni ni la general) y escanear su QR. Después, sumar la conexión a `WAHA_CONNECTIONS` en Vercel con `clinicId` = el id de arriba (por ejemplo id `consultorio-muestra`, webhook `/api/waha/webhook/consultorio-muestra`). La clave va solo en la variable privada, nunca en el chat ni en el repo. Arrancar con `enabled: false`, probar y recién ahí habilitarla.
+- [ ] **Línea de WhatsApp (27/11):** va como segunda sesión de `n8n/turnia-waha`, no en una WAHA nueva. Desde 2026.6.1 WAHA Core admite varias sesiones por instancia; todas las del VPS son más nuevas. La de Mininni sigue sola en `n8n/waha` (cliente que paga: un reinicio de una instancia compartida la tiraría). Ya está creada la sesión `consultorio-muestra`, **detenida**, con su propio webhook a `https://turniasalud.app/api/waha/webhook/consultorio-muestra` (`session.status`, `message`, `message.any`, firma propia y reintentos como Mininni). Falta:
+  1. Con el chip listo: dashboard de `turnia-waha` → sesión `consultorio-muestra` → Start → escanear el QR.
+  2. En Vercel, sumar a `WAHA_CONNECTIONS` (secreto de Production) la conexión `{"id":"consultorio-muestra","clinicId":"86901eaf-369c-4ef5-a653-8c89c0bce2e3","phone":"549…","url":"https://n8n-turnia-waha.b6mgbu.easypanel.host/","apiKey":<WAHA_API_KEY de turnia-waha>,"webhookHmac":<la clave HMAC del webhook de esa sesión, en el dashboard>,"session":"consultorio-muestra","enabled":false,"revision":1}` y redesplegar. Las claves van solo ahí, nunca en el chat ni en el repo.
+  3. Probar y recién ahí `enabled: true`.
+  - Turnia no necesita cambios: la línea general descarta los mensajes de otras sesiones y cada línea propia valida su sesión y su número. El webhook global de `turnia-waha` (`WHATSAPP_HOOK_URL`) también recibe los de esta sesión y los descarta.
 
 ## Preferencias del paciente y «no hay turnos» (27/11/2026)
 
@@ -71,14 +75,14 @@ Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detec
 - Las recuperaciones, los reinicios y el uso alto de RAM/disco se guardan en el panel, sin enviar avisos. Un cambio de arranque solo se registra si avanza más de cinco segundos; se ignoran diferencias mínimas, retrocesos y fechas futuras.
 - Los logs se guardan sin avisos: pueden ser históricos o reconexiones ya resueltas. Las caídas se confirman por estado/webhook; las restricciones que efectivamente frenan una línea en uso conservan su aviso. Los preavisos de cupo no lo generan.
 
-**Qué hay en el VPS (Easypanel, leído por API el 26/11):** un solo CPU, 3,9 GB de RAM y 47 GB de disco. Cuatro WAHA, todas NOWEB y CORE, con una sola sesión cada una:
+**Qué hay en el VPS (Easypanel, leído por API el 26/11):** un solo CPU, 3,9 GB de RAM y 47 GB de disco. Cuatro WAHA, todas NOWEB y CORE, con una sesión cada una (por cómo se armaron, no por un límite: desde 2026.6.1 WAHA Core admite varias):
 
 | Servicio | Línea | Estado 26/11 | Imagen |
 |---|---|---|---|
 | `n8n/waha` | 3765 (Guerra–Mininni, la activa) | WORKING | `waha:noweb` (corre 2026.10.1), sin tope de memoria |
 | `n8n/turnia-guerra-mininni-waha` | 3765 (la anterior) | FAILED, sin webhook | 2026.9.2 fijada, 768 MB |
 | `n8n/turnia-prospeccion-5483-waha` | 5483 (prospección, suspendida) | FAILED | 2026.9.2 fijada, 768 MB |
-| `n8n/turnia-waha` | general y demo | sin leer desde la nube (clave de la sesión vieja) | `waha:noweb`, 768 MB |
+| `n8n/turnia-waha` | general y demo (0022) | **27/11: la sesión `default` (0022, estaba en FAILED) se borró a pedido de Axel.** Ahora tiene solo `consultorio-muestra` (detenida). `WHATSAPP_START_SESSION=default` vuelve a crear una `default` vacía si el contenedor se reinicia: sacar esa variable en el próximo redespliegue | 2026.10.1 por digest, 768 MB |
 
 **Hallazgos:**
 - **La RAM del VPS está entre 89 y 96 %** (el 25/11 a las 12:55 llegó a 3,77 de 3,9 GB). Más usan: n8n (590 MB), Chatwoot sidekiq (520), `turnia-waha` (460) y `n8n/waha` (370). Las dos WAHA en FAILED ocupan unos 600 MB sin dar servicio. A las 23 h el CPU llega al 100 % (coincide con la limpieza diaria de Docker de Easypanel).
