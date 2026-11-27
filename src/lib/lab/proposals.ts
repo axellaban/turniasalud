@@ -7,7 +7,7 @@ import type { Clinic } from "../types";
 import { referenceCases, type Condition, type Dimension, type LabCase } from "./cases";
 import { draftCase, proposeImprovements, type CaseDraftOut, type LabFinding, type ProposalDraft } from "./judge";
 import { effectivePrompt, patchProblem } from "./prompt";
-import { allCases, clinicContextFor, getRun, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabRun } from "./runs";
+import { allCases, clinicContextFor, getRun, labAgentLlm, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabRun } from "./runs";
 import { compareRuns } from "./score";
 
 // Mejoras del Laboratorio de Sofi: Claude las propone a partir de las fallas, se prueban en un experimento
@@ -123,7 +123,10 @@ export async function generateProposals(clinic: Clinic, opts: { focusResultId?: 
       })} returning id`;
     created.push({ id: row.id, layer: d.capa, valid: !problem });
   }
-  for (const p of created.filter((c) => c.layer === "prompt" && c.valid).slice(0, 2)) {
+  // Tope de experimentos automáticos: 4 por día y por clínica (cada uno es una batería).
+  const [{ today }] = await sql<Array<{ today: number }>>`
+    select count(*)::int as today from lab_runs where clinic_id = ${clinic.id} and kind = 'experimento' and created_at > now() - interval '24 hours'`;
+  for (const p of created.filter((c) => c.layer === "prompt" && c.valid).slice(0, Math.max(0, Math.min(2, 4 - today)))) {
     await startExperiment(p.id, opts.actor ?? "Laboratorio").catch((e) => console.error("Laboratorio: no se pudo empezar el experimento", errorText(e)));
   }
   return created.length;
@@ -146,6 +149,7 @@ async function baselineFor(clinic: Clinic, actor: string): Promise<string> {
   const [recent] = await sql<Array<{ id: string }>>`
     select id from lab_runs
     where clinic_id = ${clinic.id} and kind = 'bateria' and prompt_hash = ${current.hash}
+      and agent_llm is not distinct from ${await labAgentLlm()}
       and status in ('preparando', 'corriendo', 'puntuando', 'terminada') and created_at > now() - interval '7 days'
     order by created_at desc limit 1`;
   if (recent) return recent.id;

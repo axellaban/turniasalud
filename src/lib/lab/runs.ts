@@ -46,6 +46,8 @@ export type LabRun = {
   case_ids: string[];
   repeat_count: number;
   agent_id: string | null;
+  /** Modelo con que respondió Sofi en la simulación (null: el del agente, Opus). */
+  agent_llm: string | null;
   invocation_id: string | null;
   test_ids: Record<string, string>;
   cases: CaseSnapshot[];
@@ -157,6 +159,49 @@ export async function clinicContextFor(clinic: Clinic, vars?: Record<string, str
 }
 
 // ---------------------------------------------------------------------------
+// Modelo de Sofi en el laboratorio: Haiku (barato), sin tocar el agente real. Se elige de la lista que
+// ElevenLabs acepta hoy: LAB_AGENT_LLM si está, si no el Haiku más nuevo disponible.
+// ---------------------------------------------------------------------------
+let llmCache: { at: number; value: string } | null = null;
+
+/** El modelo de la lista: el pedido si está; si no, el Haiku más nuevo. Puro. */
+export function pickLabLlm(available: string[], wanted = "claude-haiku-5-5"): string | null {
+  if (available.includes(wanted)) return wanted;
+  const haikus = available.filter((id) => /haiku/i.test(id)).sort((a, b) => b.localeCompare(a, "en", { numeric: true }));
+  return haikus[0] ?? null;
+}
+
+/** Junta los ids de modelo de la respuesta de /v1/convai/llm/list, tenga la forma que tenga. Puro. */
+export function llmIds(body: unknown): string[] {
+  const ids = new Set<string>();
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) {
+        if (typeof x === "string" && ["llm", "id", "model_id", "name"].includes(k) && /^(claude|gpt|gemini|grok|qwen|glm|custom)/i.test(x)) ids.add(x);
+        else walk(x);
+      }
+    }
+  };
+  walk(body);
+  return [...ids];
+}
+
+export async function labAgentLlm(): Promise<string> {
+  const wanted = process.env.LAB_AGENT_LLM || "claude-haiku-5-5";
+  if (llmCache && Date.now() - llmCache.at < 6 * 3600_000) return llmCache.value;
+  let value = wanted;
+  try {
+    const picked = pickLabLlm(llmIds(await elevenlabs("/v1/convai/llm/list")), wanted);
+    if (picked) value = picked;
+  } catch (e) {
+    console.error("Laboratorio: no se pudo leer la lista de modelos de ElevenLabs; va", wanted, errorText(e));
+  }
+  llmCache = { at: Date.now(), value };
+  return value;
+}
+
+// ---------------------------------------------------------------------------
 // Crear y lanzar
 // ---------------------------------------------------------------------------
 async function labAgentId(): Promise<string> {
@@ -257,7 +302,7 @@ export function mockOverrides(mocks: Record<string, Mock>, byName: Record<string
 
 async function launch(runId: string, clinic: Clinic, cases: CaseSnapshot[], vars: Record<string, string>, prompt: string, repeat: number): Promise<void> {
   const agentId = await labAgentId();
-  const tools = await agentTools(agentId);
+  const [tools, llm] = await Promise.all([agentTools(agentId), labAgentLlm()]);
   const testIds: Record<string, string> = {};
   for (const c of cases) {
     const created = await elevenlabs<{ id: string }>("/v1/convai/agent-testing/create", {
@@ -292,11 +337,12 @@ async function launch(runId: string, clinic: Clinic, cases: CaseSnapshot[], vars
       tests: Object.keys(testIds).map((test_id) => ({ test_id })),
       repeat_count: repeat,
       // Por WhatsApp escribe primero el paciente: sin el saludo inicial de las llamadas.
-      agent_config_override: { conversation_config: { conversation: { text_only: true }, agent: { first_message: "", prompt: { prompt } } } },
+      // El laboratorio responde con Haiku: el agente real (y las charlas de pacientes) siguen con su modelo.
+      agent_config_override: { conversation_config: { conversation: { text_only: true }, agent: { first_message: "", prompt: { prompt, llm } } } },
     }),
   });
   await sql`
-    update lab_runs set status = 'corriendo', agent_id = ${agentId}, invocation_id = ${run.id}, test_ids = ${json(testIds)}, started_at = now()
+    update lab_runs set status = 'corriendo', agent_id = ${agentId}, agent_llm = ${llm}, invocation_id = ${run.id}, test_ids = ${json(testIds)}, started_at = now()
     where id = ${runId}`;
 }
 

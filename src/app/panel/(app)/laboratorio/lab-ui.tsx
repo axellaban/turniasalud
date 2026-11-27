@@ -197,3 +197,7 @@ export const KIND_LABEL: Record<string, string> = { bateria: "Batería", experim
 export function RunLink({ id, children }: { id: string; children: ReactNode }) {
   return <Link href={`/panel/laboratorio/corridas/${id}`} className="font-medium text-brand-700 hover:underline">{children}</Link>;
 }
+
+/** Con qué modelo respondió Sofi en la corrida. */
+export const modelLabel = (llm: string | null | undefined) =>
+  !llm ? "Opus (modelo de producción)" : /haiku/i.test(llm) ? `Haiku (${llm})` : llm;

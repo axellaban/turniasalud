@@ -20,7 +20,7 @@ Charlas reales y de testers ─────┼─► puntaje 1 a 100 ─► fall
    - un paciente simulado le escribe a Sofi por el canal de WhatsApp, en modo solo texto;
    - **todas las herramientas devuelven datos fijos**, así que no tocan la agenda, Smile Connect ni a ningún paciente;
    - Sofi recibe el prompt efectivo (ver más abajo) y las variables reales del consultorio.
-2. **Juez.** Claude (`LAB_LLM`, por defecto `claude-opus-5-5`) evalúa cada charla con una rúbrica de cinco dimensiones y, en las simulaciones, las condiciones de cada caso. Además corren dos **controles automáticos** que no dependen del juez:
+2. **Juez.** Claude (`LAB_LLM`, por defecto `claude-haiku-5-5`) evalúa cada charla con una rúbrica de cinco dimensiones y, en las simulaciones, las condiciones de cada caso. Además corren dos **controles automáticos** que no dependen del juez:
    - afirmar que un turno quedó reservado, cancelado o movido sin una herramienta que lo confirme (falla crítica; negarlo, «no quedó reservado», no cuenta);
    - decir «no hay turnos» sin haber consultado la disponibilidad.
    La falta de «¿» y «¡» no cuenta: es el estilo elegido para WhatsApp (`prompt.ts` y `whatsapp-style.ts`).
@@ -78,6 +78,12 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 | Después de cada batería o «Jugar de paciente» que termina, y además una vez por día desde las 6 | Propuestas (espera a que no haya una batería abierta). Las de prompt se prueban solas, hasta 2. |
 | Cada 10 minutos, fuera de 2 a 6 | Cobertura: arma casos (2 por vuelta) para los tipos de caso con sentido (`VALID_CELLS` en `cases.ts`) que todavía no tienen ninguno, primero los que aparecen en charlas reales. Entran en la batería siguiente. |
 | Desde las 9, una vez por día | Resumen por WhatsApp a Axel, si está prendido y hay algo nuevo (una batería de las últimas 26 h o mejoras pendientes). Sale por la línea general. Si falla, no se manda por el canal de avisos técnicos, porque es un resumen y no un aviso. |
+
+**Modelo: todo el laboratorio corre con Haiku** (pedido de Axel, 27/11):
+- En las simulaciones, Sofi responde con Haiku: el laboratorio pasa el modelo en la corrida (`agent_config_override`) sin tocar el agente real. Elige `LAB_AGENT_LLM` si está, o el Haiku más nuevo que ElevenLabs acepte hoy (`/v1/convai/llm/list`). Cada corrida guarda el modelo (`lab_runs.agent_llm`) y el panel solo compara baterías del mismo modelo.
+- El juez, las propuestas y el armado de casos usan `LAB_LLM`, por defecto `claude-haiku-5-5`.
+- Las charlas reales y las de prueba en producción las atiende Sofi con su modelo de producción (Opus). El puntaje de laboratorio mide a Sofi con Haiku: sirve para encontrar fallas y comparar versiones entre sí, no como número exacto de producción.
+- Tope: 4 experimentos automáticos por día y por clínica.
 
 **Cuánto cuesta:**
 - Una batería son 18 casos de referencia más los guardados, × 3: unas 54 simulaciones en ElevenLabs y 54 evaluaciones de Claude.

@@ -10,7 +10,7 @@ import { DIMENSION_LABEL } from "@/lib/lab/score";
 import type { LabSettings } from "@/lib/lab/tick";
 import { labGenerateProposals, labRunBattery, labSettings } from "../../lab-actions";
 import { LabForm } from "./lab-form";
-import { BandBadge, DimBars, LabHeader, RUN_STATUS, RunLink, ScoreRing, fmtScore, scoreTone } from "./lab-ui";
+import { BandBadge, DimBars, LabHeader, RUN_STATUS, RunLink, ScoreRing, fmtScore, modelLabel, scoreTone } from "./lab-ui";
 
 export const metadata: Metadata = { title: "Laboratorio de Sofi · Panel" };
 export const maxDuration = 300;
@@ -80,6 +80,7 @@ export default async function LabPage() {
                   Batería del {formatDateTime(o.latest.finished_at as string, clinic.timezone)} · versión {versionLabel(o.latest.prompt_hash)} ·{" "}
                   <RunLink id={o.latest.id}>ver la corrida</RunLink>
                 </p>
+                <p className="text-brand-900/70">Sofi respondió con {modelLabel(o.latest.agent_llm)}. Las charlas reales y las de prueba en producción usan el modelo de producción.</p>
                 {num(o.latest.spread) !== null && <p className="text-brand-900/70">Varía ±{fmtScore(o.latest.spread)} entre repeticiones: una diferencia menor no cuenta como mejora.</p>}
                 {o.latest.critical_count > 0 && (
                   <p className="text-red-700">{o.latest.critical_count} falla{o.latest.critical_count === 1 ? "" : "s"} crítica{o.latest.critical_count === 1 ? "" : "s"}: el puntaje queda en 69 como máximo.</p>
