@@ -244,6 +244,16 @@ describe("consumo de ElevenLabs con los campos reales", () => {
     expect(isCriticalKind({ dimension: "exactitud", texto: "Pide confirmación explícita del nuevo horario" })).toBe(false);
     expect(isCriticalKind({ dimension: "trato", texto: "Trata de usted desde el primer mensaje" })).toBe(false);
   });
+  it("la ficha de un caso armado es de la persona del escenario", async () => {
+    const { scenarioPatientName, caseFromDraft } = await import("./proposals");
+    expect(scenarioPatientName("Sos Julián Ferreyra, paciente del consultorio")).toBe("Julián Ferreyra");
+    expect(scenarioPatientName("Sos la madre de Tomás")).toBeNull();
+    const draft = { titulo: "t", motivo: "receta", situacion: "sin_turno", paciente_nuevo: false, escenario: "Sos Julián Ferreyra y pedís una receta.", respuestas: [], condiciones: [] };
+    const c = caseFromDraft(draft as never, "caso-x");
+    expect(c.patient.name).toBe("Julián Ferreyra");
+    expect(c.patient.context).toContain("Nombre: Julián Ferreyra");
+    expect(c.patient.context).not.toContain("Laura");
+  });
 });
 
 describe("fecha para el juez", () => {

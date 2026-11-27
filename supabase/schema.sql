@@ -2552,3 +2552,23 @@ alter table lab_runs add column if not exists sim_prompt text;
 alter table lab_runs drop constraint if exists lab_runs_kind_check;
 alter table lab_runs add constraint lab_runs_kind_check check (kind in ('bateria', 'experimento', 'jugar', 'verificacion'));
 create index if not exists lab_results_sim_idx on lab_results (run_id) where el_status in ('pendiente', 'simulando');
+
+-- Laboratorio (27/11/2026): casos armados donde el escenario es de otra persona («Sos Julián Ferreyra…»)
+-- pero la ficha quedó a nombre de Laura Prueba. Sofi saludaba a «Laura» y el juez lo marcaba como «datos de
+-- otra persona» (falla crítica que no era de Sofi). La ficha pasa a tener el nombre del escenario.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-27-laboratorio-ficha-del-escenario') then
+    update lab_cases c
+       set patient = jsonb_build_object('name', m.nombre, 'context', replace(c.patient->>'context', 'Laura Prueba', m.nombre))
+      from (
+        select id, (regexp_match(scenario, '^\s*Sos ([A-ZÁÉÍÓÚÑ][a-záéíóúñü]+(?: [A-ZÁÉÍÓÚÑ][a-záéíóúñü]+){1,2})'))[1] as nombre
+          from lab_cases
+      ) m
+     where m.id = c.id
+       and m.nombre is not null
+       and m.nombre <> 'Laura Prueba'
+       and c.patient->>'name' = 'Laura Prueba';
+    insert into data_migrations (name) values ('2026-11-27-laboratorio-ficha-del-escenario');
+  end if;
+end $$;
