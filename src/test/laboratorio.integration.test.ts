@@ -273,4 +273,16 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     expect(text).toContain("Laboratorio de Sofi · Consultorio Lab");
     expect(text).toContain("Charlas reales, últimos 7 días");
   });
+
+  it("el informe para revisar afuera pide su propia clave y devuelve la corrida", async () => {
+    const { GET } = await import("@/app/api/lab/informe/route");
+    const { createHash } = await import("node:crypto");
+    await sql`insert into lab_access_tokens (token_hash, label) values (${createHash("sha256").update("clave-de-informe-de-prueba-123456").digest("hex")}, 'test')`;
+    expect((await GET(new Request("https://turnia.test/api/lab/informe"))).status).toBe(401);
+    expect((await GET(new Request("https://turnia.test/api/lab/informe", { headers: { "x-lab-token": "otra" } }))).status).toBe(401);
+    const list = await (await GET(new Request("https://turnia.test/api/lab/informe", { headers: { "x-lab-token": "clave-de-informe-de-prueba-123456" } }))).json();
+    expect(list.corridas.length).toBeGreaterThan(0);
+    const one = await (await GET(new Request(`https://turnia.test/api/lab/informe?corrida=${batteryId}`, { headers: { "x-lab-token": "clave-de-informe-de-prueba-123456" } }))).json();
+    expect(one.resultados).toHaveLength(4);
+  });
 });

@@ -2485,3 +2485,16 @@ begin
     insert into data_migrations (name) values ('2026-11-27-laboratorio-guerra-mininni');
   end if;
 end $$;
+
+-- Claves de solo lectura del informe del laboratorio (/api/lab/informe), para revisarlo desde Claude Code.
+-- Se crean en Panel → Laboratorio de Sofi → Criterios; se guarda solo el hash (la clave se ve una vez).
+create table if not exists lab_access_tokens (
+  id uuid primary key default gen_random_uuid(),
+  token_hash text not null unique,
+  label text not null,
+  created_by text,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+alter table lab_access_tokens enable row level security;
