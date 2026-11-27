@@ -4,7 +4,7 @@ import { Badge, Card, Empty, Notice, smallButtonClass } from "@/components/ui";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
 import { INTENT_LABEL, SITUATION_LABEL, labReviews } from "@/lib/lab/panel";
-import { labCaseFromConversation } from "../../../lab-actions";
+import { labCaseFromConversation, labMarkTest } from "../../../lab-actions";
 import { LabForm } from "../lab-form";
 import { Findings, LabHeader, fmtScore, scoreTone } from "../lab-ui";
 
@@ -74,6 +74,10 @@ export default async function ReviewsPage({ searchParams }: PageProps<"/panel/la
                   <div className="mt-2"><Findings items={r.findings} /></div>
                 </details>
               ) : null}
+              <LabForm action={labMarkTest} submit={r.is_test ? "Contar como charla real" : "Marcar como prueba"} button={`${smallButtonClass} mt-3 mr-2`}>
+                <input type="hidden" name="conversacion" value={r.conversation_id} />
+                <input type="hidden" name="prueba" value={r.is_test ? "no" : "si"} />
+              </LabForm>
               {!r.error && (
                 <LabForm action={labCaseFromConversation} submit="Convertir en caso de la batería" pending="Claude está armando el caso…" button={`${smallButtonClass} mt-3`}>
                   <input type="hidden" name="conversacion" value={r.conversation_id} />
