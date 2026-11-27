@@ -20,10 +20,10 @@ Charlas reales y de testers ─────┼─► puntaje 1 a 100 ─► fall
    - un paciente simulado le escribe a Sofi por el canal de WhatsApp, en modo solo texto;
    - **todas las herramientas devuelven datos fijos**, así que no tocan la agenda, Smile Connect ni a ningún paciente;
    - Sofi recibe el prompt efectivo (ver más abajo) y las variables reales del consultorio.
-2. **Juez.** Claude (`LAB_LLM`, por defecto `claude-opus-5-5`) evalúa cada charla con una rúbrica de cinco dimensiones y, en las simulaciones, las condiciones de cada caso. Además corren tres **controles automáticos** que no dependen del juez:
-   - afirmar que un turno quedó reservado, cancelado o movido sin una herramienta que lo confirme (falla crítica);
-   - decir «no hay turnos» sin haber consultado la disponibilidad;
-   - preguntas sin «¿».
+2. **Juez.** Claude (`LAB_LLM`, por defecto `claude-opus-5-5`) evalúa cada charla con una rúbrica de cinco dimensiones y, en las simulaciones, las condiciones de cada caso. Además corren dos **controles automáticos** que no dependen del juez:
+   - afirmar que un turno quedó reservado, cancelado o movido sin una herramienta que lo confirme (falla crítica; negarlo, «no quedó reservado», no cuenta);
+   - decir «no hay turnos» sin haber consultado la disponibilidad.
+   La falta de «¿» y «¡» no cuenta: es el estilo elegido para WhatsApp (`prompt.ts` y `whatsapp-style.ts`).
 3. **Charlas reales.** Cada charla cerrada de una clínica con el laboratorio prendido se puntúa a la media hora con la misma rúbrica. Las herramientas que usó se leen de ElevenLabs. Las charlas de testers (modo prueba) quedan marcadas (`conversations.is_test`) y se muestran aparte como «Prueba en producción». También salen de las métricas del inicio del panel.
 4. **Propuestas.** Una vez por día, después de la batería, Claude lee las fallas del laboratorio y de las charlas reales y propone hasta 4 mejoras. Antes lee los **criterios** que ya decidió el equipo, para no proponer lo mismo. Cada mejora tiene un nivel y una capa:
    - **Nivel A**: solo forma (ortografía, fechas, formato).

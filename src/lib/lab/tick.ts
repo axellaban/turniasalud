@@ -65,8 +65,8 @@ export async function runLab(budgetMs = 110_000): Promise<Record<string, unknown
     const [openBattery] = await sql`
       select 1 from lab_runs where clinic_id = ${clinic.id} and kind = 'bateria' and status in ('preparando', 'corriendo', 'puntuando')
         and created_at > now() - interval '12 hours' limit 1`;
-    // Espera a que termine la batería de la noche, hasta el mediodía.
-    if (openBattery && localHour(clinic.timezone) < 12) continue;
+    // Espera a que termine la batería abierta: las propuestas sin sus resultados salen vacías.
+    if (openBattery) continue;
     await setSetting(clinic.id, { last_proposals: today });
     try {
       report[`propuestas:${clinic.name}`] = await generateProposals(clinic, { actor: "Laboratorio" });

@@ -190,8 +190,8 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     const woman = results.filter((r) => r.case_id === "profesional-mujer-tarde");
     const price = results.filter((r) => r.case_id === "precio-particular");
     expect(Number(woman[0].score)).toBeLessThan(Number(price[0].score));
-    // Controles automáticos: «no hay» sin buscar y una pregunta sin «¿».
-    expect(woman[0].checks?.filter((c) => !c.pass).map((c) => c.dim).sort()).toEqual(["exactitud", "trato"]);
+    // Control automático: «no hay» sin buscar. La falta de «¿» no cuenta (estilo elegido para WhatsApp).
+    expect(woman[0].checks?.filter((c) => !c.pass).map((c) => c.dim)).toEqual(["exactitud"]);
     expect(Number(run?.score)).toBeGreaterThan(0);
     expect(run?.dims?.exactitud).not.toBeNull();
     expect(el.invocations.size).toBe(1);
