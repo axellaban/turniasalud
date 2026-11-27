@@ -160,6 +160,13 @@ export default async function TeamPage() {
                   <Field label="Nombre del profesional"><input name="full_name" required defaultValue={p.full_name} className={inputClass} /></Field>
                   <Field label="Especialidad del profesional"><input name="specialty" required defaultValue={p.specialty} list="specialties" className={inputClass} /></Field>
                   <Field label="Descripción del profesional"><input name="bio" defaultValue={p.bio ?? ""} className={inputClass} /></Field>
+                  <Field label="Si el paciente pide una mujer o un hombre" hint={`Sin elegir, ${clinic.agent_name || "Sofi"} se guía por «Dra.» o «Dr.» en el nombre.`}>
+                    <select name="gender" defaultValue={p.gender ?? ""} className={inputClass}>
+                      <option value="">Según el nombre</option>
+                      <option value="mujer">Es profesional mujer</option>
+                      <option value="hombre">Es profesional hombre</option>
+                    </select>
+                  </Field>
                   {activeTypes.length > 0 && (
                     <fieldset className="sm:col-span-2">
                       <input type="hidden" name="types_field" value="1" />

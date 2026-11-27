@@ -1,5 +1,15 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Preferencias del paciente y «no hay turnos» (27/11/2026)
+
+Charla real de Guerra–Mininni: la paciente pidió «con una mujer» y «después de las 17». Sofi dijo que con la profesional no había nada «hasta mediados de enero» (había el 23/12, el 28/12 y el 29/12) y dos mensajes después le ofreció horarios con un profesional hombre. Además preguntó las preferencias recién al final.
+
+- [x] `consultar_disponibilidad`: `profesional_genero` (mujer, hombre, cualquiera), `desde_hora` y `hasta_hora`. Lo pedido queda guardado por paciente (`agent_search_preferences`, vence a las 12 h) y se aplica en cada búsqueda de la charla; un horario nuevo reemplaza al anterior y «cualquiera» lo borra. Si nadie cumple la preferencia, no ofrece a otro: pide preguntar antes.
+- [x] Busca hasta 60 días antes de decir que no hay. Sin Smile Connect, de una vez; con Smile Connect, de a dos semanas con `seguir_buscando`. Siempre devuelve `buscado` (desde/hasta) y el mensaje dice «Busqué hasta el D/M».
+- [x] `professionals.gender` y en Configuración → Equipo «Si el paciente pide una mujer o un hombre». Sin dato, sale de «Dra.»/«Dr.» del nombre; nunca se adivina por el nombre de pila. El catálogo de Sofi dice «Profesional mujer/hombre».
+- [x] Prompt: preguntar la preferencia de profesional y horario junto con los datos; mantenerla toda la charla; «No hay» solo hasta `buscado.hasta`, con la fecha; «Perdón, me fijé de nuevo y sí hay…».
+- [ ] Guerra–Mininni: marcar en Equipo a quien no tenga «Dra.»/«Dr.» en el nombre (por ejemplo, Lara Fernandez), para que entre en las búsquedas de «con una mujer».
+
 ## Motivo de consulta y lista de espera unificada — 27/11/2026
 
 - Pedido de Axel y feedback de Guerra–Mininni: Sofi debe preguntar el motivo antes de ofrecer horarios si no lo dijo el paciente, usar sus palabras, no repetir la pregunta ni explicar prioridades internas. «Consulta general» alcanza si no quiere detallar. `collect_visit_reason` queda apagado por defecto; activar solo en Guerra–Mininni después de actualizar las herramientas de sus agentes.

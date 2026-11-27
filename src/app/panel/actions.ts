@@ -517,6 +517,12 @@ export async function saveProfessional(form: FormData) {
   await saveProfessionalWithFeedback({}, form);
 }
 
+/** «mujer» u «hombre» del formulario; vacío, se guía por el título del nombre. */
+function genderOf(form: FormData): "mujer" | "hombre" | null {
+  const value = text(form, "gender");
+  return value === "mujer" || value === "hombre" ? value : null;
+}
+
 /** Editar un profesional, con confirmación o el motivo por el que no se guardó. */
 export async function saveProfessionalWithFeedback(_previous: FormState, form: FormData): Promise<FormState> {
   let clinic;
@@ -536,6 +542,7 @@ export async function saveProfessionalWithFeedback(_previous: FormState, form: F
   const coverages = (text(form, "accepted_coverages") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
   const rows = await sql`
     update professionals set full_name = ${name}, specialty = ${specialty}, bio = ${text(form, "bio")}
+      ${form.has("gender") ? sql`, gender = ${genderOf(form)}` : sql``}
       ${form.has("accepted_coverages") ? sql`, accepted_coverages = ${coverages.length ? coverages : null}` : sql``}
     where id = ${id} and clinic_id = ${clinic.id} returning id`;
   if (!rows.length) return { ok: false, message: "Este profesional no pertenece a la clínica elegida. Recargá la página." };
