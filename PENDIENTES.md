@@ -1,5 +1,15 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Consultorio odontológico de muestra (27/11/2026)
+
+Clínica real (no demo) para mostrarle Turnia a los consultorios: **Consultorio Odontológico Turnia**, id `86901eaf-369c-4ef5-a653-8c89c0bce2e3`. Agenda propia en Turnia (sin Smile Connect), dos profesionales ficticios con horarios (Dra. Valeria Costa y Dr. Nicolás Ibarra) y la marca `clinics.showcase`: funciona como una real (Sofi manda recordatorios y avisos), pero no cuenta en el uso real de `/api/metricas`. La crea la migración `2026-11-27-consultorio-de-muestra`. El Centro Médico Plaza sigue siendo la clínica principal de las demos y del WhatsApp general: no se toca.
+
+Falta:
+- [ ] **Prestaciones:** en el panel, elegir la clínica → Configuración → Prestaciones → «Sumar las que faltan» (plantilla odontológica). Revisar duraciones y precios.
+- [ ] **Agente propio:** Configuración → «Crear/actualizar agente». Sin agente propio usa el general; para la línea propia tiene que tener el suyo.
+- [ ] **Google Calendar:** Configuración → Calendario, con la cuenta de Google del usuario.
+- [ ] **Línea de WhatsApp:** chip nuevo, un WAHA nuevo en Easypanel (WAHA Core admite una sola sesión; no tocar la de Mininni ni la general) y escanear su QR. Después, sumar la conexión a `WAHA_CONNECTIONS` en Vercel con `clinicId` = el id de arriba (por ejemplo id `consultorio-muestra`, webhook `/api/waha/webhook/consultorio-muestra`). La clave va solo en la variable privada, nunca en el chat ni en el repo. Arrancar con `enabled: false`, probar y recién ahí habilitarla.
+
 ## Preferencias del paciente y «no hay turnos» (27/11/2026)
 
 Charla real de Guerra–Mininni: la paciente pidió «con una mujer» y «después de las 17». Sofi dijo que con la profesional no había nada «hasta mediados de enero» (había el 23/12, el 28/12 y el 29/12) y dos mensajes después le ofreció horarios con un profesional hombre. Además preguntó las preferencias recién al final.

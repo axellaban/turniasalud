@@ -50,7 +50,7 @@ export default async function ClinicsPage({ searchParams }: PageProps<"/panel/cl
           <div className="min-w-0 flex-1 basis-64">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-semibold text-brand-950">{clinic.name}</h2>
-              <Badge tone={clinic.retained_at || !clinic.is_demo ? "green" : "yellow"}>{!clinic.is_demo ? "Principal" : clinic.retained_at ? "Demo conservada" : "Demo temporal"}</Badge>
+              <Badge tone={clinic.retained_at || !clinic.is_demo ? "green" : "yellow"}>{clinic.showcase ? "De muestra" : !clinic.is_demo ? "Principal" : clinic.retained_at ? "Demo conservada" : "Demo temporal"}</Badge>
               {clinic.id === active.id && <Badge tone="blue">Seleccionada</Badge>}
               {clinic.accesses > 0 && <Badge tone="blue">Con acceso propio</Badge>}
             </div>

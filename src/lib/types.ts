@@ -30,6 +30,8 @@ export type Clinic = {
   after_hours_instructions: string | null;
   /** Clínica temporal de la demo del lead magnet (/probar-demo), armada con la web del interesado. */
   is_demo: boolean;
+  /** Clínica de muestra de Turnia: funciona como una real, pero no cuenta en el uso real de las métricas. */
+  showcase?: boolean;
   demo_source_url: string | null;
   retained_at: string | null;
   updated_at: string;

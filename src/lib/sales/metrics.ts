@@ -18,9 +18,10 @@ const REPLIED = ["respondio", "reunion", "cliente", "no_interesa", "baja"];
 
 // Clínica real (alias «c»): no es de una demo, o es la cuenta de un consultorio, que se crea como clínica
 // conservada (is_demo) con su código de «Acceso del consultorio». Una cuenta es una clínica con algún
-// código sin revocar: la misma definición que scripts/embudo.mjs, para que los números coincidan.
+// código sin revocar: la misma definición que scripts/embudo.mjs, para que los números coincidan. La clínica
+// de muestra de Turnia (showcase) no es uso real.
 const realClinic = () =>
-  sql`(not c.is_demo or exists (select 1 from clinic_access ca where ca.clinic_id = c.id and ca.revoked_at is null))`;
+  sql`(not c.showcase and (not c.is_demo or exists (select 1 from clinic_access ca where ca.clinic_id = c.id and ca.revoked_at is null)))`;
 
 export async function turniaMetrics({ from, to }: Range) {
   // Un instante cae en el rango según su día en Buenos Aires; sin fechas, todo.
