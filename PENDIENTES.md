@@ -5,9 +5,38 @@
 En producción: Panel → Turnia → **Laboratorio de Sofi** ([`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md)). Batería nocturna con 18 casos × 3, puntaje de 1 a 100, revisión de las charlas reales, propuestas diarias de Claude, experimentos (versión actual contra la variante) y publicación con un clic. Guerra–Mininni arranca con el laboratorio y el resumen por WhatsApp prendidos.
 - [ ] Mirar la primera batería nocturna (28/11, de 2 a 6) y la primera tanda de propuestas. Si el juez se equivoca, sumar criterios en la pestaña Criterios.
 - [x] Criterio cargado (migración): en Guerra–Mininni se ofrece primero al Dr. Mininni y no se pregunta por profesional al inicio; si el paciente pide otro (o «una mujer»), se respeta.
-- [ ] `consultar_disponibilidad` busca dos semanas por defecto (`src/lib/agent/tools.ts`): es la causa probable del «no hay hasta mediados de enero». La simulación no lo ve porque las herramientas devuelven datos fijos; corregirlo en el código (o aprobar la mejora si el laboratorio la propone).
+- [ ] **Decidir con Axel:** el PR #289 hace que Sofi pregunte la preferencia de profesional junto con los datos, pero Axel prefiere que en Guerra–Mininni se ofrezca primero al Dr. Mininni sin preguntar (criterio cargado). Mientras no se resuelva, el juez del laboratorio marca esa pregunta como falla en Guerra–Mininni. Opciones: sacarla del prompt general y dejarla para los consultorios que la quieran, o una regla en las instrucciones de Guerra–Mininni.
 - [ ] Pasar al repositorio (`src/lib/agent/prompt.ts`) las mejoras de prompt aprobadas en el laboratorio cada tanto; el procedimiento está en el plan.
 - [ ] Próximas fases, en este orden: consultorio de laboratorio con agenda sintética y herramientas reales; modo prueba completo (pacientes ficticios, ficha simulada, números con vencimiento, `#prueba`, archivar chats); prueba automática en producción con una línea de prueba; calibración semanal del juez. Fase 2: escrituras reales en Smile Connect, solo con un profesional de prueba acordado con Mariano.
+
+## Consultorio odontológico de muestra (27/11/2026)
+
+Clínica real (no demo) para mostrarle Turnia a los consultorios: **Consultorio Odontológico Turnia**, id `86901eaf-369c-4ef5-a653-8c89c0bce2e3`. Agenda propia en Turnia (sin Smile Connect), dos profesionales ficticios con horarios (Dra. Valeria Costa y Dr. Nicolás Ibarra) y la marca `clinics.showcase`: funciona como una real (Sofi manda recordatorios y avisos), pero no cuenta en el uso real de `/api/metricas`. La crea la migración `2026-11-27-consultorio-de-muestra`. El Centro Médico Plaza sigue siendo la clínica principal de las demos y del WhatsApp general: no se toca.
+
+Falta:
+- [ ] **Prestaciones:** en el panel, elegir la clínica → Configuración → Prestaciones → «Sumar las que faltan» (plantilla odontológica). Revisar duraciones y precios.
+- [ ] **Agente propio:** Configuración → «Crear/actualizar agente». Sin agente propio usa el general; para la línea propia tiene que tener el suyo.
+- [ ] **Google Calendar:** Configuración → Calendario, con la cuenta de Google del usuario.
+- [ ] **Línea de WhatsApp:** chip nuevo, un WAHA nuevo en Easypanel (WAHA Core admite una sola sesión; no tocar la de Mininni ni la general) y escanear su QR. Después, sumar la conexión a `WAHA_CONNECTIONS` en Vercel con `clinicId` = el id de arriba (por ejemplo id `consultorio-muestra`, webhook `/api/waha/webhook/consultorio-muestra`). La clave va solo en la variable privada, nunca en el chat ni en el repo. Arrancar con `enabled: false`, probar y recién ahí habilitarla.
+
+## Preferencias del paciente y «no hay turnos» (27/11/2026)
+
+Charla real de Guerra–Mininni: la paciente pidió «con una mujer» y «después de las 17». Sofi dijo que con la profesional no había nada «hasta mediados de enero» (había el 23/12, el 28/12 y el 29/12) y dos mensajes después le ofreció horarios con un profesional hombre. Además preguntó las preferencias recién al final.
+
+- [x] `consultar_disponibilidad`: `profesional_genero` (mujer, hombre, cualquiera), `desde_hora` y `hasta_hora`. Lo pedido queda guardado por paciente (`agent_search_preferences`, vence a las 12 h) y se aplica en cada búsqueda de la charla; un horario nuevo reemplaza al anterior y «cualquiera» lo borra. Si nadie cumple la preferencia, no ofrece a otro: pide preguntar antes.
+- [x] Busca hasta 60 días antes de decir que no hay. Sin Smile Connect, de una vez; con Smile Connect, de a dos semanas con `seguir_buscando`. Siempre devuelve `buscado` (desde/hasta) y el mensaje dice «Busqué hasta el D/M».
+- [x] `professionals.gender` y en Configuración → Equipo «Si el paciente pide una mujer o un hombre». Sin dato, sale de «Dra.»/«Dr.» del nombre; nunca se adivina por el nombre de pila. El catálogo de Sofi dice «Profesional mujer/hombre».
+- [x] Prompt: preguntar la preferencia de profesional y horario junto con los datos; mantenerla toda la charla; «No hay» solo hasta `buscado.hasta`, con la fecha; «Perdón, me fijé de nuevo y sí hay…».
+- [x] Desplegado ([PR #289](https://github.com/axellaban/turniasalud/pull/289)) y cargado el 27/11 directo en ElevenLabs: el prompt en los dos agentes (WhatsApp general y llamadas de Guerra–Mininni) y la herramienta `consultar_disponibilidad`. Se comprobó que no cambió nada más. Las charlas que ya estaban abiertas siguen con el prompt anterior hasta que empiezan de nuevo.
+- [ ] Guerra–Mininni: marcar en Equipo a quien no tenga «Dra.»/«Dr.» en el nombre (por ejemplo, Lara Fernandez), para que entre en las búsquedas de «con una mujer».
+
+## Motivo de consulta y lista de espera unificada — 27/11/2026
+
+- Pedido de Axel y feedback de Guerra–Mininni: Sofi debe preguntar el motivo antes de ofrecer horarios si no lo dijo el paciente, usar sus palabras, no repetir la pregunta ni explicar prioridades internas. «Consulta general» alcanza si no quiere detallar. `collect_visit_reason` queda apagado por defecto; activar solo en Guerra–Mininni después de actualizar las herramientas de sus agentes.
+- El motivo, categorías y primera vez confirmada se guardan en el turno y también en la inscripción sin turno. No inferir primera vez por ausencia de historial en Turnia. No inventar ni completar retroactivamente motivos de pacientes reales.
+- **Una sola lista:** Panel → Lista de espera, con acceso en el menú lateral y en «Más» en celular. Columnas con/sin turno, motivo, prioridad, preferencias y reserva actual. Incluye pedidos de aviso y primeras consultas confirmadas de implantes/prótesis/blanqueamiento para evaluar adelanto; distingue ambos orígenes y no genera inscripciones ni mensajes por mostrar un candidato. El equipo decide a quién contactar. La prioridad es de seguimiento, no urgencia clínica. La consulta del equipo por WhatsApp usa la misma lista actualizada.
+- Una reserva recuperada sin `notes` deja una cola independiente para completar las notas: conserva el turno confirmado, verifica el turno antes/después, preserva texto de recepción y no reejecuta el alta. Reintentos a los 5/10/20/40 minutos (máximo cinco intentos); al agotarlos queda para revisar en el panel. Sin avisos técnicos ni mensajes al paciente por ese campo opcional. La API obliga a reenviar horarios al editar notas y no ofrece escritura condicional: se coteja dos veces antes y se verifica después; no prometer ausencia absoluta de carreras con cambios manuales simultáneos.
+- Validación local: 849 tests en 101 archivos y regresiones focalizadas posteriores, proveedores simulados y Postgres descartable; ninguna reserva real usada para estas pruebas. La pantalla pasó el control en computadora e iPhone, con/sin turno, filtros, enlace en «Más», sin errores de navegador, desborde de página ni problemas graves de accesibilidad. Para habilitar una clínica se actualizan primero sus agentes y después se activa la opción en el panel.
 
 ## Hallazgos de la sesión de pruebas de Sofi (26/11/2026)
 
@@ -20,7 +49,8 @@ Facundo probó a Sofi simulando pacientes de Guerra–Mininni y encontró 11 pro
 - [x] Trato «Como escribe el paciente» (`clinics.tone = 'espejo'`).
 - [x] Guerra–Mininni (migración `2026-11-26-contencion-diferenciales-guerra-mininni`): contención y diferenciales agregados a sus instrucciones.
 - [x] Batería `probar-sofi`: 10 casos nuevos (los que usan `anular_tarea` se saltean hasta «Actualizar a Sofi»).
-- [ ] **«Actualizar a Sofi»** en Panel → Sistema y correr la batería (`npm run probar-sofi -- --agente <id> --clinica "Guerra"`).
+- [x] **«Actualizar a Sofi»** desde Configuración de Guerra–Mininni: el 27/11 el panel confirmó la actualización del agente general (WhatsApp) y el propio (llamadas). Repetir al publicar nuevas herramientas o prompt.
+- [ ] Correr la batería de simulaciones de ElevenLabs (`npm run probar-sofi -- --agente <id> --clinica "Guerra"`). La actualización del agente no equivale a haber corrido la batería.
 - [ ] Decidir con Mariano si Guerra–Mininni pasa al trato «Como escribe el paciente» y si Sofi puede decir «limpieza» (hoy sus instrucciones lo prohíben, pedido del 18/11).
 - [ ] TODO_CONFIG de Guerra–Mininni: valor de la consulta particular (en Prestaciones o Preguntas frecuentes), precio «desde» o rango de implante, blanqueamiento y otros tratamientos (Prestaciones → precio y modo), en cuánto tiempo los contacta el consultorio ante una urgencia (Turnos y urgencias → «Qué hacer ante una urgencia»), y si hay un turno de urgencia en la agenda (prestación «Es un turno de urgencia»). Cargar los celulares de testers en «Modo prueba».
 - [ ] n8n `Turnia · Eventos`: sumar una rama para `tarea.anulada` si recepción tiene que enterarse de que un pedido quedó sin efecto (hoy el evento llega y no hace nada).

@@ -382,6 +382,11 @@ describe.runIf(base)("Perfiles de clínicas editables", () => {
     expect(await actions.saveAppointmentTypeWithFeedback({}, form({ ...base, id: foreign.id }))).toMatchObject({ ok: false, message: expect.stringContaining("no pertenece") });
     expect(await actions.saveProfessionalWithFeedback({}, form({ clinic_id: a, id: pro.id, full_name: "Dra. Nueva", specialty: "Odontología" }))).toEqual({ ok: true, message: "Profesional guardado." });
     expect(await actions.saveProfessionalWithFeedback({}, form({ clinic_id: a, id: pro.id, full_name: "", specialty: "Odontología" }))).toMatchObject({ ok: false });
+    // Si el paciente pide una mujer o un hombre: se guarda lo elegido y, vacío, vuelve a «según el nombre».
+    await actions.saveProfessionalWithFeedback({}, form({ clinic_id: a, id: pro.id, full_name: "Lara Nueva", specialty: "Odontología", gender: "mujer" }));
+    expect((await sql`select gender from professionals where id = ${pro.id}`)[0].gender).toBe("mujer");
+    await actions.saveProfessionalWithFeedback({}, form({ clinic_id: a, id: pro.id, full_name: "Dra. Nueva", specialty: "Odontología", gender: "" }));
+    expect((await sql`select gender from professionals where id = ${pro.id}`)[0].gender).toBeNull();
   });
   it("borrar la clínica borra sus accesos", async () => {
     await clinics.createAccess({}, form({ clinic_id: a }));

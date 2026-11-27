@@ -173,7 +173,7 @@ describe("casos de referencia", () => {
   it("incluye el caso de la profesional mujer después de las 17", () => {
     const c = cases.find((x) => x.id === "profesional-mujer-tarde");
     expect(c?.situation).toBe("pide_profesional");
-    expect(JSON.stringify(c?.mocks)).toContain("No hay turnos libres");
+    expect(JSON.stringify(c?.mocks)).toContain("Busqué hasta el");
   });
 
   it("las fechas simuladas son futuras", () => {

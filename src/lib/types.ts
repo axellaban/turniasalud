@@ -30,6 +30,8 @@ export type Clinic = {
   after_hours_instructions: string | null;
   /** Clínica temporal de la demo del lead magnet (/probar-demo), armada con la web del interesado. */
   is_demo: boolean;
+  /** Clínica de muestra de Turnia: funciona como una real, pero no cuenta en el uso real de las métricas. */
+  showcase?: boolean;
   demo_source_url: string | null;
   retained_at: string | null;
   updated_at: string;
@@ -72,6 +74,8 @@ export type Clinic = {
   lab_settings?: { resumen_whatsapp?: boolean; auto_a?: boolean; last_proposals?: string; last_digest?: string };
   /** Usa el protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). */
   dental_protocol: boolean;
+  /** Pedir y guardar el motivo antes de que Sofi reserve un turno. */
+  collect_visit_reason?: boolean;
   /** Horas antes del turno en que las horas reservadas para urgencias quedan libres para todo. */
   urgent_release_hours: number | null;
   /**
@@ -94,6 +98,8 @@ export type Professional = {
   active: boolean;
   /** Su id en Smile Connect, si el consultorio está conectado por la API. */
   smile_professional_id?: number | null;
+  /** «mujer» u «hombre», para cuando el paciente pide uno u otro. Sin dato, sale del «Dra.»/«Dr.» del nombre. */
+  gender?: "mujer" | "hombre" | null;
 };
 
 export type AppointmentType = {
@@ -225,6 +231,9 @@ export type Appointment = {
   notes: string | null;
   /** Nombre propio del turno («Consulta de implantes»); vacío, se llama como su prestación. */
   title?: string | null;
+  consultation_reason?: string | null;
+  consultation_categories?: string[];
+  patient_first_visit?: boolean | null;
   reminder_sent_at: string | null;
   confirmed_at: string | null;
   survey_sent_at: string | null;

@@ -89,7 +89,10 @@ export function slot(daysAhead: number, time: string, professional = "Dr. Marian
     cuando: `${DAYS[d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth() + 1} a las ${Number(m) ? `${Number(h)}:${m}` : Number(h)}`,
   };
 }
-const dateKey = (daysAhead: number) => new Date(Date.now() + daysAhead * 86400_000).toISOString().slice(0, 10);
+const dayMonth = (daysAhead: number) => {
+  const d = new Date(Date.now() + daysAhead * 86400_000);
+  return `${d.getUTCDate()}/${d.getUTCMonth() + 1}`;
+};
 const json = (value: unknown) => JSON.stringify(value);
 
 // ---------------------------------------------------------------------------
@@ -457,12 +460,13 @@ export function referenceCases(): LabCase[] {
       scenario: "Sos una paciente nueva. Tu primer mensaje es: «Hola, quiero sacar turno para una consulta». En el mensaje siguiente escribís: «Busco con una mujer, después de las 17». Si te piden datos, das en un mensaje: Carolina Ejemplo, DNI 30222333, 04/08/1984, carolina@example.com, OSDE 210, afiliado 61111111. Si te dicen que no hay, preguntás una vez «¿y en diciembre tampoco?». Si te ofrecen un profesional varón, decís que preferís una mujer. Después terminás.",
       mocks: {
         registrar_paciente: { ok: true, mensaje: "Datos del paciente guardados." },
-        consultar_disponibilidad: { ok: true, turnos: [], mensaje: `No hay turnos libres entre ${dateKey(0)} y ${dateKey(14)}. Buscá más adelante y reservale el primero que le sirva; la lista de espera es para adelantar ese turno.` },
+        // Como responde la herramienta desde el 27/11: busca 60 días y dice hasta dónde (src/lib/agent/service.ts).
+        consultar_disponibilidad: { ok: true, turnos: [], buscado: { desde: dayMonth(0), hasta: dayMonth(60) }, mensaje: `Busqué hasta el ${dayMonth(60)} y no hay turnos con lo que pidió (profesional mujer, desde las 17). Decíselo con la fecha («Busqué hasta el ${dayMonth(60)} y no encontré…») y, antes de ofrecerle otra cosa, preguntale si quiere que busque sin esa condición (otro profesional u otro horario).` },
       },
       conditions: [
         { dim: "exactitud", text: "El agente nunca afirma que no hay turnos más allá de las fechas que devolvió la búsqueda (por ejemplo «hasta enero» o «hasta mediados de enero») ni inventa fechas: dice hasta qué fecha buscó o busca más adelante." },
         { dim: "exactitud", text: "Después de que la paciente pide una profesional mujer, el agente no le ofrece horarios con un profesional varón sin antes preguntarle si le sirve." },
-        { dim: "resolucion", text: "Si no encuentra lugar, el agente ofrece seguir buscando más adelante o la lista de espera, en el mismo mensaje." },
+        { dim: "resolucion", text: "Si no encuentra lugar, el agente dice hasta qué fecha buscó y, antes de ofrecer otra cosa, pregunta si quiere que busque sin esa condición (otro profesional u otro horario) o le ofrece la lista de espera." },
         TRATO_USTED,
         SIN_PRESENTARSE,
       ],

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TASK_PRIORITIES, TASK_TYPES } from "../types";
 import { HEALTH_QUESTIONS } from "../health-form";
+import { CONSULTATION_CATEGORIES } from '../consultation-reason';
 
 // Definición única de las herramientas del agente: de acá salen tanto la
 // validación del endpoint como la configuración que se sube a ElevenLabs.
@@ -99,7 +100,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "consultar_disponibilidad",
     description:
-      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios. Si el paciente pide una hora concreta, pasá hora_exacta y usá hora_solicitada.disponible para saber si se puede ofrecer. Filtra por cobertura, y con un turno de urgencia busca hoy y mañana. Si trae aviso_cobertura, decíselo antes de ofrecer. Si trae preguntar_antes, preguntalo antes de reservar.",
+      "Busca horarios libres reales para reservar (tipo_turno_id) o mover un turno existente (turno_id). Usala SIEMPRE antes de ofrecer horarios. Si el paciente pide una hora concreta, pasá hora_exacta y usá hora_solicitada.disponible para saber si se puede ofrecer. Lo que pidió el paciente (profesional mujer u hombre, franja, desde_hora, hasta_hora) queda guardado y se aplica solo en las búsquedas siguientes de la charla: mandalo una vez cuando lo dice y volvé a mandarlo solo si lo cambia. 'buscado' dice entre qué días se buscó: nunca digas que no hay más allá de esa fecha. Si trae seguir_buscando, llamá de nuevo con esas fechas antes de responder. Filtra por cobertura, y con un turno de urgencia busca hoy y mañana. Si trae aviso_cobertura, decíselo antes de ofrecer. Si trae preguntar_antes, preguntalo antes de reservar.",
     params: {
       tipo_turno_id: { type: "string", description: "Para reservar: id del tipo de turno, copiado del catálogo." },
       turno_id: { type: "string", description: "Para reprogramar: turno_id del turno existente (si son dos prácticas seguidas, usá el de la primera)." },
@@ -108,7 +109,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       desde: { type: "string", description: `Primer día a buscar. ${isoDate} Por defecto, hoy.` },
       hasta: { type: "string", description: `Último día a buscar. ${isoDate} Por defecto, dos semanas después de 'desde'.` },
       hora_exacta: { type: "string", description: "Hora concreta que pidió el paciente, en hora local (HH:MM, 24 h), por ejemplo 15:00. Si pidió un día específico, mandá ese mismo día en desde y hasta." },
-      franja: { type: "string", description: "Franja horaria preferida.", enum: ["manana", "tarde", "cualquiera"] },
+      franja: { type: "string", description: "Franja horaria que pidió el paciente. «cualquiera» borra la preferencia de horario guardada.", enum: ["manana", "tarde", "cualquiera"] },
+      desde_hora: { type: "string", description: "Si pidió desde cierta hora («después de las 17»): la primera hora de inicio que le sirve (HH:MM, 24 h), por ejemplo 17:00." },
+      hasta_hora: { type: "string", description: "Si pidió hasta cierta hora («antes de las 12»): la última hora de inicio que le sirve (HH:MM, 24 h)." },
+      profesional_genero: {
+        type: "string",
+        description: "Si pidió que lo atienda una mujer o un hombre. «cualquiera» borra esa preferencia (solo si el paciente aceptó otro profesional).",
+        enum: ["mujer", "hombre", "cualquiera"],
+      },
       cobertura: {
         type: "string",
         description: "Solo si el paciente se va a atender con otra cobertura que la de su ficha (por ejemplo, 'Particular'). Si no, se usa la de la ficha.",
@@ -125,6 +133,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       hasta: z.string().optional(),
       hora_exacta: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
       franja: z.enum(["manana", "tarde", "cualquiera"]).optional(),
+      desde_hora: z.string().trim().regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/).optional(),
+      hasta_hora: z.string().trim().regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/).optional(),
+      profesional_genero: z.enum(["mujer", "hombre", "cualquiera"]).optional(),
       cobertura: z.string().optional(),
     }).refine((input) => Boolean(input.tipo_turno_id) !== Boolean(input.turno_id), "Usá tipo_turno_id para reservar o turno_id para reprogramar."),
   },
@@ -140,6 +151,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       nombre_completo: { type: "string", description: "Nombre y apellido del paciente, si todavía no lo registraste." },
       cobertura: { type: "string", description: "Cobertura con la que se atiende en este turno." },
       notas: { type: "string", description: "Motivo de consulta u observaciones breves para el profesional." },
+      motivo_consulta: { type: 'string', description: 'Motivo expresado por el paciente, en una frase. Si la clínica lo pide, averigualo antes de buscar horarios y mandalo siempre al reservar.' },
+      categorias_motivo: { type: 'string', description: 'Categorías del motivo informado: general, control, implantes, protesis, blanqueamiento u otro. Varias separadas por coma; no inventes intereses que no expresó.' },
+      primera_vez: { type: 'boolean', description: 'true solo si confirmó que nunca se atendió en el consultorio; false si ya vino o hay una visita en el historial. Si no se sabe, omitilo. Una ficha nueva en Turnia no prueba primera vez.' },
       titulo: {
         type: "string",
         description:
@@ -156,6 +170,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       nombre_completo: z.string().optional(),
       cobertura: z.string().optional(),
       notas: z.string().optional(),
+      motivo_consulta: z.string().trim().min(1).max(500).optional(),
+      categorias_motivo: z.string().max(100).optional(),
+      primera_vez: z.boolean().optional(),
       titulo: z.string().optional(),
     }),
   },
@@ -237,9 +254,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       turno_id: { type: "string", description: "Para mover uno existente: id de ese turno. No lo reemplaces por el tipo genérico importado." },
       profesional_id: { type: "string", description: "id del profesional, si quiere uno en particular." },
       preferencias: { type: "string", description: "Días y horarios que le sirven." },
+      motivo_consulta: { type: 'string', description: 'Motivo que ya contó el paciente. Guardalo también cuando queda en espera sin turno.' },
+      categorias_motivo: { type: 'string', description: 'general, control, implantes, protesis, blanqueamiento u otro; varias separadas por coma, a partir de lo que dijo.' },
+      primera_vez: { type: 'boolean', description: 'true si confirmó que nunca se atendió; false si ya vino. Omitilo si no se sabe.' },
       sin_turno: { type: "string", description: "Solo con tipo_turno_id: por qué queda en lista de espera sin turno reservado.", enum: ["no_hay_horarios", "no_quiere_turno"] },
     },
     schema: z.object({ tipo_turno_id: z.string().min(1).optional(), turno_id: z.string().min(1).optional(), profesional_id: z.string().optional(), preferencias: z.string().optional(),
+      motivo_consulta: z.string().trim().min(1).max(500).optional(), categorias_motivo: z.string().max(100).optional(), primera_vez: z.boolean().optional(),
       sin_turno: z.enum(["no_hay_horarios", "no_quiere_turno"]).optional() })
       .refine((i) => Boolean(i.tipo_turno_id) !== Boolean(i.turno_id), "Usá tipo_turno_id o turno_id, solo uno."),
   },
@@ -300,14 +321,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   // Equipo del consultorio (acceso total por WhatsApp).
   {
     name: "ver_lista_espera",
-    description: `${STAFF} Lee ahora la lista de espera de la clínica, incluidas las altas de hoy: pacientes, celulares, prestación, profesional, preferencias, estado y turno que conservan. Usala cada vez que pregunte por la lista; no respondas de memoria. Por defecto trae todas las inscripciones pendientes, activas y ofrecidas, sin límite de fecha. Tiene páginas de 30: seguí siguiente_pagina para una lista completa. No agrega ni avisa a pacientes.`,
+    description: `${STAFF} Lee ahora la lista unificada de espera, incluidas las altas de hoy: con/sin turno, motivo, prioridad, preferencias y reserva actual. Si la clínica captura el motivo, incluye primeras consultas de implantes/prótesis/blanqueamiento para evaluar adelanto; inscripcion_confirmada distingue quienes aceptaron avisos de esos candidatos. Usala cada vez, no respondas de memoria. Tiene páginas de 30: seguí siguiente_pagina. No agrega ni avisa a pacientes.`,
     params: {
       desde: { type: "string", description: `Filtrar por fecha de inscripción, inclusive. ${isoDate} Para las altas de hoy, usá la fecha de hoy de la clínica; para la lista completa, omitilo.` },
       profesional_id: { type: "string", description: "id del profesional, solo si pide filtrar por uno." },
       estado: { type: "string", description: "Por defecto pendientes (activa y ofrecida). Todas incluye también resueltas y canceladas.", enum: ["pendientes", "activa", "ofrecida", "resuelta", "cancelada", "todas"] },
+      motivo: { type: 'string', description: 'Filtrar por categoría del motivo, si el equipo pide una. Sin filtro trae todos.', enum: [...CONSULTATION_CATEGORIES] },
+      prioridad: { type: 'string', description: 'alta: primeras consultas de implantes, prótesis y blanqueamiento. normal: resto de la lista. No es una prioridad clínica.', enum: ['alta', 'normal'] },
+      con_turno: { type: 'boolean', description: 'true: con reserva vigente; false: sin turno. Omitilo para ambos.' },
       pagina: { type: "number", description: "Número entero de página desde 1. Usá siguiente_pagina si la lista no entró completa." },
     },
-    schema: z.object({ desde: z.string().optional(), profesional_id: z.string().optional(), estado: z.enum(["pendientes", "activa", "ofrecida", "resuelta", "cancelada", "todas"]).optional(), pagina: z.number().int().min(1).max(10000).optional() }),
+    schema: z.object({ desde: z.string().optional(), profesional_id: z.string().optional(), estado: z.enum(["pendientes", "activa", "ofrecida", "resuelta", "cancelada", "todas"]).optional(),
+      motivo: z.enum(CONSULTATION_CATEGORIES).optional(), prioridad: z.enum(['alta', 'normal']).optional(), con_turno: z.boolean().optional(),
+      pagina: z.number().int().min(1).max(10000).optional() }),
   },
   {
     name: "ver_agenda",

@@ -1670,6 +1670,21 @@ alter table appointments add column if not exists smile_reply_phone text;
 alter table appointments add column if not exists smile_management jsonb;
 -- La ficha de salud cambió después de crear el turno: hay que sumarla a la nota en Smile Connect.
 alter table appointments add column if not exists smile_notes_refresh boolean not null default false;
+alter table clinics add column if not exists collect_visit_reason boolean not null default false;
+alter table appointments add column if not exists consultation_reason text;
+alter table appointments add column if not exists consultation_categories text[] not null default '{}';
+alter table appointments add column if not exists patient_first_visit boolean;
+alter table waitlist add column if not exists consultation_reason text;
+alter table waitlist add column if not exists consultation_categories text[] not null default '{}';
+alter table waitlist add column if not exists patient_first_visit boolean;
+-- Nota omitida al recuperar un alta básica: se completa aparte, sin reintentar la reserva.
+alter table appointments add column if not exists smile_booking_notes text;
+alter table appointments add column if not exists smile_booking_notes_pending boolean not null default false;
+alter table appointments add column if not exists smile_booking_notes_attempts integer not null default 0;
+alter table appointments add column if not exists smile_booking_notes_retry_at timestamptz;
+alter table appointments add column if not exists smile_booking_notes_error text;
+create index if not exists appointments_smile_booking_notes_idx on appointments (clinic_id) where smile_booking_notes_pending;
+create index if not exists appointments_consultation_categories_idx on appointments using gin (consultation_categories);
 create index if not exists appointments_smile_notes_refresh_idx on appointments (clinic_id) where smile_notes_refresh;
 alter table appointments drop constraint if exists appointments_smile_sync_check;
 alter table appointments add constraint appointments_smile_sync_check
@@ -2222,6 +2237,81 @@ begin
       updated_at = now()
     where id = '67c3954a-8df8-46c2-a604-f818832bee36' and agent_context is not null;
     insert into data_migrations (name) values ('2026-11-26-contencion-diferenciales-guerra-mininni');
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Preferencias del paciente al buscar turno (27/11/2026, charla real con Guerra–Mininni: pidió «con una
+-- mujer» y «después de las 17», y dos mensajes después Sofi le ofreció a un profesional hombre).
+-- * professionals.gender: «mujer» u «hombre». Sin dato, sale del «Dra.»/«Dr.» del nombre.
+-- * agent_search_preferences: lo que el paciente pidió (profesional mujer u hombre, un profesional,
+--   desde/hasta qué hora, franja). consultar_disponibilidad lo aplica en cada búsqueda de esa charla
+--   hasta que el paciente lo cambie, y vence a las 12 horas.
+-- ---------------------------------------------------------------------------
+alter table professionals add column if not exists gender text;
+alter table professionals drop constraint if exists professionals_gender_check;
+alter table professionals add constraint professionals_gender_check check (gender is null or gender in ('mujer', 'hombre'));
+
+create table if not exists agent_search_preferences (
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  patient_phone text not null,
+  preferences jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (clinic_id, patient_phone)
+);
+alter table agent_search_preferences enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Consultorio odontológico de muestra (27/11/2026). Una clínica real (no demo) para mostrarle Turnia a los
+-- consultorios: agenda propia en Turnia (sin Smile Connect), su propio agente, Google Calendar y su propia
+-- línea de WAHA (WAHA_CONNECTIONS con este clinicId). No reemplaza al Centro Médico Plaza, que sigue siendo
+-- la clínica principal de las demos y del WhatsApp general.
+-- * clinics.showcase: clínica de muestra de Turnia. Funciona como una real, pero no cuenta en el uso real
+--   de las métricas (/api/metricas).
+-- * Solo se crea en producción (donde está la ficha de Guerra–Mininni), no en la base de los tests. Una vez.
+-- * Los profesionales son ficticios. Las prestaciones se suman desde Configuración → Prestaciones
+--   («Sumar las que faltan», la plantilla odontológica).
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists showcase boolean not null default false;
+
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-27-consultorio-de-muestra')
+     and exists (select 1 from clinics where id = '67c3954a-8df8-46c2-a604-f818832bee36') then
+    insert into clinics (id, name, agent_name, specialty, timezone, hours_text, accepted_coverages, policies,
+      urgency_instructions, after_hours_instructions, is_demo, retained_at, showcase)
+    values (
+      '86901eaf-369c-4ef5-a653-8c89c0bce2e3',
+      'Consultorio Odontológico Turnia',
+      'Sofi',
+      'Odontología',
+      'America/Argentina/Buenos_Aires',
+      'Lunes a viernes de 9 a 19 h. Sábados de 9 a 13 h.',
+      array['OSDE', 'Swiss Medical', 'Galeno', 'Medifé', 'Particular'],
+      E'- Cancelaciones o cambios con al menos 24 h de anticipación.\n- Tolerancia de 10 minutos.',
+      E'Si el paciente cuenta un golpe fuerte en la cara o la boca, un diente que se cayó o se movió por un golpe, sangrado que no para, hinchazón que crece o que le cuesta tragar o respirar, o fiebre con dolor de muelas, ofrecele el primer turno de urgencia del día y creá una tarea urgente. Si le cuesta respirar o tragar, que vaya a la guardia más cercana.',
+      E'Fuera de horario no hay odontólogos de guardia. Para una urgencia que no puede esperar, la guardia más cercana. Los pedidos se responden el siguiente día hábil.',
+      false, now(), true);
+
+    insert into professionals (id, clinic_id, full_name, specialty, bio, gender) values
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', '86901eaf-369c-4ef5-a653-8c89c0bce2e3', 'Dra. Valeria Costa', 'Odontología',
+        'Odontología general, limpiezas, blanqueamiento y estética.', 'mujer'),
+      ('e70b08b7-cd15-45af-bd89-b645ba9ed0a6', '86901eaf-369c-4ef5-a653-8c89c0bce2e3', 'Dr. Nicolás Ibarra', 'Odontología',
+        'Odontología general, endodoncia e implantes.', 'hombre');
+
+    -- Costa: lunes, miércoles y viernes de 9 a 13 y de 15 a 19. Ibarra: martes y jueves de 10 a 18, sábados de 9 a 13.
+    insert into schedules (professional_id, weekday, start_time, end_time) values
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', 1, '09:00', '13:00'),
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', 1, '15:00', '19:00'),
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', 3, '09:00', '13:00'),
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', 3, '15:00', '19:00'),
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', 5, '09:00', '13:00'),
+      ('ee5736f7-e720-495c-9c19-6fc36e85c9a2', 5, '15:00', '19:00'),
+      ('e70b08b7-cd15-45af-bd89-b645ba9ed0a6', 2, '10:00', '18:00'),
+      ('e70b08b7-cd15-45af-bd89-b645ba9ed0a6', 4, '10:00', '18:00'),
+      ('e70b08b7-cd15-45af-bd89-b645ba9ed0a6', 6, '09:00', '13:00');
+
+    insert into data_migrations (name) values ('2026-11-27-consultorio-de-muestra');
   end if;
 end $$;
 

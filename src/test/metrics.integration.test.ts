@@ -112,6 +112,17 @@ describe.runIf(base)("métricas del tablero", () => {
     expect(m.sofi.total).toBe(m.sofi.clinicas + m.sofi.demos);
   });
 
+  it("la clínica de muestra de Turnia funciona como real pero no cuenta como uso", async () => {
+    const before = await metrics.turniaMetrics({ from: null, to: null });
+    const [muestra] = await sql<Array<{ id: string }>>`insert into clinics (name, is_demo, showcase) values ('Consultorio de muestra', false, true) returning id`;
+    await sql`insert into conversations (clinic_id, started_at) values (${muestra.id}, now() - interval '1 day')`;
+    const m = await metrics.turniaMetrics({ from: null, to: null });
+    expect(m.uso.clinicas).toBe(before.uso.clinicas);
+    expect(m.uso.conversaciones).toBe(before.uso.conversaciones);
+    expect(m.sofi.clinicas7).toBe(before.sofi.clinicas7);
+    expect(m.sofi.demos7).toBe(before.sofi.demos7 + 1);
+  });
+
   it("con fechas, cuenta la cohorte del primer contacto en el período", async () => {
     const m = await metrics.turniaMetrics({ from: "2026-10-21", to: "2026-10-26" });
     expect(m.prospeccion).toMatchObject({ prospectados: 4, contactados: 1, clientes: 1 });

@@ -1,4 +1,5 @@
 import "server-only";
+import { consultationFields, type ConsultationInput } from '../consultation-reason';
 import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyByAppointment, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
@@ -10,7 +11,8 @@ import { normalizePhone } from "../phone";
 import { sendPatientMessage, whatsappReadiness } from "../whatsapp";
 import { notifyN8n } from "../n8n";
 import { googleBusy } from "../calendar/sync";
-import { getSmileApiConnection, isLiveSmileMode, smileBusy, writesEnabledOnServer } from "../smile-connect-link";
+import { getSmileApiConnection, isLiveSmileMode, smileBusy, smileIsSource, writesEnabledOnServer } from "../smile-connect-link";
+import { professionalGender, type ProfessionalGender } from "../professional-gender";
 import { confirmNewSmileAppointment, processSmileBookingLater, processSmileNotesLater, settleSmileBooking } from "../smile-connect-push";
 import { noticesToldInChat } from "../clinic-notices";
 import { appointmentAccessEnabled, appointmentAccessKey, expireAppointmentAccess } from "./appointment-access";
@@ -399,6 +401,75 @@ async function findByAppointment(
 // ---------------------------------------------------------------------------
 // consultar_disponibilidad
 // ---------------------------------------------------------------------------
+/** Hasta cuántos días adelante se busca antes de decir que no hay turnos. */
+const SEARCH_HORIZON_DAYS = 60;
+/** Lo que pidió el paciente vale para toda la charla; una charla nueva al otro día empieza de cero. */
+const PREFERENCES_TTL_HOURS = 12;
+
+type SearchPreferences = {
+  genero?: ProfessionalGender;
+  franja?: "manana" | "tarde";
+  desde_hora?: string;
+  hasta_hora?: string;
+};
+
+const dayMonth = (key: string) => `${Number(key.slice(8, 10))}/${Number(key.slice(5, 7))}`;
+
+/**
+ * Las preferencias del paciente en esta charla: lo guardado más lo que trae esta búsqueda. Un horario
+ * nuevo reemplaza al anterior (pedir «a la mañana» borra el «después de las 17») y «cualquiera» borra.
+ * Con el equipo del consultorio no se guardan: busca para distintos pacientes.
+ */
+async function searchPreferences(
+  ctx: ToolContext,
+  input: { franja?: "manana" | "tarde" | "cualquiera"; desde_hora?: string; hasta_hora?: string; profesional_genero?: ProfessionalGender | "cualquiera" },
+): Promise<SearchPreferences> {
+  const remember = Boolean(ctx.patientPhone) && !ctx.staff;
+  let saved: SearchPreferences = {};
+  if (remember) {
+    const [row] = await sql<Array<{ preferences: SearchPreferences }>>`
+      select preferences from agent_search_preferences
+      where clinic_id = ${ctx.clinicId} and patient_phone = ${ctx.patientPhone}
+        and updated_at > now() - make_interval(hours => ${PREFERENCES_TTL_HOURS})`.catch(() => []);
+    saved = row?.preferences ?? {};
+  }
+  const prefs: SearchPreferences = { ...saved };
+  if (input.profesional_genero === "cualquiera") delete prefs.genero;
+  else if (input.profesional_genero) prefs.genero = input.profesional_genero;
+  const from = parseClockTime(input.desde_hora) ?? undefined;
+  const to = parseClockTime(input.hasta_hora) ?? undefined;
+  if (input.franja === "cualquiera" && !from && !to) {
+    delete prefs.franja; delete prefs.desde_hora; delete prefs.hasta_hora;
+  } else if (from || to) {
+    delete prefs.franja; delete prefs.desde_hora; delete prefs.hasta_hora;
+    if (input.franja && input.franja !== "cualquiera") prefs.franja = input.franja;
+    if (from) prefs.desde_hora = from;
+    if (to) prefs.hasta_hora = to;
+  } else if (input.franja) {
+    delete prefs.desde_hora; delete prefs.hasta_hora;
+    prefs.franja = input.franja as "manana" | "tarde";
+  }
+  if (remember && JSON.stringify(prefs) !== JSON.stringify(saved)) {
+    await sql`
+      insert into agent_search_preferences (clinic_id, patient_phone, preferences, updated_at)
+      values (${ctx.clinicId}, ${ctx.patientPhone}, ${json(prefs)}, now())
+      on conflict (clinic_id, patient_phone) do update set preferences = excluded.preferences, updated_at = now()`
+      .catch((e) => console.error("No se pudieron guardar las preferencias del paciente", e instanceof Error ? e.message : e));
+  } else if (remember && Object.keys(prefs).length) {
+    await sql`update agent_search_preferences set updated_at = now() where clinic_id = ${ctx.clinicId} and patient_phone = ${ctx.patientPhone}`.catch(() => {});
+  }
+  return prefs;
+}
+
+/** Las preferencias en palabras, para que Sofi las tenga presentes («con una mujer, desde las 17:00»). */
+function preferencesText(p: SearchPreferences): string {
+  return [
+    p.genero === "mujer" ? "con una profesional mujer" : p.genero === "hombre" ? "con un profesional hombre" : "",
+    p.franja === "manana" ? "a la mañana" : p.franja === "tarde" ? "a la tarde" : "",
+    p.desde_hora && p.hasta_hora ? `entre las ${p.desde_hora} y las ${p.hasta_hora}` : p.desde_hora ? `desde las ${p.desde_hora}` : p.hasta_hora ? `hasta las ${p.hasta_hora}` : "",
+  ].filter(Boolean).join(", ");
+}
+
 export async function checkAvailability(
   ctx: ToolContext,
   input: {
@@ -410,11 +481,19 @@ export async function checkAvailability(
     hasta?: string;
     hora_exacta?: string;
     franja?: "manana" | "tarde" | "cualquiera";
+    desde_hora?: string;
+    hasta_hora?: string;
+    profesional_genero?: ProfessionalGender | "cualquiera";
     cobertura?: string;
   },
 ) {
   const exactTime = parseClockTime(input.hora_exacta);
   if (input.hora_exacta !== undefined && !exactTime) throw new ToolError("La hora exacta debe ser válida, por ejemplo 15:00.");
+  for (const field of ["desde_hora", "hasta_hora"] as const) {
+    if (input[field] !== undefined && !parseClockTime(input[field])) throw new ToolError(`${field} debe ser una hora válida, por ejemplo 17:00.`);
+  }
+  // Lo que el paciente pidió en esta charla (profesional mujer u hombre, horario) vale en cada búsqueda.
+  const prefs = await searchPreferences(ctx, input);
   const clinic = await getClinic(ctx.clinicId);
   const catalog = await getCatalog(clinic.id);
   const links = catalog.links ?? [];
@@ -439,9 +518,27 @@ export async function checkAvailability(
 
   const selectedPro = input.profesional_id || move?.appt.professional_id;
   const otherPro = move?.appt.second_professional_id;
-  const capable = catalog.professionals.filter(
+  let capable = catalog.professionals.filter(
     (p) => visit.every((t) => professionalDoes(p, t, links)) && (!selectedPro || p.id === selectedPro) && p.id !== otherPro,
   );
+  const prefsText = preferencesText(prefs);
+  const applied = prefsText ? { preferencias_del_paciente: prefsText } : {};
+  // Si pidió un profesional en particular, vale ese; si no, solo profesionales del sexo que pidió.
+  let genderNotice: string | undefined;
+  if (prefs.genero && !input.profesional_id && capable.length) {
+    const unknown = capable.filter((p) => !professionalGender(p)).map((p) => p.full_name);
+    const matching = capable.filter((p) => professionalGender(p) === prefs.genero);
+    if (unknown.length) genderNotice = `No está cargado si ${unknown.join(" y ")} es mujer u hombre (Configuración → Equipo): no se incluyó en la búsqueda.`;
+    if (!matching.length) {
+      return {
+        ok: true,
+        turnos: [],
+        ...applied,
+        mensaje: `${prefs.genero === "mujer" ? "Ninguna profesional mujer hace" : "Ningún profesional hombre hace"} ${next ? `${type.name} y ${next.name}` : type.name}.${genderNotice ? ` ${genderNotice}` : ""} No le ofrezcas otro profesional por tu cuenta: decíselo y preguntale si le sirve con ${prefs.genero === "mujer" ? "un profesional hombre" : "una profesional mujer"}. Solo si dice que sí, buscá de nuevo con profesional_genero="cualquiera".`,
+      };
+    }
+    capable = matching;
+  }
   if (!capable.length) {
     throw new ToolError(
       next
@@ -478,12 +575,23 @@ export async function checkAvailability(
   const today = localDateKey(now, clinic.timezone);
   // Un turno de urgencia busca hoy y mañana, salvo que se pidan otras fechas.
   const urgent = type.is_urgent;
-  const span = urgent && !input.desde && !input.hasta ? 1 : 14;
+  // Antes de decir que no hay, se busca hasta 60 días. Sin Smile Connect se busca todo de una vez
+  // (se ofrecen igual los primeros); con Smile Connect cada día tarda, así que va de a dos semanas.
+  const horizonKey = addDaysKey(today, SEARCH_HORIZON_DAYS);
+  const explicitEnd = parseDateKey(input.hasta) !== null;
+  const wide = !explicitEnd && !urgent && !smileIsSource(await getSmileApiConnection(clinic.id));
+  const span = urgent && !input.desde && !input.hasta ? 1 : wide ? SEARCH_HORIZON_DAYS : 14;
   let fromKey = parseDateKey(input.desde) ?? today;
   if (fromKey < today) fromKey = today;
   let toKey = parseDateKey(input.hasta) ?? addDaysKey(fromKey, span);
   if (toKey < fromKey) toKey = addDaysKey(fromKey, span);
   if (toKey > addDaysKey(fromKey, 60)) toKey = addDaysKey(fromKey, 60);
+  if (!explicitEnd && toKey > horizonKey && fromKey <= horizonKey) toKey = horizonKey;
+  const searched = { buscado: { desde: dayMonth(fromKey), hasta: dayMonth(toKey) } };
+  // Si no hubo lugar y no se llegó al tope, la próxima búsqueda (Sofi no dice «no hay» antes).
+  const keepGoing = !explicitEnd && !(urgent && span === 1) && toKey < horizonKey
+    ? { desde: addDaysKey(toKey, 1), hasta: addDaysKey(toKey, 14) > horizonKey ? horizonKey : addDaysKey(toKey, 14) }
+    : null;
 
   const bookingDays = asClinic ? null : clinic.booking_weekdays;
   const dayNotice = bookingDaysText(bookingDays);
@@ -560,11 +668,14 @@ export async function checkAvailability(
     perDayPerProfessional: 2,
   };
   const matches = exactTime ? computeSlots({ ...slotQuery, startTime: exactTime }) : [];
-  const slots = matches.length ? matches : computeSlots({ ...slotQuery, partOfDay: input.franja });
+  const slots = matches.length
+    ? matches
+    : computeSlots({ ...slotQuery, partOfDay: prefs.franja, earliestStart: prefs.desde_hora, latestStart: prefs.hasta_hora });
   const requestedTime = exactTime ? { hora_solicitada: { hora: exactTime, disponible: matches.length > 0 } } : {};
   const timeMessage = !exactTime ? "" : matches.length
     ? `Hay disponibilidad a las ${exactTime}. Ofrecé el horario solicitado. `
-    : `La hora solicitada (${exactTime}) no está disponible en las fechas buscadas. Si hay opciones, ofrecelas como alternativas. `;
+    : `La hora solicitada (${exactTime}) no está disponible entre el ${dayMonth(fromKey)} y el ${dayMonth(toKey)}.${keepGoing ? ` Si le sirve más adelante, buscala con desde=${keepGoing.desde} y hasta=${keepGoing.hasta} antes de decirle que no hay.` : ""} Si hay opciones, ofrecelas como alternativas. `;
+  const extraNotices = genderNotice ? { aviso_preferencias: genderNotice } : {};
 
   const names = new Map(professionals.map((p) => [p.id, p.full_name]));
   // Días que la agenda del consultorio no confirmó a tiempo: no se dan por llenos ante el paciente.
@@ -577,23 +688,46 @@ export async function checkAvailability(
       turnos: [],
       ...requestedTime,
       ...notChecked,
+      ...searched,
+      ...applied,
       ...(coverageNotice && { aviso_cobertura: coverageNotice }),
       mensaje: `La agenda del consultorio tardó en responder y no pude revisar ${uncheckedText} (están en dias_sin_revisar). En los demás días buscados no hay lugar. No le digas al paciente que no hay turnos en esas fechas: volvé a llamar a consultar_disponibilidad con desde=${unchecked[0]} y hasta=${unchecked.at(-1)} antes de responder.`,
     };
   }
-  if (!slots.length) {
+  if (!slots.length && keepGoing && !(urgent && span === 1)) {
     return {
       ok: true,
       turnos: [],
       ...requestedTime,
+      ...searched,
+      ...applied,
+      ...extraNotices,
+      seguir_buscando: keepGoing,
       ...(coverageNotice && { aviso_cobertura: coverageNotice }),
-      mensaje: timeMessage + (move
+      mensaje: `Entre el ${dayMonth(fromKey)} y el ${dayMonth(toKey)} no hay lugar${prefsText ? ` con lo que pidió (${prefsText})` : ""}. Todavía no le digas que no hay turnos: llamá enseguida a consultar_disponibilidad con desde=${keepGoing.desde} y hasta=${keepGoing.hasta}, con los mismos datos.`,
+    };
+  }
+  if (!slots.length) {
+    const until = `Busqué hasta el ${dayMonth(toKey)}`;
+    return {
+      ok: true,
+      turnos: [],
+      ...requestedTime,
+      ...searched,
+      ...applied,
+      ...extraNotices,
+      ...(coverageNotice && { aviso_cobertura: coverageNotice }),
+      mensaje: timeMessage + (prefsText && !move && !(urgent && span === 1)
+        ? `${until} y no hay turnos con lo que pidió (${prefsText}). Decíselo con la fecha («${until} y no encontré…») y, antes de ofrecerle otra cosa, preguntale si quiere que busque sin esa condición (otro profesional u otro horario).`
+        : move
         ? `No hay horarios para mover esa visita entre ${fromKey} y ${toKey}. Ofrecé buscar otras fechas. El turno original sigue reservado.`
         : urgent && span === 1
           ? "No hay lugar de urgencia hoy ni mañana. Creá una tarea de tipo «urgencia» con prioridad «urgente» para que el equipo lo contacte hoy, y decile qué hacer mientras tanto según el protocolo de urgencias."
           : next
           ? `No hay horarios entre ${fromKey} y ${toKey} en los que entren ${type.name} y ${next.name} seguidas. Ofrecé buscar más adelante o dos turnos por separado.`
-          : `No hay turnos libres entre ${fromKey} y ${toKey}. Buscá más adelante y reservale el primero que le sirva; la lista de espera es para adelantar ese turno.`),
+          : explicitEnd
+          ? `No hay turnos libres entre el ${dayMonth(fromKey)} y el ${dayMonth(toKey)}. Decíselo con las fechas, buscá más adelante y reservale el primero que le sirva; la lista de espera es para adelantar ese turno.`
+          : `${until} y no hay turnos libres. Decíselo con la fecha («${until} y no encontré lugar»), ofrecé anotarlo en la lista de espera sin turno y creá una tarea de derivacion_humana para que recepción lo coordine.`),
     };
   }
   const turnos = slots.map((s) => ({
@@ -614,12 +748,18 @@ export async function checkAvailability(
     ...(visit.some((t) => t.ask_before) && { preguntar_antes: visit.map((t) => t.ask_before).filter(Boolean).join(" ") }),
     ...(urgent && !move && { urgencia: true }),
     ...agendaNotice,
+    ...searched,
+    ...applied,
+    ...extraNotices,
   };
   if (move) {
     return {
       ok: true,
       ...requestedTime,
       ...agendaNotice,
+      ...searched,
+      ...applied,
+      ...extraNotices,
       turno_id: move.appt.id,
       tipo_turno: move.appt.title || type.name,
       ...(next && { segunda_practica: move.follower?.title || next.name }),
@@ -938,7 +1078,7 @@ const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
 type NewAppointment = Pick<
   Appointment,
   "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
-> & Partial<Pick<Appointment, "second_professional_id" | "title" | "smile_deferred" | "smile_reply_phone">>;
+> & Partial<Pick<Appointment, "second_professional_id" | "title" | "smile_deferred" | "smile_reply_phone" | "consultation_reason" | "consultation_categories" | "patient_first_visit">>;
 
 /**
  * Serializa las reservas de cada profesional dentro de la transacción: si dos
@@ -967,7 +1107,7 @@ async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promi
   return appt;
 }
 
-type BookInput = {
+type BookInput = ConsultationInput & {
   tipo_turno_id: string;
   /** Otra práctica en la misma visita, a continuación y con el mismo profesional. */
   segundo_tipo_turno_id?: string;
@@ -1115,6 +1255,9 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   }
 
   type Part = Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date };
+  let consultation: ReturnType<typeof consultationFields>;
+  try { consultation = consultationFields(input, Boolean(clinic.collect_visit_reason) && !byPanel); }
+  catch (e) { throw new ToolError(e instanceof Error ? e.message : 'Falta el motivo de consulta.'); }
   const parts: Part[] = [];
   if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, { ...opts, byPanel, deferSmile })), startsAt });
   if (input.segundo_tipo_turno_id) {
@@ -1194,7 +1337,8 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
             status: liveSmile ? "pendiente" : "confirmado",
             source,
             coverage,
-            notes: i === 0 ? (input.notas ?? null) : null,
+            notes: i === 0 ? [...new Set([consultation.consultation_reason, input.notas?.trim()].filter(Boolean))].join(' | ') || null : null,
+            ...(i === 0 && consultation),
             ...(i === 0 && title && { title }),
             ...(deferSmile && { smile_deferred: true, smile_reply_phone: replyPhone }),
           }),
@@ -1685,6 +1829,9 @@ async function rescheduleLoaded(
         coverage,
         notes: t.notes,
         title: t.title ?? null,
+        consultation_reason: t.consultation_reason ?? null,
+        consultation_categories: t.consultation_categories ?? [],
+        patient_first_visit: t.patient_first_visit ?? null,
       });
       const moved = await insertAppointment(tx, row(appt, { pro, second, type, endsAt }, startsAt));
       const movedNext = follower && next ? await insertAppointment(tx, row(follower, next, next.startsAt)) : null;
@@ -1947,7 +2094,7 @@ export async function muteSender(ctx: ToolContext, input: { motivo: "vendedor" |
 // ---------------------------------------------------------------------------
 // Como hace la secretaria: primero un turno reservado y la lista de espera es para adelantarlo.
 // Así el paciente no cree que estar anotado le asegura un turno antes, ni se queda sin ninguno.
-export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string;
+export async function joinWaitlist(ctx: ToolContext, input: ConsultationInput & { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string;
   sin_turno?: "no_hay_horarios" | "no_quiere_turno" }) {
   if (Boolean(input.tipo_turno_id) === Boolean(input.turno_id)) throw new ToolError("Usá tipo_turno_id o turno_id, solo uno.");
   const clinic = await getClinic(ctx.clinicId);
@@ -1971,12 +2118,20 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: st
   const professionalId = input.profesional_id ?? move?.appt.professional_id ?? null;
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${"waitlist:" + ctx.clinicId + ":" + patient.id}::text, 0))`;
-    const [existing] = await tx`select id from waitlist where clinic_id = ${ctx.clinicId} and patient_id = ${patient.id}
+    const [existing] = await tx<Array<{ id: string; consultation_reason: string | null; consultation_categories: string[]; patient_first_visit: boolean | null }>>`select id, consultation_reason, consultation_categories, patient_first_visit from waitlist where clinic_id = ${ctx.clinicId} and patient_id = ${patient.id}
       and appointment_type_id = ${waitType.id} and appointment_id is not distinct from ${move?.appt.id ?? null}::uuid
       and professional_id is not distinct from ${professionalId}::uuid and status in ('activa', 'ofrecida') limit 1`;
-    if (existing) await tx`update waitlist set preferences = coalesce(${input.preferencias ?? null}, preferences) where id = ${existing.id}`;
-    else await tx`insert into waitlist (clinic_id, patient_id, appointment_type_id, appointment_id, professional_id, preferences)
-      values (${ctx.clinicId}, ${patient.id}, ${waitType.id}, ${move?.appt.id ?? null}, ${professionalId}, ${input.preferencias ?? null})`;
+    let consultation: ReturnType<typeof consultationFields>;
+    try {
+      consultation = consultationFields({
+        motivo_consulta: input.motivo_consulta ?? existing?.consultation_reason ?? move?.appt.consultation_reason ?? undefined,
+        categorias_motivo: input.categorias_motivo ?? (existing?.consultation_categories ?? move?.appt.consultation_categories)?.join(','),
+        primera_vez: input.primera_vez ?? existing?.patient_first_visit ?? move?.appt.patient_first_visit ?? undefined,
+      }, Boolean(clinic.collect_visit_reason) && !move && !ctx.staff);
+    } catch (e) { throw new ToolError(e instanceof Error ? e.message : 'Falta el motivo de la consulta.'); }
+    if (existing) await tx`update waitlist set preferences = coalesce(${input.preferencias ?? null}, preferences), ${tx(consultation)} where id = ${existing.id}`;
+    else await tx`insert into waitlist ${tx({ clinic_id: ctx.clinicId, patient_id: patient.id, appointment_type_id: waitType.id,
+      appointment_id: move?.appt.id ?? null, professional_id: professionalId, preferences: input.preferencias ?? null, ...consultation })}`;
   });
   return { ok: true, mensaje: move
     ? "Anotado en lista de espera para adelantar ese turno, que sigue reservado. Decile que conserva ese turno y que, si se libera un lugar antes, le escribimos por WhatsApp. No le prometas que lo van a adelantar."

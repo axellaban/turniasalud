@@ -13,6 +13,7 @@ const CLINIC: Item[] = [
   { href: "/panel/conversaciones", label: "Conversaciones", short: "Chats", icon: "conversaciones" },
   { href: "/panel/tareas", label: "Tareas", icon: "tareas" },
   { href: "/panel/pacientes", label: "Pacientes", icon: "pacientes" },
+  { href: "/panel/lista-espera", label: "Lista de espera", icon: "agenda" },
   { href: "/panel/campanas", label: "Campañas", icon: "campanas" },
   { href: "/panel/configuracion", label: "Configuración", icon: "configuracion" },
 ];

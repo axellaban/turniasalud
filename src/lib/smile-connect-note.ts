@@ -114,6 +114,25 @@ export function withHealthLine(current: string | null, line: string, lastSent: s
 export const healthLineOf = (note: string | null | undefined): string | null =>
   note?.split("\n").find(isHealthLine)?.trim() ?? null;
 
+/** Agrega solo líneas faltantes. Un motivo que recepción cambió se revisa, nunca se reemplaza. */
+export function withBookingNote(current: string | null, desired: string): string {
+  const lines = current ? current.split('\n') : [];
+  const wanted = desired.split('\n').map(l => l.trim()).filter(Boolean);
+  const reason = wanted.find(l => l.startsWith('Motivo:'));
+  if (reason && lines.some(l => l.trim().startsWith('Motivo:') && l.trim() !== reason)) {
+    throw new Error('Recepción cambió el motivo en Smile Connect. Conserve su nota y revise el motivo en Turnia.');
+  }
+  for (const line of wanted) {
+    // El texto guardado al reservar puede ser anterior a una actualización de la ficha/cobertura.
+    if (isHealthLine(line) && lines.some(isHealthLine)) continue;
+    if (line.startsWith('Obra social:') && lines.some(l => l.trim().startsWith('Obra social:'))) continue;
+    if (!lines.some(l => l.trim() === line)) lines.push(line);
+  }
+  const next = lines.join('\n');
+  if (next.length > SMILE_NOTES_MAX) throw new Error('La nota de Smile Connect no tiene espacio. El motivo sigue disponible en Turnia.');
+  return next;
+}
+
 export type SmileServiceName = { service_id: number; name: string };
 
 /**

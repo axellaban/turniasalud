@@ -69,6 +69,80 @@ describe.runIf(url)("lista de espera actual para el equipo por WhatsApp", () => 
     await sql`insert into clinic_staff_phones (clinic_id, phone, name) values (${clinic}, ${doctor}, 'Doctora autorizada')`;
   });
 
+  it('unifica pedidos de aviso y primeras consultas por motivo, sin inscribir ni duplicar pacientes', async () => {
+    await sql`update clinics set collect_visit_reason = true where id = ${clinic}`;
+    const [appt] = await sql`insert into appointments (clinic_id, patient_id, appointment_type_id, professional_id, starts_at, ends_at,
+      status, source, consultation_reason, consultation_categories, patient_first_visit)
+      values (${clinic}, ${patient}, ${type}, ${pro}, now() + interval '40 days', now() + interval '40 days 45 minutes',
+      'confirmado', 'whatsapp', 'Quiero consultar por un implante', array['implantes'], true) returning id`;
+    try {
+      expect(await tool()).toMatchObject({ total: 1, pacientes: [expect.objectContaining({
+        espera_id: appt.id, con_turno: true, prioridad: 'alta', inscripcion_confirmada: false, motivo: 'Quiero consultar por un implante',
+      })] });
+      expect((await sql`select count(*)::int as n from waitlist where clinic_id = ${clinic}`)[0].n).toBe(0);
+      await entry('activa', new Date().toISOString(), appt.id);
+      expect(await tool()).toMatchObject({ total: 1, pacientes: [expect.objectContaining({ con_turno: true, prioridad: 'alta', inscripcion_confirmada: true })] });
+      expect(await tool({ con_turno: false })).toMatchObject({ total: 0 });
+      expect(await tool({ prioridad: 'alta', motivo: 'implantes' })).toMatchObject({ total: 1 });
+      expect(await tool({ motivo: 'control' })).toMatchObject({ total: 0 });
+      await sql`delete from waitlist where clinic_id = ${clinic}`;
+      await sql`update appointments set status = 'reprogramado' where id = ${appt.id}`;
+      expect(await tool()).toMatchObject({ total: 0 });
+      await sql`update appointments set status = 'confirmado', starts_at = now() + interval '45 days', ends_at = now() + interval '45 days 45 minutes' where id = ${appt.id}`;
+      expect(await tool()).toMatchObject({ total: 1 });
+      await sql`update appointments set status = 'cancelado' where id = ${appt.id}`;
+      expect(await tool()).toMatchObject({ total: 0 });
+    } finally {
+      await sql`delete from waitlist where clinic_id = ${clinic}`;
+      await sql`delete from appointments where id = ${appt.id}`;
+      await sql`update clinics set collect_visit_reason = false where id = ${clinic}`;
+    }
+  });
+
+  it('sin turno figura en la misma lista; primera vez desconocida y cambios pendientes no se destacan', async () => {
+    await entry();
+    expect(await tool({ con_turno: false, prioridad: 'normal' })).toMatchObject({ total: 1, pacientes: [expect.objectContaining({
+      con_turno: false, prioridad: 'normal', inscripcion_confirmada: true, motivo: null,
+    })] });
+    await sql`update clinics set collect_visit_reason = true where id = ${clinic}`;
+    const [appt] = await sql`insert into appointments (clinic_id, patient_id, appointment_type_id, professional_id, starts_at, ends_at,
+      status, source, consultation_reason, consultation_categories)
+      values (${clinic}, ${patient}, ${type}, ${pro}, now() + interval '41 days', now() + interval '41 days 45 minutes',
+      'confirmado', 'whatsapp', 'Consulta por corona', array['protesis']) returning id`;
+    try {
+      await sql`delete from waitlist where clinic_id = ${clinic}`;
+      expect(await tool()).toMatchObject({ total: 0 });
+      await sql`update appointments set patient_first_visit = true, smile_sync = 'pendiente' where id = ${appt.id}`;
+      expect(await tool()).toMatchObject({ total: 0 });
+      await sql`update appointments set smile_sync = 'ok' where id = ${appt.id}`;
+      expect(await tool({ prioridad: 'alta' })).toMatchObject({ total: 1 });
+      await sql`update clinics set collect_visit_reason = false where id = ${clinic}`;
+      expect(await tool()).toMatchObject({ total: 0 });
+    } finally {
+      await sql`delete from appointments where id = ${appt.id}`;
+      await sql`update clinics set collect_visit_reason = false where id = ${clinic}`;
+    }
+  });
+
+  it('guarda motivo y prioridad también sin reserva, y conserva el dato al actualizar preferencias', async () => {
+    await sql`update clinics set collect_visit_reason = true where id = ${clinic}`;
+    const join = async (extra: Record<string, unknown>) => (await handler(new Request('https://turnia.test/api/agent/tools/anotar_lista_espera', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-turnia-secret': secret },
+      body: JSON.stringify({ clinic_id: clinic, patient_phone: patientPhone, canal: 'custom', tipo_turno_id: type,
+        sin_turno: 'no_hay_horarios', ...extra }),
+    }), { params: Promise.resolve({ name: 'anotar_lista_espera' }) })).json();
+    try {
+      expect(await join({})).toMatchObject({ ok: false, error: expect.stringContaining('pregunte el motivo') });
+      expect(await join({ motivo_consulta: 'Consultar por una prótesis', categorias_motivo: 'protesis', primera_vez: true })).toMatchObject({ ok: true });
+      expect(await tool({ con_turno: false, prioridad: 'alta', motivo: 'protesis' })).toMatchObject({ total: 1,
+        pacientes: [expect.objectContaining({ motivo: 'Consultar por una prótesis', prioridad: 'alta', con_turno: false, inscripcion_confirmada: true })] });
+      expect(await join({ preferencias: 'Por la tarde' })).toMatchObject({ ok: true });
+      expect(await tool()).toMatchObject({ total: 1, pacientes: [expect.objectContaining({ motivo: 'Consultar por una prótesis', preferencias: 'Por la tarde' })] });
+    } finally {
+      await sql`update clinics set collect_visit_reason = false where id = ${clinic}`;
+    }
+  });
+
   it("lee altas y cambios en cada llamada; incluye ofrecidas y no confunde una propuesta con una inscripción", async () => {
     expect(await tool()).toMatchObject({ ok: true, total: 0, pacientes: [] });
     // Una propuesta anotada en la memoria todavía no es una inscripción aceptada.
