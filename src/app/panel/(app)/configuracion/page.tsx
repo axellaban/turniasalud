@@ -60,7 +60,7 @@ export default async function SettingsPage() {
   const sheet = healthFormSheet(clinic);
   const hoursMismatch = hoursTextMismatch(clinic.hours_text, catalog.schedules);
   const loginUrl = `${env.appUrl().replace(/\/$/, "")}/panel/login`;
-  const status = !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
+  const status = clinic.showcase ? "Clínica de muestra de Turnia: funciona como un consultorio real (Sofi manda recordatorios y avisos), pero no cuenta en las métricas." : !clinic.is_demo ? "Clínica principal." : clinic.retained_at ? "Demo conservada: su agenda es de prueba y no se borra sola." : "Demo temporal: su agenda es de prueba. No se borra sola; se borra solo si la borrás desde Clínicas.";
 
   return (
     <>
