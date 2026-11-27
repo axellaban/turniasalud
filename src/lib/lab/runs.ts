@@ -501,7 +501,7 @@ async function judgePending(run: LabRun, budgetMs: number): Promise<void> {
       where id in (
         select id from lab_results
         where run_id = ${run.id} and not judged and (judge_started_at is null or judge_started_at < now() - interval '10 minutes')
-        order by case_id, repetition limit 3 for update skip locked)
+        order by case_id, repetition limit 6 for update skip locked)
       returning *`;
     if (!claimed.length) return;
     context ??= await clinicContextFor(clinic);

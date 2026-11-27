@@ -39,7 +39,7 @@ async function setSetting(clinicId: string, patch: LabSettings): Promise<void> {
   await sql`update clinics set lab_settings = lab_settings || ${json(patch)} where id = ${clinicId}`;
 }
 
-export async function runLab(budgetMs = 110_000): Promise<Record<string, unknown>> {
+export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown>> {
   const started = Date.now();
   const left = () => budgetMs - (Date.now() - started);
   const report: Record<string, unknown> = {};
@@ -106,7 +106,7 @@ export async function runLab(budgetMs = 110_000): Promise<Record<string, unknown
   for (const id of await openRuns()) {
     if (left() < 30_000) break;
     try {
-      const run = await advanceRun(id, Math.min(60_000, left() - 25_000));
+      const run = await advanceRun(id, Math.min(140_000, left() - 25_000));
       report[`corrida:${id.slice(0, 8)}`] = run?.status;
     } catch (e) {
       report[`corrida:${id.slice(0, 8)}`] = e instanceof Error ? e.message : String(e);
