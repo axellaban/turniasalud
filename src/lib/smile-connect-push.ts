@@ -148,14 +148,28 @@ async function noteFields(tx: TransactionSql, row: Row, conn: SmileApiConnection
  * Crea el turno en Smile Connect. Si rechaza la prestación, lo crea sin ella (igual va escrita en la
  * nota): la prestación nunca deja a un paciente sin turno. Devuelve también lo que se mandó.
  */
-async function createInSmile(client: SmileClient, request: Parameters<typeof scCreateAppointment>[1], key: string) {
+async function createInSmile(client: SmileClient, request: Parameters<typeof scCreateAppointment>[1], key: string,
+  reconcile?: () => Promise<number | null>) {
   try {
-    return { result: await scCreateAppointment(client, request, key), sent: request };
+    return { result: await scCreateAppointment(client, request, key), sent: request, recovered: false };
   } catch (e) {
+    // Un 500 al procesar notas o prestación no debe impedir el alta básica. El proveedor pudo
+    // escribir antes de fallar: primero buscar el turno exacto y volver a verificar disponibilidad.
+    if (reconcile && (request.notes != null || request.service_id != null)
+      && e instanceof SmileApiError && e.status === 500 && e.code === 'internal_error') {
+      const id = await reconcile();
+      if (id) return { result: { appointment_id: id }, sent: request, recovered: true };
+      const sent = { ...request };
+      delete sent.notes;
+      delete sent.service_id;
+      const result = await scCreateAppointment(client, sent, `${key}-basico`);
+      return { result: { ...result, campos_omitidos: ['notes', 'service_id'].filter(k => k in request),
+        error_complementarios: smileErrorText(e) }, sent, recovered: false };
+    }
     if (request.service_id == null || !(e instanceof SmileApiError) || ![400, 422].includes(e.status)) throw e;
     const sent = { ...request };
     delete sent.service_id;
-    return { result: await scCreateAppointment(client, sent, `${key}-sin-prestacion`), sent };
+    return { result: await scCreateAppointment(client, sent, `${key}-sin-prestacion`), sent, recovered: false };
   }
 }
 
@@ -444,13 +458,19 @@ async function processDeferredBooking(tx: TransactionSql, client: SmileClient, c
         patient_id: patientId, professional_id: row.smile_professional_id!, box_id: row.smile_box_id!,
         start_date: new Date(row.starts_at).toISOString(), end_date: new Date(row.ends_at).toISOString(), ...(await noteFields(tx, row, conn)),
       };
-      const { result, sent } = await createInSmile(client, request, `turnia-turno-${row.id}`);
+      const { result, sent, recovered } = await createInSmile(client, request, `turnia-turno-${row.id}`, async () => {
+        const matches = (await liveAppointmentsNear(client, row)).filter(a => matchesNewAppointment(a, row, patientId));
+        if (matches.length > 1) throw new Review('Hay más de un turno del paciente en el horario pedido. Recepción debe comprobarlo.');
+        if (matches.length) return matches[0].appointment_id;
+        await assertFreeInSmile(client, row);
+        return null;
+      });
       if (!Number.isSafeInteger(result?.appointment_id) || result.appointment_id <= 0) {
         throw new Review("Smile Connect no devolvió un número de turno válido.");
       }
       id = result.appointment_id;
-      createdByTurnia = true;
-      await logChange(tx, row, "crear", "hecho", { request: sent, result });
+      createdByTurnia = !recovered;
+      if (!recovered) await logChange(tx, row, "crear", "hecho", { request: sent, result });
       await tx`update appointments set external_id = ${`sc:${id}`} where id = ${row.id}`;
     }
   }
