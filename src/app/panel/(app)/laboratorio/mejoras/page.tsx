@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Badge, Card, Empty, Notice, dangerButtonClass, inputClass, secondaryButtonClass } from "@/components/ui";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
-import { labProposals } from "@/lib/lab/panel";
+import { findEvidence, labProposals } from "@/lib/lab/panel";
 import { experimentSummary, type LabProposal } from "@/lib/lab/proposals";
 import { DIMENSION_LABEL } from "@/lib/lab/score";
 import { labApprove, labExperiment, labReject, labRevert } from "../../../lab-actions";
@@ -46,6 +46,7 @@ export default async function ProposalsPage({ searchParams }: PageProps<"/panel/
   const proposals = await labProposals(clinic.id);
   const current = proposals.find((p) => p.id === id) ?? proposals.find((p) => ["pendiente", "probando"].includes(p.status)) ?? proposals[0] ?? null;
   const experiment = current?.experiment_run_id ? await experimentSummary(current.experiment_run_id) : null;
+  const evidenceLinks = current ? await Promise.all(current.evidence.map((e) => findEvidence(clinic.id, e.cita).catch(() => null))) : [];
   const pending = proposals.filter((p) => p.status === "pendiente").length;
 
   return (
@@ -105,7 +106,19 @@ export default async function ProposalsPage({ searchParams }: PageProps<"/panel/
                 {current.evidence.length > 0 && (
                   <ul className="mt-2 space-y-1.5">
                     {current.evidence.map((e, i) => (
-                      <li key={i} className="rounded-xl bg-[#f3efe8] px-3 py-2 text-sm">«{e.cita}» <span className="text-xs text-brand-900/60">· {e.fuente}</span></li>
+                      <li key={i} className="rounded-xl bg-[#f3efe8] px-3 py-2 text-sm">
+                        «{e.cita}» <span className="text-xs text-brand-900/60">· {e.fuente}</span>
+                        {evidenceLinks[i] && (
+                          <Link
+                            href={evidenceLinks[i]?.kind === "laboratorio"
+                              ? `/panel/laboratorio/corridas/${(evidenceLinks[i] as { run_id: string }).run_id}?caso=${encodeURIComponent((evidenceLinks[i] as { case_id: string }).case_id)}`
+                              : `/panel/conversaciones/${(evidenceLinks[i] as { conversation_id: string }).conversation_id}`}
+                            className="ml-1 whitespace-nowrap text-xs font-semibold text-brand-700 hover:underline"
+                          >
+                            Ver la charla →
+                          </Link>
+                        )}
+                      </li>
                     ))}
                   </ul>
                 )}

@@ -2533,3 +2533,13 @@ begin
     insert into data_migrations (name) values ('2026-11-27-laboratorio-criticas-de-casos');
   end if;
 end $$;
+
+-- Laboratorio (27/11/2026): los casos armados que fijan «hoy es …» con otra fecha confundían al juez (Sofi
+-- decía bien la fecha real y se marcaba como error). Se borran para que se vuelvan a armar con la fecha real.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-27-laboratorio-casos-con-fecha') then
+    delete from lab_cases where source = 'exploratorio' and scenario ~* 'hoy es (lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)';
+    insert into data_migrations (name) values ('2026-11-27-laboratorio-casos-con-fecha');
+  end if;
+end $$;

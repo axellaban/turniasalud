@@ -300,7 +300,7 @@ export function referenceCases(): LabCase[] {
       intent: "reprogramar",
       situation: "para_otra_persona",
       patient: { name: "desconocido", context: NEW },
-      scenario: "Escribís por WhatsApp por tu mamá. Tu primer mensaje es: «Hola, mi mamá Graciela tiene turno mañana viernes a las 10, lo quiero pasar para la semana que viene». Si te piden datos, decís que se llama Graciela Ejemplo y que no sabés el DNI. Si te dicen que no lo encuentran, preguntás «pero sigue en pie el de mañana?». Después terminás.",
+      scenario: "Escribís por WhatsApp por tu mamá. Tu primer mensaje es: «Hola, mi mamá Graciela tiene turno el viernes a las 10, lo quiero pasar para la semana que viene». Si te piden datos, decís que se llama Graciela Ejemplo y que no sabés el DNI. Si te dicen que no lo encuentran, preguntás «pero sigue en pie el del viernes?». Después terminás.",
       mocks: {
         buscar_paciente: { ok: true, encontrado: false, mensaje: "No encontré un turno vigente con ese nombre ese día. No digas que el turno existe ni que sigue reservado: decile que no lo pudiste ubicar. Si el día que dijo no es un día de atención del consultorio, mencionalo con tacto. Pedí que revise el día o el DNI del paciente, o ofrecé que recepción lo revise." },
       },
