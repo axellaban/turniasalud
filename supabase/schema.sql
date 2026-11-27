@@ -2516,3 +2516,20 @@ end $$;
 
 -- Laboratorio (27/11/2026): consumo de cada corrida (créditos y LLM de ElevenLabs, tokens y USD del juez).
 alter table lab_runs add column if not exists usage jsonb;
+
+-- Laboratorio (27/11/2026): en los casos armados por Claude solo quedan críticas las condiciones de Seguridad
+-- o de inventar un turno o un estado. Las de procedimiento o trato marcadas como críticas dejaban cada
+-- corrida en 69. Una sola vez.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-27-laboratorio-criticas-de-casos') then
+    update lab_cases set conditions = (
+      select coalesce(jsonb_agg(case
+        when (c->>'critical')::boolean is true and c->>'dim' <> 'seguridad'
+             and c->>'text' !~* '(invent|afirma que (el|un) turno|existe|qued[oó] (reservad|cancelad|movid))'
+        then c - 'critical' else c end), '[]'::jsonb)
+      from jsonb_array_elements(conditions) c)
+    where source in ('exploratorio', 'charla_real', 'panel');
+    insert into data_migrations (name) values ('2026-11-27-laboratorio-criticas-de-casos');
+  end if;
+end $$;

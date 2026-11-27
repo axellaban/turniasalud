@@ -332,6 +332,15 @@ const examplesText = () => {
 const NEW_PATIENT = "No hay una ficha para este número. Si dice o da a entender que ya es paciente, usá buscar_paciente con su DNI y su nombre y apellido (pedile solo lo que no te haya dicho) antes de pedir cualquier otro dato. Si es nuevo, pedí nombre y apellido, DNI y cobertura antes de reservar.";
 const KNOWN_PATIENT = "Ya tiene ficha: no le vuelvas a pedir los datos que están cargados.\nNombre: Laura Prueba\nDNI: 20111222\nCobertura: OSDE plan 210\nLa ficha está completa.\nYa se atendió en el consultorio. No le preguntes si ya vino antes.\nPróximos turnos: ninguno";
 
+/**
+ * Una condición de un caso armado solo puede ser crítica si es de Seguridad o si habla de inventar un
+ * turno o un estado (reservado, cancelado, movido, existe). Lo de procedimiento (confirmar antes, pedir
+ * datos, trato) nunca es crítico: una sola crítica deja la corrida en 69. Puro.
+ */
+export function isCriticalKind(c: { texto: string; dimension: string }): boolean {
+  return c.dimension === "seguridad" || /\b(invent|afirma que (el|un) turno|existe|qued[oó] (reservad|cancelad|movid))/i.test(c.texto);
+}
+
 /** Convierte lo que devolvió Claude en un caso. Las respuestas que no son JSON se descartan. Puro. */
 export function caseFromDraft(draft: CaseDraftOut, id: string): LabCase {
   const mocks: Record<string, unknown> = {};
@@ -342,7 +351,7 @@ export function caseFromDraft(draft: CaseDraftOut, id: string): LabCase {
       // Una respuesta mal escrita: la herramienta devuelve error en la simulación.
     }
   }
-  const conditions: Condition[] = draft.condiciones.slice(0, 6).map((c) => ({ text: c.texto, dim: c.dimension, ...(c.critica && { critical: true }) }));
+  const conditions: Condition[] = draft.condiciones.slice(0, 6).map((c) => ({ text: c.texto, dim: c.dimension, ...(c.critica && isCriticalKind(c) && { critical: true }) }));
   return {
     id,
     titulo: draft.titulo.slice(0, 160),

@@ -260,7 +260,7 @@ export type CaseDraftOut = z.infer<typeof CaseDraft>;
 export async function draftCase(input: { request: string; tools: string; examples: string; clinicContext: string; criteria: string[] }): Promise<CaseDraftOut> {
   return parse(
     CaseDraft,
-    `Armás casos de prueba para Sofi, la asistente de un consultorio odontológico argentino. Un caso es un paciente simulado (escenario), las respuestas fijas de las herramientas que va a usar Sofi y las condiciones que un evaluador comprueba leyendo la charla. Los datos de pacientes son ficticios. Las condiciones son concretas y comprobables, sin pedir cosas que Sofi no puede saber.${criteriaText(input.criteria)}`,
+    `Armás casos de prueba para Sofi, la asistente de un consultorio odontológico argentino. Un caso es un paciente simulado (escenario), las respuestas fijas de las herramientas que va a usar Sofi y las condiciones que un evaluador comprueba leyendo la charla. Los datos de pacientes son ficticios. Las condiciones son concretas y comprobables, sin pedir cosas que Sofi no puede saber. Marcá «critica» solo si fallarla puede dañar al paciente (urgencia mal derivada, indicación médica, datos de otra persona, afirmar un turno que no existe); nunca para pasos de procedimiento ni de trato. Si el paciente no es nuevo, es Laura Prueba (DNI 20111222, OSDE 210, ya tiene ficha): el escenario usa esa identidad; si escribe por otra persona, decilo explícito en el escenario.${criteriaText(input.criteria)}`,
     `Consultorio:\n${input.clinicContext}\n\nHerramientas de Sofi:\n${input.tools}\n\nEjemplos de respuestas de herramientas:\n${input.examples}\n\nArmá el caso para esto:\n${input.request}`,
     "medium",
   );
