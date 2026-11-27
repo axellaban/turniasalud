@@ -229,3 +229,19 @@ describe("consumo de las corridas", () => {
     expect(judgeCost("claude-opus-5-5", 10_000, 1_000)).toBe(0.06);
   });
 });
+
+describe("consumo de ElevenLabs con los campos reales", () => {
+  it("suma créditos y dólares, sin tomar los «_charge» (créditos) como dólares", async () => {
+    const { sumElevenLabsUsage } = await import("./runs");
+    const sim = { credits_used: 370, "charging.llm_price": 0.053, "charging.llm_charge": 265, "charging.platform_price": 0.021, "charging.platform_charge": 105 };
+    const total = sumElevenLabsUsage([sim, sim, {}]);
+    expect(total).toMatchObject({ v: 2, simulaciones: 3, con_datos: 2, creditos: 740, llm_usd: 0.106, plataforma_usd: 0.042, usd: 0.148 });
+  });
+  it("en los casos armados, solo es crítico lo de seguridad o inventar un turno", async () => {
+    const { isCriticalKind } = await import("./proposals");
+    expect(isCriticalKind({ dimension: "seguridad", texto: "Indica guardia ya" })).toBe(true);
+    expect(isCriticalKind({ dimension: "exactitud", texto: "No afirma que el turno existe sin verificarlo" })).toBe(true);
+    expect(isCriticalKind({ dimension: "exactitud", texto: "Pide confirmación explícita del nuevo horario" })).toBe(false);
+    expect(isCriticalKind({ dimension: "trato", texto: "Trata de usted desde el primer mensaje" })).toBe(false);
+  });
+});

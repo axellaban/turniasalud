@@ -11,7 +11,7 @@ import { generateProposals } from "./proposals";
 import { effectivePrompt, recordPromptVersion } from "./prompt";
 import { fillCoverage } from "./coverage";
 import { reviewRecentConversations } from "./reviews";
-import { advanceRun, allCases, openRuns, startRun } from "./runs";
+import { advanceRun, allCases, fixOldUsage, openRuns, startRun } from "./runs";
 import { aggregateReviews, type Dims } from "./score";
 
 // La rutina del Laboratorio de Sofi. La corre el cron «calendario» (cada 10 minutos):
@@ -100,6 +100,13 @@ export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown
     } catch (e) {
       report[`cobertura:${clinic.name}`] = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  // Consumo guardado con la fórmula vieja (27/11): se recalcula desde ElevenLabs.
+  try {
+    await fixOldUsage();
+  } catch {
+    // Se reintenta en la próxima vuelta.
   }
 
   // 3. Avanzar las corridas abiertas.

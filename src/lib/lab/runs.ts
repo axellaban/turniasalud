@@ -56,7 +56,7 @@ export type LabRun = {
   dims: Dims | null;
   critical_count: number;
   /** Consumo: { elevenlabs: { creditos, llm_usd, … }, juez: { usd, tokens_entrada, tokens_salida, llamadas } }. */
-  usage: { elevenlabs?: { simulaciones: number; con_datos: number; creditos: number; llm_usd: number; ejemplo: Record<string, number> }; juez?: { usd: number; tokens_entrada: number; tokens_salida: number; llamadas: number } } | null;
+  usage: { elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; llm_usd: number; plataforma_usd?: number; usd?: number }; juez?: { usd: number; tokens_entrada: number; tokens_salida: number; llamadas: number } } | null;
   error: string | null;
   created_by: string | null;
   created_at: string;
@@ -447,29 +447,43 @@ export function usageNumbers(body: unknown): Record<string, number> {
  * lab_runs.usage para no depender de una forma exacta, y el panel suma créditos y USD de LLM.
  */
 async function recordElevenLabsUsage(runId: string, testRuns: TestRun[]): Promise<void> {
+  const total = sumElevenLabsUsage(testRuns.map((r) => usageNumbers(r)));
+  await sql`update lab_runs set usage = coalesce(usage, '{}'::jsonb) || ${json({ elevenlabs: total })} where id = ${runId}`;
+}
+
+/**
+ * Suma el consumo que informa ElevenLabs en cada simulación: créditos («credits_used») y dólares
+ * («charging.llm_price» del modelo y «charging.platform_price» de la plataforma). Los «…_charge» son
+ * créditos, no dólares: no se suman como USD. Puro.
+ */
+export function sumElevenLabsUsage(perSimulation: Array<Record<string, number>>) {
   let credits = 0;
   let llmUsd = 0;
+  let platformUsd = 0;
   let withData = 0;
-  const sample: Record<string, number> = {};
-  for (const r of testRuns.slice(0, 200)) {
-    let numbers = usageNumbers(r);
-    const conversationId = (r as { conversation_id?: string; agent_conversation_id?: string }).conversation_id
-      ?? (r as { agent_conversation_id?: string }).agent_conversation_id;
-    if (conversationId) {
-      const detail = await elevenlabs<unknown>(`/v1/convai/conversations/${encodeURIComponent(conversationId)}`).catch(() => null);
-      if (detail) numbers = { ...numbers, ...usageNumbers({ metadata: (detail as { metadata?: unknown }).metadata }) };
-    }
-    if (!Object.keys(numbers).length) continue;
+  for (const n of perSimulation) {
+    const c = n["credits_used"] ?? n["metadata.cost"];
+    if (c === undefined && n["charging.llm_price"] === undefined) continue;
     withData++;
-    if (!Object.keys(sample).length) Object.assign(sample, numbers);
-    credits += numbers["metadata.cost"] ?? 0;
-    for (const [k, v] of Object.entries(numbers)) if (/llm_price|llm_charge|llm_cost/i.test(k)) llmUsd += v;
+    credits += c ?? 0;
+    llmUsd += n["charging.llm_price"] ?? 0;
+    platformUsd += n["charging.platform_price"] ?? 0;
   }
-  await sql`
-    update lab_runs set usage = coalesce(usage, '{}'::jsonb) || ${json({
-      elevenlabs: { simulaciones: testRuns.length, con_datos: withData, creditos: credits, llm_usd: Math.round(llmUsd * 10000) / 10000, ejemplo: sample },
-    })}
-    where id = ${runId}`;
+  const r4 = (v: number) => Math.round(v * 10000) / 10000;
+  return { v: 2, simulaciones: perSimulation.length, con_datos: withData, creditos: credits, llm_usd: r4(llmUsd), plataforma_usd: r4(platformUsd), usd: r4(llmUsd + platformUsd) };
+}
+
+/** Vuelve a calcular el consumo de corridas que se guardó con la fórmula vieja (las pruebas siguen en ElevenLabs). */
+export async function fixOldUsage(): Promise<number> {
+  const runs = await sql<Array<{ id: string; invocation_id: string }>>`
+    select id, invocation_id from lab_runs
+    where invocation_id is not null and usage ? 'elevenlabs' and coalesce((usage->'elevenlabs'->>'v')::int, 1) < 2
+    limit 3`;
+  for (const r of runs) {
+    const invocation = await elevenlabs<{ test_runs?: TestRun[] }>(`/v1/convai/test-invocations/${r.invocation_id}`).catch(() => null);
+    if (invocation) await recordElevenLabsUsage(r.id, invocation.test_runs ?? []);
+  }
+  return runs.length;
 }
 
 /** Suma lo que costó el juez de la corrida. */
