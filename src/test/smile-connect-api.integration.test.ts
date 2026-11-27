@@ -85,6 +85,7 @@ const fake = {
   dropCreateReply: false,
   dropCreate500: false,
   failOptionalCreate: false,
+  failNotePatch: false,
   dropMoveReply: false,
   rejectMoveSlot: false,
   beforeMoveReject: undefined as (() => void) | undefined,
@@ -242,6 +243,7 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
     const a = fake.appointments.get(Number(m[1]));
     if (!a) return err(404, "not_found");
     if (method === "GET") return ok({ data: a });
+    if (fake.failNotePatch && 'notes' in body) return err(500, 'internal_error');
     if (fake.rejectMoveSlot) {
       fake.beforeMoveReject?.();
       return err(409, "slot_unavailable");
@@ -980,6 +982,27 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       await sql`update smile_connect_changes set created_at = now() - interval '2 hours' where appointment_id = ${booking.turno_id!}`;
     });
 
+    it('si la clínica exige motivo, no reserva sin preguntarlo y guarda lo informado en el turno', async () => {
+      await sql`update clinics set collect_visit_reason = true where id = ${gm}`;
+      let id: string | undefined;
+      try {
+        const before = (await sql`select count(*)::int as n from appointments where clinic_id = ${gm}`)[0].n;
+        expect(await book(82)).toMatchObject({ ok: false, error: expect.stringContaining('pregunte el motivo') });
+        expect((await sql`select count(*)::int as n from appointments where clinic_id = ${gm}`)[0].n).toBe(before);
+        const booked = await tool('reservar_turno', { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro,
+          inicio: at(82, '10:00'), motivo_consulta: 'Consultar por un implante', categorias_motivo: 'implantes', primera_vez: true });
+        id = booked.turno_id;
+        expect(id).toBeTruthy();
+        expect((await sql`select consultation_reason, consultation_categories, patient_first_visit, notes from appointments where id = ${id!}`)[0])
+          .toMatchObject({ consultation_reason: 'Consultar por un implante', consultation_categories: ['implantes'], patient_first_visit: true, notes: 'Consultar por un implante' });
+        // Una repetición de la misma reserva no duplica ni vuelve a pedir un motivo ya guardado.
+        expect((await book(82)).turno_id).toBe(id);
+      } finally {
+        await sql`update clinics set collect_visit_reason = false where id = ${gm}`;
+        if (id) await sql`delete from appointments where id = ${id}`;
+      }
+    });
+
     it("un 500 de campos complementarios no bloquea la reserva y concilia antes de usar el alta básica", async () => {
       fake.notes = true;
       await link.saveSmileApiKey(gm, KEY);
@@ -998,6 +1021,23 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
         const [record] = await sql`select result from smile_connect_changes where appointment_id = ${booking.turno_id!}
           and action = 'crear' and status = 'hecho'`;
         expect(record.result).toMatchObject({ campos_omitidos: ['notes'], error_complementarios: expect.stringContaining('500') });
+        const [queued] = await sql`select smile_booking_notes_pending, smile_booking_notes from appointments where id = ${booking.turno_id!}`;
+        expect(queued).toMatchObject({ smile_booking_notes_pending: true, smile_booking_notes: expect.any(String) });
+        const postsBefore = writes().filter(w => w.path === '/appointments').length;
+        const alertsBefore = mocks.axel.length;
+        fake.failNotePatch = true;
+        await push.pushPendingSmile(gm);
+        expect(await smileSync(booking.turno_id!)).toMatchObject({ status: 'confirmado', smile_sync: 'ok' });
+        expect((await sql`select smile_booking_notes_attempts, smile_booking_notes_pending from appointments where id = ${booking.turno_id!}`)[0])
+          .toMatchObject({ smile_booking_notes_attempts: 1, smile_booking_notes_pending: true });
+        expect(mocks.axel).toHaveLength(alertsBefore);
+        fake.failNotePatch = false;
+        await sql`update appointments set smile_booking_notes_retry_at = now() - interval '1 second' where id = ${booking.turno_id!}`;
+        await push.pushPendingSmile(gm);
+        const [completed] = await sql`select external_id, smile_booking_notes_pending from appointments where id = ${booking.turno_id!}`;
+        expect(completed.smile_booking_notes_pending).toBe(false);
+        expect(fake.appointments.get(Number(completed.external_id.slice(3)))?.notes).toBe(queued.smile_booking_notes);
+        expect(writes().filter(w => w.path === '/appointments')).toHaveLength(postsBefore);
         // Si el 500 aparece después de aplicar el POST, se recupera ese turno, sin un segundo POST.
         fake.failOptionalCreate = false;
         const uncertain = await book(81);
@@ -1012,6 +1052,7 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       } finally {
         fake.failOptionalCreate = false;
         fake.dropCreate500 = false;
+        fake.failNotePatch = false;
         fake.notes = false;
         await link.saveSmileApiKey(gm, KEY);
         await link.setSmileMode(gm, 'crear');
@@ -1195,7 +1236,8 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
 
     it("mueve el mismo turno y después lo cancela, verificando los dos cambios aun sin respuesta de escritura", async () => {
       await link.setSmileMode(gm, "completa");
-      const booking = await book(23);
+      const booking = await tool('reservar_turno', { clinic_id: gm, tipo_turno_id: gmConsult, profesional_id: gmPro,
+        inicio: at(23, '10:00'), motivo_consulta: 'Consultar por una corona', categorias_motivo: 'protesis', primera_vez: true });
       await push.pushPendingSmile(gm, booking.turno_id);
       await send();
       fake.whatsapps.length = 0;
@@ -1213,8 +1255,10 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       expect(fake.whatsapps).toHaveLength(0);
       await retryDue(booking.turno_id!);
       expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
-      const [moved] = await sql`select id, starts_at, status from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
-      expect(moved).toMatchObject({ starts_at: at(23, "11:00"), status: "confirmado" });
+      const [moved] = await sql`select id, starts_at, status, consultation_reason, consultation_categories, patient_first_visit
+        from appointments where clinic_id = ${gm} and external_id = ${before.external_id}`;
+      expect(moved).toMatchObject({ starts_at: at(23, "11:00"), status: "confirmado",
+        consultation_reason: 'Consultar por una corona', consultation_categories: ['protesis'], patient_first_visit: true });
       expect(await smileSync(booking.turno_id!)).toMatchObject({ status: "reprogramado", external_id: null });
       expect(writes().map((w) => [w.method, w.path])).toEqual([["PATCH", `/appointments/${remoteId}`]]);
       await Promise.all([send(), send()]);

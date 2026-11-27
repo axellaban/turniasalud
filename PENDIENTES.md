@@ -1,5 +1,13 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Motivo de consulta y lista de espera unificada — 27/11/2026
+
+- Pedido de Axel y feedback de Guerra–Mininni: Sofi debe preguntar el motivo antes de ofrecer horarios si no lo dijo el paciente, usar sus palabras, no repetir la pregunta ni explicar prioridades internas. «Consulta general» alcanza si no quiere detallar. `collect_visit_reason` queda apagado por defecto; activar solo en Guerra–Mininni después de actualizar las herramientas de sus agentes.
+- El motivo, categorías y primera vez confirmada se guardan en el turno y también en la inscripción sin turno. No inferir primera vez por ausencia de historial en Turnia. No inventar ni completar retroactivamente motivos de pacientes reales.
+- **Una sola lista:** Panel → Lista de espera, con acceso en el menú lateral y en «Más» en celular. Columnas con/sin turno, motivo, prioridad, preferencias y reserva actual. Incluye pedidos de aviso y primeras consultas confirmadas de implantes/prótesis/blanqueamiento para evaluar adelanto; distingue ambos orígenes y no genera inscripciones ni mensajes por mostrar un candidato. El equipo decide a quién contactar. La prioridad es de seguimiento, no urgencia clínica. La consulta del equipo por WhatsApp usa la misma lista actualizada.
+- Una reserva recuperada sin `notes` deja una cola independiente para completar las notas: conserva el turno confirmado, verifica el turno antes/después, preserva texto de recepción y no reejecuta el alta. Reintentos a los 5/10/20/40 minutos (máximo cinco intentos); al agotarlos queda para revisar en el panel. Sin avisos técnicos ni mensajes al paciente por ese campo opcional. La API obliga a reenviar horarios al editar notas y no ofrece escritura condicional: se coteja dos veces antes y se verifica después; no prometer ausencia absoluta de carreras con cambios manuales simultáneos.
+- Validación local: 849 tests en 101 archivos, proveedores simulados y Postgres descartable; ninguna reserva real usada para estas pruebas. Falta comprobar despliegue, habilitación de la opción y actualización final de los agentes en producción al cerrar esta entrega.
+
 ## Hallazgos de la sesión de pruebas de Sofi (26/11/2026)
 
 Facundo probó a Sofi simulando pacientes de Guerra–Mininni y encontró 11 problemas. Hecho en el repositorio (llega a ElevenLabs con «Actualizar a Sofi»):
@@ -11,7 +19,8 @@ Facundo probó a Sofi simulando pacientes de Guerra–Mininni y encontró 11 pro
 - [x] Trato «Como escribe el paciente» (`clinics.tone = 'espejo'`).
 - [x] Guerra–Mininni (migración `2026-11-26-contencion-diferenciales-guerra-mininni`): contención y diferenciales agregados a sus instrucciones.
 - [x] Batería `probar-sofi`: 10 casos nuevos (los que usan `anular_tarea` se saltean hasta «Actualizar a Sofi»).
-- [ ] **«Actualizar a Sofi»** en Panel → Sistema y correr la batería (`npm run probar-sofi -- --agente <id> --clinica "Guerra"`).
+- [x] **«Actualizar a Sofi»** desde Configuración de Guerra–Mininni: el 27/11 el panel confirmó la actualización del agente general (WhatsApp) y el propio (llamadas). Repetir al publicar nuevas herramientas o prompt.
+- [ ] Correr la batería de simulaciones de ElevenLabs (`npm run probar-sofi -- --agente <id> --clinica "Guerra"`). La actualización del agente no equivale a haber corrido la batería.
 - [ ] Decidir con Mariano si Guerra–Mininni pasa al trato «Como escribe el paciente» y si Sofi puede decir «limpieza» (hoy sus instrucciones lo prohíben, pedido del 18/11).
 - [ ] TODO_CONFIG de Guerra–Mininni: valor de la consulta particular (en Prestaciones o Preguntas frecuentes), precio «desde» o rango de implante, blanqueamiento y otros tratamientos (Prestaciones → precio y modo), en cuánto tiempo los contacta el consultorio ante una urgencia (Turnos y urgencias → «Qué hacer ante una urgencia»), y si hay un turno de urgencia en la agenda (prestación «Es un turno de urgencia»). Cargar los celulares de testers en «Modo prueba».
 - [ ] n8n `Turnia · Eventos`: sumar una rama para `tarea.anulada` si recepción tiene que enterarse de que un pedido quedó sin efecto (hoy el evento llega y no hace nada).

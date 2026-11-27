@@ -26,6 +26,7 @@ type Row = {
   source: string;
   coverage: string | null;
   notes: string | null;
+  smile_booking_notes_pending: boolean;
   confirmed_at: string | null;
   reminder_sent_at: string | null;
   calendar_sync: string | null;
@@ -74,7 +75,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/panel/age
 
   const [rows, blocks, google, smileRows] = await Promise.all([
     sql<Row[]>`
-      select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.confirmed_at, a.reminder_sent_at,
+      select a.id, a.starts_at, a.ends_at, a.status, a.source, a.coverage, a.notes, a.smile_booking_notes_pending, a.confirmed_at, a.reminder_sent_at,
              a.calendar_sync, a.smile_management, a.external_id, a.professional_id, a.second_professional_id, a.appointment_type_id, a.patient_id, p.full_name as patient, p.phone, coalesce(a.title, t.name) as type_name,
              (select c.id from conversations c where c.clinic_id = a.clinic_id and c.patient_id = a.patient_id
                 and c.started_at between a.created_at - interval '6 hours' and a.created_at + interval '10 minutes'
@@ -441,6 +442,7 @@ function AppointmentDetail({ row: a, healthForm, pro, tz, closeHref, clinicId, t
     ["Teléfono", displayPhone(a.phone)],
     ["Lo dio", CHANNEL_LABEL[a.source] ?? a.source],
     ["Nota", a.notes],
+    ["Nota en Smile Connect", a.smile_booking_notes_pending ? "Pendiente de completar. El turno está confirmado y el motivo se conserva en Turnia. Si hace falta, recepción puede copiar la nota de arriba en Smile Connect." : null],
     [
       "Ficha de salud",
       healthForm &&

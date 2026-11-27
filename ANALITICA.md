@@ -56,6 +56,7 @@ Un dispositivo marcado nunca se identifica como un prospecto, aunque abra su lin
 ## 4. Privacidad
 
 - **El panel no se mide ni se graba**, porque tiene datos de pacientes. Tampoco `/demo`. `before_send` descarta cualquier evento con esas URLs y la grabación se pausa al entrar.
+- Lista de espera unificada (27/11): el acceso del menú y sus filtros por turno, motivo, prioridad y profesional se resuelven en el panel, sin eventos ni grabaciones de pacientes. No enviar sus valores a PostHog.
 - **Los tokens no salen:** los de `/probar-demo/sesion/<token>` y `/probar-demo/llamada/<token>` abren la demo y gastan minutos de ElevenLabs, así que salen como `[oculto]` en URLs, referrer y propiedades.
 - **Nada de lo que se escribe:**
   - Ningún evento lee valores de formularios, emails, teléfonos ni el texto de las conversaciones con Sofi; solo cuántos mensajes hubo.
