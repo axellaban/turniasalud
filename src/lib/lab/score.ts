@@ -80,32 +80,44 @@ export type RunAggregate = { score: number | null; spread: number | null; dims: 
 export function aggregateRun(results: ScoredResult[], weights: Record<string, number>): RunAggregate {
   const scored = results.filter((r) => r.score !== null);
   const w = (id: string) => weights[id] ?? 1;
-  const reps = [...new Set(scored.map((r) => r.repetition))];
-  const perRep = reps
-    .map((rep) => {
-      const rows = scored.filter((r) => r.repetition === rep);
-      const total = rows.reduce((acc, r) => acc + w(r.case_id), 0);
-      return total ? rows.reduce((acc, r) => acc + w(r.case_id) * (r.score as number), 0) / total : null;
-    })
-    .filter((v): v is number => v !== null);
+  // Cada caso vale el promedio de sus charlas (1, o 3 si la primera falló y se repitió).
+  const byCase = new Map<string, number[]>();
+  for (const r of scored) byCase.set(r.case_id, [...(byCase.get(r.case_id) ?? []), r.score as number]);
+  let sum = 0;
+  let total = 0;
+  const halfRanges: number[] = [];
+  for (const [id, values] of byCase) {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    sum += w(id) * mean;
+    total += w(id);
+    if (values.length > 1) halfRanges.push((Math.max(...values) - Math.min(...values)) / 2);
+  }
   const criticalCount = results.filter((r) => r.critical).length;
-  let score = perRep.length ? perRep.reduce((a, b) => a + b, 0) / perRep.length : null;
+  let score = total ? sum / total : null;
   if (score !== null && criticalCount > 0) score = Math.min(score, CRITICAL_CAP);
-  const spread = perRep.length > 1 ? (Math.max(...perRep) - Math.min(...perRep)) / 2 : null;
+  // El ± sale de los casos que se repitieron: cuánto varía Sofi ante lo mismo.
+  const spread = halfRanges.length ? halfRanges.reduce((a, b) => a + b, 0) / halfRanges.length : null;
   const dims = {} as Record<Dimension, number | null>;
   for (const d of DIMENSIONS) {
-    let sum = 0;
-    let total = 0;
+    let dsum = 0;
+    let dtotal = 0;
     for (const r of scored) {
       const v = r.dims?.[d];
       if (typeof v === "number") {
-        sum += w(r.case_id) * v;
-        total += w(r.case_id);
+        dsum += w(r.case_id) * v;
+        dtotal += w(r.case_id);
       }
     }
-    dims[d] = total ? round(sum / total) : null;
+    dims[d] = dtotal ? round(dsum / dtotal) : null;
   }
   return { score: score === null ? null : round(score), spread: spread === null ? null : round(spread), dims, criticalCount };
+}
+
+/** Casos con charlas que dan muy distinto (más de 20 puntos entre la mejor y la peor). Puro. */
+export function unstableCases(results: ScoredResult[]): string[] {
+  const byCase = new Map<string, number[]>();
+  for (const r of results) if (r.score !== null) byCase.set(r.case_id, [...(byCase.get(r.case_id) ?? []), r.score]);
+  return [...byCase].filter(([, v]) => v.length > 1 && Math.max(...v) - Math.min(...v) > 20).map(([id]) => id);
 }
 
 /** Promedio simple de las charlas reales (cada charla pesa lo mismo), con el mismo techo por fallas críticas. */

@@ -2543,3 +2543,12 @@ begin
     insert into data_migrations (name) values ('2026-11-27-laboratorio-casos-con-fecha');
   end if;
 end $$;
+
+-- Laboratorio v2 (27/11/2026): simulador propio con la API de Claude (sin ElevenLabs), repeticiones solo
+-- para lo que falla, topes de gasto y verificación semanal con ElevenLabs y el modelo de producción.
+alter table lab_runs add column if not exists engine text not null default 'elevenlabs';
+alter table lab_runs add column if not exists sim_vars jsonb;
+alter table lab_runs add column if not exists sim_prompt text;
+alter table lab_runs drop constraint if exists lab_runs_kind_check;
+alter table lab_runs add constraint lab_runs_kind_check check (kind in ('bateria', 'experimento', 'jugar', 'verificacion'));
+create index if not exists lab_results_sim_idx on lab_results (run_id) where el_status in ('pendiente', 'simulando');

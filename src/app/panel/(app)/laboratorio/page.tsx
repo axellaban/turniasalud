@@ -7,7 +7,7 @@ import { labJudgeConfigured } from "@/lib/lab/judge";
 import { labOverview, num } from "@/lib/lab/panel";
 import { versionDates } from "@/lib/lab/prompt";
 import { DIMENSION_LABEL } from "@/lib/lab/score";
-import type { LabSettings } from "@/lib/lab/tick";
+import { spentToday, type LabSettings } from "@/lib/lab/tick";
 import { labGenerateProposals, labRunBattery, labSettings } from "../../lab-actions";
 import { LabForm } from "./lab-form";
 import { BandBadge, DimBars, LabHeader, RUN_STATUS, RunLink, ScoreRing, fmtScore, modelLabel, scoreTone } from "./lab-ui";
@@ -18,7 +18,7 @@ export const maxDuration = 300;
 export default async function LabPage() {
   await requireAdmin();
   const clinic = await getPanelClinic();
-  const [o, dates] = await Promise.all([labOverview(clinic.id), versionDates()]);
+  const [o, dates, spent] = await Promise.all([labOverview(clinic.id), versionDates(), spentToday(clinic)]);
   const settings: LabSettings = clinic.lab_settings ?? {};
   const enabled = Boolean(clinic.lab_enabled);
   const score = num(o.latest?.score);
@@ -41,7 +41,7 @@ export default async function LabPage() {
         actions={
           <>
             <LabForm action={labRunBattery} submit="Correr la batería ahora" pending="Armando las simulaciones…" button={secondaryButtonClass}>
-              <input type="hidden" name="repetir" value="3" />
+              <input type="hidden" name="repetir" value="1" />
             </LabForm>
             <Link href="/panel/laboratorio/jugar" className="inline-flex items-center justify-center gap-1 rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
               Jugar de paciente
@@ -80,7 +80,7 @@ export default async function LabPage() {
                   Batería del {formatDateTime(o.latest.finished_at as string, clinic.timezone)} · versión {versionLabel(o.latest.prompt_hash)} ·{" "}
                   <RunLink id={o.latest.id}>ver la corrida</RunLink>
                 </p>
-                <p className="text-brand-900/70">Sofi respondió con {modelLabel(o.latest.agent_llm)}. Las charlas reales y las de prueba en producción usan el modelo de producción.</p>
+                <p className="text-brand-900/70">Sofi respondió con {modelLabel(o.latest.agent_llm, o.latest.engine)}. Las charlas reales y las de prueba en producción usan el modelo de producción.</p>
                 {num(o.latest.spread) !== null && <p className="text-brand-900/70">Varía ±{fmtScore(o.latest.spread)} entre repeticiones: una diferencia menor no cuenta como mejora.</p>}
                 {o.latest.critical_count > 0 && (
                   <p className="text-red-700">{o.latest.critical_count} falla{o.latest.critical_count === 1 ? "" : "s"} crítica{o.latest.critical_count === 1 ? "" : "s"}: el puntaje queda en 69 como máximo.</p>
@@ -175,6 +175,17 @@ export default async function LabPage() {
               <input type="checkbox" name="resumen_whatsapp" defaultChecked={Boolean(settings.resumen_whatsapp)} className="mt-1" />
               <span><strong>Resumen por WhatsApp</strong> a Axel, a partir de las 9, solo si hay algo nuevo.</span>
             </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2">
+                <span><strong>Tope por corrida</strong> USD</span>
+                <input type="number" name="tope_corrida_usd" min="0.1" step="0.1" defaultValue={settings.tope_corrida_usd ?? 1} className="w-20 rounded-lg border border-brand-900/15 px-2 py-1" />
+              </label>
+              <label className="flex items-center gap-2">
+                <span><strong>Tope por día</strong> USD</span>
+                <input type="number" name="tope_dia_usd" min="0.1" step="0.1" defaultValue={settings.tope_dia_usd ?? 2} className="w-20 rounded-lg border border-brand-900/15 px-2 py-1" />
+              </label>
+              <span className="text-xs text-brand-900/65">Hoy: USD {spent.toFixed(2)}. Al llegar al tope del día, lo automático espera a mañana.</span>
+            </div>
             <label className="flex items-start gap-2">
               <input type="checkbox" name="auto_a" defaultChecked={Boolean(settings.auto_a)} className="mt-1" />
               <span><strong>Publicar solas las de nivel A</strong> (solo forma) si el experimento no empeora nada. Conviene prenderlo después de unas semanas.</span>

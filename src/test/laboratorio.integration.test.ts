@@ -142,6 +142,22 @@ vi.mock("@/lib/lab/judge", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/lab/simulator", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/lab/simulator")>()),
+  // Sofi simulada sin API: la variante corrige el «hasta enero».
+  simulateConversation: vi.fn(async (input: { prompt: string; scenario: string }) => {
+    const bad = input.scenario.includes("con una mujer") && !input.prompt.includes("VARIANTE-LAB");
+    return {
+      lines: bad
+        ? [{ role: "paciente", text: "Busco con una mujer, después de las 17", tools: [] }, { role: "sofi", text: "No tengo turnos después de las 17 hasta mediados de enero.", tools: [] }]
+        : [{ role: "paciente", text: "Hola", tools: [] }, { role: "sofi", text: "Busqué hasta el 11/12 y no encontré. ¿Busco más adelante?", tools: [{ name: "consultar_disponibilidad", params: "{}", result: '{"ok":true}', error: false }] }],
+      usage: { model: "claude-haiku-5-5", sofi: { input: 1000, cache_write: 0, cache_read: 20000, output: 300 }, paciente: { input: 500, cache_write: 0, cache_read: 0, output: 50 }, usd: 0.003 },
+      turns: 1,
+      ended: "paciente",
+    };
+  }),
+}));
+
 vi.mock("@/lib/agent/setup", () => ({
   // «Actualizar a Sofi» sin ElevenLabs: registra la versión como lo hace el setup real.
   setupAgent: vi.fn(async () => {
@@ -180,7 +196,7 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
 
   it("lanza la batería en ElevenLabs con las herramientas simuladas y el prompt efectivo", async () => {
     const cases = referenceCases().filter((c) => ["profesional-mujer-tarde", "precio-particular"].includes(c.id));
-    batteryId = await runs.startRun({ clinic, kind: "bateria", label: "Batería de prueba", cases, repeat: 2, createdBy: "test" });
+    batteryId = await runs.startRun({ clinic, kind: "bateria", label: "Batería de prueba", cases, repeat: 2, createdBy: "test", engine: "elevenlabs" });
     const run = await runs.getRun(batteryId);
     expect(run?.status).toBe("corriendo");
     expect(el.created).toHaveLength(2);
@@ -210,23 +226,51 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     expect(el.invocations.size).toBe(1);
   });
 
-  it("propone mejoras y prueba sola la de prompt contra la versión actual", async () => {
-    const n = await proposals.generateProposals(clinic, { actor: "test" });
+  it("propone mejoras y prueba sola la de prompt contra la versión actual, con casos focalizados", async () => {
+    const n = await proposals.generateProposals(clinic, { actor: "Laboratorio" });
     expect(n).toBe(2);
     const [prompt] = await sql<Array<{ id: string; status: string; experiment_run_id: string; level: string }>>`select * from lab_proposals where layer = 'prompt'`;
     const [rule] = await sql<Array<{ level: string; status: string }>>`select * from lab_proposals where layer = 'consultorio'`;
     expect(rule.level).toBe("C");
     expect(prompt.status).toBe("probando");
     const variant = await runs.getRun(prompt.experiment_run_id);
-    expect(variant?.baseline_run_id).toBe(batteryId);
+    expect(variant?.engine).toBe("simulador");
     expect(variant?.prompt_override).toContain("VARIANTE-LAB");
-    await runs.advanceRun(prompt.experiment_run_id, 30_000);
+    // Focalizado: el caso que falló en la batería y los que tienen condiciones críticas, hasta 8.
+    expect(variant?.cases.length).toBeLessThanOrEqual(8);
+    expect(variant?.case_ids).toContain("profesional-mujer-tarde");
+    const base = await runs.getRun(variant?.baseline_run_id as string);
+    expect(base?.case_ids).toEqual(variant?.case_ids);
+    for (let i = 0; i < 6; i++) {
+      await runs.advanceRun(base!.id, 30_000);
+      await runs.advanceRun(variant!.id, 30_000);
+    }
+    expect((await runs.getRun(base!.id))?.status).toBe("terminada");
+    // En la referencia, el caso que falla se repitió 2 veces más; en la variante, no.
+    const baseRows = (await runs.runResults(base!.id)).filter((r) => r.case_id === "profesional-mujer-tarde");
+    const varRows = (await runs.runResults(variant!.id)).filter((r) => r.case_id === "profesional-mujer-tarde");
+    expect(baseRows).toHaveLength(3);
+    expect(varRows).toHaveLength(1);
     const [after] = await sql<Array<{ status: string }>>`select status from lab_proposals where id = ${prompt.id}`;
     expect(after.status).toBe("pendiente");
     const summary = await proposals.experimentSummary(prompt.experiment_run_id);
     expect(summary.ready).toBe(true);
     expect(summary.delta).toBeGreaterThan(0);
     expect(summary.regressions).toBe(0);
+    // El costo del simulador queda registrado por corrida.
+    expect(Number((await runs.getRun(variant!.id))?.usage?.simulador?.usd)).toBeGreaterThan(0);
+  });
+
+  it("frena la corrida al llegar al tope de gasto", async () => {
+    await sql`update clinics set lab_settings = lab_settings || '{"tope_corrida_usd": 0.005}'::jsonb where id = ${clinic.id}`;
+    // Se simulan de a 6: la primera tanda supera el tope y el resto queda sin correr.
+    const cases = referenceCases().slice(0, 10);
+    const id = await runs.startRun({ clinic, kind: "jugar", label: "Tope", cases, repeat: 1, createdBy: "test" });
+    for (let i = 0; i < 4; i++) await runs.advanceRun(id, 30_000);
+    const rows = await runs.runResults(id);
+    expect(rows.some((r) => r.el_status === "omitida" && /tope de gasto/.test(r.error ?? ""))).toBe(true);
+    expect((await runs.getRun(id))?.status).toBe("terminada");
+    await sql`update clinics set lab_settings = lab_settings - 'tope_corrida_usd' where id = ${clinic.id}`;
   });
 
   it("aprobar una mejora de prompt la publica en Sofi y queda registrada la versión", async () => {

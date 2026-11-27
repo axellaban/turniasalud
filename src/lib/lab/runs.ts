@@ -8,6 +8,7 @@ import { judgeSimulation, labJudgeConfigured, type LabFinding } from "./judge";
 import { applyPatches, effectivePrompt, promptHash } from "./prompt";
 import { aggregateRun, automaticChecks, caseWeights, conversationScore, type Dims, type ScoredResult, type Verdict } from "./score";
 import { normalizeTranscript, transcriptText, type LabLine } from "./transcript";
+import { simulateConversation, type SimulationUsage } from "./simulator";
 
 // Corridas del Laboratorio de Sofi: arma las simulaciones en ElevenLabs (agent-testing, todas las
 // herramientas simuladas), espera los resultados, los puntúa con el juez y calcula el puntaje.
@@ -16,7 +17,9 @@ import { normalizeTranscript, transcriptText, type LabLine } from "./transcript"
 //
 // Lo avanza el cron «calendario» cada 10 minutos (src/lib/lab/tick.ts) y el panel al abrir una corrida.
 
-export type RunKind = "bateria" | "experimento" | "jugar";
+export type RunKind = "bateria" | "experimento" | "jugar" | "verificacion";
+/** simulador: API de Claude directa (v2, por defecto). elevenlabs: pruebas de agentes de ElevenLabs (verificación). */
+export type RunEngine = "simulador" | "elevenlabs";
 export type RunStatus = "preparando" | "corriendo" | "puntuando" | "terminada" | "error";
 
 /** El caso tal como se corrió: las condiciones ya resueltas para esa clínica. */
@@ -48,6 +51,9 @@ export type LabRun = {
   agent_id: string | null;
   /** Modelo con que respondió Sofi en la simulación (null: el del agente, Opus). */
   agent_llm: string | null;
+  engine: RunEngine;
+  sim_vars: Record<string, string> | null;
+  sim_prompt: string | null;
   invocation_id: string | null;
   test_ids: Record<string, string>;
   cases: CaseSnapshot[];
@@ -56,7 +62,7 @@ export type LabRun = {
   dims: Dims | null;
   critical_count: number;
   /** Consumo: { elevenlabs: { creditos, llm_usd, … }, juez: { usd, tokens_entrada, tokens_salida, llamadas } }. */
-  usage: { elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; llm_usd: number; plataforma_usd?: number; usd?: number }; juez?: { usd: number; tokens_entrada: number; tokens_salida: number; llamadas: number } } | null;
+  usage: { simulador?: { modelo?: string; usd: number; charlas: number; tokens_entrada?: number; tokens_cache_escritura?: number; tokens_cache_lectura?: number; tokens_salida?: number }; elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; llm_usd: number; plataforma_usd?: number; usd?: number }; juez?: { usd: number; tokens_entrada: number; tokens_salida: number; llamadas: number } } | null;
   error: string | null;
   created_by: string | null;
   created_at: string;
@@ -224,6 +230,10 @@ export type StartRunInput = {
   proposalId?: string | null;
   baselineRunId?: string | null;
   createdBy?: string | null;
+  /** Por defecto el simulador propio. «elevenlabs» solo para la verificación con producción. */
+  engine?: RunEngine;
+  /** Solo con ElevenLabs: usar el modelo del agente (producción) en vez de Haiku. */
+  productionModel?: boolean;
 };
 
 /** Crea la corrida y la lanza en ElevenLabs. Si falla el lanzamiento, la corrida queda en error con el motivo. */
@@ -233,6 +243,7 @@ export async function startRun(input: StartRunInput): Promise<string> {
   const prompt = input.prompt ?? (await effectivePrompt()).prompt;
   const cases = input.cases.map((c) => snapshot(c, vars));
   const repeat = Math.min(5, Math.max(1, Math.round(input.repeat)));
+  const engine: RunEngine = input.engine ?? "simulador";
   const [run] = await sql<Array<{ id: string }>>`
     insert into lab_runs ${sql({
       clinic_id: input.clinic.id,
@@ -246,9 +257,20 @@ export async function startRun(input: StartRunInput): Promise<string> {
       repeat_count: repeat,
       cases: json(cases),
       created_by: input.createdBy ?? null,
+      engine,
+      ...(engine === "simulador" && { sim_vars: json(vars), sim_prompt: prompt, agent_llm: simulatorModel(), status: "corriendo", started_at: new Date() }),
     })} returning id`;
+  if (engine === "simulador") {
+    // Una charla por caso (o las repeticiones pedidas en «Jugar de paciente»); las que fallan se repiten solas.
+    for (const c of cases) {
+      for (let rep = 1; rep <= repeat; rep++) {
+        await sql`insert into lab_results (run_id, case_id, repetition, el_status) values (${run.id}, ${c.id}, ${rep}, 'pendiente') on conflict do nothing`;
+      }
+    }
+    return run.id;
+  }
   try {
-    await launch(run.id, input.clinic, cases, vars, prompt, repeat);
+    await launch(run.id, input.clinic, cases, vars, prompt, repeat, Boolean(input.productionModel));
   } catch (e) {
     await sql`update lab_runs set status = 'error', error = ${errorText(e)}, finished_at = now() where id = ${run.id}`;
   }
@@ -302,9 +324,10 @@ export function mockOverrides(mocks: Record<string, Mock>, byName: Record<string
   return overrides;
 }
 
-async function launch(runId: string, clinic: Clinic, cases: CaseSnapshot[], vars: Record<string, string>, prompt: string, repeat: number): Promise<void> {
+async function launch(runId: string, clinic: Clinic, cases: CaseSnapshot[], vars: Record<string, string>, prompt: string, repeat: number, productionModel = false): Promise<void> {
   const agentId = await labAgentId();
-  const [tools, llm] = await Promise.all([agentTools(agentId), labAgentLlm()]);
+  const [tools, labLlm] = await Promise.all([agentTools(agentId), productionModel ? Promise.resolve(null) : labAgentLlm()]);
+  const llm = labLlm;
   const testIds: Record<string, string> = {};
   for (const c of cases) {
     const created = await elevenlabs<{ id: string }>("/v1/convai/agent-testing/create", {
@@ -340,7 +363,7 @@ async function launch(runId: string, clinic: Clinic, cases: CaseSnapshot[], vars
       repeat_count: repeat,
       // Por WhatsApp escribe primero el paciente: sin el saludo inicial de las llamadas.
       // El laboratorio responde con Haiku: el agente real (y las charlas de pacientes) siguen con su modelo.
-      agent_config_override: { conversation_config: { conversation: { text_only: true }, agent: { first_message: "", prompt: { prompt, llm } } } },
+      agent_config_override: { conversation_config: { conversation: { text_only: true }, agent: { first_message: "", prompt: { prompt, ...(llm && { llm }) } } } },
     }),
   });
   await sql`
@@ -372,6 +395,14 @@ export async function runResults(runId: string): Promise<LabResult[]> {
 export async function advanceRun(runId: string, budgetMs = 60_000): Promise<LabRun | null> {
   let run = await getRun(runId);
   if (!run) return null;
+  if (run.engine === "simulador") {
+    if (run.status !== "corriendo") return run;
+    const started = Date.now();
+    await simulatePending(run, Math.round(budgetMs * 0.6));
+    await judgePending(run, Math.max(10_000, budgetMs - (Date.now() - started)));
+    await maybeFinish(run.id);
+    return getRun(runId);
+  }
   if (run.status === "corriendo") {
     await collect(run);
     run = await getRun(runId);
@@ -514,7 +545,8 @@ async function judgePending(run: LabRun, budgetMs: number): Promise<void> {
       update lab_results set judge_started_at = now()
       where id in (
         select id from lab_results
-        where run_id = ${run.id} and not judged and (judge_started_at is null or judge_started_at < now() - interval '10 minutes')
+        where run_id = ${run.id} and not judged and coalesce(el_status, '') not in ('pendiente', 'simulando')
+          and (judge_started_at is null or judge_started_at < now() - interval '10 minutes')
         order by case_id, repetition limit 6 for update skip locked)
       returning *`;
     if (!claimed.length) return;
@@ -561,6 +593,12 @@ async function judgeResult(run: LabRun, result: LabResult, clinicContext: string
       summary: verdict.summary,
       error: null,
     });
+    // Repetición a demanda: si la primera charla falla, el caso corre 2 veces más para descartar casualidad.
+    if (run.engine === "simulador" && run.kind !== "jugar" && result.repetition === 1 && failed(scored.score, scored.critical, [...verdict.verdicts, ...checks])) {
+      for (const rep of [2, 3]) {
+        await sql`insert into lab_results (run_id, case_id, repetition, el_status) values (${run.id}, ${result.case_id}, ${rep}, 'pendiente') on conflict do nothing`;
+      }
+    }
   } catch (e) {
     // Se reintenta en la próxima vuelta (judge_started_at vence a los 10 minutos), salvo que ya falló varias veces.
     console.error("Laboratorio: el juez falló", errorText(e));
@@ -599,7 +637,7 @@ async function maybeFinish(runId: string): Promise<void> {
   const [{ open }] = await sql<Array<{ open: number }>>`select count(*)::int as open from lab_results where run_id = ${runId} and not judged`;
   if (open) return;
   const run = await getRun(runId);
-  if (!run || run.status !== "puntuando") return;
+  if (!run || run.status !== (run.engine === "simulador" ? "corriendo" : "puntuando")) return;
   const results = await runResults(runId);
   const weights = caseWeights(run.cases, await intentShare(run.clinic_id));
   const agg = aggregateRun(results.map(toScored), weights);
@@ -607,7 +645,7 @@ async function maybeFinish(runId: string): Promise<void> {
     update lab_runs set status = 'terminada', score = ${agg.score}, spread = ${agg.spread}, dims = ${json(agg.dims)},
       critical_count = ${agg.criticalCount}, finished_at = now(),
       error = ${agg.score === null ? "No se pudo puntuar ninguna charla (mirá el detalle)." : null}
-    where id = ${runId} and status = 'puntuando' returning *`;
+    where id = ${runId} and status = ${run.status} returning *`;
   if (!done) return;
   for (const hook of RUN_HOOKS) {
     await hook(done).catch((e) => console.error("Laboratorio: falló un paso al terminar la corrida", errorText(e)));
@@ -635,4 +673,100 @@ export async function variantPrompt(change: { old_str?: string; new_str?: string
   const result = applyPatches(base.prompt, [{ id: "variante", old_str: change.old_str ?? "", new_str: change.new_str ?? "" }]);
   if (result.failed.length) throw new Error(result.failed[0].reason);
   return result.prompt;
+}
+
+// ---------------------------------------------------------------------------
+// Simulador propio (v2)
+// ---------------------------------------------------------------------------
+export const simulatorModel = () => process.env.LAB_SIM_LLM || process.env.LAB_LLM || "claude-haiku-5-5";
+
+/** Una charla falla si baja de 85, tiene una falla crítica o no cumple alguna condición. Puro. */
+export function failed(score: number | null, critical: boolean, verdicts: Array<{ pass: boolean }>): boolean {
+  return critical || score === null || score < 85 || verdicts.some((v) => !v.pass);
+}
+
+/** Lo que lleva gastado la corrida (simulador + juez + ElevenLabs), en USD. Puro. */
+export function runCost(usage: LabRun["usage"]): number {
+  const u = (usage ?? {}) as { simulador?: { usd?: number }; juez?: { usd?: number }; elevenlabs?: { usd?: number; v?: number } };
+  return Number(u.simulador?.usd ?? 0) + Number(u.juez?.usd ?? 0) + (u.elevenlabs?.v === 2 ? Number(u.elevenlabs.usd ?? 0) : 0);
+}
+
+async function addSimUsage(runId: string, u: SimulationUsage): Promise<void> {
+  const tokens = (k: "input" | "cache_write" | "cache_read" | "output") => u.sofi[k] + u.paciente[k];
+  await sql`
+    update lab_runs set usage = jsonb_set(coalesce(usage, '{}'::jsonb), '{simulador}', jsonb_build_object(
+      'modelo', ${u.model}::text,
+      'usd', coalesce((usage->'simulador'->>'usd')::numeric, 0) + ${u.usd},
+      'charlas', coalesce((usage->'simulador'->>'charlas')::int, 0) + 1,
+      'tokens_entrada', coalesce((usage->'simulador'->>'tokens_entrada')::bigint, 0) + ${tokens("input")},
+      'tokens_cache_escritura', coalesce((usage->'simulador'->>'tokens_cache_escritura')::bigint, 0) + ${tokens("cache_write")},
+      'tokens_cache_lectura', coalesce((usage->'simulador'->>'tokens_cache_lectura')::bigint, 0) + ${tokens("cache_read")},
+      'tokens_salida', coalesce((usage->'simulador'->>'tokens_salida')::bigint, 0) + ${tokens("output")}))
+    where id = ${runId}`;
+}
+
+/** Tope de gasto por corrida (USD), de la configuración del laboratorio de la clínica. */
+async function runCap(clinicId: string): Promise<number> {
+  const [row] = await sql<Array<{ cap: string | null }>>`select lab_settings->>'tope_corrida_usd' as cap from clinics where id = ${clinicId}`;
+  const n = Number(row?.cap);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+async function simulatePending(run: LabRun, budgetMs: number): Promise<void> {
+  if (!labJudgeConfigured()) {
+    await sql`
+      update lab_results set el_status = 'omitida', judged = true, judged_at = now(), error = 'Falta ANTHROPIC_API_KEY para simular.'
+      where run_id = ${run.id} and el_status in ('pendiente', 'simulando')`;
+    return;
+  }
+  const started = Date.now();
+  const cap = await runCap(run.clinic_id);
+  const prompt = run.sim_prompt ?? run.prompt_override ?? (await effectivePrompt()).prompt;
+  const vars = run.sim_vars ?? {};
+  while (Date.now() - started < budgetMs) {
+    const fresh = await getRun(run.id);
+    if (runCost(fresh?.usage ?? null) >= cap) {
+      await sql`
+        update lab_results set el_status = 'omitida', judged = true, judged_at = now(),
+          error = ${`Se alcanzó el tope de gasto de la corrida (USD ${cap}).`}
+        where run_id = ${run.id} and el_status = 'pendiente'`;
+      return;
+    }
+    const claimed = await sql<LabResult[]>`
+      update lab_results set el_status = 'simulando', judge_started_at = now()
+      where id in (
+        select id from lab_results
+        where run_id = ${run.id} and (el_status = 'pendiente' or (el_status = 'simulando' and judge_started_at < now() - interval '10 minutes'))
+        order by repetition, case_id limit 6 for update skip locked)
+      returning *`;
+    if (!claimed.length) return;
+    await Promise.all(claimed.map(async (r) => {
+      const c = run.cases.find((x) => x.id === r.case_id);
+      if (!c) {
+        await sql`update lab_results set el_status = 'omitida', judged = true, judged_at = now(), error = 'El caso ya no existe.' where id = ${r.id}`;
+        return;
+      }
+      try {
+        const sim = await simulateConversation({
+          prompt,
+          vars: { ...vars, patient_name: c.patient.name, patient_context: c.patient.context, patient_phone: "5491100000000", conversation_context: "El paciente inició la conversación.", campaign_id: "ninguna" },
+          scenario: c.scenario,
+          mocks: { ...DEFAULT_MOCKS, ...c.mocks },
+          history: c.history,
+          maxTurns: c.maxTurns,
+        });
+        await sql`
+          update lab_results set el_status = 'simulada', transcript = ${json(sim.lines)}, judge_started_at = null, error = null
+          where id = ${r.id}`;
+        await addSimUsage(run.id, sim.usage);
+      } catch (e) {
+        console.error("Laboratorio: falló la simulación", errorText(e));
+        // Se reintenta en la próxima vuelta; si ya lleva más de 40 minutos, se da por perdida.
+        await sql`
+          update lab_results set el_status = case when created_at < now() - interval '40 minutes' then 'omitida' else 'pendiente' end,
+            judged = created_at < now() - interval '40 minutes', error = ${errorText(e)}
+          where id = ${r.id}`;
+      }
+    }));
+  }
 }
