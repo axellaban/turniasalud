@@ -107,13 +107,13 @@ export function verifyProspectingVoiceToken(token: string | null, now = Date.now
   }
 }
 
-const PANEL_SECTIONS = ["prospeccion", "agenda", "conversaciones", "tareas", "pacientes", "campanas", "configuracion", "clinicas", "demos", "sistema", "comercial"];
+const PANEL_SECTIONS = ["prospeccion", "agenda", "conversaciones", "tareas", "pacientes", "lista-espera", "campanas", "configuracion", "clinicas", "demos", "sistema", "comercial"];
 
 /** Destino después de ingresar: una sección real del panel o la demo; si no, el inicio. */
 export function safeNext(value: unknown): string {
   const next = typeof value === "string" ? value : "";
   if (next === "/demo" || next === "/panel") return next;
-  const section = /^\/panel\/([a-z]+)(?:[/?]|$)/.exec(next)?.[1];
+  const section = /^\/panel\/([a-z]+(?:-[a-z]+)*)(?:[/?]|$)/.exec(next)?.[1];
   return section && PANEL_SECTIONS.includes(section) ? next : "/panel";
 }
 

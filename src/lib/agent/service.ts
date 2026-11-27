@@ -1,4 +1,5 @@
 import "server-only";
+import { consultationFields, type ConsultationInput } from '../consultation-reason';
 import { json, sql, pgErrorCode, type TransactionSql } from "../db";
 import { getCatalog, getClinic, findPatientByPhone, getScheduleBlocks, isUuid, patientContextText, type Catalog } from "../clinic";
 import { addHouseholdMember, findOrCreatePatientForPhone, identifyByAppointment, identifyPatient, namesMatch, normalizeDni, sameCoverage, type Identification } from "../patients";
@@ -1077,7 +1078,7 @@ const isOverlapError = (error: unknown) => pgErrorCode(error) === "23P01";
 type NewAppointment = Pick<
   Appointment,
   "clinic_id" | "patient_id" | "professional_id" | "appointment_type_id" | "starts_at" | "ends_at" | "status" | "source" | "coverage" | "notes"
-> & Partial<Pick<Appointment, "second_professional_id" | "title" | "smile_deferred" | "smile_reply_phone">>;
+> & Partial<Pick<Appointment, "second_professional_id" | "title" | "smile_deferred" | "smile_reply_phone" | "consultation_reason" | "consultation_categories" | "patient_first_visit">>;
 
 /**
  * Serializa las reservas de cada profesional dentro de la transacción: si dos
@@ -1106,7 +1107,7 @@ async function insertAppointment(tx: TransactionSql, row: NewAppointment): Promi
   return appt;
 }
 
-type BookInput = {
+type BookInput = ConsultationInput & {
   tipo_turno_id: string;
   /** Otra práctica en la misma visita, a continuación y con el mismo profesional. */
   segundo_tipo_turno_id?: string;
@@ -1254,6 +1255,9 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
   }
 
   type Part = Awaited<ReturnType<typeof assertBookable>> & { startsAt: Date };
+  let consultation: ReturnType<typeof consultationFields>;
+  try { consultation = consultationFields(input, Boolean(clinic.collect_visit_reason) && !byPanel); }
+  catch (e) { throw new ToolError(e instanceof Error ? e.message : 'Falta el motivo de consulta.'); }
   const parts: Part[] = [];
   if (!same) parts.push({ ...(await assertBookable(clinic, input.profesional_id, input.tipo_turno_id, startsAt, { ...opts, byPanel, deferSmile })), startsAt });
   if (input.segundo_tipo_turno_id) {
@@ -1333,7 +1337,8 @@ export async function bookAppointment(ctx: ToolContext, input: BookInput, opts: 
             status: liveSmile ? "pendiente" : "confirmado",
             source,
             coverage,
-            notes: i === 0 ? (input.notas ?? null) : null,
+            notes: i === 0 ? [...new Set([consultation.consultation_reason, input.notas?.trim()].filter(Boolean))].join(' | ') || null : null,
+            ...(i === 0 && consultation),
             ...(i === 0 && title && { title }),
             ...(deferSmile && { smile_deferred: true, smile_reply_phone: replyPhone }),
           }),
@@ -1824,6 +1829,9 @@ async function rescheduleLoaded(
         coverage,
         notes: t.notes,
         title: t.title ?? null,
+        consultation_reason: t.consultation_reason ?? null,
+        consultation_categories: t.consultation_categories ?? [],
+        patient_first_visit: t.patient_first_visit ?? null,
       });
       const moved = await insertAppointment(tx, row(appt, { pro, second, type, endsAt }, startsAt));
       const movedNext = follower && next ? await insertAppointment(tx, row(follower, next, next.startsAt)) : null;
@@ -2091,7 +2099,7 @@ export async function muteSender(ctx: ToolContext, input: { motivo: "vendedor" |
 // ---------------------------------------------------------------------------
 // Como hace la secretaria: primero un turno reservado y la lista de espera es para adelantarlo.
 // Así el paciente no cree que estar anotado le asegura un turno antes, ni se queda sin ninguno.
-export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string;
+export async function joinWaitlist(ctx: ToolContext, input: ConsultationInput & { tipo_turno_id?: string; turno_id?: string; profesional_id?: string; preferencias?: string;
   sin_turno?: "no_hay_horarios" | "no_quiere_turno" }) {
   if (Boolean(input.tipo_turno_id) === Boolean(input.turno_id)) throw new ToolError("Usá tipo_turno_id o turno_id, solo uno.");
   const clinic = await getClinic(ctx.clinicId);
@@ -2115,12 +2123,20 @@ export async function joinWaitlist(ctx: ToolContext, input: { tipo_turno_id?: st
   const professionalId = input.profesional_id ?? move?.appt.professional_id ?? null;
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(hashtextextended(${"waitlist:" + ctx.clinicId + ":" + patient.id}::text, 0))`;
-    const [existing] = await tx`select id from waitlist where clinic_id = ${ctx.clinicId} and patient_id = ${patient.id}
+    const [existing] = await tx<Array<{ id: string; consultation_reason: string | null; consultation_categories: string[]; patient_first_visit: boolean | null }>>`select id, consultation_reason, consultation_categories, patient_first_visit from waitlist where clinic_id = ${ctx.clinicId} and patient_id = ${patient.id}
       and appointment_type_id = ${waitType.id} and appointment_id is not distinct from ${move?.appt.id ?? null}::uuid
       and professional_id is not distinct from ${professionalId}::uuid and status in ('activa', 'ofrecida') limit 1`;
-    if (existing) await tx`update waitlist set preferences = coalesce(${input.preferencias ?? null}, preferences) where id = ${existing.id}`;
-    else await tx`insert into waitlist (clinic_id, patient_id, appointment_type_id, appointment_id, professional_id, preferences)
-      values (${ctx.clinicId}, ${patient.id}, ${waitType.id}, ${move?.appt.id ?? null}, ${professionalId}, ${input.preferencias ?? null})`;
+    let consultation: ReturnType<typeof consultationFields>;
+    try {
+      consultation = consultationFields({
+        motivo_consulta: input.motivo_consulta ?? existing?.consultation_reason ?? move?.appt.consultation_reason ?? undefined,
+        categorias_motivo: input.categorias_motivo ?? (existing?.consultation_categories ?? move?.appt.consultation_categories)?.join(','),
+        primera_vez: input.primera_vez ?? existing?.patient_first_visit ?? move?.appt.patient_first_visit ?? undefined,
+      }, Boolean(clinic.collect_visit_reason) && !move && !ctx.staff);
+    } catch (e) { throw new ToolError(e instanceof Error ? e.message : 'Falta el motivo de la consulta.'); }
+    if (existing) await tx`update waitlist set preferences = coalesce(${input.preferencias ?? null}, preferences), ${tx(consultation)} where id = ${existing.id}`;
+    else await tx`insert into waitlist ${tx({ clinic_id: ctx.clinicId, patient_id: patient.id, appointment_type_id: waitType.id,
+      appointment_id: move?.appt.id ?? null, professional_id: professionalId, preferences: input.preferencias ?? null, ...consultation })}`;
   });
   return { ok: true, mensaje: move
     ? "Anotado en lista de espera para adelantar ese turno, que sigue reservado. Decile que conserva ese turno y que, si se libera un lugar antes, le escribimos por WhatsApp. No le prometas que lo van a adelantar."

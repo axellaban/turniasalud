@@ -31,10 +31,18 @@ export default async function BookingRulesPage() {
         {/* Índice: la pestaña tiene varias secciones y con esto se llega a cada una sin bajar. */}
         <nav aria-label="Secciones de la pestaña" className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
           <span className="text-brand-900/60">En esta pestaña:</span>
-          {[["dias", "Días"], ["primer-turno", "Primer turno"], ["mover", "Mover y cancelar"], ["seguimiento", "Si no contesta"], ["urgencias", "Urgencias"], ["fuera-de-horario", "Fuera de horario"], ...(admin ? [["protocolo", "Protocolo"]] : [])].map(([id, label]) => (
+          {[["dias", "Días"], ["motivo", "Motivo de consulta"], ["primer-turno", "Primer turno"], ["mover", "Mover y cancelar"], ["seguimiento", "Si no contesta"], ["urgencias", "Urgencias"], ["fuera-de-horario", "Fuera de horario"], ...(admin ? [["protocolo", "Protocolo"]] : [])].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="font-medium text-brand-700 hover:underline">{label}</a>
           ))}
         </nav>
+        <Section id="motivo" title="Motivo de la consulta" description={`${agent} pregunta solo cuando el paciente todavía no lo dijo. Si prefiere no detallar, alcanza con «consulta general». El motivo queda en el turno y se envía a las notas de Smile Connect.`}>
+          <input type="hidden" name="collect_visit_reason_field" value="1" />
+          <label className={`${check} ${wide}`}>
+            <input type="checkbox" name="collect_visit_reason" defaultChecked={clinic.collect_visit_reason} className="mt-1" />
+            <span>Pedir y guardar el motivo antes de reservar<span className={hint}>La lista de espera también muestra primeras consultas de implantes, prótesis y blanqueamiento para evaluar un adelanto. El equipo elige a quién contactar.</span></span>
+          </label>
+          <p className={`${wide} text-sm`}><Link href="/panel/lista-espera" className={link}>Ver lista de espera</Link></p>
+        </Section>
         <Section id="dias" title={`Días en que ${agent} da turnos`} description="Se aplica al ofrecer, reservar y elegir el nuevo día de una reprogramación. Los horarios de atención se conservan: el equipo puede seguir usando los otros días y la sincronización de la agenda no cambia esta regla.">
           <input type="hidden" name="booking_weekdays_field" value="1" />
           <fieldset className={wide}>

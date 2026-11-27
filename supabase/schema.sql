@@ -1670,6 +1670,21 @@ alter table appointments add column if not exists smile_reply_phone text;
 alter table appointments add column if not exists smile_management jsonb;
 -- La ficha de salud cambió después de crear el turno: hay que sumarla a la nota en Smile Connect.
 alter table appointments add column if not exists smile_notes_refresh boolean not null default false;
+alter table clinics add column if not exists collect_visit_reason boolean not null default false;
+alter table appointments add column if not exists consultation_reason text;
+alter table appointments add column if not exists consultation_categories text[] not null default '{}';
+alter table appointments add column if not exists patient_first_visit boolean;
+alter table waitlist add column if not exists consultation_reason text;
+alter table waitlist add column if not exists consultation_categories text[] not null default '{}';
+alter table waitlist add column if not exists patient_first_visit boolean;
+-- Nota omitida al recuperar un alta básica: se completa aparte, sin reintentar la reserva.
+alter table appointments add column if not exists smile_booking_notes text;
+alter table appointments add column if not exists smile_booking_notes_pending boolean not null default false;
+alter table appointments add column if not exists smile_booking_notes_attempts integer not null default 0;
+alter table appointments add column if not exists smile_booking_notes_retry_at timestamptz;
+alter table appointments add column if not exists smile_booking_notes_error text;
+create index if not exists appointments_smile_booking_notes_idx on appointments (clinic_id) where smile_booking_notes_pending;
+create index if not exists appointments_consultation_categories_idx on appointments using gin (consultation_categories);
 create index if not exists appointments_smile_notes_refresh_idx on appointments (clinic_id) where smile_notes_refresh;
 alter table appointments drop constraint if exists appointments_smile_sync_check;
 alter table appointments add constraint appointments_smile_sync_check

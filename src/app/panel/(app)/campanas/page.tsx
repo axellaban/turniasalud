@@ -260,9 +260,9 @@ export default async function CampaignsPage(props?: PageProps<"/panel/campanas">
           <article className="flex min-h-40 flex-col rounded-2xl border border-brand-900/10 bg-white p-4">
             <span className="text-xs text-brand-900/65">Lista de espera</span>
             <strong className="mt-1 font-display text-3xl text-brand-950 tabular-nums">{waitlist.total.toLocaleString("es-AR")}</strong>
-            <span className="text-xs text-brand-900/65">Se avisa sola al liberarse un turno</span>
+            <span className="text-xs text-brand-900/65">Los avisos automáticos van solo a quienes los pidieron</span>
             <div className="mt-auto pt-3">
-              <Badge tone="blue">Automática</Badge>
+              <Badge tone="blue">Con turno y sin turno</Badge>
               <Link href="/panel/lista-espera" className="ml-3 text-sm font-semibold text-brand-700 hover:underline">Ver lista →</Link>
             </div>
           </article>
