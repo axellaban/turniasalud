@@ -39,7 +39,7 @@ export async function labRunBattery(_prev: LabFormState, form: FormData): Promis
   const clinic = await adminClinic(form);
   let id: string;
   try {
-    const repeat = Number(text(form, "repetir") || 3);
+    const repeat = Number(text(form, "repetir") || 1);
     id = await startRun({ clinic, kind: "bateria", label: "Batería pedida desde el panel", cases: await allCases(clinic.id), repeat, createdBy: ACTOR });
   } catch (e) {
     return fail(e);
@@ -165,7 +165,16 @@ export async function labExperiment(_prev: LabFormState, form: FormData): Promis
 
 export async function labSettings(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   const clinic = await adminClinic(form);
-  const settings = { resumen_whatsapp: form.get("resumen_whatsapp") === "on", auto_a: form.get("auto_a") === "on" };
+  const usd = (key: string, fallback: number) => {
+    const n = Number(text(form, key).replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? Math.min(100, Math.round(n * 100) / 100) : fallback;
+  };
+  const settings = {
+    resumen_whatsapp: form.get("resumen_whatsapp") === "on",
+    auto_a: form.get("auto_a") === "on",
+    tope_corrida_usd: usd("tope_corrida_usd", 1),
+    tope_dia_usd: usd("tope_dia_usd", 2),
+  };
   await sql`
     update clinics set lab_enabled = ${form.get("lab_enabled") === "on"}, lab_settings = lab_settings || ${json(settings)}
     where id = ${clinic.id}`;

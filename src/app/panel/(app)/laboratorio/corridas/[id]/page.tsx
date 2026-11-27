@@ -6,7 +6,8 @@ import { isUuid } from "@/lib/clinic";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
 import { INTENT_LABEL, SITUATION_LABEL, num } from "@/lib/lab/panel";
-import { getRun, runResults } from "@/lib/lab/runs";
+import { getRun, runResults, toScored } from "@/lib/lab/runs";
+import { unstableCases } from "@/lib/lab/score";
 import { normalizeTranscript } from "@/lib/lab/transcript";
 import { labAdvance, labProposeFromResult, labSaveCase } from "../../../../lab-actions";
 import { LabForm } from "../../lab-form";
@@ -31,13 +32,14 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
   });
   const selected = byCase.find((x) => x.c.id === caso) ?? (byCase.length === 1 ? byCase[0] : null);
   const judgedCount = results.filter((r) => r.judged).length;
+  const unstable = new Set(unstableCases(results.map(toScored)));
 
   return (
     <>
       <LabHeader
         current="/panel/laboratorio/corridas"
         title={run.label}
-        description={`${KIND_LABEL[run.kind]} · ${modelLabel(run.agent_llm)} · ${run.cases.length} caso${run.cases.length === 1 ? "" : "s"} × ${run.repeat_count} · empezó el ${formatDateTime(run.created_at, clinic.timezone)}${run.created_by ? ` · ${run.created_by}` : ""}`}
+        description={`${KIND_LABEL[run.kind]} · ${modelLabel(run.agent_llm, run.engine)} · ${run.cases.length} caso${run.cases.length === 1 ? "" : "s"} × ${run.repeat_count} · empezó el ${formatDateTime(run.created_at, clinic.timezone)}${run.created_by ? ` · ${run.created_by}` : ""}`}
         actions={<Badge tone={RUN_STATUS[run.status]?.tone}>{RUN_STATUS[run.status]?.label}</Badge>}
       />
       {run.error && <Notice tone="error" className="mb-5">{run.error}</Notice>}
@@ -47,7 +49,9 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
           <LabForm action={labAdvance} submit="Actualizar ahora" pending="Trayendo y puntuando…" button={secondaryButtonClass} className="flex flex-wrap items-center justify-between gap-3">
             <input type="hidden" name="corrida" value={run.id} />
             <p className="text-sm text-brand-900/75">
-              {run.status === "corriendo"
+              {run.status === "corriendo" && run.engine === "simulador"
+                ? `Simulando y puntuando: van ${judgedCount} de ${results.length} charlas. Las que fallan se repiten 2 veces más.`
+                : run.status === "corriendo"
                 ? "ElevenLabs está simulando las charlas (suele tardar entre 5 y 30 minutos según la cantidad)."
                 : run.status === "puntuando"
                   ? `El juez va ${judgedCount} de ${results.length} charlas.`
@@ -94,6 +98,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       {critical && <span className="text-xs font-semibold text-red-700">crítica</span>}
+                      {unstable.has(c.id) && <span className="text-xs font-semibold text-sun-700" title="Las repeticiones dieron muy distinto">inestable</span>}
                       <span className="grid h-8 min-w-10 place-items-center rounded-lg px-1.5 text-sm font-semibold" style={{ background: `${scoreTone(score)}22`, color: score === null ? "#5b6275" : "#171729" }}>
                         {rows.length ? fmtScore(score) : "…"}
                       </span>
@@ -138,7 +143,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
                     <div className="flex items-center gap-2">
                       {r.critical && <Badge tone="red">Falla crítica</Badge>}
                       <span className="rounded-lg px-2 py-1 text-sm font-semibold" style={{ background: `${scoreTone(r.score)}22` }}>
-                        {r.judged ? (num(r.score) === null ? "Sin puntaje" : `Puntaje ${fmtScore(r.score)}`) : "Puntuando…"}
+                        {["pendiente", "simulando"].includes(r.el_status ?? "") ? "Simulando…" : r.judged ? (num(r.score) === null ? "Sin puntaje" : `Puntaje ${fmtScore(r.score)}`) : "Puntuando…"}
                       </span>
                     </div>
                   </div>

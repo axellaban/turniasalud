@@ -186,26 +186,29 @@ export function Findings({ items }: { items: LabFinding[] | null }) {
 
 export const RUN_STATUS: Record<string, { label: string; tone: "gray" | "green" | "yellow" | "red" | "blue" }> = {
   preparando: { label: "Preparando", tone: "gray" },
-  corriendo: { label: "Simulando en ElevenLabs", tone: "blue" },
+  corriendo: { label: "Simulando", tone: "blue" },
   puntuando: { label: "Puntuando", tone: "yellow" },
   terminada: { label: "Terminada", tone: "green" },
   error: { label: "Con error", tone: "red" },
 };
 
-export const KIND_LABEL: Record<string, string> = { bateria: "Batería", experimento: "Experimento", jugar: "Jugar de paciente" };
+export const KIND_LABEL: Record<string, string> = { bateria: "Batería", experimento: "Experimento", jugar: "Jugar de paciente", verificacion: "Verificación con producción" };
 
 export function RunLink({ id, children }: { id: string; children: ReactNode }) {
   return <Link href={`/panel/laboratorio/corridas/${id}`} className="font-medium text-brand-700 hover:underline">{children}</Link>;
 }
 
-/** Con qué modelo respondió Sofi en la corrida. */
-export const modelLabel = (llm: string | null | undefined) =>
-  !llm ? "Opus (modelo de producción)" : /haiku/i.test(llm) ? `Haiku (${llm})` : llm;
+/** Con qué motor y modelo respondió Sofi en la corrida. */
+export const modelLabel = (llm: string | null | undefined, engine?: string | null) => {
+  const model = !llm ? "Opus (modelo de producción)" : /haiku/i.test(llm) ? `Haiku (${llm})` : llm;
+  return engine === "simulador" ? `Simulador propio · ${model}` : `ElevenLabs · ${model}`;
+};
 
-/** El consumo de una corrida en una línea, con lo que haya informado ElevenLabs y el juez. */
-export function usageText(usage: { elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; usd?: number }; juez?: { usd: number; llamadas: number } } | null | undefined): string | null {
+/** El consumo de una corrida en una línea: simulador, ElevenLabs y juez, con el total. */
+export function usageText(usage: { simulador?: { usd: number; charlas: number }; elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; usd?: number }; juez?: { usd: number; llamadas: number } } | null | undefined): string | null {
   if (!usage) return null;
   const parts: string[] = [];
+  if (usage.simulador) parts.push(`Simulador: USD ${Number(usage.simulador.usd).toFixed(3)} (${usage.simulador.charlas} charlas)`);
   const el = usage.elevenlabs;
   if (el && el.v === 2) {
     parts.push(el.con_datos
@@ -215,7 +218,7 @@ export function usageText(usage: { elevenlabs?: { v?: number; simulaciones: numb
     parts.push("ElevenLabs: recalculando el consumo…");
   }
   if (usage.juez) parts.push(`Juez: USD ${Number(usage.juez.usd).toFixed(3)} (${usage.juez.llamadas} evaluaciones)`);
-  const total = (el?.v === 2 ? el.usd ?? 0 : 0) + (usage.juez ? Number(usage.juez.usd) : 0);
+  const total = Number(usage.simulador?.usd ?? 0) + (el?.v === 2 ? el.usd ?? 0 : 0) + Number(usage.juez?.usd ?? 0);
   if (total) parts.push(`Total: USD ${total.toFixed(2)}`);
   return parts.length ? parts.join(" · ") : null;
 }

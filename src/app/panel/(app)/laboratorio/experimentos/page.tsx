@@ -14,7 +14,8 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
   await requireAdmin();
   const clinic = await getPanelClinic();
   const { id, caso } = (await searchParams) as { id?: string; caso?: string };
-  const runs = await labRuns(clinic.id, "experimento");
+  // Las corridas «Referencia» (la versión actual con los mismos casos) se ven dentro de su experimento.
+  const runs = (await labRuns(clinic.id, "experimento")).filter((r) => r.proposal_id);
   const selected = runs.find((r) => r.id === id) ?? runs[0] ?? null;
   const summary = selected ? await experimentSummary(selected.id) : null;
   const comparison = summary?.comparison ?? null;

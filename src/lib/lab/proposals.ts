@@ -7,7 +7,7 @@ import type { Clinic } from "../types";
 import { referenceCases, type Condition, type Dimension, type LabCase } from "./cases";
 import { draftCase, proposeImprovements, type CaseDraftOut, type LabFinding, type ProposalDraft } from "./judge";
 import { effectivePrompt, patchProblem } from "./prompt";
-import { allCases, clinicContextFor, getRun, labAgentLlm, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabRun } from "./runs";
+import { allCases, clinicContextFor, getRun, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabRun } from "./runs";
 import { compareRuns } from "./score";
 
 // Mejoras del Laboratorio de Sofi: Claude las propone a partir de las fallas, se prueban en un experimento
@@ -123,10 +123,12 @@ export async function generateProposals(clinic: Clinic, opts: { focusResultId?: 
       })} returning id`;
     created.push({ id: row.id, layer: d.capa, valid: !problem });
   }
-  // Tope de experimentos automáticos: 4 por día y por clínica (cada uno es una batería).
+  // Tope de experimentos automáticos: 1 por día y por clínica (los manuales, desde Mejoras, no tienen tope).
   const [{ today }] = await sql<Array<{ today: number }>>`
-    select count(*)::int as today from lab_runs where clinic_id = ${clinic.id} and kind = 'experimento' and created_at > now() - interval '24 hours'`;
-  for (const p of created.filter((c) => c.layer === "prompt" && c.valid).slice(0, Math.max(0, Math.min(2, 4 - today)))) {
+    select count(*)::int as today from lab_runs where clinic_id = ${clinic.id} and kind = 'experimento' and created_by = 'Laboratorio' and created_at > now() - interval '24 hours'`;
+  const { spentToday, dailyCap } = await import("./tick");
+  const capLeft = (await spentToday(clinic)) < dailyCap(clinic);
+  for (const p of created.filter((c) => c.layer === "prompt" && c.valid).slice(0, capLeft ? Math.max(0, 1 - today) : 0)) {
     await startExperiment(p.id, opts.actor ?? "Laboratorio").catch((e) => console.error("Laboratorio: no se pudo empezar el experimento", errorText(e)));
   }
   return created.length;
@@ -143,20 +145,20 @@ async function clinicOf(id: string): Promise<Clinic> {
   return row;
 }
 
-/** Una batería terminada de la versión actual (de la última semana), o una nueva para comparar. */
-async function baselineFor(clinic: Clinic, actor: string): Promise<string> {
-  const current = await effectivePrompt();
-  const [recent] = await sql<Array<{ id: string }>>`
-    select id from lab_runs
-    where clinic_id = ${clinic.id} and kind = 'bateria' and prompt_hash = ${current.hash}
-      and agent_llm is not distinct from ${await labAgentLlm()}
-      and status in ('preparando', 'corriendo', 'puntuando', 'terminada') and created_at > now() - interval '7 days'
-    order by created_at desc limit 1`;
-  if (recent) return recent.id;
-  return startRun({ clinic, kind: "bateria", label: "Batería de referencia (versión actual)", cases: await allCases(clinic.id), repeat: 3, createdBy: actor });
+/**
+ * Casos de un experimento focalizado: los que fallaron en la última batería (los de la dimensión de la
+ * mejora primero) más los que tienen condiciones críticas, hasta 8. Puro.
+ */
+export function focusedCases(all: LabCase[], failing: Array<{ case_id: string; dims: Record<string, number | null> | null }>, dimension: string | null, max = 8): LabCase[] {
+  const weak = (r: { dims: Record<string, number | null> | null }) => (dimension && typeof r.dims?.[dimension] === "number" ? (r.dims[dimension] as number) : 100);
+  const ordered = [...failing].sort((a, b) => weak(a) - weak(b)).map((r) => r.case_id);
+  const critical = all.filter((c) => c.conditions.some((cond) => typeof cond !== "function" && cond.critical)).map((c) => c.id);
+  const ids = [...new Set([...ordered, ...critical])].slice(0, max);
+  const picked = all.filter((c) => ids.includes(c.id));
+  return picked.length ? picked : all.slice(0, max);
 }
 
-/** Prueba una mejora de prompt: la versión actual contra la variante, con los mismos casos. */
+/** Prueba una mejora de prompt: la versión actual contra la variante, con los mismos casos (focalizados). */
 export async function startExperiment(proposalId: string, actor: string): Promise<string> {
   const p = await getProposal(proposalId);
   if (!p) throw new Error("No encontré la mejora.");
@@ -164,13 +166,20 @@ export async function startExperiment(proposalId: string, actor: string): Promis
   if (!p.clinic_id) throw new Error("La mejora no tiene consultorio.");
   const clinic = await clinicOf(p.clinic_id);
   const prompt = await variantPrompt(p.change);
-  const baseline = await baselineFor(clinic, actor);
+  const all = await allCases(clinic.id);
+  const failing = await sql<Array<{ case_id: string; dims: Record<string, number | null> | null }>>`
+    select r.case_id, r.dims from lab_results r
+    where r.run_id = (select id from lab_runs where clinic_id = ${clinic.id} and kind = 'bateria' and status = 'terminada' order by finished_at desc limit 1)
+      and r.judged and r.repetition = 1 and (coalesce(r.score, 0) < 85 or r.critical)`;
+  const cases = focusedCases(all, failing, p.dimension);
+  // La versión actual con los mismos casos, para comparar parejo.
+  const baseline = await startRun({ clinic, kind: "experimento", label: `Referencia · ${p.title}`, cases, repeat: 1, createdBy: actor });
   const runId = await startRun({
     clinic,
     kind: "experimento",
     label: `Experimento · ${p.title}`,
-    cases: await allCases(clinic.id),
-    repeat: 3,
+    cases,
+    repeat: 1,
     prompt,
     proposalId: p.id,
     baselineRunId: baseline,
@@ -228,7 +237,7 @@ onRunFinished(resolveExperiments);
 
 /** Después de cada batería o prueba de «Jugar de paciente»: las propuestas se piden en la próxima vuelta del cron. */
 async function queueProposals(run: LabRun): Promise<void> {
-  if (run.kind === "experimento") return;
+  if (run.kind === "experimento" || run.kind === "verificacion") return;
   await sql`update clinics set lab_settings = lab_settings || '{"proposals_due": true}'::jsonb where id = ${run.clinic_id}`;
 }
 onRunFinished(queueProposals);

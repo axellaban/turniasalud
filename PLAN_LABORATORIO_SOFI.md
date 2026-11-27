@@ -106,6 +106,21 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 - Tablas: `lab_cases`, `lab_runs`, `lab_results`, `lab_reviews`, `lab_versions`, `lab_proposals`, `lab_criteria`, `clinics.lab_enabled`, `clinics.lab_settings` y `conversations.is_test`.
 - Tests: `src/lib/lab/score.test.ts` y `src/test/laboratorio.integration.test.ts`. El segundo cubre de punta a punta, con ElevenLabs y Claude simulados: la batería, el puntaje, la propuesta, el experimento, aprobar, quitar, la regla del consultorio, rechazar y la revisión de una charla real.
 
+## v2 (27/11/2026): simulador propio, más barato
+
+Pedido de Axel después de medir el consumo en ElevenLabs. Lo principal:
+- **Simulador propio** (`src/lib/lab/simulator.ts`), el motor por defecto. Sofi y el paciente simulado corren directo contra la API de Claude con Haiku, sin ElevenLabs:
+  - Sofi recibe el mismo prompt efectivo (con las `{{variables}}` completadas), las mismas herramientas (`TOOL_DEFINITIONS` más `end_call`) y las respuestas fijas del caso;
+  - el prefijo (herramientas y prompt) se guarda en caché;
+  - las charlas tienen como máximo 8 turnos y terminan cuando el paciente responde «FIN» o Sofi usa `end_call`.
+- **Un solo juez** (Haiku): ya no evalúa ElevenLabs.
+- **Repeticiones a demanda:** cada caso corre una vez. Si falla (menos de 85, alguna condición sin cumplir o una falla crítica), corre 2 veces más y el caso vale el promedio. El ± sale de los casos repetidos y se marca **inestable** el que varía más de 20 puntos.
+- **Experimentos focalizados:** los casos que fallaron en la última batería más los que tienen condiciones críticas, hasta 8. Cada experimento tiene su propia corrida «Referencia» (la versión actual con los mismos casos). Hay como máximo 1 experimento automático por día; los manuales no tienen tope.
+- **Topes en dólares** (Resumen): por corrida, 1 por defecto, y al llegar a ese tope el resto de las charlas queda sin correr; por día, 2 por defecto, y al llegar las corridas automáticas esperan a mañana.
+- **Costo completo** en Corridas y en el informe: simulador, juez y, en la verificación, ElevenLabs.
+- **Verificación semanal con producción:** los lunes de 3 a 6, los casos con condiciones críticas (hasta 8) corren en ElevenLabs con el modelo del agente (Opus), para ver si el simulador se aleja de producción.
+- **Batch API para el juez:** no se usa. Ahorraría centavos por batería y demoraría horas.
+
 ## Informe para revisar afuera
 
 `GET /api/lab/informe` (últimas corridas, propuestas, criterios y charlas puntuadas) y `GET /api/lab/informe?corrida=<id>` (una corrida charla por charla), con el header `x-lab-token`. La clave se crea en Panel → Laboratorio → Criterios → «Acceso de Claude al informe» (se ve una sola vez; en la base queda solo su hash; se puede revocar). También acepta `LAB_REPORT_TOKEN` si algún día se carga en Vercel. Solo lee el laboratorio. Lo usa Claude Code para revisar las corridas sin entrar al panel: la clave se guarda una vez en el entorno de la sesión (formulario seguro), nunca en el chat.

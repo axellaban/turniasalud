@@ -71,7 +71,7 @@ export type Clinic = {
   test_phones?: string[];
   /** Laboratorio de Sofi (src/lib/lab): corrida nocturna, revisión de charlas y propuestas. */
   lab_enabled?: boolean;
-  lab_settings?: { resumen_whatsapp?: boolean; auto_a?: boolean; last_proposals?: string; last_digest?: string; proposals_due?: boolean };
+  lab_settings?: { resumen_whatsapp?: boolean; auto_a?: boolean; last_proposals?: string; last_digest?: string; proposals_due?: boolean; tope_corrida_usd?: number; tope_dia_usd?: number };
   /** Usa el protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). */
   dental_protocol: boolean;
   /** Pedir y guardar el motivo antes de que Sofi reserve un turno. */

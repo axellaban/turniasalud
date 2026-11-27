@@ -11,7 +11,7 @@ import { generateProposals } from "./proposals";
 import { effectivePrompt, recordPromptVersion } from "./prompt";
 import { fillCoverage } from "./coverage";
 import { reviewRecentConversations } from "./reviews";
-import { advanceRun, allCases, fixOldUsage, openRuns, startRun } from "./runs";
+import { advanceRun, allCases, fixOldUsage, openRuns, runCost, startRun, type LabRun } from "./runs";
 import { aggregateReviews, type Dims } from "./score";
 
 // La rutina del Laboratorio de Sofi. La corre el cron «calendario» (cada 10 minutos):
@@ -27,10 +27,33 @@ export type LabSettings = {
   last_proposals?: string;
   last_digest?: string;
   proposals_due?: boolean;
+  tope_corrida_usd?: number;
+  tope_dia_usd?: number;
 };
 
 type LabClinic = Clinic & { lab_enabled: boolean; lab_settings: LabSettings };
 
+
+const localWeekday = (timezone: string, now = new Date()) =>
+  ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "short" }).format(now));
+
+/** Lo gastado hoy en el laboratorio de la clínica (corridas creadas hoy, hora del consultorio), en USD. */
+export async function spentToday(clinic: Clinic): Promise<number> {
+  const rows = await sql<Array<{ usage: LabRun["usage"] }>>`
+    select usage from lab_runs where clinic_id = ${clinic.id}
+      and (created_at at time zone ${clinic.timezone})::date = (now() at time zone ${clinic.timezone})::date`;
+  return rows.reduce((a, r) => a + runCost(r.usage), 0);
+}
+
+/** Tope de gasto diario del laboratorio (USD; por defecto 2). */
+export const dailyCap = (clinic: Clinic) => {
+  const n = Number((clinic.lab_settings as { tope_dia_usd?: number } | undefined)?.tope_dia_usd);
+  return Number.isFinite(n) && n > 0 ? n : 2;
+};
+
+async function overDailyCap(clinic: Clinic): Promise<boolean> {
+  return (await spentToday(clinic)) >= dailyCap(clinic);
+}
 
 const localHour = (timezone: string, now = new Date()) =>
   Number(new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(now));
@@ -52,17 +75,33 @@ export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown
     await recordPromptVersion({ hash: current.hash, applied: current.applied, failed: [] });
   }
 
-  // 1. La batería nocturna.
+  // 1. La batería nocturna (una charla por caso; las que fallan se repiten solas) y, los lunes, la
+  //    verificación con ElevenLabs y el modelo de producción. Nada automático si se pasó el tope del día.
   for (const clinic of clinics) {
     const hour = localHour(clinic.timezone);
     if (hour < 2 || hour >= 6) continue;
+    if (await overDailyCap(clinic)) {
+      report[`tope:${clinic.name}`] = "Se alcanzó el tope de gasto del día: las corridas automáticas esperan a mañana.";
+      continue;
+    }
     const today = localDateKey(new Date(), clinic.timezone);
     const [already] = await sql`
-      select 1 from lab_runs where clinic_id = ${clinic.id} and kind = 'bateria'
+      select 1 from lab_runs where clinic_id = ${clinic.id} and kind = 'bateria' and created_by = 'Laboratorio'
         and (created_at at time zone ${clinic.timezone})::date = ${today}::date limit 1`;
-    if (already) continue;
     try {
-      report[`bateria:${clinic.name}`] = await startRun({ clinic, kind: "bateria", label: "Batería nocturna", cases: await allCases(clinic.id), repeat: 3, createdBy: "Laboratorio" });
+      if (!already) {
+        report[`bateria:${clinic.name}`] = await startRun({ clinic, kind: "bateria", label: "Batería nocturna", cases: await allCases(clinic.id), repeat: 1, createdBy: "Laboratorio" });
+      } else if (localWeekday(clinic.timezone) === 1 && hour >= 3) {
+        const [verified] = await sql`
+          select 1 from lab_runs where clinic_id = ${clinic.id} and kind = 'verificacion' and created_at > now() - interval '6 days' limit 1`;
+        if (!verified) {
+          const critical = (await allCases(clinic.id)).filter((c) => c.conditions.some((cond) => typeof cond !== "function" && cond.critical)).slice(0, 8);
+          report[`verificacion:${clinic.name}`] = await startRun({
+            clinic, kind: "verificacion", label: "Verificación semanal con producción (ElevenLabs y Opus)", cases: critical, repeat: 1,
+            createdBy: "Laboratorio", engine: "elevenlabs", productionModel: true,
+          });
+        }
+      }
     } catch (e) {
       report[`bateria:${clinic.name}`] = e instanceof Error ? e.message : String(e);
     }
@@ -94,6 +133,7 @@ export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown
     if (!labJudgeConfigured() || left() < 80_000) break;
     const hour = localHour(clinic.timezone);
     if (hour >= 2 && hour < 6) continue;
+    if (await overDailyCap(clinic)) continue;
     try {
       const titles = await fillCoverage(clinic, 2, 70_000);
       if (titles.length) report[`cobertura:${clinic.name}`] = titles;

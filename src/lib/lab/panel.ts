@@ -72,7 +72,7 @@ export async function labOverview(clinicId: string): Promise<Overview> {
   ]);
   const latest = batteries[0] ?? null;
   // Solo se comparan baterías del mismo modelo (Haiku en el laboratorio; la primera fue con Opus).
-  const sameModel = batteries.filter((b) => (b.agent_llm ?? null) === (latest?.agent_llm ?? null));
+  const sameModel = batteries.filter((b) => (b.agent_llm ?? null) === (latest?.agent_llm ?? null) && b.engine === latest?.engine);
   const failing = new Map<string, { text: string; dim: Dimension; count: number; cases: Set<string> }>();
   if (latest) {
     const results = await sql<Array<Pick<LabResult, "case_id" | "conditions" | "checks">>>`
