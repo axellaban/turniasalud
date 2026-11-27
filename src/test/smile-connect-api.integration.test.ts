@@ -83,6 +83,8 @@ const fake = {
   beforeCreate: undefined as (() => void) | undefined,
   createStatus: 201,
   dropCreateReply: false,
+  dropCreate500: false,
+  failOptionalCreate: false,
   dropMoveReply: false,
   rejectMoveSlot: false,
   beforeMoveReject: undefined as (() => void) | undefined,
@@ -221,6 +223,7 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
   }
   if (path === "/appointments" && method === "POST") {
     fake.beforeCreate?.();
+    if (fake.failOptionalCreate && ('notes' in body || 'service_id' in body)) return err(500, 'internal_error');
     if (fake.createStatus !== 201) return err(fake.createStatus, "alta_simulada");
     if (!fake.patients.has(body.patient_id)) return err(400, "invalid_request");
     if (fake.rejectService && "service_id" in body) return err(422, "invalid_service");
@@ -228,6 +231,7 @@ async function fakeFetch(input: string | URL | Request, init: RequestInit = {}):
       ...("notes" in body && { notes: body.notes }), ...("service_id" in body && { service_id: body.service_id }) };
     fake.appointments.set(a.appointment_id, a);
     fake.idem.set(`${method}${path}${idem}`, { appointment_id: a.appointment_id });
+    if (fake.dropCreate500) { fake.dropCreate500 = false; return err(500, 'internal_error'); }
     if (fake.dropCreateReply) {
       fake.dropCreateReply = false;
       return err(503, "respuesta_perdida");
@@ -974,6 +978,44 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
       await send();
       expect(fake.whatsapps.filter((w) => w.text.includes('quedó confirmado'))).toHaveLength(1);
       await sql`update smile_connect_changes set created_at = now() - interval '2 hours' where appointment_id = ${booking.turno_id!}`;
+    });
+
+    it("un 500 de campos complementarios no bloquea la reserva y concilia antes de usar el alta básica", async () => {
+      fake.notes = true;
+      await link.saveSmileApiKey(gm, KEY);
+      await link.setSmileMode(gm, 'completa');
+      try {
+        const booking = await book(80);
+        fake.calls.length = 0;
+        fake.failOptionalCreate = true;
+        expect(await push.pushPendingSmile(gm, booking.turno_id)).toMatchObject({ ok: 1 });
+        expect(await smileSync(booking.turno_id!)).toMatchObject({ status: 'confirmado', smile_sync: 'ok' });
+        const posts = writes().filter(w => w.path === '/appointments');
+        expect(posts).toHaveLength(2);
+        expect(posts[0].body).toHaveProperty('notes');
+        expect(posts[1].body).not.toHaveProperty('notes');
+        expect(posts[1].idem).toBe(`${posts[0].idem}-basico`);
+        const [record] = await sql`select result from smile_connect_changes where appointment_id = ${booking.turno_id!}
+          and action = 'crear' and status = 'hecho'`;
+        expect(record.result).toMatchObject({ campos_omitidos: ['notes'], error_complementarios: expect.stringContaining('500') });
+        // Si el 500 aparece después de aplicar el POST, se recupera ese turno, sin un segundo POST.
+        fake.failOptionalCreate = false;
+        const uncertain = await book(81);
+        fake.calls.length = 0;
+        fake.dropCreate500 = true;
+        expect(await push.pushPendingSmile(gm, uncertain.turno_id)).toMatchObject({ ok: 1 });
+        expect(writes().filter(w => w.path === '/appointments')).toHaveLength(1);
+        expect(await smileSync(uncertain.turno_id!)).toMatchObject({ status: 'confirmado', smile_sync: 'ok' });
+        await send();
+        await sql`update smile_connect_changes set created_at = now() - interval '2 hours'
+          where appointment_id = any(${[booking.turno_id!, uncertain.turno_id!]}::uuid[])`;
+      } finally {
+        fake.failOptionalCreate = false;
+        fake.dropCreate500 = false;
+        fake.notes = false;
+        await link.saveSmileApiKey(gm, KEY);
+        await link.setSmileMode(gm, 'crear');
+      }
     });
 
     it("revierte y reintenta una transacción abortada después de escribir, sin duplicar el turno remoto", async () => {
