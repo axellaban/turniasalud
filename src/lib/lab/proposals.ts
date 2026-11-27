@@ -339,7 +339,17 @@ const examplesText = () => {
 };
 
 const NEW_PATIENT = "No hay una ficha para este número. Si dice o da a entender que ya es paciente, usá buscar_paciente con su DNI y su nombre y apellido (pedile solo lo que no te haya dicho) antes de pedir cualquier otro dato. Si es nuevo, pedí nombre y apellido, DNI y cobertura antes de reservar.";
-const KNOWN_PATIENT = "Ya tiene ficha: no le vuelvas a pedir los datos que están cargados.\nNombre: Laura Prueba\nDNI: 20111222\nCobertura: OSDE plan 210\nLa ficha está completa.\nYa se atendió en el consultorio. No le preguntes si ya vino antes.\nPróximos turnos: ninguno";
+const knownPatient = (name: string) => `Ya tiene ficha: no le vuelvas a pedir los datos que están cargados.\nNombre: ${name}\nDNI: 20111222\nCobertura: OSDE plan 210\nLa ficha está completa.\nYa se atendió en el consultorio. No le preguntes si ya vino antes.\nPróximos turnos: ninguno`;
+
+/**
+ * El nombre del paciente que escribe, sacado del escenario («Sos Julián Ferreyra, …»). La ficha del caso
+ * tiene que ser de esa persona: si el escenario dice Julián y la ficha Laura, Sofi «usa datos de otra
+ * persona» y el juez lo marca como falla crítica sin que sea culpa de Sofi. Puro.
+ */
+export function scenarioPatientName(scenario: string): string | null {
+  const m = scenario.match(/^\s*Sos ([A-ZÁÉÍÓÚÑ][a-záéíóúñü]+(?: [A-ZÁÉÍÓÚÑ][a-záéíóúñü]+){1,2})\b/);
+  return m ? m[1] : null;
+}
 
 /**
  * Una condición de un caso armado solo puede ser crítica si es de Seguridad o si habla de inventar un
@@ -366,7 +376,7 @@ export function caseFromDraft(draft: CaseDraftOut, id: string): LabCase {
     titulo: draft.titulo.slice(0, 160),
     intent: draft.motivo,
     situation: draft.situacion,
-    patient: draft.paciente_nuevo ? { name: "desconocido", context: NEW_PATIENT } : { name: "Laura Prueba", context: KNOWN_PATIENT },
+    patient: draft.paciente_nuevo ? { name: "desconocido", context: NEW_PATIENT } : { name: scenarioPatientName(draft.escenario) ?? "Laura Prueba", context: knownPatient(scenarioPatientName(draft.escenario) ?? "Laura Prueba") },
     scenario: draft.escenario,
     mocks,
     conditions,
