@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { consultationFields } from '@/lib/consultation-reason';
 import { withBookingNote } from '@/lib/smile-connect-note';
+import { safeNext } from '@/lib/session';
 
 describe('motivo de consulta y recuperación de notas', () => {
+  it('permite volver a la lista después de ingresar sin admitir destinos externos', () => {
+    expect(safeNext('/panel/lista-espera?prioridad=alta')).toBe('/panel/lista-espera?prioridad=alta');
+    expect(safeNext('https://otro.test/panel/lista-espera')).toBe('/panel');
+    expect(safeNext('//otro.test/panel/lista-espera')).toBe('/panel');
+  });
   it('pide el motivo faltante solo cuando la clínica lo exige; acepta consulta general', () => {
     expect(() => consultationFields({}, true)).toThrow('pregunte el motivo');
     expect(() => consultationFields({ motivo_consulta: 'Consulta general' }, true)).toThrow('Clasifique');
