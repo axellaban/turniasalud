@@ -99,7 +99,7 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 
 ## Informe para revisar afuera
 
-`GET /api/lab/informe` (últimas corridas, propuestas, criterios y charlas puntuadas) y `GET /api/lab/informe?corrida=<id>` (una corrida charla por charla), con el header `x-lab-token: <LAB_REPORT_TOKEN>`. Solo lee el laboratorio. Lo usa Claude Code para revisar las corridas sin entrar al panel: la clave se guarda una vez en el entorno de la sesión (formulario seguro), nunca en el chat.
+`GET /api/lab/informe` (últimas corridas, propuestas, criterios y charlas puntuadas) y `GET /api/lab/informe?corrida=<id>` (una corrida charla por charla), con el header `x-lab-token`. La clave se crea en Panel → Laboratorio → Criterios → «Acceso de Claude al informe» (se ve una sola vez; en la base queda solo su hash; se puede revocar). También acepta `LAB_REPORT_TOKEN` si algún día se carga en Vercel. Solo lee el laboratorio. Lo usa Claude Code para revisar las corridas sin entrar al panel: la clave se guarda una vez en el entorno de la sesión (formulario seguro), nunca en el chat.
 
 ## Importante
 

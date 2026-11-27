@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { json, sql } from "@/lib/db";
@@ -235,4 +236,20 @@ export async function labCoverageCases(_prev: LabFormState, form: FormData): Pro
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Clave de solo lectura del informe del laboratorio (para Claude Code). Se muestra una sola vez. */
+export async function labCreateToken(_prev: LabFormState, form: FormData): Promise<LabFormState> {
+  await requireAdmin();
+  const label = text(form, "etiqueta") || "Claude Code";
+  const token = `lab_${randomBytes(24).toString("hex")}`;
+  await sql`insert into lab_access_tokens (token_hash, label, created_by) values (${createHash("sha256").update(token).digest("hex")}, ${label.slice(0, 80)}, ${ACTOR})`;
+  revalidatePath("/panel/laboratorio/criterios");
+  return { ok: true, message: `Clave (se ve solo ahora, copiala): ${token}` };
+}
+
+export async function labRevokeToken(_prev: LabFormState, form: FormData): Promise<LabFormState> {
+  await requireAdmin();
+  await sql`update lab_access_tokens set revoked_at = now() where id = ${text(form, "clave")} and revoked_at is null`;
+  return done("Clave revocada.");
 }
