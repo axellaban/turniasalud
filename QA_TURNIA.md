@@ -72,6 +72,7 @@ Buscá `### QA <fecha de hoy> am` o `pm`, con la fecha de Argentina. Mirá `Esta
 - Postgres local descartable y proveedores simulados: 849 tests / 101 archivos. Guardas de motivo antes de reservar, aceptación de consulta general, persistencia al reprogramar, espera sin turno, conservación al actualizar preferencias, aislamiento por clínica y acceso del equipo, filtros y actualización al cancelar. No hay alta automática en espera para candidatos por motivo.
 - Regresión del proveedor: POST con notas devuelve 500, alta básica queda confirmada, PATCH opcional falla y se reintenta aparte; la reserva no se repite, la nota se verifica al completar y no se mandan alertas técnicas por ella. Se preservan notas de recepción y se detecta un motivo modificado por el equipo.
 - El panel confirmó la actualización del agente general y de llamadas de Guerra–Mininni con el código publicado antes de este cambio. Repetir después de publicar y habilitar solo esa clínica. La batería remota de simulaciones de ElevenLabs queda separada de los tests locales.
+- Pantalla probada con Next en producción local y base ficticia: escritorio e iPhone 13, columnas y filtro sin turno, acceso del menú lateral y «Más». HTTP 200, sin errores de navegador, desborde de página ni violaciones graves/críticas de accesibilidad. Se corrigió también el regreso a `/panel/lista-espera` después del login, conservando la restricción a destinos internos.
 
 ### Verificación 2026-11-19 am (tareas 10 y 8 de computer use)
 

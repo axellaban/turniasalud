@@ -1046,6 +1046,12 @@ describe.runIf(url)("Smile Connect por API (simulado)", () => {
         expect(await push.pushPendingSmile(gm, uncertain.turno_id)).toMatchObject({ ok: 1 });
         expect(writes().filter(w => w.path === '/appointments')).toHaveLength(1);
         expect(await smileSync(uncertain.turno_id!)).toMatchObject({ status: 'confirmado', smile_sync: 'ok' });
+        expect((await sql`select smile_booking_notes_pending from appointments where id = ${uncertain.turno_id!}`)[0].smile_booking_notes_pending).toBe(true);
+        const patchesBefore = writes().filter(w => w.method === 'PATCH').length;
+        await push.pushPendingSmile(gm);
+        expect((await sql`select smile_booking_notes_pending from appointments where id = ${uncertain.turno_id!}`)[0].smile_booking_notes_pending).toBe(false);
+        // El POST incierto sí había guardado la nota: se verifica y no vuelve a escribirla.
+        expect(writes().filter(w => w.method === 'PATCH')).toHaveLength(patchesBefore);
         await send();
         await sql`update smile_connect_changes set created_at = now() - interval '2 hours'
           where appointment_id = any(${[booking.turno_id!, uncertain.turno_id!]}::uuid[])`;

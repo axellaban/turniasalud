@@ -478,8 +478,8 @@ async function processDeferredBooking(tx: TransactionSql, client: SmileClient, c
       createdByTurnia = !recovered;
       if (!recovered) await logChange(tx, row, "crear", "hecho", { request: sent, result });
       await tx`update appointments set external_id = ${`sc:${id}`},
-        smile_booking_notes = ${request.notes && !sent.notes ? request.notes : null},
-        smile_booking_notes_pending = ${Boolean(request.notes && !sent.notes)} where id = ${row.id}`;
+        smile_booking_notes = ${request.notes && (!sent.notes || recovered) ? request.notes : null},
+        smile_booking_notes_pending = ${Boolean(request.notes && (!sent.notes || recovered))} where id = ${row.id}`;
     }
   }
   await verifyNewAppointment(tx, client, row, id, patientId, createdByTurnia);
