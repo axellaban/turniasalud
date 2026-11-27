@@ -230,9 +230,18 @@ async function agentTools(agentId: string): Promise<{ ids: string[]; byName: Rec
 }
 
 /** Las respuestas fijas en el formato de ElevenLabs (las herramientas que el agente no tiene se ignoran). */
+/**
+ * Respuestas que valen para todos los casos si el caso no trae la suya: derivar a recepción siempre
+ * funciona. Sin esto, la simulación devuelve error y Sofi termina hablando de fallas del sistema.
+ */
+const DEFAULT_MOCKS: Record<string, Mock> = {
+  crear_tarea: { ok: true, tarea_id: "tarea-simulada", mensaje: "Tarea creada para el equipo." },
+  anular_tarea: { ok: true, anuladas: [], mensaje: "No había pedidos de esta charla para anular." },
+};
+
 export function mockOverrides(mocks: Record<string, Mock>, byName: Record<string, string>): Record<string, unknown[]> {
   const overrides: Record<string, unknown[]> = {};
-  for (const [name, mock] of Object.entries(mocks)) {
+  for (const [name, mock] of Object.entries({ ...DEFAULT_MOCKS, ...mocks })) {
     const id = byName[name];
     if (!id) continue;
     const options = Array.isArray(mock) && mock.every((o) => o && typeof o === "object" && "resultado" in o)

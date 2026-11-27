@@ -23,7 +23,7 @@ export const DIMENSION_HELP: Record<Dimension, string> = {
   exactitud: "Busca bien, respeta lo pedido, no inventa turnos ni dice «no hay» sin buscar.",
   resolucion: "Termina lo que el paciente vino a hacer, o lo deriva bien.",
   eficiencia: "Vueltas hasta resolver, datos pedidos de a uno, preguntas repetidas.",
-  trato: "Usted, «¿», fechas completas, sin etiquetas internas ni fórmulas.",
+  trato: "El trato del consultorio, fechas completas, sin etiquetas internas ni fórmulas.",
 };
 
 /** Techo del puntaje de una corrida con alguna falla crítica. */
@@ -123,7 +123,9 @@ export function band(score: number | null): Band | null {
 // Controles automáticos: lo que se puede comprobar sin juez, mirando lo que escribió y qué herramientas usó.
 // ---------------------------------------------------------------------------
 const STATE_CLAIM = /\b(qued[oó]|est[aá]|fue|ya (?:est[aá]|qued[oó]))\s+(?:\w+\s+)?(reservad[oa]|cancelad[oa]|movid[oa]|reprogramad[oa]|anotad[oa] en la lista)/i;
-const STATE_TOOLS = ["reservar_turno", "cancelar_turno", "reprogramar_turno", "anotar_lista_espera", "confirmar_turno"];
+const STATE_TOOLS = ["reservar_turno", "cancelar_turno", "reprogramar_turno", "anotar_lista_espera", "confirmar_turno", "anular_tarea", "crear_tarea"];
+/** «no quedó reservado», «todavía no está confirmado»: negar un estado no es afirmarlo. */
+const NEGATED = /\b(no|nunca|todav[ií]a no|a[uú]n no)\s+(?:\w+\s+)?$/i;
 const NO_SLOTS = /\bno (?:tengo|hay|me (?:quedan|figuran))\s+(?:\w+\s+){0,2}(turnos?|lugar(?:es)?|horarios?|disponibilidad)\b/i;
 
 function okResult(result: string | null): boolean {
@@ -136,7 +138,7 @@ function okResult(result: string | null): boolean {
   }
 }
 
-/** Preguntas de Sofi sin «¿» de apertura (cuenta oraciones que terminan en «?»). */
+/** Preguntas sin «¿» de apertura. No se usa como control: Sofi escribe sin «¿» a propósito (estilo de WhatsApp). */
 export function questionsWithoutOpening(text: string): number {
   return text
     .split(/(?<=[.!?\n])/)
@@ -154,7 +156,6 @@ export function automaticChecks(lines: LabLine[]): Verdict[] {
   let searched = false;
   let stateClaimWithoutTool: string | null = null;
   let noSlotsWithoutSearch: string | null = null;
-  let questions = 0;
   let sofiLines = 0;
   for (const line of lines) {
     if (line.role !== "sofi") continue;
@@ -164,9 +165,9 @@ export function automaticChecks(lines: LabLine[]): Verdict[] {
     }
     if (!line.text) continue;
     sofiLines++;
-    if (!stateToolOk && !stateClaimWithoutTool && STATE_CLAIM.test(line.text)) stateClaimWithoutTool = line.text;
+    const claim = STATE_CLAIM.exec(line.text);
+    if (!stateToolOk && !stateClaimWithoutTool && claim && !NEGATED.test(line.text.slice(0, claim.index))) stateClaimWithoutTool = line.text;
     if (!searched && !noSlotsWithoutSearch && NO_SLOTS.test(line.text)) noSlotsWithoutSearch = line.text;
-    questions += questionsWithoutOpening(line.text);
   }
   if (!sofiLines) return verdicts;
   verdicts.push({
@@ -181,12 +182,6 @@ export function automaticChecks(lines: LabLine[]): Verdict[] {
     pass: !noSlotsWithoutSearch,
     text: "Control automático: no dice que no hay turnos sin haber consultado la disponibilidad.",
     ...(noSlotsWithoutSearch && { reason: `Dijo «${noSlotsWithoutSearch.slice(0, 200)}» sin consultar la disponibilidad.` }),
-  });
-  verdicts.push({
-    dim: "trato",
-    pass: questions === 0,
-    text: "Control automático: toda pregunta abre con «¿».",
-    ...(questions > 0 && { reason: `${questions} pregunta${questions === 1 ? "" : "s"} sin «¿».` }),
   });
   return verdicts;
 }

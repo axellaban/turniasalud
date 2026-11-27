@@ -114,9 +114,18 @@ describe("controles automáticos", () => {
     expect(checks.find((c) => c.text.includes("no hay turnos"))?.pass).toBe(false);
   });
 
-  it("cuenta las preguntas sin «¿»", () => {
+  it("no penaliza la falta de «¿»: es el estilo elegido para WhatsApp", () => {
     expect(questionsWithoutOpening("Hola. Quiere que la anote? ¿Le sirve el martes?")).toBe(1);
-    expect(automaticChecks([sofi("Cuál le queda mejor?")]).find((c) => c.dim === "trato")?.pass).toBe(false);
+    expect(automaticChecks([sofi("Cuál le queda mejor?")]).every((c) => c.pass)).toBe(true);
+  });
+
+  it("negar un estado no es afirmarlo, y anular un pedido con la herramienta cuenta", () => {
+    expect(automaticChecks([sofi("Perdón, el jueves 3/12 a las 12 se ocupó recién y no quedó reservado.")]).every((c) => c.pass)).toBe(true);
+    const anulado = automaticChecks([
+      sofi("", [{ name: "anular_tarea", params: "{}", result: '{"ok":true}', error: false }]),
+      sofi("Listo, el pedido al doctor quedó cancelado."),
+    ]);
+    expect(anulado.every((c) => c.pass)).toBe(true);
   });
 });
 
