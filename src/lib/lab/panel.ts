@@ -1,6 +1,6 @@
 import "server-only";
 import { sql } from "../db";
-import { DIMENSIONS, INTENTS, SITUATIONS, type Dimension } from "./cases";
+import { DIMENSIONS, INTENTS, SITUATIONS, VALID_CELLS, isValidCell, type Dimension } from "./cases";
 import type { LabFinding } from "./judge";
 import type { LabProposal } from "./proposals";
 import { allCases, type LabResult, type LabRun } from "./runs";
@@ -117,6 +117,8 @@ export async function labCoverage(clinicId: string): Promise<{
   coverage: number | null;
   reviewed: number;
   testedCells: number;
+  validCells: number;
+  missingValid: number;
   uncoveredWithReal: CoverageCell[];
 }> {
   const cases = await allCases(clinicId);
@@ -154,16 +156,20 @@ export async function labCoverage(clinicId: string): Promise<{
   const reviewed = real.reduce((a, r) => a + r.n, 0);
   const covered = real.filter((r) => (cells.get(key(r.intent, r.situation))?.cases ?? 0) > 0).reduce((a, r) => a + r.n, 0);
   const all = [...cells.values()];
-  const usedIntents = INTENTS.filter((i) => all.some((c) => c.intent === i));
-  const usedSituations = SITUATIONS.filter((s) => all.some((c) => c.situation === s));
+  for (const [i, s] of VALID_CELLS) cell(i, s);
+  const usedIntents = INTENTS.filter((i) => all.concat([...cells.values()]).some((c) => c.intent === i));
+  const usedSituations = SITUATIONS.filter((s) => [...cells.values()].some((c) => c.situation === s));
+  const valid = [...cells.values()].filter((c) => isValidCell(c.intent, c.situation));
   return {
-    cells: all,
     intents: usedIntents,
     situations: usedSituations,
     coverage: reviewed ? Math.round((covered / reviewed) * 100) : null,
     reviewed,
-    testedCells: all.filter((c) => c.cases > 0).length,
-    uncoveredWithReal: all.filter((c) => !c.cases && c.real > 0).sort((a, b) => b.real - a.real),
+    cells: [...cells.values()],
+    testedCells: valid.filter((c) => c.cases > 0).length,
+    validCells: VALID_CELLS.length,
+    missingValid: valid.filter((c) => !c.cases).length,
+    uncoveredWithReal: [...cells.values()].filter((c) => !c.cases && c.real > 0).sort((a, b) => b.real - a.real),
   };
 }
 

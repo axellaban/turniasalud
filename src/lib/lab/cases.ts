@@ -68,6 +68,25 @@ export const SITUATIONS: Situation[] = [
   "mensajes_seguidos", "falla_agenda", "sin_agenda",
 ];
 
+/**
+ * Los tipos de caso que tienen sentido (motivo × situación). «Cubrir todo» es tener al menos un caso en
+ * cada uno: el laboratorio genera solo los que falten (src/lib/lab/coverage.ts). Las combinaciones que
+ * no están acá no se dan en la práctica (por ejemplo, una receta con la agenda llena).
+ */
+export const VALID_CELLS: Array<[Intent, Situation]> = [
+  ...(["con_lugar", "agenda_llena", "pide_profesional", "pide_franja", "dia_sin_atencion", "para_otra_persona", "mensajes_seguidos", "falla_agenda"] as Situation[]).map((s) => ["agendar", s] as [Intent, Situation]),
+  ...(["con_lugar", "agenda_llena", "pide_profesional", "pide_franja", "dia_sin_atencion", "para_otra_persona", "falla_agenda"] as Situation[]).map((s) => ["reprogramar", s] as [Intent, Situation]),
+  ["cancelar", "sin_agenda"], ["cancelar", "para_otra_persona"], ["cancelar", "mensajes_seguidos"],
+  ["confirmar", "sin_agenda"], ["confirmar", "para_otra_persona"],
+  ["consulta_informativa", "sin_agenda"], ["consulta_informativa", "mensajes_seguidos"],
+  ["consulta_clinica", "sin_agenda"], ["consulta_clinica", "para_otra_persona"],
+  ["urgencia", "sin_agenda"], ["urgencia", "agenda_llena"], ["urgencia", "para_otra_persona"],
+  ["receta", "sin_agenda"], ["resultados", "sin_agenda"], ["orden_medica", "sin_agenda"], ["facturacion", "sin_agenda"],
+  ["otro", "sin_agenda"], ["otro", "mensajes_seguidos"],
+];
+
+export const isValidCell = (intent: string, situation: string) => VALID_CELLS.some(([i, s]) => i === intent && s === situation);
+
 /** La condición con su texto final (algunas dependen del trato de la clínica). */
 export function resolveCondition(spec: ConditionSpec, vars: Vars): Condition {
   return typeof spec === "function" ? spec(vars) : spec;

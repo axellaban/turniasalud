@@ -222,6 +222,13 @@ async function resolveExperiments(run: LabRun): Promise<void> {
 }
 onRunFinished(resolveExperiments);
 
+/** Después de cada batería o prueba de «Jugar de paciente»: las propuestas se piden en la próxima vuelta del cron. */
+async function queueProposals(run: LabRun): Promise<void> {
+  if (run.kind === "experimento") return;
+  await sql`update clinics set lab_settings = lab_settings || '{"proposals_due": true}'::jsonb where id = ${run.clinic_id}`;
+}
+onRunFinished(queueProposals);
+
 /** «Actualizar a Sofi»: el agente general toma el prompt con las mejoras aprobadas. */
 async function publishSofi(): Promise<void> {
   const main = await getClinic();
@@ -352,7 +359,7 @@ export async function draftLabCase(clinic: Clinic, request: string): Promise<Lab
     clinicContext: await clinicContextFor(clinic),
     criteria: await criteriaFor(clinic.id),
   });
-  return caseFromDraft(draft, `caso-${Date.now().toString(36)}`);
+  return caseFromDraft(draft, `caso-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
 }
 
 /** Guarda un caso (de una prueba de «Jugar de paciente», una charla real o uno generado) para la batería. */

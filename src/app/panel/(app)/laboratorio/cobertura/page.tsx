@@ -3,6 +3,7 @@ import { Card, smallButtonClass } from "@/components/ui";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDate } from "@/lib/time";
 import { INTENT_LABEL, SITUATION_LABEL, labCoverage, labSavedCases } from "@/lib/lab/panel";
+import { isValidCell } from "@/lib/lab/cases";
 import { labCoverageCases, labToggleCase } from "../../../lab-actions";
 import { LabForm } from "../lab-form";
 import { LabHeader, scoreTone } from "../lab-ui";
@@ -16,13 +17,12 @@ export default async function CoveragePage() {
   const [cov, saved] = await Promise.all([labCoverage(clinic.id), labSavedCases(clinic.id)]);
   const cellOf = (i: string, s: string) => cov.cells.find((c) => c.intent === i && c.situation === s);
   const realByIntent = (i: string) => cov.cells.filter((c) => c.intent === i).reduce((a, c) => a + c.real, 0);
-  const missing = cov.uncoveredWithReal.slice(0, 3);
   return (
     <>
       <LabHeader
         current="/panel/laboratorio/cobertura"
         title="Cobertura"
-        description="Qué le piden los pacientes a Sofi, cruzado con la situación. Cada celda es un tipo de caso: el número es su puntaje en la última batería. Las grises no tienen casos."
+        description="Qué le piden los pacientes a Sofi, cruzado con la situación. Cada celda es un tipo de caso: el número es su puntaje en la última batería. Las grises todavía no tienen casos (se arman solos); «no aplica» son combinaciones que no se dan."
       />
       <div className="mb-5 grid gap-4 sm:grid-cols-3">
         <Card>
@@ -36,8 +36,8 @@ export default async function CoveragePage() {
         </Card>
         <Card>
           <p className="text-xs font-medium uppercase tracking-wider text-brand-900/65">Tipos de caso probados</p>
-          <p className="mt-2 font-display text-3xl font-semibold">{cov.testedCells}</p>
-          <p className="mt-1.5 text-xs text-brand-900/65">{saved.filter((c) => c.active).length} casos guardados además de los de referencia.</p>
+          <p className="mt-2 font-display text-3xl font-semibold">{cov.testedCells} <span className="text-base font-normal text-brand-900/60">de {cov.validCells}</span></p>
+          <p className="mt-1.5 text-xs text-brand-900/65">{cov.missingValid ? `Faltan ${cov.missingValid}: se arman solos, de a 2 cada 10 minutos, y entran en la batería siguiente.` : "Todos los tipos de caso tienen al menos uno."} {saved.filter((c) => c.active).length} casos guardados además de los 18 de referencia.</p>
         </Card>
         <Card>
           <p className="text-xs font-medium uppercase tracking-wider text-brand-900/65">Sin probar y ya aparecen</p>
@@ -72,6 +72,9 @@ export default async function CoveragePage() {
                   <th scope="row" className="px-1 text-left text-sm font-medium text-brand-950">{INTENT_LABEL[i] ?? i}</th>
                   {cov.situations.map((s) => {
                     const c = cellOf(i, s);
+                    if (!isValidCell(i, s) && !c?.cases && !c?.real) {
+                      return <td key={s} className="h-12 text-center align-middle text-[11px] text-brand-900/35">no aplica</td>;
+                    }
                     const tested = Boolean(c?.cases);
                     const style = tested
                       ? { background: c?.score === null ? "#eef1f8" : `${scoreTone(c?.score)}26` }
@@ -96,19 +99,14 @@ export default async function CoveragePage() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <h2 className="font-semibold text-brand-950">Lo que falta probar</h2>
-          {missing.length ? (
-            <LabForm action={labCoverageCases} submit={`Generar ${missing.length} caso${missing.length === 1 ? "" : "s"}`} pending="Claude está armando los casos…" className="mt-3 space-y-3">
-              <ul className="space-y-1.5 text-sm">
-                {missing.map((c) => (
-                  <li key={`${c.intent}|${c.situation}`}>
-                    <input type="hidden" name="celda" value={`${c.intent}|${c.situation}`} />
-                    {INTENT_LABEL[c.intent] ?? c.intent} · {SITUATION_LABEL[c.situation] ?? c.situation} <span className="text-brand-900/60">({c.real} charlas reales)</span>
-                  </li>
-                ))}
-              </ul>
+          {cov.missingValid ? (
+            <LabForm action={labCoverageCases} submit="Armar 3 ahora" pending="Claude está armando los casos…" className="mt-3 space-y-3">
+              <p className="text-sm text-brand-900/75">
+                Hay {cov.missingValid} tipo{cov.missingValid === 1 ? "" : "s"} de caso sin ningún caso. El laboratorio los arma solo (primero los que ya aparecen en charlas reales), de a 2 cada 10 minutos. Con el botón, 3 ahora.
+              </p>
             </LabForm>
           ) : (
-            <p className="mt-2 text-sm text-brand-900/70">Todos los tipos de caso que aparecen en las charlas reales revisadas tienen al menos un caso.</p>
+            <p className="mt-2 text-sm text-brand-900/70">Todos los tipos de caso tienen al menos un caso: la batería cubre el mapa completo.</p>
           )}
         </Card>
         <Card>

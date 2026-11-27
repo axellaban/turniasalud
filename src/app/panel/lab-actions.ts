@@ -11,6 +11,7 @@ import {
   addCriterion, approveProposal, draftLabCase, generateProposals, proposeFromResult, rejectProposal, revertProposal, saveCase, startExperiment,
 } from "@/lib/lab/proposals";
 import { advanceRun, allCases, getRun, startRun } from "@/lib/lab/runs";
+import { fillCoverage } from "@/lib/lab/coverage";
 import { storedTranscript, transcriptText } from "@/lib/lab/transcript";
 
 // Panel → Turnia → Laboratorio de Sofi. Solo el administrador de Turnia.
@@ -210,29 +211,13 @@ export async function labCaseFromConversation(_prev: LabFormState, form: FormDat
   }
 }
 
-/** Genera casos para los tipos de caso que aparecen en charlas reales y todavía no se prueban (hasta 3). */
+/** Arma casos para hasta 3 tipos de caso sin ninguno (primero los que aparecen en charlas reales). */
 export async function labCoverageCases(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   const clinic = await adminClinic(form);
   if (!labJudgeConfigured()) return { ok: false, message: "Falta ANTHROPIC_API_KEY." };
-  const cells = form.getAll("celda").map(String).filter(Boolean).slice(0, 3);
-  if (!cells.length) return { ok: false, message: "No hay tipos de caso sin probar que aparezcan en las charlas reales." };
   try {
-    const titles: string[] = [];
-    for (const cell of cells) {
-      const [intent, situation] = cell.split("|");
-      const examples = await sql<Array<{ summary: string | null }>>`
-        select summary from lab_reviews where clinic_id = ${clinic.id} and intent = ${intent} and situation = ${situation} and summary is not null
-        order by reviewed_at desc limit 4`;
-      const labCase = await draftLabCase(
-        clinic,
-        `Un caso de motivo «${intent}» en la situación «${situation}», como los de estas charlas reales:\n${examples.map((e) => `- ${e.summary}`).join("\n") || "(sin resúmenes)"}`,
-      );
-      labCase.intent = intent as typeof labCase.intent;
-      labCase.situation = situation as typeof labCase.situation;
-      await saveCase(clinic.id, labCase, "exploratorio", ACTOR);
-      titles.push(labCase.titulo);
-    }
-    return done(`Casos nuevos: ${titles.map((t) => `«${t}»`).join(", ")}. Entran en la batería de esta noche.`);
+    const titles = await fillCoverage(clinic, 3, 240_000);
+    return done(titles.length ? `Casos nuevos: ${titles.map((t) => `«${t}»`).join(", ")}. Entran en la batería siguiente.` : "No falta ningún tipo de caso.");
   } catch (e) {
     return fail(e);
   }
@@ -253,3 +238,4 @@ export async function labRevokeToken(_prev: LabFormState, form: FormData): Promi
   await sql`update lab_access_tokens set revoked_at = now() where id = ${text(form, "clave")} and revoked_at is null`;
   return done("Clave revocada.");
 }
+
