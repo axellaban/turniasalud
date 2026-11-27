@@ -75,7 +75,8 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 |---|---|
 | De 2 a 6, una vez por noche | Batería con todos los casos activos × 3. |
 | Cada 10 minutos | Trae los resultados de ElevenLabs, los puntúa (con un tiempo máximo por vuelta) y revisa hasta 6 charlas reales cerradas. |
-| Desde las 6, una vez por día | Propuestas. Espera a que termine la batería, hasta el mediodía. Las de prompt se prueban solas, hasta 2. |
+| Después de cada batería o «Jugar de paciente» que termina, y además una vez por día desde las 6 | Propuestas (espera a que no haya una batería abierta). Las de prompt se prueban solas, hasta 2. |
+| Cada 10 minutos, fuera de 2 a 6 | Cobertura: arma casos (2 por vuelta) para los tipos de caso con sentido (`VALID_CELLS` en `cases.ts`) que todavía no tienen ninguno, primero los que aparecen en charlas reales. Entran en la batería siguiente. |
 | Desde las 9, una vez por día | Resumen por WhatsApp a Axel, si está prendido y hay algo nuevo (una batería de las últimas 26 h o mejoras pendientes). Sale por la línea general. Si falla, no se manda por el canal de avisos técnicos, porque es un resumen y no un aviso. |
 
 **Cuánto cuesta:**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DIMENSIONS, INTENTS, SITUATIONS, referenceCases, resolveCondition } from "./cases";
+import { DIMENSIONS, INTENTS, SITUATIONS, VALID_CELLS, isValidCell, referenceCases, resolveCondition } from "./cases";
 import { aggregateRun, automaticChecks, band, caseWeights, compareRuns, conversationScore, questionsWithoutOpening, type ScoredResult } from "./score";
 import { normalizeTranscript, transcriptText, type LabLine } from "./transcript";
 import { applyPatches, patchProblem, promptHash } from "./prompt";
@@ -190,5 +190,18 @@ describe("casos de referencia", () => {
     const dates = JSON.stringify(cases.map((c) => c.mocks)).match(/\d{4}-\d{2}-\d{2}T/g) ?? [];
     expect(dates.length).toBeGreaterThan(5);
     for (const d of dates) expect(d.slice(0, 10) >= today).toBe(true);
+  });
+});
+
+describe("mapa de cobertura", () => {
+  it("los tipos de caso válidos usan motivos y situaciones conocidos, sin repetir", () => {
+    expect(new Set(VALID_CELLS.map(([i, s]) => `${i}|${s}`)).size).toBe(VALID_CELLS.length);
+    for (const [i, s] of VALID_CELLS) {
+      expect(INTENTS).toContain(i);
+      expect(SITUATIONS).toContain(s);
+    }
+  });
+  it("cada caso de referencia cae en un tipo de caso válido", () => {
+    for (const c of referenceCases()) expect(isValidCell(c.intent, c.situation), c.id).toBe(true);
   });
 });

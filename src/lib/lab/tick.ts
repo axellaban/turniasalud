@@ -8,6 +8,7 @@ import { chatIdForPhone, wahaSendText } from "../waha";
 import { withGeneralWaha } from "../waha-connections";
 import { labJudgeConfigured } from "./judge";
 import { generateProposals } from "./proposals";
+import { fillCoverage } from "./coverage";
 import { reviewRecentConversations } from "./reviews";
 import { advanceRun, allCases, openRuns, startRun } from "./runs";
 import { aggregateReviews, type Dims } from "./score";
@@ -24,6 +25,7 @@ export type LabSettings = {
   auto_a?: boolean;
   last_proposals?: string;
   last_digest?: string;
+  proposals_due?: boolean;
 };
 
 type LabClinic = Clinic & { lab_enabled: boolean; lab_settings: LabSettings };
@@ -58,22 +60,38 @@ export async function runLab(budgetMs = 110_000): Promise<Record<string, unknown
     }
   }
 
-  // 2. Las propuestas del día (tardan: si toca, es lo único pesado de esta vuelta).
+  // 2. Propuestas: después de cada batería o prueba que termina (proposals_due) y, además, una vez por día.
+  //    Tardan: si toca, es lo único pesado de esta vuelta.
   for (const clinic of clinics) {
     const today = localDateKey(new Date(), clinic.timezone);
-    if (clinic.lab_settings?.last_proposals === today || localHour(clinic.timezone) < 6 || !labJudgeConfigured()) continue;
+    const due = clinic.lab_settings?.proposals_due || (clinic.lab_settings?.last_proposals !== today && localHour(clinic.timezone) >= 6);
+    if (!due || !labJudgeConfigured()) continue;
     const [openBattery] = await sql`
       select 1 from lab_runs where clinic_id = ${clinic.id} and kind = 'bateria' and status in ('preparando', 'corriendo', 'puntuando')
         and created_at > now() - interval '12 hours' limit 1`;
     // Espera a que termine la batería abierta: las propuestas sin sus resultados salen vacías.
     if (openBattery) continue;
-    await setSetting(clinic.id, { last_proposals: today });
+    await setSetting(clinic.id, { last_proposals: today, proposals_due: false });
     try {
       report[`propuestas:${clinic.name}`] = await generateProposals(clinic, { actor: "Laboratorio" });
     } catch (e) {
       report[`propuestas:${clinic.name}`] = e instanceof Error ? e.message : String(e);
     }
     return report;
+  }
+
+  // 2b. Cobertura: arma casos para los tipos de caso que no tienen ninguno (2 por vuelta, fuera de la
+  //     ventana de la batería nocturna para que entren en la próxima).
+  for (const clinic of clinics) {
+    if (!labJudgeConfigured() || left() < 80_000) break;
+    const hour = localHour(clinic.timezone);
+    if (hour >= 2 && hour < 6) continue;
+    try {
+      const titles = await fillCoverage(clinic, 2, 70_000);
+      if (titles.length) report[`cobertura:${clinic.name}`] = titles;
+    } catch (e) {
+      report[`cobertura:${clinic.name}`] = e instanceof Error ? e.message : String(e);
+    }
   }
 
   // 3. Avanzar las corridas abiertas.

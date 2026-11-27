@@ -105,6 +105,15 @@ vi.mock("@/lib/lab/judge", async (importOriginal) => {
       findings: [{ problema: "No pidió los datos juntos", cita: "", dimension: "eficiencia", gravedad: "baja", mejora: "" }],
       summary: "Ofreció un turno.",
     })),
+    draftCase: vi.fn(async () => ({
+      titulo: "Caso armado para cobertura",
+      motivo: "otro",
+      situacion: "sin_agenda",
+      paciente_nuevo: true,
+      escenario: "Sos un paciente nuevo. Escribís: «Hola». Cuando te contesten, terminás la charla.",
+      respuestas: [{ herramienta: "consultar_disponibilidad", respuesta_json: '{"ok":true,"turnos":[]}' }],
+      condiciones: [{ texto: "El agente responde con el trato del consultorio.", dimension: "trato", critica: false }],
+    })),
     proposeImprovements: vi.fn(async () => [
       {
         titulo: "Decir hasta qué fecha buscó",
@@ -284,5 +293,24 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     expect(list.corridas.length).toBeGreaterThan(0);
     const one = await (await GET(new Request(`https://turnia.test/api/lab/informe?corrida=${batteryId}`, { headers: { "x-lab-token": "clave-de-informe-de-prueba-123456" } }))).json();
     expect(one.resultados).toHaveLength(4);
+  });
+
+  it("al terminar una batería quedan pedidas las propuestas", async () => {
+    const [c] = await sql<Array<{ lab_settings: { proposals_due?: boolean } }>>`select lab_settings from clinics where id = ${clinic.id}`;
+    expect(c.lab_settings.proposals_due).toBe(true);
+  });
+
+  it("completa la cobertura con casos para los tipos que faltan", async () => {
+    const { missingCells, fillCoverage } = await import("@/lib/lab/coverage");
+    const before = await missingCells(clinic.id);
+    expect(before.length).toBeGreaterThan(5);
+    // Primero los que ya aparecen en charlas reales.
+    expect(before[0]).toMatchObject({ intent: "agendar", situation: "mensajes_seguidos", real: 1 });
+    const titles = await fillCoverage(clinic, 2, 30_000);
+    expect(titles).toHaveLength(2);
+    const after = await missingCells(clinic.id);
+    expect(after.length).toBe(before.length - 2);
+    const [saved] = await sql<Array<{ source: string; intent: string }>>`select source, intent from lab_cases order by created_at desc limit 1`;
+    expect(saved.source).toBe("exploratorio");
   });
 });
