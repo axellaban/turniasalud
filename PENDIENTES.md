@@ -72,7 +72,16 @@ Pedido de Axel: entender por qué se desvinculó la WAHA del consultorio y detec
 **Pendiente:**
 - [x] **Variables del radar cargadas en Vercel Production el 26/11.** `EASYPANEL_API_URL=https://b6mgbu.easypanel.host/api` y token como secreto. Se redesplegó la misma versión publicada (`4da0746`); el endpoint de logs aceptó la firma derivada del token y `/api/health` respondió 200 con la base operativa.
 - [ ] **Rotar el token de Easypanel y las cuatro `WAHA_API_KEY`**: pasaron por un chat el 26/11. Rotar las claves de WAHA obliga a redesplegar cada servicio, así que conviene hacerlo fuera del horario del consultorio y empezando por las que están en FAILED.
-- [ ] **Decidir con Axel** si se apagan `turnia-guerra-mininni-waha` y `turnia-prospeccion-5483-waha` (las dos en FAILED) para liberar unos 600 MB de RAM, y si se le pone tope de memoria a `n8n/waha`. Son cambios en el VPS: no se hicieron.
+- [x] **Tanda B (27/11, 00:40, aprobada por Axel, fuera del horario del consultorio), por la API de Easypanel:**
+  - Se apagaron `turnia-guerra-mininni-waha` y `turnia-prospeccion-5483-waha` (las dos en FAILED). Volúmenes y configuración intactos: se vuelven a prender desde Easypanel si hace falta.
+  - `n8n/waha` (3765 del consultorio):
+    - imagen fijada en `devlikeapro/waha@sha256:0d64cce1…` (`noweb-2026.10.1`, la misma versión que ya corría);
+    - tope de 1024 MB de memoria con reserva de 256 MB y sin tope de CPU;
+    - zero downtime apagado.
+    - Redespliegue a las 03:41 UTC: la sesión volvió a WORKING con el 3765 en unos 40 s, sin bloqueo temporal ni tope de contactos nuevos (`messageCapping: NONE`).
+  - `n8n/turnia-waha`: misma imagen fijada y redesplegada; responde. Su sesión no se pudo leer desde la nube porque la clave guardada en el entorno de esta sesión es vieja. El radar de Turnia la lee con la clave de Easypanel.
+  - **RAM del VPS:** del 92 % antes a 73 % después (2,9 de 3,9 GB).
+- [ ] Leer la sesión de `turnia-waha` (línea general y demos) en el panel de Turnia → Sistema → Radar, y corregir la clave guardada de ese host en el entorno de la sesión de Claude.
 - [ ] Fijar la imagen de `n8n/waha` en su digest actual (no redesplegar para eso en horario de atención).
 
 ## Modelo de Sofi por canal — 25/11/2026
