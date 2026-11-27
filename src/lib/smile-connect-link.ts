@@ -1276,24 +1276,16 @@ async function alertAxelOnce(key: string, text: string): Promise<boolean> {
 const STALE_NEAR_MIN = 3 * 60;
 /** Con la sincronización por cambios (cada 10 minutos de día, 30 de noche), el aviso es antes. */
 const STALE_DELTA_MIN = 90;
-/** Sin copia por más de esto (corre una vez por día), se avisa. */
-const STALE_BACKUP_MIN = 30 * 60;
-/** Cada cuánto conviene renovar la clave de la API. */
-const KEY_ROTATE_DAYS = 180;
 
 /**
- * Revisa cómo quedó la integración de una clínica después de cada vuelta y le avisa a Axel lo que hay que
- * mirar: la agenda que dejó de sincronizarse (con el motivo), la escritura frenada, la copia diaria vieja o
- * con problemas, los horarios para revisar (un profesional nuevo o que ya no está) y, una vez por clave, si
- * falta el permiso de los bloqueos. Devuelve las claves de los avisos que salieron.
+ * Avisa solo una indisponibilidad operativa: API caída comprobada o escritura frenada.
+ * Horarios copiados, permisos opcionales, antigüedad de la clave y copias quedan en el panel.
  */
 export async function checkSmileHealth(clinicId: string, run: Record<string, unknown> = {}, now = new Date()): Promise<string[]> {
   const conn = await getSmileApiConnection(clinicId);
   if (!conn?.api_key_encrypted || conn.api_mode === "apagada") return [];
   const clinic = await getClinic(clinicId);
   const head = axelHead(clinic.name);
-  const day = localDateKey(now, clinic.timezone);
-  const half = Math.floor(now.getTime() / (12 * 3600_000));
   const connectedFor = minutesSince(conn.api_checked_at);
   const sent: string[] = [];
   const alert = async (key: string, text: string) => {
@@ -1303,40 +1295,29 @@ export async function checkSmileHealth(clinicId: string, run: Record<string, unk
   // Con la sincronización por cambios, lo fresco es lo último que trajo (cada 10 minutos); sin ella, la ventana cercana.
   const lastFresh = conn.api_supports_delta && conn.api_delta_at ? conn.api_delta_at : conn.api_near_pull_at;
   const staleAfter = conn.api_supports_delta ? STALE_DELTA_MIN : STALE_NEAR_MIN;
-  if (connectedFor > staleAfter && minutesSince(lastFresh) > staleAfter) {
-    const since = lastFresh ? `desde el ${formatWhen(lastFresh, clinic.timezone)}` : "todavía";
-    const why = conn.api_error ?? (typeof run.cupo === "string" ? run.cupo : "sin un error registrado");
-    await alert(`agenda:${half}`, `${head} la agenda no se sincroniza ${since} (${why}). Sofi igual verifica cada horario en vivo, pero sus turnos y la asistencia en Turnia pueden estar atrasados: ${panelLink()}`);
+  if (typeof run.error === 'string' || typeof run.error_cambios === 'string'
+    || (connectedFor > staleAfter && minutesSince(lastFresh) > staleAfter)) {
+    // Una copia atrasada no significa que Sofi esté caída. Confirmar con dos consultas actuales.
+    let failure: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try { await scClinic(clientFor(conn, 3000)); failure = null; break; } catch (e) { failure = e; }
+    }
+    if (failure instanceof SmileApiError && (failure.status === 0 || failure.status === 408 || failure.status >= 500)) {
+      const why = smileErrorText(failure);
+      await alert(`api:${conn.api_key_hint ?? 'clave'}`, `${head} la API no responde correctamente en dos comprobaciones actuales (${why}). La integración necesita revisión: ${panelLink()}`);
+    } else if (failure === null) {
+      await sql`delete from channel_events where key like ${`smile-axel:api:%:${clinicId}%`}`;
+    }
+  } else {
+    await sql`delete from channel_events where key like ${`smile-axel:api:%:${clinicId}%`}`;
   }
   if (conn.api_writes_paused) {
-    await alert(`escritura:${day}`, `${head} la escritura quedó frenada: ${conn.api_writes_paused} Se reanuda desde el panel: ${panelLink()}`);
-  }
-  if (connectedFor > STALE_BACKUP_MIN && minutesSince(conn.api_backup_at) > STALE_BACKUP_MIN) {
-    await alert(`copia:${day}`, `${head} no se hizo la copia diaria ${conn.api_backup_at ? `desde el ${formatWhen(conn.api_backup_at, clinic.timezone)}` : "todavía"}. Sin ella no llegan a Turnia la asistencia cargada tarde ni los cambios de los pacientes. Mirá «Lecturas de hoy» y «Último problema»: ${panelLink()}`);
-  }
-  const mirror = conn.api_mirror_summary ?? {};
-  const mirrorProblems = Object.entries(mirror).flatMap(([k, v]) => (typeof v === "string" ? [k === "error" ? v : `${k}: ${v}`] : []));
-  if (conn.api_mirror_at && mirrorProblems.length) {
-    await alert(`espejo:${shortHash(conn.api_mirror_at)}`, `${head} la copia diaria no se pudo pasar entera a Turnia: ${mirrorProblems.join(" ")} ${panelLink()}`);
-  }
-  for (const line of (conn.api_hours_note ?? "").split("\n").filter(Boolean)) {
-    await alert(`horarios:${shortHash(line)}`, line.startsWith("Horarios copiados")
-      ? `ℹ️ Turnia · Smile Connect de ${clinic.name}: ${line}`
-      : `${head} ${line} ${panelLink()}`);
-  }
-  // Buena práctica de seguridad: renovar la clave cada tanto. Es sin vencimiento para que la integración no
-  // se corte sola; a los 6 meses se le recuerda a Axel (una vez por clave).
-  if (conn.api_key_saved_at && minutesSince(conn.api_key_saved_at) > KEY_ROTATE_DAYS * 24 * 60) {
-    await alert(`clave-vieja:${conn.api_key_hint ?? "clave"}`, `${head} la clave de la API se cargó el ${formatWhen(conn.api_key_saved_at, clinic.timezone)}. Conviene renovarla: que el consultorio cree una nueva sin vencimiento con los mismos permisos (tarea 10 de TAREAS_COMPUTER_USE.md), cargarla y después revocar la anterior en Smile Connect.`);
-  }
-  if (conn.api_events_ok === false) {
-    await alert(`bloqueos:${conn.api_key_hint ?? "clave"}`, `${head} la clave no tiene el permiso events:read, así que la Agenda de Turnia no muestra los bloqueos (Sofi los respeta igual). Hace falta una clave nueva con ese permiso: tarea 10 de TAREAS_COMPUTER_USE.md.`);
+    await alert(`escritura:${shortHash(conn.api_writes_paused)}`, `${head} la escritura quedó frenada: ${conn.api_writes_paused} Se reanuda desde el panel: ${panelLink()}`);
+  } else {
+    await sql`delete from channel_events where key like ${`smile-axel:escritura:%:${clinicId}%`}`;
   }
   return sent;
 }
-
-const formatWhen = (iso: string, timeZone: string) =>
-  new Intl.DateTimeFormat("es-AR", { timeZone, day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 async function recordAndAlert(clinicId: string, e: unknown): Promise<string> {
   await alertSmileKeyProblem(clinicId, e);

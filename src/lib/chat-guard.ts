@@ -145,7 +145,8 @@ function logLimit(tipo: string, clinicId: string, extra: Record<string, unknown>
 /**
  * Le escribe a Axel desde la línea de Turnia (nunca desde la línea de una clínica), aunque la demo pública
  * esté pausada. Si el WhatsApp no sale, envía `axel.aviso` a n8n para el respaldo por email.
- * La aceptación del webhook no confirma la entrega: esa ejecución de Gmail puede fallar.
+ * true significa entregado por WhatsApp o aceptado por n8n. La aceptación del webhook no confirma
+ * la entrega final de Gmail, pero impide reenviar cada hora un email ya aceptado por ese canal.
  */
 export async function notifyAxel(text: string): Promise<boolean> {
   try {
@@ -153,8 +154,7 @@ export async function notifyAxel(text: string): Promise<boolean> {
     return true;
   } catch (e) {
     console.error("No se pudo avisar a Axel por WhatsApp", e instanceof Error ? e.message : e);
-    await notifyN8n("axel.aviso", { texto: text, error: e instanceof Error ? e.message : String(e) }).catch(() => {});
-    return false;
+    return await notifyN8n("axel.aviso", { texto: text, error: e instanceof Error ? e.message : String(e) }).catch(() => false);
   }
 }
 
@@ -166,15 +166,9 @@ async function blowFuse(clinic: Clinic, kind: "chat" | "llamadas", amount: numbe
     values (${`fusible:${kind}:${clinic.id}:${new Date().toLocaleDateString("en-CA", { timeZone: clinic.timezone })}`})
     on conflict do nothing returning key`;
   if (!claimed) return;
-  const what = kind === "chat"
-    ? `${amount} mensajes de chat (el aviso es a partir de ${CLINIC_FUSE.chatMessages})`
-    : `${amount} minutos de llamadas (el aviso es a partir de ${CLINIC_FUSE.callMinutes})`;
   console.warn(JSON.stringify({ evento: "fusible_clinica", tipo: kind, clinica: clinic.id, cantidad: amount }));
   await notifyN8n("clinica.fusible", { clinic_id: clinic.id, tipo: kind, cantidad: amount });
-  await notifyAxel(
-    `⚠️ Turnia: ${clinic.name} lleva hoy ${what}. ${clinic.agent_name || "Sofi"} sigue atendiendo; ` +
-      `revisá Conversaciones por si hay un bot o alguien abusando: ${env.appUrl().replace(/\/$/, "")}/panel/conversaciones`,
-  );
+  // Uso alto con Sofi operativa: queda registrado; no es una caída para avisarle a Axel.
 }
 
 /** Después de cada mensaje que pasa a Sofi. */

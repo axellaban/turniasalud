@@ -7,7 +7,7 @@ import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup"
 // Límites de Sofi por chat y por llamada, contra un Postgres real y descartable.
 // WAHA y ElevenLabs se simulan interceptando fetch: no sale nada a internet.
 
-const mocks = vi.hoisted(() => ({ notifyN8n: vi.fn<(event: string, payload: Record<string, unknown>) => Promise<void>>(async () => {}) }));
+const mocks = vi.hoisted(() => ({ notifyN8n: vi.fn<(event: string, payload: Record<string, unknown>) => Promise<boolean>>(async () => true) }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: mocks.notifyN8n }));
 
 const baseUrl = testDatabaseUrl();
@@ -257,13 +257,12 @@ describe.runIf(baseUrl)("límites de Sofi", () => {
     expect(await mute("5491166600010")).toBeUndefined();
   });
 
-  it("fusible de chat: al pasar los 400 mensajes del día le avisa a Axel una sola vez", async () => {
+  it("uso alto sin caída: queda registrado y no genera un aviso técnico a Axel", async () => {
     await sql`insert into chat_usage (clinic_id, phone, kind) select ${CLINIC}, '54911777' || g, 'mensaje' from generate_series(1, 400) g`;
     await send(text("z1", "5491166600011", "hola"));
     await send(text("z2", "5491166600012", "hola"));
     const notices = fake.texts(`${AXEL_WHATSAPP}@c.us`);
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatch(/mensajes de chat/);
+    expect(notices).toHaveLength(0);
     expect(mocks.notifyN8n).toHaveBeenCalledWith("clinica.fusible", expect.objectContaining({ clinic_id: CLINIC, tipo: "chat" }));
   });
 
@@ -277,7 +276,9 @@ describe.runIf(baseUrl)("límites de Sofi", () => {
       // Si WAHA no contesta, no se pierde: va a n8n.
       vi.stubEnv("WAHA_URL", "http://127.0.0.1:9");
       try {
-        expect(await notifyAxel("aviso sin WhatsApp")).toBe(false);
+        expect(await notifyAxel("aviso sin WhatsApp")).toBe(true);
+        mocks.notifyN8n.mockResolvedValueOnce(false);
+        expect(await notifyAxel("ningún canal aceptó el aviso")).toBe(false);
       } finally {
         vi.stubEnv("WAHA_URL", `${WAHA}/`);
       }
@@ -314,10 +315,9 @@ describe.runIf(baseUrl)("límites de Sofi", () => {
     await call("call_general", 600, "agente-general-sin-clinica", CLINIC);
     expect(await sql`select 1 from tasks where conversation_id = 'call_general'`).toHaveLength(0);
 
-    // 120 minutos de llamadas en el día: aviso a Axel, una sola vez.
+    // Uso alto sin corte: conserva el registro interno, sin avisos técnicos a Axel.
     for (let i = 0; i < 14; i++) await call(`call_larga_${i}`, 480);
     const notices = fake.texts(`${AXEL_WHATSAPP}@c.us`).filter((t) => t.includes("minutos de llamadas"));
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatch(/Consultorio con agente propio/);
+    expect(notices).toHaveLength(0);
   });
 });
