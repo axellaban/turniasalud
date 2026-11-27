@@ -75,7 +75,20 @@ function client() {
 const criteriaText = (criteria: string[]) =>
   criteria.length ? `\n\nCriterios que el equipo ya decidió (respetalos al evaluar y al proponer):\n${criteria.map((c) => `- ${c}`).join("\n")}` : "";
 
-async function parse<T extends z.ZodType>(schema: T, system: string, user: string, effort: "low" | "medium" | "high", maxTokens = 16000): Promise<z.infer<T>> {
+/** Lo que costó una llamada al juez (tokens y USD con los precios de lista). */
+export type JudgeUsage = { model: string; input_tokens: number; output_tokens: number; usd: number };
+
+// USD por millón de tokens (entrada, salida), precios de lista de Anthropic.
+const PRICES: Array<[RegExp, number, number]> = [[/haiku/, 0.1, 0.5], [/sonnet/, 2, 10], [/opus/, 4, 20], [/fable/, 8, 40]];
+
+export function judgeCost(model: string, input: number, output: number): number {
+  const [, inPrice, outPrice] = PRICES.find(([re]) => re.test(model)) ?? [/./, 4, 20];
+  return Math.round(((input * inPrice + output * outPrice) / 1_000_000) * 1e6) / 1e6;
+}
+
+const onUsage: ((u: JudgeUsage) => void) | null = null;
+
+async function parse<T extends z.ZodType>(schema: T, system: string, user: string, effort: "low" | "medium" | "high", maxTokens = 16000, track?: (u: JudgeUsage) => void): Promise<z.infer<T>> {
   const response = await client().beta.messages.parse({
     model: MODEL(),
     max_tokens: maxTokens,
@@ -85,6 +98,10 @@ async function parse<T extends z.ZodType>(schema: T, system: string, user: strin
     system,
     messages: [{ role: "user", content: user }],
   });
+  const usage = response.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+  const record = { model: MODEL(), input_tokens: input, output_tokens: usage.output_tokens ?? 0, usd: judgeCost(MODEL(), input, usage.output_tokens ?? 0) };
+  (track ?? onUsage)?.(record);
   if (response.stop_reason === "refusal") throw new Error("Claude no quiso evaluar esta charla.");
   if (!response.parsed_output) throw new Error(`Claude no devolvió una respuesta válida (${response.stop_reason ?? "sin motivo"}).`);
   return response.parsed_output as z.infer<T>;
@@ -97,6 +114,7 @@ export type SimulationVerdict = {
   criticalReason: string | null;
   findings: LabFinding[];
   summary: string;
+  usage: JudgeUsage | null;
 };
 
 /** Evalúa una charla simulada contra las condiciones de su caso. */
@@ -107,6 +125,7 @@ export async function judgeSimulation(input: {
   clinicContext: string;
   criteria: string[];
 }): Promise<SimulationVerdict> {
+  let usage: JudgeUsage | null = null;
   const out = await parse(
     SimulationJudgment,
     RUBRIC + criteriaText(input.criteria),
@@ -114,6 +133,8 @@ export async function judgeSimulation(input: {
       .map((c, i) => `${i + 1}. [${c.dim}${c.critical ? ", crítica" : ""}] ${c.text}`)
       .join("\n")}\n\nCharla:\n${input.transcript}\n\nEvaluá cada condición (todas, en orden), puntuá las cinco dimensiones y marcá falla crítica solo si corresponde.`,
     "medium",
+    16000,
+    (u) => { usage = u; },
   );
   const verdicts: Verdict[] = input.conditions.map((c, i) => {
     const v = out.condiciones.find((x) => x.numero === i + 1);
@@ -126,6 +147,7 @@ export async function judgeSimulation(input: {
     criticalReason: out.motivo_critico,
     findings: out.hallazgos,
     summary: out.resumen,
+    usage,
   };
 }
 

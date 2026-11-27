@@ -85,6 +85,8 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 - Las charlas reales y las de prueba en producción las atiende Sofi con su modelo de producción (Opus). El puntaje de laboratorio mide a Sofi con Haiku: sirve para encontrar fallas y comparar versiones entre sí, no como número exacto de producción.
 - Tope: 4 experimentos automáticos por día y por clínica.
 
+**Consumo de cada corrida:** las pruebas quedan en ElevenLabs (Agents → Tests, «Turnia Lab · …») y cada corrida guarda en `lab_runs.usage` lo que informe ElevenLabs (créditos y LLM) y lo que costó el juez (tokens y USD con precios de lista). El panel lo muestra en Corridas y en cada corrida; también sale en `/api/lab/informe`.
+
 **Cuánto cuesta:**
 - Una batería son 18 casos de referencia más los guardados, × 3: unas 54 simulaciones en ElevenLabs y 54 evaluaciones de Claude.
 - Un experimento suma otra batería, más la de referencia si no hay una de la versión actual.

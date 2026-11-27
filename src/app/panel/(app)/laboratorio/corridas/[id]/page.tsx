@@ -10,7 +10,7 @@ import { getRun, runResults } from "@/lib/lab/runs";
 import { normalizeTranscript } from "@/lib/lab/transcript";
 import { labAdvance, labProposeFromResult, labSaveCase } from "../../../../lab-actions";
 import { LabForm } from "../../lab-form";
-import { BandBadge, DimBars, Findings, KIND_LABEL, LabHeader, RUN_STATUS, ScoreRing, Transcript, Verdicts, fmtScore, modelLabel, scoreTone } from "../../lab-ui";
+import { BandBadge, DimBars, Findings, KIND_LABEL, LabHeader, RUN_STATUS, ScoreRing, Transcript, Verdicts, fmtScore, modelLabel, scoreTone, usageText } from "../../lab-ui";
 
 export const metadata: Metadata = { title: "Corrida · Laboratorio de Sofi" };
 export const maxDuration = 300;
@@ -41,6 +41,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
         actions={<Badge tone={RUN_STATUS[run.status]?.tone}>{RUN_STATUS[run.status]?.label}</Badge>}
       />
       {run.error && <Notice tone="error" className="mb-5">{run.error}</Notice>}
+      {usageText(run.usage) && <Notice className="mb-5">Consumo de la corrida · {usageText(run.usage)}</Notice>}
       {open && (
         <Card className="mb-5">
           <LabForm action={labAdvance} submit="Actualizar ahora" pending="Trayendo y puntuando…" button={secondaryButtonClass} className="flex flex-wrap items-center justify-between gap-3">

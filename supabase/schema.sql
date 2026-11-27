@@ -2513,3 +2513,6 @@ begin
     insert into data_migrations (name) values ('2026-11-27-laboratorio-revisar-de-nuevo');
   end if;
 end $$;
+
+-- Laboratorio (27/11/2026): consumo de cada corrida (créditos y LLM de ElevenLabs, tokens y USD del juez).
+alter table lab_runs add column if not exists usage jsonb;

@@ -3,7 +3,7 @@ import { Badge, Card, Empty } from "@/components/ui";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
 import { labRuns } from "@/lib/lab/panel";
-import { KIND_LABEL, LabHeader, RUN_STATUS, RunLink, fmtScore, modelLabel } from "../lab-ui";
+import { KIND_LABEL, LabHeader, RUN_STATUS, RunLink, fmtScore, modelLabel, usageText } from "../lab-ui";
 
 export const metadata: Metadata = { title: "Corridas · Laboratorio de Sofi" };
 
@@ -30,7 +30,8 @@ export default async function RunsPage() {
               <tbody>
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-brand-900/10">
-                    <td className="px-5 py-3"><RunLink id={r.id}>{r.label}</RunLink><span className="block text-xs text-brand-900/60">{r.cases.length} casos × {r.repeat_count} · {modelLabel(r.agent_llm)}</span></td>
+                    <td className="px-5 py-3"><RunLink id={r.id}>{r.label}</RunLink><span className="block text-xs text-brand-900/60">{r.cases.length} casos × {r.repeat_count} · {modelLabel(r.agent_llm)}</span>
+                      {usageText(r.usage) && <span className="block text-xs text-brand-900/60">{usageText(r.usage)}</span>}</td>
                     <td className="px-3 py-3">{KIND_LABEL[r.kind]}</td>
                     <td className="px-3 py-3"><Badge tone={RUN_STATUS[r.status]?.tone}>{RUN_STATUS[r.status]?.label}</Badge></td>
                     <td className="px-3 py-3 font-semibold">{fmtScore(r.score)}{r.critical_count > 0 && <span className="ml-1 text-xs font-normal text-red-700">· {r.critical_count} crítica{r.critical_count === 1 ? "" : "s"}</span>}</td>
