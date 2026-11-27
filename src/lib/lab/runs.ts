@@ -156,14 +156,16 @@ async function clinicVariables(clinic: Clinic): Promise<Record<string, string>> 
 /** Lo que el juez necesita saber del consultorio (información, catálogo e instrucciones), recortado. */
 export async function clinicContextFor(clinic: Clinic, vars?: Record<string, string>): Promise<string> {
   const v = vars ?? (await clinicVariables(clinic));
+  // El catálogo (prestaciones y precios) va antes que la información larga del consultorio: si el texto
+  // se recortaba, el juez no veía los precios y marcaba como «inventado» un precio que sí está cargado.
   const text = [
     `Nombre: ${clinic.name}. Asistente: ${clinic.agent_name}.`,
     `Trato: ${v.trato ?? ""}`,
-    v.clinic_info ?? "",
-    v.clinic_catalog ? `Catálogo:\n${v.clinic_catalog}` : "",
+    v.clinic_catalog ? `Catálogo (prestaciones y precios que Sofi puede decir):\n${v.clinic_catalog}` : "",
     v.urgency_instructions ? `Urgencias: ${v.urgency_instructions}` : "",
+    v.clinic_info ?? "",
   ].filter(Boolean).join("\n\n");
-  return text.length > 14_000 ? `${text.slice(0, 14_000)}\n[recortado]` : text;
+  return text.length > 24_000 ? `${text.slice(0, 24_000)}\n[recortado]` : text;
 }
 
 // ---------------------------------------------------------------------------
