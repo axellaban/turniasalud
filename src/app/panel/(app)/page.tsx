@@ -44,14 +44,14 @@ export default async function PanelHome() {
   const [[stats], [quality], [recovery], today, recentRows, urgentTasks] = await Promise.all([
     sql<Array<{ conversations: number; resolved: number; open_tasks: number }>>`
       select
-        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since}) as conversations,
-        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${since} and outcome = 'resuelto') as resolved,
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and not is_test and started_at >= ${since}) as conversations,
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and not is_test and started_at >= ${since} and outcome = 'resuelto') as resolved,
         (select count(*)::int from tasks where clinic_id = ${clinic.id} and status <> 'resuelta') as open_tasks`,
     // Últimos 30 días: satisfacción, confirmación de recordatorios y ausentismo.
     sql<Array<{ satisfaction: number | null; answers: number; reminded: number; confirmed: number; attended: number; absent: number }>>`
       select
-        (select round(avg(satisfaction), 1)::float8 from conversations where clinic_id = ${clinic.id} and started_at >= ${month} and satisfaction is not null) as satisfaction,
-        (select count(*)::int from conversations where clinic_id = ${clinic.id} and started_at >= ${month} and satisfaction is not null) as answers,
+        (select round(avg(satisfaction), 1)::float8 from conversations where clinic_id = ${clinic.id} and not is_test and started_at >= ${month} and satisfaction is not null) as satisfaction,
+        (select count(*)::int from conversations where clinic_id = ${clinic.id} and not is_test and started_at >= ${month} and satisfaction is not null) as answers,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month}) as reminded,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and reminder_sent_at >= ${month} and confirmed_at is not null) as confirmed,
         (select count(*)::int from appointments where clinic_id = ${clinic.id} and starts_at >= ${month} and starts_at < now() and status = 'atendido') as attended,

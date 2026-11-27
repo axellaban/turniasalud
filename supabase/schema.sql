@@ -2314,3 +2314,174 @@ begin
     insert into data_migrations (name) values ('2026-11-27-consultorio-de-muestra');
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Laboratorio de Sofi (27/11/2026, PLAN_LABORATORIO_SOFI.md). Simula pacientes contra Sofi (batería,
+-- experimentos y «Jugar de paciente»), puntúa cada charla de 1 a 100 con la misma rúbrica que las charlas
+-- reales, propone mejoras y guarda lo que el equipo decide. Panel → Turnia → Laboratorio de Sofi.
+-- * clinics.lab_enabled: corrida nocturna, revisión de charlas reales y propuestas para esa clínica.
+-- * clinics.lab_settings: resumen por WhatsApp, publicar solas las mejoras de nivel A, etc.
+-- * conversations.is_test: la charla la escribió un tester (modo prueba). No entra en el resumen diario
+--   ni en las métricas; el laboratorio la puntúa aparte («prueba en producción»).
+-- ---------------------------------------------------------------------------
+alter table clinics add column if not exists lab_enabled boolean not null default false;
+alter table clinics add column if not exists lab_settings jsonb not null default '{}'::jsonb;
+alter table conversations add column if not exists is_test boolean not null default false;
+
+-- Casos guardados desde el panel (los de referencia viven en el código: src/lib/lab/cases.ts).
+create table if not exists lab_cases (
+  id text primary key,
+  clinic_id uuid references clinics(id) on delete cascade,
+  title text not null,
+  intent text not null,
+  situation text not null,
+  source text not null default 'panel' check (source in ('panel', 'charla_real', 'exploratorio')),
+  scenario text not null,
+  patient jsonb not null default '{}'::jsonb,
+  mocks jsonb not null default '{}'::jsonb,
+  conditions jsonb not null default '[]'::jsonb,
+  history jsonb not null default '[]'::jsonb,
+  max_turns integer,
+  active boolean not null default true,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+
+-- Una corrida: la batería de una versión, una variante (experimento) o una prueba suelta.
+create table if not exists lab_runs (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  kind text not null check (kind in ('bateria', 'experimento', 'jugar')),
+  status text not null default 'preparando' check (status in ('preparando', 'corriendo', 'puntuando', 'terminada', 'error')),
+  label text not null,
+  prompt_hash text not null,
+  prompt_override text,
+  proposal_id uuid,
+  baseline_run_id uuid,
+  case_ids text[] not null default '{}',
+  repeat_count integer not null default 1,
+  agent_id text,
+  invocation_id text,
+  test_ids jsonb not null default '{}'::jsonb,
+  cases jsonb not null default '[]'::jsonb,
+  score numeric,
+  spread numeric,
+  dims jsonb,
+  critical_count integer not null default 0,
+  error text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  started_at timestamptz,
+  finished_at timestamptz
+);
+create index if not exists lab_runs_clinic_idx on lab_runs (clinic_id, created_at desc);
+create index if not exists lab_runs_open_idx on lab_runs (status) where status in ('preparando', 'corriendo', 'puntuando');
+
+-- Cada charla simulada de una corrida, con su puntaje.
+create table if not exists lab_results (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references lab_runs(id) on delete cascade,
+  case_id text not null,
+  repetition integer not null default 1,
+  el_status text,
+  transcript jsonb not null default '[]'::jsonb,
+  judged boolean not null default false,
+  score numeric,
+  dims jsonb,
+  conditions jsonb,
+  checks jsonb,
+  critical boolean not null default false,
+  findings jsonb,
+  summary text,
+  error text,
+  created_at timestamptz not null default now(),
+  judge_started_at timestamptz,
+  judged_at timestamptz,
+  unique (run_id, case_id, repetition)
+);
+create index if not exists lab_results_pending_idx on lab_results (run_id) where not judged;
+
+-- Charlas reales (y de testers) puntuadas con la misma rúbrica.
+create table if not exists lab_reviews (
+  conversation_id uuid primary key references conversations(id) on delete cascade,
+  clinic_id uuid not null references clinics(id) on delete cascade,
+  is_test boolean not null default false,
+  prompt_hash text,
+  intent text,
+  situation text,
+  score numeric,
+  dims jsonb,
+  critical boolean not null default false,
+  findings jsonb,
+  summary text,
+  error text,
+  reviewed_at timestamptz not null default now()
+);
+create index if not exists lab_reviews_clinic_idx on lab_reviews (clinic_id, reviewed_at desc);
+
+-- Versiones del prompt que llegaron a ElevenLabs («Actualizar a Sofi»): para saber qué versión atendió
+-- cada charla real.
+create table if not exists lab_versions (
+  id bigserial primary key,
+  prompt_hash text not null,
+  applied_at timestamptz not null default now(),
+  patches uuid[] not null default '{}'
+);
+create index if not exists lab_versions_applied_idx on lab_versions (applied_at desc);
+
+-- Mejoras propuestas por Claude (o escritas por el equipo) y lo que se decidió.
+create table if not exists lab_proposals (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid references clinics(id) on delete cascade,
+  level text not null check (level in ('A', 'B', 'C')),
+  layer text not null check (layer in ('prompt', 'consultorio', 'herramienta', 'configuracion')),
+  dimension text,
+  title text not null,
+  why text not null,
+  evidence jsonb not null default '[]'::jsonb,
+  change jsonb not null default '{}'::jsonb,
+  status text not null default 'pendiente'
+    check (status in ('pendiente', 'probando', 'aprobada', 'aplicada', 'rechazada', 'no_aplica')),
+  experiment_run_id uuid,
+  decision_reason text,
+  decided_by text,
+  decided_at timestamptz,
+  applied_at timestamptz,
+  apply_error text,
+  created_at timestamptz not null default now()
+);
+create index if not exists lab_proposals_clinic_idx on lab_proposals (clinic_id, status, created_at desc);
+
+-- Lo que el equipo decidió (motivos de rechazo y reglas): el juez y Claude lo leen antes de evaluar o
+-- proponer, para no volver a proponer lo mismo.
+create table if not exists lab_criteria (
+  id uuid primary key default gen_random_uuid(),
+  clinic_id uuid references clinics(id) on delete cascade,
+  text text not null,
+  proposal_id uuid,
+  created_by text,
+  created_at timestamptz not null default now()
+);
+
+alter table lab_cases enable row level security;
+alter table lab_runs enable row level security;
+alter table lab_results enable row level security;
+alter table lab_reviews enable row level security;
+alter table lab_versions enable row level security;
+alter table lab_proposals enable row level security;
+alter table lab_criteria enable row level security;
+
+-- Guerra–Mininni arranca con el laboratorio prendido (pedido de Axel, 27/11). Una sola vez: si después lo
+-- apagan desde el panel, el deploy no lo vuelve a prender.
+do $$
+begin
+  if not exists (select 1 from data_migrations where name = '2026-11-27-laboratorio-guerra-mininni') then
+    update clinics set lab_enabled = true, lab_settings = lab_settings || '{"resumen_whatsapp": true}'::jsonb
+    where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    -- Decisión de Axel sobre la charla del 26/11: el juez y las propuestas la respetan.
+    insert into lab_criteria (clinic_id, text, created_by)
+    select id, 'En Guerra–Mininni, si el paciente no pide un profesional, se ofrece primero al Dr. Mininni (el dueño del consultorio) y no se pregunta por profesional al inicio. Si el paciente pide otro profesional o «una mujer», se respeta durante toda la charla y se pregunta antes de ofrecer a otro.', 'Axel'
+    from clinics where id = '67c3954a-8df8-46c2-a604-f818832bee36';
+    insert into data_migrations (name) values ('2026-11-27-laboratorio-guerra-mininni');
+  end if;
+end $$;

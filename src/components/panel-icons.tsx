@@ -29,6 +29,7 @@ const PATHS = {
   comercial: ["M6.5 4h3l1.5 4-2 1.3a10 10 0 0 0 5.7 5.7L16 13l4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.5 6.2 2 2 0 0 1 6.5 4z"],
   prospeccion: ["M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M12 12h.01"],
   followup: ["M4 12a8 8 0 0 1 13.7-5.6", "M18 3v4h-4", "M20 12a8 8 0 0 1-13.7 5.6", "M6 21v-4h4"],
+  laboratorio: ["M9 3h6", "M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3", "M7.5 14h9"],
 } as const;
 
 export type PanelIconName = keyof typeof PATHS;

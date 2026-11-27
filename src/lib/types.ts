@@ -69,6 +69,9 @@ export type Clinic = {
   tone: "vos" | "usted" | "espejo" | null;
   /** Modo prueba: celulares de testers. */
   test_phones?: string[];
+  /** Laboratorio de Sofi (src/lib/lab): corrida nocturna, revisión de charlas y propuestas. */
+  lab_enabled?: boolean;
+  lab_settings?: { resumen_whatsapp?: boolean; auto_a?: boolean; last_proposals?: string; last_digest?: string };
   /** Usa el protocolo odontológico de Turnia (src/lib/agent/modules/odontologia.ts). */
   dental_protocol: boolean;
   /** Pedir y guardar el motivo antes de que Sofi reserve un turno. */

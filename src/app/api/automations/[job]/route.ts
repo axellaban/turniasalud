@@ -10,6 +10,7 @@ import { completePendingSummaries } from "@/lib/conversations-backfill";
 import { monitorClinicWhatsapps } from "@/lib/waha-health";
 import { runInfraRadar } from "@/lib/infra-radar";
 import { runSequences } from "@/lib/campaign-sequences";
+import { runLab } from "@/lib/lab/tick";
 import type { CampaignType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,8 @@ export const maxDuration = 300;
 //                                       reintenta los avisos al consultorio por WhatsApp,
 //                                       sincroniza Smile Connect por API, si alguna clínica lo prendió,
 //                                       de lunes a viernes de 10 a 14, manda el resumen diario de Sofi al equipo
-//                                       y manda los seguimientos de campañas a quien no respondió)
+//                                       manda los seguimientos de campañas a quien no respondió
+//                                       y corre el Laboratorio de Sofi: src/lib/lab/tick.ts)
 // POST /api/automations/seguimientos   (solo esto último, si se prefiere un disparador aparte)
 // POST /api/automations/resumen-sofi   (el resumen diario solo: lo dispara también la tarea diaria de Chapa Labs)
 const JOBS: Record<string, CampaignType> = {
@@ -55,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
       // Ya se dispara cada 10 minutos: el seguimiento de turnos ofrecidos va en la misma corrida,
       // sin pedir otro disparador en n8n. Si falla uno, el otro corre igual.
       const smileRun = job === "calendario" ? runSmileConnect() : Promise.resolve(null);
-      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp, sequences, radar] = await Promise.allSettled([
+      const [calendar, followups, changes, notices, smile, summaries, talks, whatsapp, sequences, radar, lab] = await Promise.allSettled([
         job === "calendario" ? syncPendingCalendar() : Promise.resolve(null),
         sendOfferFollowups(),
         job === "calendario" ? checkCalendarChanges() : Promise.resolve(null),
@@ -70,7 +72,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         job === "calendario" ? runSequences() : Promise.resolve(null),
         // Radar de las WAHA y del VPS (Easypanel): estado, reinicios, RAM y disco. Solo lee.
         job === "calendario" ? runInfraRadar() : Promise.resolve(null),
+        // Laboratorio de Sofi: batería nocturna, puntaje de corridas y charlas, propuestas y resumen.
+        job === "calendario" ? runLab() : Promise.resolve(null),
       ]);
+      if (lab.status === "rejected") console.error("Laboratorio de Sofi falló", lab.reason);
       if (radar.status === "rejected") console.error("Radar de WhatsApp y VPS falló", radar.reason);
       if (sequences.status === "rejected") console.error("Secuencias de campañas fallaron", sequences.reason);
       if (whatsapp.status === "rejected") console.error("Control de WhatsApp falló", whatsapp.reason);
@@ -94,6 +99,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ job
         ...(summaries.status === "fulfilled" && summaries.value?.length && { resumenes: summaries.value }),
         ...(talks.status === "fulfilled" && talks.value?.revisadas && { conversaciones_sin_resumen: talks.value }),
         ...(sequences.status === "fulfilled" && sequences.value?.length && { secuencias: sequences.value }),
+        ...(lab.status === "fulfilled" && lab.value && Object.keys(lab.value).length > 0 && { laboratorio: lab.value }),
       });
     } catch (e) {
       return NextResponse.json({ ok: false, job, error: e instanceof Error ? e.message : String(e) }, { status: 500 });

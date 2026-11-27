@@ -1,5 +1,14 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Laboratorio de Sofi (27/11/2026)
+
+En producción: Panel → Turnia → **Laboratorio de Sofi** ([`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md)). Batería nocturna con 18 casos × 3, puntaje de 1 a 100, revisión de las charlas reales, propuestas diarias de Claude, experimentos (versión actual contra la variante) y publicación con un clic. Guerra–Mininni arranca con el laboratorio y el resumen por WhatsApp prendidos.
+- [ ] Mirar la primera batería nocturna (28/11, de 2 a 6) y la primera tanda de propuestas. Si el juez se equivoca, sumar criterios en la pestaña Criterios.
+- [x] Criterio cargado (migración): en Guerra–Mininni se ofrece primero al Dr. Mininni y no se pregunta por profesional al inicio; si el paciente pide otro (o «una mujer»), se respeta.
+- [ ] **Decidir con Axel:** el PR #289 hace que Sofi pregunte la preferencia de profesional junto con los datos, pero Axel prefiere que en Guerra–Mininni se ofrezca primero al Dr. Mininni sin preguntar (criterio cargado). Mientras no se resuelva, el juez del laboratorio marca esa pregunta como falla en Guerra–Mininni. Opciones: sacarla del prompt general y dejarla para los consultorios que la quieran, o una regla en las instrucciones de Guerra–Mininni.
+- [ ] Pasar al repositorio (`src/lib/agent/prompt.ts`) las mejoras de prompt aprobadas en el laboratorio cada tanto; el procedimiento está en el plan.
+- [ ] Próximas fases, en este orden: consultorio de laboratorio con agenda sintética y herramientas reales; modo prueba completo (pacientes ficticios, ficha simulada, números con vencimiento, `#prueba`, archivar chats); prueba automática en producción con una línea de prueba; calibración semanal del juez. Fase 2: escrituras reales en Smile Connect, solo con un profesional de prueba acordado con Mariano.
+
 ## Consultorio odontológico de muestra (27/11/2026)
 
 Clínica real (no demo) para mostrarle Turnia a los consultorios: **Consultorio Odontológico Turnia**, id `86901eaf-369c-4ef5-a653-8c89c0bce2e3`. Agenda propia en Turnia (sin Smile Connect), dos profesionales ficticios con horarios (Dra. Valeria Costa y Dr. Nicolás Ibarra) y la marca `clinics.showcase`: funciona como una real (Sofi manda recordatorios y avisos), pero no cuenta en el uso real de `/api/metricas`. La crea la migración `2026-11-27-consultorio-de-muestra`. El Centro Médico Plaza sigue siendo la clínica principal de las demos y del WhatsApp general: no se toca.

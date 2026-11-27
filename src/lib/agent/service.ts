@@ -1972,13 +1972,8 @@ export async function rescheduleClinicAppointment(
 // ---------------------------------------------------------------------------
 // crear_tarea (recetas, consultas clínicas, derivación a una persona, urgencias)
 // ---------------------------------------------------------------------------
-/** ¿Escribe un tester (Configuración → Turnos y urgencias → Modo prueba)? Lo que pide no le llega al equipo. */
-export async function isTesterPhone(clinicId: string, phone: string): Promise<boolean> {
-  const normalized = normalizePhone(phone);
-  if (!/^\d{8,15}$/.test(normalized)) return false;
-  const [row] = await sql<{ test_phones: string[] | null }[]>`select test_phones from clinics where id = ${clinicId}`;
-  return (row?.test_phones ?? []).some((p) => normalizePhone(p) === normalized);
-}
+// ¿Escribe un tester? Vive en testers.ts para que la conversación también se marque como prueba.
+export { isTesterPhone } from "../testers";
 
 export async function createTask(
   ctx: ToolContext,
