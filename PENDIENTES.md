@@ -8,6 +8,7 @@ Charla real de Guerra–Mininni: la paciente pidió «con una mujer» y «despu�
 - [x] Busca hasta 60 días antes de decir que no hay. Sin Smile Connect, de una vez; con Smile Connect, de a dos semanas con `seguir_buscando`. Siempre devuelve `buscado` (desde/hasta) y el mensaje dice «Busqué hasta el D/M».
 - [x] `professionals.gender` y en Configuración → Equipo «Si el paciente pide una mujer o un hombre». Sin dato, sale de «Dra.»/«Dr.» del nombre; nunca se adivina por el nombre de pila. El catálogo de Sofi dice «Profesional mujer/hombre».
 - [x] Prompt: preguntar la preferencia de profesional y horario junto con los datos; mantenerla toda la charla; «No hay» solo hasta `buscado.hasta`, con la fecha; «Perdón, me fijé de nuevo y sí hay…».
+- [x] Desplegado ([PR #289](https://github.com/axellaban/turniasalud/pull/289)) y cargado el 27/11 directo en ElevenLabs: el prompt en los dos agentes (WhatsApp general y llamadas de Guerra–Mininni) y la herramienta `consultar_disponibilidad`. Se comprobó que no cambió nada más. Las charlas que ya estaban abiertas siguen con el prompt anterior hasta que empiezan de nuevo.
 - [ ] Guerra–Mininni: marcar en Equipo a quien no tenga «Dra.»/«Dr.» en el nombre (por ejemplo, Lara Fernandez), para que entre en las búsquedas de «con una mujer».
 
 ## Motivo de consulta y lista de espera unificada — 27/11/2026
