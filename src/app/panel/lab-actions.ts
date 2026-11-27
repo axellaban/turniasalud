@@ -3,6 +3,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { json, sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
@@ -44,6 +45,7 @@ export async function labRunBattery(_prev: LabFormState, form: FormData): Promis
   } catch (e) {
     return fail(e);
   }
+  startNow(id);
   redirect(`/panel/laboratorio/corridas/${id}`);
 }
 
@@ -67,6 +69,7 @@ export async function labPlay(_prev: LabFormState, form: FormData): Promise<LabF
   } catch (e) {
     return fail(e);
   }
+  startNow(id);
   redirect(`/panel/laboratorio/corridas/${id}`);
 }
 
@@ -156,8 +159,11 @@ export async function labRevert(_prev: LabFormState, form: FormData): Promise<La
 export async function labExperiment(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   await requireAdmin();
   try {
-    await startExperiment(text(form, "mejora"), ACTOR);
-    return done("Experimento en marcha: la versión actual contra la variante, con los mismos casos (unos 30 a 60 minutos).");
+    const variantId = await startExperiment(text(form, "mejora"), ACTOR);
+    const variant = await getRun(variantId);
+    if (variant?.baseline_run_id) startNow(variant.baseline_run_id);
+    startNow(variantId);
+    return done("Experimento en marcha: la versión actual contra la variante, con los mismos casos (hasta 8). Tarda unos minutos y cuesta centavos.");
   } catch (e) {
     return fail(e);
   }
@@ -258,4 +264,15 @@ export async function labMarkTest(_prev: LabFormState, form: FormData): Promise<
   await sql`update conversations set is_test = ${test} where id = ${id} and clinic_id = ${clinic.id}`;
   await sql`update lab_reviews set is_test = ${test} where conversation_id = ${id}`;
   return done(test ? "Marcada como prueba: ya no cuenta como charla real." : "Vuelve a contar como charla real.");
+}
+
+/** Arranca a simular apenas se crea la corrida, sin esperar al cron (que sigue después si no alcanza). */
+function startNow(runId: string) {
+  after(async () => {
+    try {
+      await advanceRun(runId, 240_000);
+    } catch (e) {
+      console.error("Laboratorio: no se pudo empezar la corrida al momento", e instanceof Error ? e.message : e);
+    }
+  });
 }
