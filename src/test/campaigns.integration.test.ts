@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 // Campañas para activar la base: importación de pacientes, audiencias con visitas importadas y
@@ -27,6 +27,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const base = testDatabaseUrl();
+afterEach(() => vi.restoreAllMocks());
 const CLINIC = "00000000-0000-4000-8000-000000000001";
 const LIMPIEZA = "00000000-0000-4000-8000-0000000000b5";
 const MARIA = "00000000-0000-4000-8000-0000000000c1";
@@ -333,6 +334,11 @@ describe.runIf(base)("campañas para activar la base", () => {
   });
 
   it("las automáticas salen apagadas, corren solo donde se prendieron, retoman lo que dejó el tope y cuentan 14 días", async () => {
+    // Esta prueba verifica el envío, no la franja horaria. Debe pasar también si el CI corre de noche.
+    const originalRunAutomation = campaigns.runAutomation;
+    const noon = new Date();
+    noon.setUTCHours(15, 0, 0, 0); // 12:00 de Buenos Aires.
+    vi.spyOn(campaigns, 'runAutomation').mockImplementation((type, clinicId) => originalRunAutomation(type, clinicId, noon));
     const { POST } = await import("@/app/api/automations/[job]/route");
     const run = (job: string, body?: unknown) =>
       POST(new Request(`https://turnia.test/api/automations/${job}`, { method: "POST", headers: { "x-turnia-secret": "test-tools" }, body: body ? JSON.stringify(body) : undefined }), {
