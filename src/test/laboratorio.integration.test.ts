@@ -317,4 +317,11 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     const [saved] = await sql<Array<{ source: string; intent: string }>>`select source, intent from lab_cases order by created_at desc limit 1`;
     expect(saved.source).toBe("exploratorio");
   });
+
+  it("encuentra la charla de donde sale la cita de una propuesta", async () => {
+    const { findEvidence } = await import("@/lib/lab/panel");
+    const link = await findEvidence(clinic.id, "«No tengo turnos después de las 17 hasta mediados de enero»");
+    expect(link).toMatchObject({ kind: "laboratorio", case_id: "profesional-mujer-tarde" });
+    expect(await findEvidence(clinic.id, "una frase que no está en ninguna charla")).toBeNull();
+  });
 });

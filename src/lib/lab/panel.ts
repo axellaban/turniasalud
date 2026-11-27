@@ -222,3 +222,22 @@ export async function labSavedCases(clinicId: string): Promise<Array<{ id: strin
 }
 
 export const DIMS: Dimension[] = DIMENSIONS;
+
+export type EvidenceLink = { kind: "laboratorio"; run_id: string; case_id: string } | { kind: "real"; conversation_id: string };
+
+/** Busca la charla de donde salió una cita (laboratorio o real, últimos 14 días). */
+export async function findEvidence(clinicId: string, cita: string): Promise<EvidenceLink | null> {
+  // El tramo más largo sin comillas: en el JSON guardado las comillas aparecen escapadas.
+  const piece = cita.split(/[«»"“”]/).map((x) => x.trim()).sort((a, b) => b.length - a.length)[0]?.slice(0, 60) ?? "";
+  if (piece.length < 12) return null;
+  const like = `%${piece.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+  const [lab] = await sql<Array<{ run_id: string; case_id: string }>>`
+    select r.run_id, r.case_id from lab_results r join lab_runs l on l.id = r.run_id
+    where l.clinic_id = ${clinicId} and l.created_at > now() - interval '14 days' and r.transcript::text ilike ${like}
+    order by l.created_at desc limit 1`;
+  if (lab) return { kind: "laboratorio", ...lab };
+  const [real] = await sql<Array<{ id: string }>>`
+    select id from conversations where clinic_id = ${clinicId} and started_at > now() - interval '14 days' and transcript::text ilike ${like}
+    order by started_at desc limit 1`;
+  return real ? { kind: "real", conversation_id: real.id } : null;
+}

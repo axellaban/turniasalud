@@ -245,3 +245,10 @@ describe("consumo de ElevenLabs con los campos reales", () => {
     expect(isCriticalKind({ dimension: "trato", texto: "Trata de usted desde el primer mensaje" })).toBe(false);
   });
 });
+
+describe("fecha para el juez", () => {
+  it("dice qué día es hoy en hora de Argentina", async () => {
+    const { todayLine } = await import("./judge");
+    expect(todayLine(new Date("2026-11-27T15:00:00Z"))).toContain("viernes 27/11/2026");
+  });
+});

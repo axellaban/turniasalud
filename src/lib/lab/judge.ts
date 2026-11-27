@@ -88,7 +88,14 @@ export function judgeCost(model: string, input: number, output: number): number 
 
 const onUsage: ((u: JudgeUsage) => void) | null = null;
 
-async function parse<T extends z.ZodType>(schema: T, system: string, user: string, effort: "low" | "medium" | "high", maxTokens = 16000, track?: (u: JudgeUsage) => void): Promise<z.infer<T>> {
+/** «Hoy es viernes 27/11/2026», en hora de Argentina: sin esto el modelo supone otra fecha. */
+export function todayLine(now = new Date()): string {
+  const f = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "long", day: "numeric", month: "numeric", year: "numeric" }).format(now);
+  return `Hoy es ${f.replace(",", "")} (hora de Argentina). Las charlas simuladas corren hoy: lo que diga Sofi sobre qué día es hoy, si un turno ya pasó o qué fecha cae mañana se compara con esta fecha.`;
+}
+
+async function parse<T extends z.ZodType>(schema: T, rawSystem: string, user: string, effort: "low" | "medium" | "high", maxTokens = 16000, track?: (u: JudgeUsage) => void): Promise<z.infer<T>> {
+  const system = `${todayLine()}\n\n${rawSystem}`;
   const response = await client().beta.messages.parse({
     model: MODEL(),
     max_tokens: maxTokens,
@@ -260,7 +267,7 @@ export type CaseDraftOut = z.infer<typeof CaseDraft>;
 export async function draftCase(input: { request: string; tools: string; examples: string; clinicContext: string; criteria: string[] }): Promise<CaseDraftOut> {
   return parse(
     CaseDraft,
-    `Armás casos de prueba para Sofi, la asistente de un consultorio odontológico argentino. Un caso es un paciente simulado (escenario), las respuestas fijas de las herramientas que va a usar Sofi y las condiciones que un evaluador comprueba leyendo la charla. Los datos de pacientes son ficticios. Las condiciones son concretas y comprobables, sin pedir cosas que Sofi no puede saber. Marcá «critica» solo si fallarla puede dañar al paciente (urgencia mal derivada, indicación médica, datos de otra persona, afirmar un turno que no existe); nunca para pasos de procedimiento ni de trato. Si el paciente no es nuevo, es Laura Prueba (DNI 20111222, OSDE 210, ya tiene ficha): el escenario usa esa identidad; si escribe por otra persona, decilo explícito en el escenario.${criteriaText(input.criteria)}`,
+    `Armás casos de prueba para Sofi, la asistente de un consultorio odontológico argentino. Un caso es un paciente simulado (escenario), las respuestas fijas de las herramientas que va a usar Sofi y las condiciones que un evaluador comprueba leyendo la charla. Los datos de pacientes son ficticios. Las condiciones son concretas y comprobables, sin pedir cosas que Sofi no puede saber. Marcá «critica» solo si fallarla puede dañar al paciente (urgencia mal derivada, indicación médica, datos de otra persona, afirmar un turno que no existe); nunca para pasos de procedimiento ni de trato. Las fechas: usá días relativos («este jueves», «la semana que viene») y, en las respuestas de las herramientas, fechas posteriores a hoy con su día de la semana correcto; nunca escribas en el escenario «hoy es …». Si el paciente no es nuevo, es Laura Prueba (DNI 20111222, OSDE 210, ya tiene ficha): el escenario usa esa identidad; si escribe por otra persona, decilo explícito en el escenario.${criteriaText(input.criteria)}`,
     `Consultorio:\n${input.clinicContext}\n\nHerramientas de Sofi:\n${input.tools}\n\nEjemplos de respuestas de herramientas:\n${input.examples}\n\nArmá el caso para esto:\n${input.request}`,
     "medium",
   );
