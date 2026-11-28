@@ -21,12 +21,12 @@ Pedido de Axel del 27/11/2026, a partir de una charla real del 26/11: Sofi dijo 
 - **El circuito:**
   1. ElevenLabs simula de noche (o cuando se pide desde el panel).
   2. La corrida queda en «puntuando».
-  3. Alguien corre el skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md) en Claude Code (en Codex o ChatGPT, leyendo ese archivo).
-  4. El skill trae lo pendiente con `GET /api/lab/evaluaciones`, lo evalúa y lo carga con `POST`.
-  5. El servidor calcula el puntaje, cierra la corrida, resuelve los experimentos y lanza el siguiente en ElevenLabs.
-- **La clave:** «Crear clave para evaluar» en Criterios (permiso `evaluar`, `lab_access_tokens.scope`). Las de solo lectura siguen sirviendo para `/api/lab/informe`, no para evaluar.
+  3. En la pestaña **Evaluar** (sin claves) alguien copia el pedido: tandas de 8 simulaciones y 4 charlas reales, con la rúbrica, el contexto de la clínica, los criterios y el formato JSON. Las charlas reales van sin teléfonos ni mails.
+  4. Lo pega en claude.ai o chatgpt.com (la suscripción) y pega la respuesta en el panel.
+  5. El servidor calcula el puntaje, cierra la corrida, resuelve los experimentos y lanza el siguiente en ElevenLabs. Cuando no quedan charlas, la misma pestaña pide las propuestas.
+- **Opcional, con clave:** el skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md) hace lo mismo desde Claude Code o Codex por `/api/lab/evaluaciones`, con una clave «para evaluar» (Criterios, `lab_access_tokens.scope`). Axel prefiere no crearla. Las claves de solo lectura siguen sirviendo para `/api/lab/informe`.
 - **Qué cuesta ahora:** ElevenLabs (cada simulación) y la suscripción. Los topes en dólares del Resumen siguen valiendo y ahora solo cuentan ElevenLabs.
-- **Sugerido:** una tarea programada de Claude Code en la nube a las 7, después de la batería. Corre con la suscripción.
+- **Sin clave no hay tarea programada:** alguien pasa por Evaluar después de la batería.
 
 ## El ciclo
 

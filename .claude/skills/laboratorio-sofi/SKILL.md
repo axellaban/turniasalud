@@ -21,6 +21,8 @@ Sí se puede: subagentes de Claude Code (corren con la suscripción), `npm run p
 
 ## Acceso
 
+**El camino normal no usa este skill ni ninguna clave:** Panel → Laboratorio → **Evaluar** (copiar el pedido, pegarlo en claude.ai o chatgpt.com, pegar la respuesta). Este skill es para automatizarlo desde Claude Code o Codex, y Axel prefiere no crear la clave. Si no hay clave, decile a quien lo pidió que use la pestaña Evaluar y pará.
+
 Hace falta una clave del laboratorio **para evaluar**. Se crea en Panel → Laboratorio → Criterios → «Crear clave para evaluar». Se ve una sola vez y nunca va en el chat ni en el repositorio:
 - **Claude Code en la nube:** network secret del entorno, host `turniasalud.app`, header `x-lab-token`. Si falta, pedila con `request_credential`. El proxy la agrega solo, así que en los comandos va un valor de relleno.
 - **Claude Code o Codex en tu computadora:** variable de entorno `LAB_TOKEN` en tu perfil del shell.

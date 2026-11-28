@@ -6,20 +6,21 @@
 //
 // Por qué: las pruebas salieron caras con la API y son simulaciones. Se pagan dos cosas y nada más:
 //   1. ElevenLabs: las simulaciones corren en sus pruebas de agentes (agent-testing).
-//   2. La suscripción de Claude Code o de ChatGPT (Codex): evalúa las charlas, revisa las reales y propone
-//      mejoras con el skill `laboratorio-sofi` (.claude/skills/laboratorio-sofi/SKILL.md), que lee y carga
-//      todo por /api/lab/evaluaciones.
+//   2. La suscripción de Claude o de ChatGPT: evalúa las charlas, revisa las reales y propone mejoras.
+//      Sin claves: en Panel → Laboratorio → Evaluar se copia el pedido, se pega en claude.ai o chatgpt.com y
+//      se pega la respuesta. (También existe /api/lab/evaluaciones con el skill `laboratorio-sofi`, para
+//      quien quiera automatizarlo con una clave; no hace falta.)
 //
 // Este archivo es el candado: `labApiAllowed` es false fijo y `forbidLabApi` corta antes de crear un cliente
 // de la API. `src/test/laboratorio-sin-api.integration.test.ts` falla si alguien lo afloja. No lo cambies sin
 // una decisión escrita de Axel en PENDIENTES.md.
 
 export const LAB_API_RULE =
-  "Regla del laboratorio: prohibido usar la API de Anthropic u OpenAI con clave para las pruebas de Sofi. Las simulaciones corren en ElevenLabs; evaluar, revisar charlas reales y proponer mejoras lo hace Claude Code o ChatGPT con la suscripción (skill laboratorio-sofi).";
+  "Regla del laboratorio: prohibido usar la API de Anthropic u OpenAI con clave para las pruebas de Sofi. Las simulaciones corren en ElevenLabs; evaluar, revisar charlas reales y proponer mejoras lo hace Claude o ChatGPT con la suscripción (Panel → Laboratorio → Evaluar).";
 
 /** Lo que ve el equipo en el panel cuando algo lo hace la suscripción y no el servidor. */
 export const LAB_SUBSCRIPTION_MESSAGE =
-  "Esto no lo hace el servidor: por regla, el laboratorio no usa la API. Lo hace Claude Code o ChatGPT con la suscripción (skill laboratorio-sofi); queda en la cola y aparece acá cuando lo cargan.";
+  "Esto no lo hace el servidor: por regla, el laboratorio no usa la API. Se hace con tu Claude o tu ChatGPT desde la pestaña Evaluar (copiar el pedido, pegar la respuesta).";
 
 /** Siempre false: el laboratorio no puede llamar a la API de un modelo. */
 export const labApiAllowed = (): boolean => false;

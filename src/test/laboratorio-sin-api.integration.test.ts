@@ -176,6 +176,28 @@ describe.runIf(url)("Laboratorio sin API: solo ElevenLabs y la suscripción", ()
     expect(again.errores[0]).toMatch(/ya estaba evaluado/);
   });
 
+  it("desde el panel, sin clave: el pedido para pegar en el chat y la respuesta pegada", async () => {
+    const external = await import("@/lib/lab/external");
+    const second = await runs.startRun({ clinic, kind: "jugar", label: "Jugar", cases: referenceCases().filter((c) => c.id === "precio-particular"), repeat: 1, createdBy: "test" });
+    // ElevenLabs devuelve la misma invocación simulada: la corrida nueva toma sus charlas.
+    await sql`update lab_runs set invocation_id = 'inv_1', test_ids = (select test_ids from lab_runs where id = ${runId}) where id = ${second}`;
+    await runs.advanceRun(second, 10_000);
+    const work = await external.pendingWork({ clinicId: clinic.id, simulaciones: 8, reales: 4, propuestasSoloAlFinal: true });
+    expect(work.simulaciones.map((x) => x.corrida)).toEqual([second]);
+    expect(work.propuestas).toEqual([]);
+    const prompt = external.subscriptionPrompt(work);
+    expect(prompt).toContain(`resultado=${work.simulaciones[0].resultado}`);
+    expect(prompt).toContain("RÚBRICA");
+    expect(prompt).not.toContain("555");
+    const answer = `Acá va:\n\`\`\`json\n${JSON.stringify({
+      simulaciones: [{ resultado: work.simulaciones[0].resultado, condiciones: work.simulaciones[0].condiciones.map((c) => ({ numero: c.numero, cumple: true, motivo: "Bien." })), dimensiones: { seguridad: null, exactitud: 95, resolucion: 90, eficiencia: 90, trato: 90 }, falla_critica: false, motivo_critico: null, hallazgos: [], resumen: "Bien." }],
+    })}\n\`\`\``;
+    const result = await external.applyExternal({ ...(external.parseSubscriptionAnswer(answer) as object), evaluador: "ChatGPT" });
+    expect(result).toMatchObject({ ok: true, simulaciones: 1, corridas_cerradas: 1 });
+    expect((await runs.getRun(second))?.status).toBe("terminada");
+    expect(() => external.parseSubscriptionAnswer("no tengo nada")).toThrow(/No encontré un JSON/);
+  });
+
   it("rechaza lo que no tiene el formato", async () => {
     const res = await call("POST", TOKEN, { evaluador: "x" });
     expect(res.status).toBe(400);
