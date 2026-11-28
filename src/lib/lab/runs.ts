@@ -15,6 +15,9 @@ import { simulateConversation, type SimulationUsage } from "./simulator";
 //
 //   preparando → corriendo (ElevenLabs simula) → puntuando (el juez evalúa cada charla) → terminada
 //
+// REGLA (policy.ts): el juez no corre en el servidor. En «puntuando» las charlas esperan a que Claude Code o
+// ChatGPT, con la suscripción, las evalúe por /api/lab/evaluaciones (saveJudgment + maybeFinish).
+//
 // Lo avanza el cron «calendario» cada 10 minutos (src/lib/lab/tick.ts) y el panel al abrir una corrida.
 
 export type RunKind = "bateria" | "experimento" | "jugar" | "verificacion";
@@ -234,7 +237,7 @@ export type StartRunInput = {
   proposalId?: string | null;
   baselineRunId?: string | null;
   createdBy?: string | null;
-  /** Por defecto el simulador propio. «elevenlabs» solo para la verificación con producción. */
+  /** Con la regla de policy.ts siempre ElevenLabs (el simulador propio usa la API y está prohibido). */
   engine?: RunEngine;
   /** Solo con ElevenLabs: usar el modelo del agente (producción) en vez de Haiku. */
   productionModel?: boolean;
@@ -247,7 +250,8 @@ export async function startRun(input: StartRunInput): Promise<string> {
   const prompt = input.prompt ?? (await effectivePrompt()).prompt;
   const cases = input.cases.map((c) => snapshot(c, vars));
   const repeat = Math.min(5, Math.max(1, Math.round(input.repeat)));
-  const engine: RunEngine = input.engine ?? "simulador";
+  // Por regla (policy.ts) el simulador propio no corre en el servidor: usa la API. Todo va por ElevenLabs.
+  const engine: RunEngine = labJudgeConfigured() ? (input.engine ?? "simulador") : "elevenlabs";
   const [run] = await sql<Array<{ id: string }>>`
     insert into lab_runs ${sql({
       clinic_id: input.clinic.id,
@@ -543,6 +547,10 @@ async function criteriaFor(clinicId: string): Promise<string[]> {
 }
 
 async function judgePending(run: LabRun, budgetMs: number): Promise<void> {
+  if (!labJudgeConfigured()) {
+    await closeEmptyResults(run.id);
+    return;
+  }
   const started = Date.now();
   const clinic = await clinicById(run.clinic_id);
   if (!clinic) return;
@@ -563,6 +571,59 @@ async function judgePending(run: LabRun, budgetMs: number): Promise<void> {
   }
 }
 
+const hasSofi = (r: LabResult) => (r.transcript ?? []).some((l) => l.role === "sofi" && l.text);
+
+/**
+ * Sin juez en el servidor (regla de policy.ts): las charlas quedan esperando a la suscripción. Solo se cierran
+ * las que no tienen nada que evaluar, para que la corrida no quede abierta por ellas.
+ */
+async function closeEmptyResults(runId: string): Promise<void> {
+  const rows = await sql<LabResult[]>`
+    select * from lab_results where run_id = ${runId} and not judged and coalesce(el_status, '') not in ('pendiente', 'simulando')`;
+  for (const r of rows.filter((x) => !hasSofi(x))) {
+    await sql`
+      update lab_results set judged = true, judged_at = now(), error = ${r.error ?? "La simulación no tiene respuestas de Sofi."}
+      where id = ${r.id} and not judged`;
+  }
+}
+
+/** Lo que dijo el juez (en el formato del laboratorio). */
+export type JudgmentInput = {
+  verdicts: Verdict[];
+  judge: Dims;
+  judgeCritical: boolean;
+  criticalReason: string | null;
+  findings: LabFinding[];
+  summary: string;
+};
+
+/** Calcula el puntaje de una charla simulada con lo que dijo el juez y lo guarda. Devuelve el puntaje. */
+export async function saveJudgment(run: LabRun, result: LabResult, verdict: JudgmentInput, judgeModel: string | null, firstOpinion: string | null = null) {
+  const c = run.cases.find((x) => x.id === result.case_id);
+  const lines = [...normalizeTranscript(c?.history ?? []), ...result.transcript];
+  const checks = automaticChecks(lines);
+  const scored = conversationScore({ verdicts: [...verdict.verdicts, ...checks], judge: verdict.judge, judgeCritical: verdict.judgeCritical });
+  const findings = verdict.judgeCritical && verdict.criticalReason
+    ? [{ problema: verdict.criticalReason, cita: "", dimension: "seguridad" as const, gravedad: "alta" as const, mejora: "" }, ...verdict.findings]
+    : verdict.findings;
+  await sql`
+    update lab_results set ${sql({
+      score: scored.score,
+      dims: json(scored.dims),
+      conditions: json(verdict.verdicts),
+      checks: json(checks),
+      critical: scored.critical,
+      findings: json(findings),
+      summary: verdict.summary,
+      judge_model: judgeModel,
+      first_opinion: firstOpinion,
+      error: null,
+      judged: true,
+      judged_at: new Date(),
+    })} where id = ${result.id}`;
+  return { ...scored, checks };
+}
+
 async function judgeResult(run: LabRun, result: LabResult, clinicContext: string, criteria: string[]): Promise<void> {
   const c = run.cases.find((x) => x.id === result.case_id);
   const history = normalizeTranscript(c?.history ?? []);
@@ -570,12 +631,8 @@ async function judgeResult(run: LabRun, result: LabResult, clinicContext: string
   const checks = automaticChecks(lines);
   const finish = (fields: Record<string, unknown>) => sql`
     update lab_results set ${sql({ ...fields, judged: true, judged_at: new Date() })} where id = ${result.id}`;
-  if (!c || !result.transcript.some((l) => l.role === "sofi" && l.text)) {
+  if (!c || !hasSofi(result)) {
     await finish({ error: result.error ?? "La simulación no tiene respuestas de Sofi.", checks: json(checks) });
-    return;
-  }
-  if (!labJudgeConfigured()) {
-    await finish({ error: "Falta ANTHROPIC_API_KEY: la charla se simuló pero no se pudo puntuar.", checks: json(checks) });
     return;
   }
   try {
@@ -603,21 +660,7 @@ async function judgeResult(run: LabRun, result: LabResult, clinicContext: string
         firstOpinion = null;
       }
     }
-    const findings = verdict.judgeCritical && verdict.criticalReason
-      ? [{ problema: verdict.criticalReason, cita: "", dimension: "seguridad" as const, gravedad: "alta" as const, mejora: "" }, ...verdict.findings]
-      : verdict.findings;
-    await finish({
-      score: scored.score,
-      dims: json(scored.dims),
-      conditions: json(verdict.verdicts),
-      checks: json(checks),
-      critical: scored.critical,
-      findings: json(findings),
-      summary: verdict.summary,
-      judge_model: judgeModel,
-      first_opinion: firstOpinion,
-      error: null,
-    });
+    scored = await saveJudgment(run, result, verdict, judgeModel, firstOpinion);
     // Repetición a demanda: si la primera charla falla, el caso corre 2 veces más para descartar casualidad.
     if (run.engine === "simulador" && run.kind !== "jugar" && result.repetition === 1 && failed(scored.score, scored.critical, [...verdict.verdicts, ...checks])) {
       for (const rep of [2, 3]) {
@@ -654,7 +697,7 @@ export function onRunFinished(hook: (run: LabRun) => Promise<void>): void {
   if (!RUN_HOOKS.includes(hook)) RUN_HOOKS.push(hook);
 }
 
-async function maybeFinish(runId: string): Promise<void> {
+export async function maybeFinish(runId: string): Promise<void> {
   // Un resultado cuyo juez falló 3 veces (más de 30 minutos reintentando) se da por perdido.
   await sql`
     update lab_results set judged = true, judged_at = now()

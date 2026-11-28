@@ -1,38 +1,21 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
+import { labTokenAuthorized } from "@/lib/lab/access";
 import { getRun, runResults } from "@/lib/lab/runs";
 import { experimentSummary, getProposal } from "@/lib/lab/proposals";
 
 // Informe de solo lectura del Laboratorio de Sofi para revisarlo fuera del panel (por ejemplo, Claude Code).
 // Protegido con su propia clave (header x-lab-token): una creada en Panel → Laboratorio → Criterios, o
-// LAB_REPORT_TOKEN en Vercel. No da acceso a nada más.
+// LAB_REPORT_TOKEN en Vercel. No da acceso a nada más. Para cargar evaluaciones: /api/lab/evaluaciones.
 //   GET /api/lab/informe                 → últimas corridas, propuestas, criterios y charlas puntuadas
 //   GET /api/lab/informe?corrida=<id>    → una corrida completa, charla por charla
 // Las charlas simuladas son ficticias; de las reales solo van el puntaje, el resumen y los hallazgos.
 
 export const dynamic = "force-dynamic";
 
-const sha = (v: string) => createHash("sha256").update(v).digest("hex");
-
-/** La clave del panel (lab_access_tokens, se guarda el hash) o LAB_REPORT_TOKEN si está en Vercel. */
-async function authorized(request: Request): Promise<boolean> {
-  const received = request.headers.get("x-lab-token") ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!received || received.length < 24) return false;
-  const expected = process.env.LAB_REPORT_TOKEN;
-  if (expected && expected.length >= 24) {
-    const a = Buffer.from(received);
-    const b = Buffer.from(expected);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  const [row] = await sql`
-    update lab_access_tokens set last_used_at = now() where token_hash = ${sha(received)} and revoked_at is null returning id`;
-  return Boolean(row);
-}
-
 export async function GET(request: Request) {
-  if (!(await authorized(request))) return NextResponse.json({ ok: false, error: "No autorizado." }, { status: 401 });
+  if (!(await labTokenAuthorized(request, "lectura"))) return NextResponse.json({ ok: false, error: "No autorizado." }, { status: 401 });
   const url = new URL(request.url);
   const id = url.searchParams.get("corrida");
   if (id) {

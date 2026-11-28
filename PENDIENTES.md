@@ -1,5 +1,16 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Regla del laboratorio: prohibido usar la API con clave (28/11/2026)
+
+**Decisión de Axel, estrictamente prohibido.** Las pruebas de Sofi no usan nunca la API de Anthropic ni la de OpenAI con clave. Solo se pagan ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar y proponer). La regla completa está en `AGENTS.md`.
+
+- **En el código:** `src/lib/lab/policy.ts` (`labApiAllowed` en `false` fijo) bloquea el simulador propio, el juez, la segunda instancia con Opus, las propuestas y el armado de casos, aunque `ANTHROPIC_API_KEY` esté en Vercel. Lo vigila `src/test/laboratorio-sin-api.integration.test.ts`.
+- **Cómo queda:** las corridas van por ElevenLabs y quedan en «puntuando» hasta que alguien corre el skill `laboratorio-sofi`. El skill trae lo pendiente de `/api/lab/evaluaciones`, lo evalúa con la misma rúbrica y lo carga. El servidor calcula el puntaje y cierra las corridas.
+- **Falta (Axel o Facu):**
+  1. En Panel → Laboratorio → Criterios, «Crear clave para evaluar». La clave va en el entorno de Claude Code (network secret, host `turniasalud.app`, header `x-lab-token`) o como `LAB_TOKEN` en la computadora de quien corra Codex. Nunca en el chat.
+  2. Elegir quién lo corre y cuándo. Lo recomendado: una tarea programada de Claude Code en la nube, todos los días a las 7, después de la batería de las 2 a las 6. Corre con la suscripción.
+  3. Si no hace falta la batería todas las noches, bajarla a dos o tres por semana para gastar menos ElevenLabs.
+
 ## Laboratorio de Sofi (27/11/2026)
 
 En producción: Panel → Turnia → **Laboratorio de Sofi** ([`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md)). Batería nocturna con 18 casos × 3, puntaje de 1 a 100, revisión de las charlas reales, propuestas diarias de Claude, experimentos (versión actual contra la variante) y publicación con un clic. Guerra–Mininni arranca con el laboratorio y el resumen por WhatsApp prendidos.
