@@ -6,7 +6,7 @@ import type { Clinic } from "../types";
 import { referenceCases, resolveCondition, type Condition, type HistoryLine, type Intent, type LabCase, type Mock, type Situation } from "./cases";
 import { APPEAL_MODEL, judgeSimulation, labJudgeConfigured, secondInstanceOn, type LabFinding } from "./judge";
 import { applyPatches, effectivePrompt, promptHash } from "./prompt";
-import { LAB_PAUSED_MESSAGE, labPaused } from "./policy";
+import { LAB_ELEVENLABS_MESSAGE, LAB_PAUSED_MESSAGE, labElevenLabsAllowed, labPaused, labSimModel, labSimulatorAllowed } from "./policy";
 import { aggregateRun, automaticChecks, caseWeights, conversationScore, needsMoreReps, type Dims, type ScoredResult, type Verdict } from "./score";
 import { normalizeTranscript, transcriptText, type LabLine } from "./transcript";
 import { simulateConversation, type SimulationUsage } from "./simulator";
@@ -253,8 +253,10 @@ export async function startRun(input: StartRunInput): Promise<string> {
   const prompt = input.prompt ?? (await effectivePrompt()).prompt;
   const cases = input.cases.map((c) => snapshot(c, vars));
   const repeat = Math.min(5, Math.max(1, Math.round(input.repeat)));
-  // Por regla (policy.ts) el simulador propio no corre en el servidor: usa la API. Todo va por ElevenLabs.
-  const engine: RunEngine = labJudgeConfigured() ? (input.engine ?? "simulador") : "elevenlabs";
+  // Regla de costos (policy.ts): todo va por el simulador (Haiku, con topes); ElevenLabs nunca.
+  if (input.engine === "elevenlabs" && !labElevenLabsAllowed()) throw new Error(LAB_ELEVENLABS_MESSAGE);
+  if (input.engine !== "elevenlabs" && !labSimulatorAllowed()) throw new Error(LAB_PAUSED_MESSAGE);
+  const engine: RunEngine = input.engine === "elevenlabs" ? "elevenlabs" : "simulador";
   const [run] = await sql<Array<{ id: string }>>`
     insert into lab_runs ${sql({
       clinic_id: input.clinic.id,
@@ -779,7 +781,7 @@ export async function variantPrompt(change: { old_str?: string; new_str?: string
 // ---------------------------------------------------------------------------
 // Simulador propio (v2)
 // ---------------------------------------------------------------------------
-export const simulatorModel = () => process.env.LAB_SIM_LLM || process.env.LAB_LLM || "claude-haiku-5-5";
+export const simulatorModel = () => labSimModel();
 
 /** Una charla falla si baja de 85, tiene una falla crítica o no cumple alguna condición. Puro. */
 export function failed(score: number | null, critical: boolean, verdicts: Array<{ pass: boolean }>): boolean {
@@ -814,14 +816,16 @@ async function runCap(clinicId: string): Promise<number> {
 }
 
 async function simulatePending(run: LabRun, budgetMs: number): Promise<void> {
-  if (!labJudgeConfigured()) {
+  if (!labSimulatorAllowed() || !process.env.ANTHROPIC_API_KEY) {
     await sql`
-      update lab_results set el_status = 'omitida', judged = true, judged_at = now(), error = 'Falta ANTHROPIC_API_KEY para simular.'
+      update lab_results set el_status = 'omitida', judged = true, judged_at = now(), error = 'El simulador no está disponible (pausa o falta ANTHROPIC_API_KEY).'
       where run_id = ${run.id} and el_status in ('pendiente', 'simulando')`;
     return;
   }
   const started = Date.now();
   const cap = await runCap(run.clinic_id);
+  const clinic = await clinicById(run.clinic_id);
+  const { spentToday, dailyCap } = await import("./tick");
   const prompt = run.sim_prompt ?? run.prompt_override ?? (await effectivePrompt()).prompt;
   const vars = run.sim_vars ?? {};
   while (Date.now() - started < budgetMs) {
@@ -830,6 +834,14 @@ async function simulatePending(run: LabRun, budgetMs: number): Promise<void> {
       await sql`
         update lab_results set el_status = 'omitida', judged = true, judged_at = now(),
           error = ${`Se alcanzó el tope de gasto de la corrida (USD ${cap}).`}
+        where run_id = ${run.id} and el_status = 'pendiente'`;
+      return;
+    }
+    // Tope del día (policy.ts): corta también a mitad de corrida.
+    if (clinic && (await spentToday(clinic)) >= dailyCap(clinic)) {
+      await sql`
+        update lab_results set el_status = 'omitida', judged = true, judged_at = now(),
+          error = ${`Se alcanzó el tope de gasto del día (USD ${dailyCap(clinic)}).`}
         where run_id = ${run.id} and el_status = 'pendiente'`;
       return;
     }

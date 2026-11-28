@@ -4,29 +4,24 @@ Panel → Turnia → **Laboratorio de Sofi** (`/panel/laboratorio`, solo el admi
 
 Pedido de Axel del 27/11/2026, a partir de una charla real del 26/11: Sofi dijo «no hay turnos con la Dra. Coldeira después de las 17 hasta mediados de enero» y había el 23/12. Después le ofreció al Dr. Mininni a una paciente que había pedido una mujer.
 
-## Regla (28/11/2026): sin API, solo ElevenLabs y la suscripción
+## Reglas de costo (decisión de Axel, 28/11/2026)
 
-**Estrictamente prohibido usar la API de Anthropic u OpenAI con clave para el laboratorio** (decisión de Axel). Las pruebas salieron caras con la API y son simulaciones. Prevalece sobre todo lo que sigue: donde abajo dice «Claude», «Haiku», «Opus» o «simulador propio» contra la API, ahora es así:
+Prevalecen sobre todo lo que sigue. La tabla completa está en `PENDIENTES.md`; el candado, en `src/lib/lab/policy.ts`.
 
-| Parte | Antes | Ahora |
-|---|---|---|
-| Simulaciones | Simulador propio (API de Claude, Haiku) | **ElevenLabs** (`agent-testing`), con Haiku dentro de ElevenLabs. Si alguien pide el simulador, igual va por ElevenLabs. |
-| Juez de las simulaciones | Haiku por API, y Opus en segunda instancia | **La suscripción** de Claude Code o ChatGPT, con la misma rúbrica, por `/api/lab/evaluaciones`. Revisa dos veces las fallas críticas. |
-| Charlas reales | Haiku por API, a la media hora | La suscripción, con los teléfonos y mails tapados. |
-| Propuestas, reintentos y casos nuevos | Haiku y Opus por API | La suscripción. Los botones del panel que los pedían avisan que se hace por ese camino. |
-| Atribución de lo que empeora en un experimento | Opus por API | Sin segunda instancia: lo que empeora cuenta como del cambio. Quien corre el skill puede mirarlo y decidir. |
-| Puntaje, controles automáticos, experimentos, publicar | El servidor | El servidor, igual que antes (no usan ningún modelo). |
-
-- **El candado:** `src/lib/lab/policy.ts`. `labApiAllowed` es `false` fijo, el juez y el simulador cortan con `LabApiForbidden` antes de crear un cliente, y `src/test/laboratorio-sin-api.integration.test.ts` comprueba que, con las claves cargadas, no sale ninguna llamada a la API. Los tests de antes (`laboratorio.integration.test.ts`) simulan el juez para probar la lógica, sin red.
+- **Simular:** simulador propio, solo con Haiku (unos USD 0,005 por charla). Es la única parte que usa la API. Topes: USD 1 por corrida y USD 2 por día, que cortan a mitad de corrida.
+- **Evaluar, revisar charlas reales y proponer mejoras:** la suscripción, desde la pestaña **Evaluar**. Nada de API ni de Opus: no corren el juez del servidor, la segunda instancia, la atribución ni el reintento automático.
+- **ElevenLabs:** nunca para pruebas. No corren la verificación semanal, `probar-sofi` ni el motor `elevenlabs`.
+- **Nada automático:** ni batería nocturna, ni experimentos solos, ni cobertura. Una batería, «Jugar de paciente» o «Probar en el laboratorio» se lanzan a mano, antes de publicar un cambio.
 - **El circuito:**
-  1. ElevenLabs simula de noche (o cuando se pide desde el panel).
-  2. La corrida queda en «puntuando».
-  3. En la pestaña **Evaluar** (sin claves) alguien copia el pedido: tandas de 8 simulaciones y 4 charlas reales, con la rúbrica, el contexto de la clínica, los criterios y el formato JSON. Las charlas reales van sin teléfonos ni mails.
-  4. Lo pega en claude.ai o chatgpt.com (la suscripción) y pega la respuesta en el panel.
-  5. El servidor calcula el puntaje, cierra la corrida, resuelve los experimentos y lanza el siguiente en ElevenLabs. Cuando no quedan charlas, la misma pestaña pide las propuestas.
-- **Opcional, con clave:** el skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md) hace lo mismo desde Claude Code o Codex por `/api/lab/evaluaciones`, con una clave «para evaluar» (Criterios, `lab_access_tokens.scope`). Axel prefiere no crearla. Las claves de solo lectura siguen sirviendo para `/api/lab/informe`.
-- **Qué cuesta ahora:** ElevenLabs (cada simulación) y la suscripción. Los topes en dólares del Resumen siguen valiendo y ahora solo cuentan ElevenLabs.
-- **Sin clave no hay tarea programada:** alguien pasa por Evaluar después de la batería.
+  1. Lanzar la corrida.
+  2. El simulador corre las charlas.
+  3. Evaluarlas en la pestaña Evaluar.
+  4. El panel calcula el puntaje y cierra la corrida.
+- **Charlas reales:** se revisan en Evaluar una vez por semana, con costo $0.
+- **Lo que sigue funcionando:**
+  - las repeticiones de los experimentos cuando un caso da muy distinto;
+  - la comparación «concluyente / no concluyente»;
+  - aprobar y publicar.
 
 ## El ciclo
 

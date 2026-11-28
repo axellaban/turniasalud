@@ -5,19 +5,13 @@ description: Corre la parte del Laboratorio de Sofi que hace la suscripción (Cl
 
 # Laboratorio de Sofi con la suscripción
 
-## La regla (Axel, 28/11/2026): estrictamente prohibido usar la API con clave
+## Las reglas de costo (Axel, 28/11/2026)
 
-Las pruebas de Sofi son simulaciones. Se pagan dos cosas y nada más:
-
-1. **ElevenLabs**, que corre las simulaciones (sus pruebas de agentes).
-2. **La suscripción** de Claude Code o de ChatGPT (Codex), que evalúa y propone. **Quien evalúa sos vos**, con tu propio razonamiento.
-
-Prohibido, sin excepciones:
-- Llamar a `api.anthropic.com`, `api.openai.com` u otra API de modelos con una clave (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` u otra), ni desde un script, ni con `curl`, ni con un SDK.
-- Correr el simulador propio del repositorio (`src/lib/lab/simulator.ts`) o el juez (`src/lib/lab/judge.ts`) contra la API.
-- Prender la API en el código: `labApiAllowed` en `src/lib/lab/policy.ts` es `false` fijo y `src/test/laboratorio-sin-api.integration.test.ts` lo vigila. No se cambia sin una decisión escrita de Axel en `PENDIENTES.md`.
-
-Sí se puede: subagentes de Claude Code (corren con la suscripción), `npm run probar-sofi` (usa ElevenLabs) y las corridas desde el panel (van por ElevenLabs).
+- **Simular:** el servidor corre el simulador propio, solo con Haiku y con topes. Es la única parte con API, y no te toca a vos.
+- **Evaluar y proponer:** **vos**, con tu propio razonamiento y la suscripción. Prohibido llamar a `api.anthropic.com`, `api.openai.com` u otra API con una clave, desde un script, con `curl` o con un SDK.
+- **ElevenLabs:** nunca para pruebas (`probar-sofi` está apagado).
+- **Nada automático:** no lances corridas solo. Las lanza una persona desde el panel.
+- **Detalle:** en `src/lib/lab/policy.ts` y `PENDIENTES.md`. No se cambia sin una decisión escrita de Axel.
 
 ## Acceso
 

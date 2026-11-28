@@ -7,6 +7,7 @@ import type { Clinic } from "../types";
 import { referenceCases, type Condition, type Dimension, type LabCase } from "./cases";
 import { attributeRegression, draftCase, labJudgeConfigured, proposeImprovements, refineProposal, type CaseDraftOut, type JudgeUsage, type LabFinding, type ProposalDraft } from "./judge";
 import { effectivePrompt, patchProblem } from "./prompt";
+import { labAutoRunsAllowed } from "./policy";
 import { addJudgeUsage, allCases, clinicContextFor, getRun, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabResult, type LabRun } from "./runs";
 import { compareRuns, type CaseComparison } from "./score";
 import { normalizeTranscript, transcriptText } from "./transcript";
@@ -167,7 +168,8 @@ export async function saveProposalDrafts(clinic: Clinic, drafts: ProposalDraft[]
   const [{ today }] = await sql<Array<{ today: number }>>`
     select count(*)::int as today from lab_runs where clinic_id = ${clinic.id} and kind = 'experimento' and created_by = 'Laboratorio' and created_at > now() - interval '24 hours'`;
   const { spentToday, dailyCap } = await import("./tick");
-  const capLeft = (await spentToday(clinic)) < dailyCap(clinic);
+  // Regla de costos (policy.ts): sin experimentos automáticos; se prueban a mano desde Mejoras.
+  const capLeft = labAutoRunsAllowed() && (await spentToday(clinic)) < dailyCap(clinic);
   for (const p of created.filter((c) => c.layer === "prompt" && c.valid).slice(0, capLeft ? Math.max(0, 1 - today) : 0)) {
     await startExperiment(p.id, actor).catch((e) => console.error("Laboratorio: no se pudo empezar el experimento", errorText(e)));
   }

@@ -3,54 +3,41 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { referenceCases } from "@/lib/lab/cases";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
-// REGLA (Axel, 28/11/2026; src/lib/lab/policy.ts): el Laboratorio de Sofi NUNCA usa la API de Anthropic ni
-// de OpenAI con clave. Las simulaciones van por ElevenLabs y lo demás lo hace la suscripción de Claude Code
-// o ChatGPT por /api/lab/evaluaciones. Si este test falla porque alguien volvió a prender la API, la
-// respuesta correcta es volver a apagarla, no cambiar el test.
+// REGLAS DE COSTO (Axel, 28/11/2026; src/lib/lab/policy.ts):
+//   - la API de Claude solo para simular (Sofi y el paciente), siempre con Haiku y con topes;
+//   - evaluar y proponer, nunca con la API: lo hace la suscripción (pestaña Evaluar o /api/lab/evaluaciones);
+//   - ElevenLabs nunca para pruebas, y nada automático (ni batería nocturna ni experimentos solos).
+// Si este test falla porque alguien aflojó una regla, se vuelve a poner la regla, no se cambia el test.
 
 const url = testDatabaseUrl();
 
-const el = vi.hoisted(() => ({ created: [] as Array<Record<string, unknown>>, runs: [] as Array<Record<string, unknown>> }));
+const el = vi.hoisted(() => ({ calls: [] as string[] }));
 
-// La pausa total (policy.ts) se levanta solo acá, para probar la lógica sin red.
-vi.mock("@/lib/lab/policy", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/lab/policy")>()), labPaused: () => false }));
-
+// ElevenLabs no se llama nunca en las pruebas.
 vi.mock("@/lib/elevenlabs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/elevenlabs")>()),
-  elevenlabs: vi.fn(async (path: string, init: RequestInit = {}) => {
-    const body = init.body ? JSON.parse(String(init.body)) : null;
-    if (path === "/v1/convai/llm/list") return { llms: [{ llm: "claude-haiku-5-5" }] };
-    if (path === "/v1/convai/agents/agent_lab") return { conversation_config: { agent: { prompt: { tool_ids: ["t1"] } } } };
-    if (path.startsWith("/v1/convai/tools")) return { tools: [{ id: "t1", tool_config: { name: "consultar_disponibilidad" } }] };
-    if (path === "/v1/convai/agent-testing/create") {
-      el.created.push(body);
-      return { id: `test_${el.created.length}` };
-    }
-    if (path === "/v1/convai/agents/agent_lab/run-tests") {
-      el.runs.push(body);
-      return { id: "inv_1" };
-    }
-    if (path === "/v1/convai/test-invocations/inv_1") {
-      return {
-        test_runs: el.created.map((_, i) => ({
-          test_id: `test_${i + 1}`,
-          status: "passed",
-          agent_responses: [
-            { role: "user", message: "Hola, ¿atienden por OSDE?" },
-            { role: "agent", message: "Sí, atendemos por OSDE." },
-          ],
-        })),
-      };
-    }
-    throw new Error(`ElevenLabs simulado: ${path}`);
+  elevenlabs: vi.fn(async (path: string) => {
+    el.calls.push(path);
+    throw new Error(`ElevenLabs no se usa en las pruebas: ${path}`);
   }),
+}));
+
+// El simulador (la única excepción a la API) se reemplaza por uno fijo: el test no sale a la red.
+vi.mock("@/lib/lab/simulator", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/lab/simulator")>()),
+  simulateConversation: vi.fn(async () => ({
+    lines: [{ role: "paciente", text: "Hola, ¿atienden por OSDE?", tools: [] }, { role: "sofi", text: "Sí, atendemos por OSDE.", tools: [] }],
+    usage: { model: "claude-haiku-5-5", sofi: { input: 1000, cache_write: 0, cache_read: 20000, output: 100 }, paciente: { input: 300, cache_write: 0, cache_read: 0, output: 30 }, usd: 0.003 },
+    turns: 1,
+    ended: "paciente",
+  })),
 }));
 
 const TOKEN = `lab_${"e".repeat(48)}`;
 const READ_ONLY = `lab_${"l".repeat(48)}`;
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
 
-describe.runIf(url)("Laboratorio sin API: solo ElevenLabs y la suscripción", () => {
+describe.runIf(url)("Laboratorio: simula con Haiku, evalúa la suscripción, nunca ElevenLabs", () => {
   let sql: typeof import("@/lib/db").sql;
   let runs: typeof import("@/lib/lab/runs");
   let route: typeof import("@/app/api/lab/evaluaciones/route");
@@ -103,29 +90,40 @@ describe.runIf(url)("Laboratorio sin API: solo ElevenLabs y la suscripción", ()
     await sql?.end();
   });
 
-  it("el candado está puesto: el juez y el simulador no crean un cliente de la API aunque haya clave", async () => {
-    const { labApiAllowed, LabApiForbidden } = await import("@/lib/lab/policy");
+  it("las reglas están puestas: el juez no usa la API, el simulador solo con Haiku, sin ElevenLabs ni nada automático", async () => {
+    const policy = await import("@/lib/lab/policy");
     const judge = await import("@/lib/lab/judge");
-    const simulator = await import("@/lib/lab/simulator");
-    expect(labApiAllowed()).toBe(false);
+    expect(policy.labApiAllowed()).toBe(false);
+    expect(policy.labElevenLabsAllowed()).toBe(false);
+    expect(policy.labAutoRunsAllowed()).toBe(false);
+    expect(policy.labSimulatorAllowed()).toBe(true);
     expect(judge.labJudgeConfigured()).toBe(false);
-    await expect(judge.judgeSimulation({ scenario: "x", conditions: [], transcript: "x", clinicContext: "", criteria: [] })).rejects.toBeInstanceOf(LabApiForbidden);
-    await expect(judge.judgeRealConversation({ transcript: "x", clinicContext: "", criteria: [] })).rejects.toBeInstanceOf(LabApiForbidden);
-    await expect(simulator.simulateConversation({ prompt: "x", vars: {}, scenario: "x", mocks: {}, history: [] })).rejects.toBeInstanceOf(LabApiForbidden);
+    await expect(judge.judgeSimulation({ scenario: "x", conditions: [], transcript: "x", clinicContext: "", criteria: [] })).rejects.toBeInstanceOf(policy.LabApiForbidden);
+    await expect(judge.judgeRealConversation({ transcript: "x", clinicContext: "", criteria: [] })).rejects.toBeInstanceOf(policy.LabApiForbidden);
+    vi.stubEnv("LAB_SIM_LLM", "claude-opus-5-5");
+    expect(policy.labSimModel()).toBe("claude-haiku-5-5");
+    vi.stubEnv("LAB_SIM_LLM", "");
   });
 
-  it("la batería va por ElevenLabs aunque pidan el simulador propio, y queda esperando a la suscripción", async () => {
+  it("la batería simula con Haiku, nunca en ElevenLabs, y queda esperando a la suscripción", async () => {
     const cases = referenceCases().filter((c) => c.id === "precio-particular");
-    runId = await runs.startRun({ clinic, kind: "bateria", label: "Batería", cases, repeat: 1, createdBy: "test", engine: "simulador" });
-    expect((await runs.getRun(runId))?.engine).toBe("elevenlabs");
-    expect(el.runs).toHaveLength(1);
-    await runs.advanceRun(runId, 10_000);
+    await expect(runs.startRun({ clinic, kind: "bateria", label: "x", cases, repeat: 1, createdBy: "test", engine: "elevenlabs" })).rejects.toThrow(/ElevenLabs/);
+    runId = await runs.startRun({ clinic, kind: "bateria", label: "Batería", cases, repeat: 1, createdBy: "test" });
+    expect(await runs.getRun(runId)).toMatchObject({ engine: "simulador", agent_llm: "claude-haiku-5-5" });
     const run = await runs.advanceRun(runId, 10_000);
-    expect(run?.status).toBe("puntuando");
+    expect(run?.status).toBe("corriendo");
     const results = await runs.runResults(runId);
     expect(results).toHaveLength(1);
-    expect(results[0].judged).toBe(false);
-    expect(results[0].error).toBeNull();
+    expect(results[0]).toMatchObject({ el_status: "simulada", judged: false, error: null });
+    expect(el.calls).toEqual([]);
+  });
+
+  it("el cron no lanza nada solo", async () => {
+    const before = (await sql`select count(*)::int as n from lab_runs`)[0].n;
+    const { runLab } = await import("@/lib/lab/tick");
+    await runLab(30_000);
+    expect((await sql`select count(*)::int as n from lab_runs`)[0].n).toBe(before);
+    expect(el.calls).toEqual([]);
   });
 
   it("la cola pide una clave para evaluar; la de solo lectura no alcanza", async () => {
@@ -134,7 +132,7 @@ describe.runIf(url)("Laboratorio sin API: solo ElevenLabs y la suscripción", ()
     const res = await call("GET", TOKEN);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.regla).toMatch(/prohibido usar la API/);
+    expect(body.regla).toMatch(/solo para simular/);
     expect(body.rubrica).toContain("seguridad");
     expect(body.simulaciones).toHaveLength(1);
     expect(body.simulaciones[0].condiciones[0]).toMatchObject({ numero: 1 });
@@ -182,8 +180,6 @@ describe.runIf(url)("Laboratorio sin API: solo ElevenLabs y la suscripción", ()
   it("desde el panel, sin clave: el pedido para pegar en el chat y la respuesta pegada", async () => {
     const external = await import("@/lib/lab/external");
     const second = await runs.startRun({ clinic, kind: "jugar", label: "Jugar", cases: referenceCases().filter((c) => c.id === "precio-particular"), repeat: 1, createdBy: "test" });
-    // ElevenLabs devuelve la misma invocación simulada: la corrida nueva toma sus charlas.
-    await sql`update lab_runs set invocation_id = 'inv_1', test_ids = (select test_ids from lab_runs where id = ${runId}) where id = ${second}`;
     await runs.advanceRun(second, 10_000);
     const work = await external.pendingWork({ clinicId: clinic.id, simulaciones: 8, reales: 4, propuestasSoloAlFinal: true });
     expect(work.simulaciones.map((x) => x.corrida)).toEqual([second]);
@@ -206,7 +202,8 @@ describe.runIf(url)("Laboratorio sin API: solo ElevenLabs y la suscripción", ()
     expect(res.status).toBe(400);
   });
 
-  it("en todo el recorrido no hubo ni una llamada a la API de Anthropic u OpenAI", () => {
+  it("en todo el recorrido no hubo llamadas a la API (el simulador está reemplazado) ni a ElevenLabs", () => {
     expect(apiCalls).toEqual([]);
+    expect(el.calls).toEqual([]);
   });
 });

@@ -1,18 +1,16 @@
 import "server-only";
-import type Anthropic from "@anthropic-ai/sdk";
-import { forbidLabApi } from "./policy";
+import Anthropic from "@anthropic-ai/sdk";
+import { forbidLabApi, labSimModel, labSimulatorAllowed } from "./policy";
 import { TOOL_DEFINITIONS } from "../agent/tools";
 import type { HistoryLine, Mock } from "./cases";
 import type { LabLine, LabTool } from "./transcript";
 
-// Simulador propio del Laboratorio de Sofi (v2). APAGADO POR REGLA (policy.ts, 28/11): corría contra la
-// API de Claude con clave y eso está prohibido; las corridas van por ElevenLabs. Queda para los tests, con
-// el cliente simulado. Cómo era: Sofi y el paciente simulado corrían directo contra la API, sin ElevenLabs. Sofi recibe el mismo prompt efectivo, las mismas variables del consultorio y
-// las mismas herramientas que en producción; las herramientas devuelven las respuestas fijas del caso.
-// Todo con Haiku (LAB_LLM) y con caché del prompt: el prefijo (herramientas + prompt) es igual en todos
-// los turnos y en todos los casos del consultorio.
+// Simulador propio del Laboratorio de Sofi: el motor de las pruebas (regla de Axel, 28/11, en policy.ts: la
+// única excepción a «nada de API», solo con Haiku y con topes; ElevenLabs nunca). Sofi y el paciente simulado
+// corren contra la API de Claude.
 
-const MODEL = () => process.env.LAB_SIM_LLM || process.env.LAB_LLM || "claude-haiku-5-5";
+// Siempre Haiku (policy.ts): aunque una variable pida otro modelo.
+const MODEL = () => labSimModel();
 const MAX_TURNS = 8;
 const MAX_TOOL_STEPS = 6;
 const TOOL_RESULT_MAX = 2500;
@@ -130,8 +128,8 @@ export async function simulateConversation(input: {
   maxTurns?: number | null;
   client?: Anthropic;
 }): Promise<Simulation> {
-  // Prohibido por regla (policy.ts): sin un cliente inyectado (los tests) no se simula contra la API.
-  const client = input.client ?? forbidLabApi("simulador del laboratorio");
+  // La única excepción a «nada de API» (policy.ts): simular, con Haiku y con los topes de la corrida y del día.
+  const client = input.client ?? (labSimulatorAllowed() ? new Anthropic({ timeout: 120_000, maxRetries: 2 }) : forbidLabApi("simulador del laboratorio"));
   const model = MODEL();
   const system: Anthropic.TextBlockParam[] = [{ type: "text", text: fillPrompt(input.prompt, input.vars), cache_control: { type: "ephemeral" } }];
   const tools = sofiTools();

@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { Card, Notice, ghostButtonClass, secondaryButtonClass } from "@/components/ui";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
-import { labJudgeConfigured } from "@/lib/lab/judge";
 import { labOverview, num } from "@/lib/lab/panel";
 import { versionDates } from "@/lib/lab/prompt";
 import { DIMENSION_LABEL } from "@/lib/lab/score";
@@ -11,7 +10,7 @@ import { spentToday, type LabSettings } from "@/lib/lab/tick";
 import { labGenerateProposals, labRunBattery, labSettings } from "../../lab-actions";
 import { LabForm } from "./lab-form";
 import { BandBadge, DimBars, LabHeader, RUN_STATUS, RunLink, ScoreRing, fmtScore, modelLabel, scoreTone } from "./lab-ui";
-import { LAB_PAUSED_MESSAGE } from "@/lib/lab/policy";
+import { LAB_PAUSED_MESSAGE, labPaused } from "@/lib/lab/policy";
 
 export const metadata: Metadata = { title: "Laboratorio de Sofi · Panel" };
 export const maxDuration = 300;
@@ -51,12 +50,13 @@ export default async function LabPage() {
         }
       />
 
-      <Notice tone="warning" className="mb-5">
-        <strong>En pausa.</strong> {LAB_PAUSED_MESSAGE}
-      </Notice>
-      {!labJudgeConfigured() && (
+      {labPaused() ? (
+        <Notice tone="warning" className="mb-5">
+          <strong>En pausa.</strong> {LAB_PAUSED_MESSAGE}
+        </Notice>
+      ) : (
         <Notice className="mb-5">
-          <strong>Regla:</strong> el laboratorio no usa la API de Claude ni de ChatGPT (salía caro). Las simulaciones corren en ElevenLabs; puntuar, revisar las charlas reales y proponer mejoras se hace con tu Claude o tu ChatGPT desde la pestaña <Link href="/panel/laboratorio/evaluar" className="font-medium underline">Evaluar</Link>, sin claves. Hasta entonces, las corridas quedan en «puntuando».
+          <strong>Cómo se usa (para gastar lo mínimo):</strong> nada corre solo. Antes de publicar un cambio en Sofi, lanzá una batería o «Jugar de paciente»: simula con Haiku (unos USD 0,005 por charla, tope de USD 1 por corrida y 2 por día) y nunca en ElevenLabs. Después puntuá en la pestaña <Link href="/panel/laboratorio/evaluar" className="font-medium underline">Evaluar</Link> con tu Claude o tu ChatGPT (la suscripción, sin API). Ahí también se revisan las charlas reales, una vez por semana.
         </Notice>
       )}
       {o.running && (
