@@ -82,7 +82,7 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
                   <dd className="mt-1 font-display text-4xl font-semibold">{summary.delta === null ? "—" : summary.delta > 0 ? `+${summary.delta}` : summary.delta}</dd>
                   <dd className="text-xs text-brand-900/70">
                     {analysis ? analysis.texto : <>
-                      {summary.improved} caso{summary.improved === 1 ? "" : "s"} mejoran, {summary.regressions} empeoran{summary.inconclusive ? `, ${summary.inconclusive} no concluyentes` : ""}.
+                      {summary.improved} {summary.improved === 1 ? "caso mejora" : "casos mejoran"}, {summary.regressions} {summary.regressions === 1 ? "empeora" : "empeoran"}{summary.inconclusive ? `, ${summary.inconclusive} ${summary.inconclusive === 1 ? "no es concluyente" : "no son concluyentes"}` : ""}.
                       {summary.delta !== null && Math.abs(summary.delta) <= Math.max(num(summary.base?.spread) ?? 0, num(summary.variant?.spread) ?? 0) && " Dentro de la variación entre corridas: no es una diferencia clara."}
                     </>}
                   </dd>
