@@ -278,3 +278,29 @@ function startNow(runId: string) {
     }
   });
 }
+
+/**
+ * «Evaluar» sin clave ni API: el equipo pegó en el panel lo que respondió Claude o ChatGPT (la suscripción)
+ * al pedido de la pestaña Evaluar. Se guarda igual que lo del skill: el servidor calcula el puntaje.
+ */
+export async function labApplySubscription(_prev: LabFormState, form: FormData): Promise<LabFormState> {
+  await requireAdmin();
+  const answer = text(form, "respuesta");
+  if (!answer) return { ok: false, message: "Pegá la respuesta del chat." };
+  const evaluador = text(form, "evaluador") === "ChatGPT" ? "ChatGPT" : "Claude";
+  try {
+    const { applyExternal, parseSubscriptionAnswer } = await import("@/lib/lab/external");
+    const parsed = parseSubscriptionAnswer(answer) as Record<string, unknown>;
+    const result = await applyExternal({ ...parsed, evaluador });
+    revalidatePath("/panel/laboratorio", "layout");
+    if (!result.ok) return { ok: false, message: `La respuesta no tiene el formato: ${result.errores.slice(0, 3).join(" · ")}` };
+    const parts = [
+      result.simulaciones && `${result.simulaciones} simulaciones`,
+      result.charlas_reales && `${result.charlas_reales} charlas reales`,
+      result.propuestas && `${result.propuestas} propuestas`,
+    ].filter(Boolean);
+    return done(`Cargado: ${parts.join(", ") || "nada nuevo"}${result.corridas_cerradas ? ` · ${result.corridas_cerradas} corrida${result.corridas_cerradas === 1 ? "" : "s"} cerrada${result.corridas_cerradas === 1 ? "" : "s"}` : ""}.${result.errores.length ? ` Avisos: ${result.errores.slice(0, 3).join(" · ")}` : ""} Si queda más, copiá el pedido nuevo.`);
+  } catch (e) {
+    return fail(e);
+  }
+}

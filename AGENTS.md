@@ -27,7 +27,7 @@ Desde este repositorio: antes de trabajar en la prospección, revisá si hay mej
 
 - **Qué no se hace:** usar la API de Anthropic, la de OpenAI u otra con clave (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) para probar, simular, evaluar o mejorar a Sofi. Vale para el Laboratorio de Sofi, `probar-sofi`, el QA y cualquier script nuevo.
 - **Qué se paga:** solo ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar, revisar charlas y proponer mejoras).
-- **Cómo se corre:** con el skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md). En Codex o ChatGPT, leé ese archivo y seguilo igual.
+- **Cómo se corre, sin claves:** Panel → Laboratorio → **Evaluar**. Se copia el pedido, se pega en claude.ai o chatgpt.com con la cuenta de la suscripción y se pega la respuesta. El skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md) hace lo mismo desde Claude Code o Codex, pero necesita una clave del laboratorio: es opcional y Axel prefiere no crearla.
 - **El candado:** `labApiAllowed` en `src/lib/lab/policy.ts` es `false` fijo y `src/test/laboratorio-sin-api.integration.test.ts` falla si alguien lo afloja. No lo cambies, ni para «probar rápido», sin una decisión escrita de Axel en `PENDIENTES.md`.
 - **Qué no cambia:** Sofi atendiendo pacientes reales y las funciones de producción que ya usan la API (por ejemplo, leer documentos o armar la ficha de una demo). La regla es para las pruebas.
 

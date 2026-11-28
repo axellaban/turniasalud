@@ -66,7 +66,7 @@ export default async function CriteriaPage() {
       <Card className="mt-5">
         <h2 className="font-semibold text-brand-950">Acceso de Claude Code o ChatGPT</h2>
         <p className="mt-1 max-w-prose text-sm text-brand-900/70">
-          Por regla, el laboratorio no usa la API de Claude ni de ChatGPT: puntuar las charlas, revisar las reales y proponer mejoras lo hace Claude Code o ChatGPT con la suscripción (skill <code>laboratorio-sofi</code>). Para eso necesita una clave <strong>para evaluar</strong>; la de <strong>solo lectura</strong> sirve para mirar el informe. Ninguna puede reservar ni tocar pacientes. Se ve una sola vez: guardala en el entorno de la sesión (Network secrets, host <code>turniasalud.app</code>, header <code>x-lab-token</code>) o en tu computadora como <code>LAB_TOKEN</code>, nunca en el chat.
+          No hace falta para evaluar: eso se hace en la pestaña Evaluar, sin claves. Esto es solo para quien quiera que Claude Code lo haga solo: una clave <strong>para evaluar</strong> (skill <code>laboratorio-sofi</code>) o <strong>de solo lectura</strong> para mirar el informe. Ninguna puede reservar ni tocar pacientes. Se ve una sola vez: guardala en el entorno de la sesión (Network secrets, host <code>turniasalud.app</code>, header <code>x-lab-token</code>) o en tu computadora como <code>LAB_TOKEN</code>, nunca en el chat.
         </p>
         {tokens.length > 0 && (
           <ul className="mt-3 divide-y divide-brand-900/10 text-sm">

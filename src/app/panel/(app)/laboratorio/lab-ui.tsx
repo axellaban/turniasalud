@@ -10,6 +10,7 @@ import type { LabFinding } from "@/lib/lab/judge";
 
 export const LAB_TABS = [
   { href: "/panel/laboratorio", label: "Resumen" },
+  { href: "/panel/laboratorio/evaluar", label: "Evaluar" },
   { href: "/panel/laboratorio/jugar", label: "Jugar de paciente" },
   { href: "/panel/laboratorio/charlas", label: "Charlas" },
   { href: "/panel/laboratorio/cobertura", label: "Cobertura" },

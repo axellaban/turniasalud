@@ -5,10 +5,16 @@
 **Decisión de Axel, estrictamente prohibido.** Las pruebas de Sofi no usan nunca la API de Anthropic ni la de OpenAI con clave. Solo se pagan ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar y proponer). La regla completa está en `AGENTS.md`.
 
 - **En el código:** `src/lib/lab/policy.ts` (`labApiAllowed` en `false` fijo) bloquea el simulador propio, el juez, la segunda instancia con Opus, las propuestas y el armado de casos, aunque `ANTHROPIC_API_KEY` esté en Vercel. Lo vigila `src/test/laboratorio-sin-api.integration.test.ts`.
-- **Cómo queda:** las corridas van por ElevenLabs y quedan en «puntuando» hasta que alguien corre el skill `laboratorio-sofi`. El skill trae lo pendiente de `/api/lab/evaluaciones`, lo evalúa con la misma rúbrica y lo carga. El servidor calcula el puntaje y cierra las corridas.
-- **Falta (Axel o Facu):**
-  1. En Panel → Laboratorio → Criterios, «Crear clave para evaluar». La clave va en el entorno de Claude Code (network secret, host `turniasalud.app`, header `x-lab-token`) o como `LAB_TOKEN` en la computadora de quien corra Codex. Nunca en el chat.
-  2. Elegir quién lo corre y cuándo. Lo recomendado: una tarea programada de Claude Code en la nube, todos los días a las 7, después de la batería de las 2 a las 6. Corre con la suscripción.
+- **Cómo queda, sin claves:**
+  1. Las corridas van por ElevenLabs y quedan en «puntuando».
+  2. En Panel → Laboratorio → **Evaluar**, se copia el pedido. Son tandas de 8 simulaciones y 4 charlas reales, con la rúbrica, el contexto y el formato.
+  3. Se pega en claude.ai o chatgpt.com con la cuenta de la suscripción y se pega la respuesta en el panel.
+  4. El panel calcula el puntaje y cierra las corridas.
+  5. Cuando no quedan charlas, la misma pestaña pide las propuestas de mejora.
+- **Opcional (Axel prefiere no hacerlo):** automatizarlo con Claude Code. Necesita una clave «para evaluar» (Criterios) y el skill `laboratorio-sofi`, que usa `/api/lab/evaluaciones`. Sin esa clave no hay tarea programada: alguien tiene que pasar por Evaluar.
+- **Falta (Facu):**
+  1. Pasar por Evaluar después de cada batería o «Jugar de paciente».
+  2. Comprobar que su Claude o su ChatGPT estén con la cuenta de la suscripción.
   3. Si no hace falta la batería todas las noches, bajarla a dos o tres por semana para gastar menos ElevenLabs.
 
 ## Laboratorio de Sofi (27/11/2026)
