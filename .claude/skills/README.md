@@ -25,3 +25,5 @@ Cambios respecto del original, a propósito:
 Para actualizar una skill: volver a copiarla del repo de origen, revisar el diff y anotar el commit acá.
 
 Además, `qa-turnia` es propia del proyecto: el QA de producción (ver [`QA_TURNIA.md`](../../QA_TURNIA.md)).
+
+`laboratorio-sofi` también es propia: evalúa las charlas del Laboratorio de Sofi y propone mejoras con la suscripción de Claude Code o ChatGPT, **nunca con la API con clave** (regla en [`AGENTS.md`](../../AGENTS.md) y [`PLAN_LABORATORIO_SOFI.md`](../../PLAN_LABORATORIO_SOFI.md)).

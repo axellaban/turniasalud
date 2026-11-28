@@ -14,6 +14,7 @@ import {
 import { advanceRun, allCases, getRun, startRun } from "@/lib/lab/runs";
 import { fillCoverage } from "@/lib/lab/coverage";
 import { storedTranscript, transcriptText } from "@/lib/lab/transcript";
+import { LAB_SUBSCRIPTION_MESSAGE } from "@/lib/lab/policy";
 
 // Panel → Turnia → Laboratorio de Sofi. Solo el administrador de Turnia.
 
@@ -59,7 +60,7 @@ export async function labPlay(_prev: LabFormState, form: FormData): Promise<LabF
   try {
     let labCase;
     if (description) {
-      if (!labJudgeConfigured()) return { ok: false, message: "Falta ANTHROPIC_API_KEY para armar un caso desde una descripción." };
+      if (!labJudgeConfigured()) return { ok: false, message: LAB_SUBSCRIPTION_MESSAGE };
       labCase = await draftLabCase(clinic, description);
     } else {
       labCase = (await allCases(clinic.id)).find((c) => c.id === caseId);
@@ -108,7 +109,7 @@ export async function labToggleCase(_prev: LabFormState, form: FormData): Promis
 
 export async function labProposeFromResult(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   await requireAdmin();
-  if (!labJudgeConfigured()) return { ok: false, message: "Falta ANTHROPIC_API_KEY." };
+  if (!labJudgeConfigured()) return { ok: false, message: LAB_SUBSCRIPTION_MESSAGE };
   try {
     const n = await proposeFromResult(text(form, "resultado"), ACTOR);
     return done(n ? `${n} mejora${n === 1 ? "" : "s"} nueva${n === 1 ? "" : "s"} en Mejoras.` : "Claude no encontró nada nuevo para proponer en esta charla.");
@@ -119,7 +120,7 @@ export async function labProposeFromResult(_prev: LabFormState, form: FormData):
 
 export async function labGenerateProposals(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   const clinic = await adminClinic(form);
-  if (!labJudgeConfigured()) return { ok: false, message: "Falta ANTHROPIC_API_KEY." };
+  if (!labJudgeConfigured()) return { ok: false, message: LAB_SUBSCRIPTION_MESSAGE };
   try {
     const n = await generateProposals(clinic, { actor: ACTOR });
     return done(n ? `${n} mejora${n === 1 ? "" : "s"} nueva${n === 1 ? "" : "s"}. Las de prompt ya se están probando.` : "No hay fallas recientes para proponer (o ya están todas propuestas).");
@@ -206,7 +207,7 @@ export async function labDeleteCriterion(_prev: LabFormState, form: FormData): P
 /** Convierte una charla real (o de un tester) en un caso de la batería. */
 export async function labCaseFromConversation(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   const clinic = await adminClinic(form);
-  if (!labJudgeConfigured()) return { ok: false, message: "Falta ANTHROPIC_API_KEY." };
+  if (!labJudgeConfigured()) return { ok: false, message: LAB_SUBSCRIPTION_MESSAGE };
   const id = text(form, "conversacion");
   if (!isUuid(id)) return { ok: false, message: "Falta la charla." };
   const [row] = await sql<Array<{ transcript: unknown; summary: string | null; findings: Array<{ problema: string; cita: string }> | null }>>`
@@ -229,7 +230,7 @@ export async function labCaseFromConversation(_prev: LabFormState, form: FormDat
 /** Arma casos para hasta 3 tipos de caso sin ninguno (primero los que aparecen en charlas reales). */
 export async function labCoverageCases(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   const clinic = await adminClinic(form);
-  if (!labJudgeConfigured()) return { ok: false, message: "Falta ANTHROPIC_API_KEY." };
+  if (!labJudgeConfigured()) return { ok: false, message: LAB_SUBSCRIPTION_MESSAGE };
   try {
     const titles = await fillCoverage(clinic, 3, 240_000);
     return done(titles.length ? `Casos nuevos: ${titles.map((t) => `«${t}»`).join(", ")}. Entran en la batería siguiente.` : "No falta ningún tipo de caso.");
@@ -238,12 +239,13 @@ export async function labCoverageCases(_prev: LabFormState, form: FormData): Pro
   }
 }
 
-/** Clave de solo lectura del informe del laboratorio (para Claude Code). Se muestra una sola vez. */
+/** Clave del laboratorio para Claude Code o ChatGPT: de lectura o para evaluar (suscripción). Se muestra una sola vez. */
 export async function labCreateToken(_prev: LabFormState, form: FormData): Promise<LabFormState> {
   await requireAdmin();
   const label = text(form, "etiqueta") || "Claude Code";
+  const scope = text(form, "permiso") === "evaluar" ? "evaluar" : "lectura";
   const token = `lab_${randomBytes(24).toString("hex")}`;
-  await sql`insert into lab_access_tokens (token_hash, label, created_by) values (${createHash("sha256").update(token).digest("hex")}, ${label.slice(0, 80)}, ${ACTOR})`;
+  await sql`insert into lab_access_tokens (token_hash, label, created_by, scope) values (${createHash("sha256").update(token).digest("hex")}, ${label.slice(0, 80)}, ${ACTOR}, ${scope})`;
   revalidatePath("/panel/laboratorio/criterios");
   return { ok: true, message: `Clave (se ve solo ahora, copiala): ${token}` };
 }

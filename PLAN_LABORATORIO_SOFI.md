@@ -4,6 +4,30 @@ Panel → Turnia → **Laboratorio de Sofi** (`/panel/laboratorio`, solo el admi
 
 Pedido de Axel del 27/11/2026, a partir de una charla real del 26/11: Sofi dijo «no hay turnos con la Dra. Coldeira después de las 17 hasta mediados de enero» y había el 23/12. Después le ofreció al Dr. Mininni a una paciente que había pedido una mujer.
 
+## Regla (28/11/2026): sin API, solo ElevenLabs y la suscripción
+
+**Estrictamente prohibido usar la API de Anthropic u OpenAI con clave para el laboratorio** (decisión de Axel). Las pruebas salieron caras con la API y son simulaciones. Prevalece sobre todo lo que sigue: donde abajo dice «Claude», «Haiku», «Opus» o «simulador propio» contra la API, ahora es así:
+
+| Parte | Antes | Ahora |
+|---|---|---|
+| Simulaciones | Simulador propio (API de Claude, Haiku) | **ElevenLabs** (`agent-testing`), con Haiku dentro de ElevenLabs. Si alguien pide el simulador, igual va por ElevenLabs. |
+| Juez de las simulaciones | Haiku por API, y Opus en segunda instancia | **La suscripción** de Claude Code o ChatGPT, con la misma rúbrica, por `/api/lab/evaluaciones`. Revisa dos veces las fallas críticas. |
+| Charlas reales | Haiku por API, a la media hora | La suscripción, con los teléfonos y mails tapados. |
+| Propuestas, reintentos y casos nuevos | Haiku y Opus por API | La suscripción. Los botones del panel que los pedían avisan que se hace por ese camino. |
+| Atribución de lo que empeora en un experimento | Opus por API | Sin segunda instancia: lo que empeora cuenta como del cambio. Quien corre el skill puede mirarlo y decidir. |
+| Puntaje, controles automáticos, experimentos, publicar | El servidor | El servidor, igual que antes (no usan ningún modelo). |
+
+- **El candado:** `src/lib/lab/policy.ts`. `labApiAllowed` es `false` fijo, el juez y el simulador cortan con `LabApiForbidden` antes de crear un cliente, y `src/test/laboratorio-sin-api.integration.test.ts` comprueba que, con las claves cargadas, no sale ninguna llamada a la API. Los tests de antes (`laboratorio.integration.test.ts`) simulan el juez para probar la lógica, sin red.
+- **El circuito:**
+  1. ElevenLabs simula de noche (o cuando se pide desde el panel).
+  2. La corrida queda en «puntuando».
+  3. Alguien corre el skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md) en Claude Code (en Codex o ChatGPT, leyendo ese archivo).
+  4. El skill trae lo pendiente con `GET /api/lab/evaluaciones`, lo evalúa y lo carga con `POST`.
+  5. El servidor calcula el puntaje, cierra la corrida, resuelve los experimentos y lanza el siguiente en ElevenLabs.
+- **La clave:** «Crear clave para evaluar» en Criterios (permiso `evaluar`, `lab_access_tokens.scope`). Las de solo lectura siguen sirviendo para `/api/lab/informe`, no para evaluar.
+- **Qué cuesta ahora:** ElevenLabs (cada simulación) y la suscripción. Los topes en dólares del Resumen siguen valiendo y ahora solo cuentan ElevenLabs.
+- **Sugerido:** una tarea programada de Claude Code en la nube a las 7, después de la batería. Corre con la suscripción.
+
 ## El ciclo
 
 ```
@@ -79,7 +103,7 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 | Cada 10 minutos, fuera de 2 a 6 | Cobertura: arma casos (2 por vuelta) para los tipos de caso con sentido (`VALID_CELLS` en `cases.ts`) que todavía no tienen ninguno, primero los que aparecen en charlas reales. Entran en la batería siguiente. |
 | Desde las 9, una vez por día | Resumen por WhatsApp a Axel, si está prendido y hay algo nuevo (una batería de las últimas 26 h o mejoras pendientes). Sale por la línea general. Si falla, no se manda por el canal de avisos técnicos, porque es un resumen y no un aviso. |
 
-**Modelo: todo el laboratorio corre con Haiku** (pedido de Axel, 27/11):
+**Modelo** (pedido de Axel, 27/11; ahora solo vale para las simulaciones en ElevenLabs, ver la regla del 28/11):
 - En las simulaciones, Sofi responde con Haiku: el laboratorio pasa el modelo en la corrida (`agent_config_override`) sin tocar el agente real. Elige `LAB_AGENT_LLM` si está, o el Haiku más nuevo que ElevenLabs acepte hoy (`/v1/convai/llm/list`). Cada corrida guarda el modelo (`lab_runs.agent_llm`) y el panel solo compara baterías del mismo modelo.
 - El juez, las propuestas y el armado de casos usan `LAB_LLM`, por defecto `claude-haiku-5-5`.
 - Las charlas reales y las de prueba en producción las atiende Sofi con su modelo de producción (Opus). El puntaje de laboratorio mide a Sofi con Haiku: sirve para encontrar fallas y comparar versiones entre sí, no como número exacto de producción.
@@ -106,7 +130,7 @@ La corre el cron `calendario`, cada 10 minutos, desde `src/lib/lab/tick.ts`. Apl
 - Tablas: `lab_cases`, `lab_runs`, `lab_results`, `lab_reviews`, `lab_versions`, `lab_proposals`, `lab_criteria`, `clinics.lab_enabled`, `clinics.lab_settings` y `conversations.is_test`.
 - Tests: `src/lib/lab/score.test.ts` y `src/test/laboratorio.integration.test.ts`. El segundo cubre de punta a punta, con ElevenLabs y Claude simulados: la batería, el puntaje, la propuesta, el experimento, aprobar, quitar, la regla del consultorio, rechazar y la revisión de una charla real.
 
-## v2 (27/11/2026): simulador propio, más barato
+## v2 (27/11/2026): simulador propio, más barato (reemplazado por la regla del 28/11: el simulador usaba la API)
 
 Pedido de Axel después de medir el consumo en ElevenLabs. Lo principal:
 - **Simulador propio** (`src/lib/lab/simulator.ts`), el motor por defecto. Sofi y el paciente simulado corren directo contra la API de Claude con Haiku, sin ElevenLabs:
@@ -121,7 +145,7 @@ Pedido de Axel después de medir el consumo en ElevenLabs. Lo principal:
 - **Verificación semanal con producción:** los lunes de 3 a 6, los casos con condiciones críticas (hasta 8) corren en ElevenLabs con el modelo del agente (Opus), para ver si el simulador se aleja de producción.
 - **Batch API para el juez:** no se usa. Ahorraría centavos por batería y demoraría horas.
 
-## v3 (28/11/2026): segunda instancia con Opus, experimentos confiables y reintento
+## v3 (28/11/2026): segunda instancia con Opus, experimentos confiables y reintento (Opus por API apagado por la regla del 28/11; lo de los experimentos sigue)
 
 Pedido de Axel después de ver un experimento que daba 92 → 0 por una sola frase.
 - **Segunda instancia con Opus 5.5** (`APPEAL_MODEL`, `LAB_APPEAL_LLM`; `off` la apaga). Opus no evalúa todas las charlas, porque cuesta 40 veces más por token que Haiku (unos USD 0,05 a 0,10 por charla contra 0,002). Entra en tres lugares:

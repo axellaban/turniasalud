@@ -51,8 +51,8 @@ export default async function LabPage() {
       />
 
       {!labJudgeConfigured() && (
-        <Notice tone="warning" className="mb-5">
-          Falta <code>ANTHROPIC_API_KEY</code> en Vercel: las simulaciones corren, pero no se pueden puntuar ni proponer mejoras.
+        <Notice className="mb-5">
+          <strong>Regla:</strong> el laboratorio no usa la API de Claude ni de ChatGPT (salía caro). Las simulaciones corren en ElevenLabs; puntuar, revisar las charlas reales y proponer mejoras lo hace Claude Code o ChatGPT con la suscripción (skill <code>laboratorio-sofi</code>). Hasta que lo corran, las corridas quedan en «puntuando».
         </Notice>
       )}
       {o.running && (
@@ -162,7 +162,7 @@ export default async function LabPage() {
             </li>
             <li className="py-3">
               <LabForm action={labGenerateProposals} submit="Pedir propuestas ahora" pending="Claude está leyendo las fallas…" button={ghostButtonClass} className="flex flex-wrap items-center justify-between gap-2">
-                <span>Claude propone mejoras solo, una vez por día, después de la batería.</span>
+                <span>Las propuestas las arma Claude Code o ChatGPT con la suscripción cuando corre el skill <code>laboratorio-sofi</code> (por regla, no la API).</span>
               </LabForm>
             </li>
           </ul>
