@@ -6,6 +6,7 @@ import type { Clinic } from "../types";
 import { referenceCases, resolveCondition, type Condition, type HistoryLine, type Intent, type LabCase, type Mock, type Situation } from "./cases";
 import { APPEAL_MODEL, judgeSimulation, labJudgeConfigured, secondInstanceOn, type LabFinding } from "./judge";
 import { applyPatches, effectivePrompt, promptHash } from "./prompt";
+import { LAB_PAUSED_MESSAGE, labPaused } from "./policy";
 import { aggregateRun, automaticChecks, caseWeights, conversationScore, needsMoreReps, type Dims, type ScoredResult, type Verdict } from "./score";
 import { normalizeTranscript, transcriptText, type LabLine } from "./transcript";
 import { simulateConversation, type SimulationUsage } from "./simulator";
@@ -245,6 +246,8 @@ export type StartRunInput = {
 
 /** Crea la corrida y la lanza en ElevenLabs. Si falla el lanzamiento, la corrida queda en error con el motivo. */
 export async function startRun(input: StartRunInput): Promise<string> {
+  // Pausa total (policy.ts): ninguna simulación nueva, ni en ElevenLabs ni en la API.
+  if (labPaused()) throw new Error(LAB_PAUSED_MESSAGE);
   if (!input.cases.length) throw new Error("No hay casos para correr.");
   const vars = await clinicVariables(input.clinic);
   const prompt = input.prompt ?? (await effectivePrompt()).prompt;
