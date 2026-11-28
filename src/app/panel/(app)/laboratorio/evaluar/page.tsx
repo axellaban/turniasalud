@@ -25,10 +25,10 @@ export default async function EvaluatePage() {
       <LabHeader
         current="/panel/laboratorio/evaluar"
         title="Evaluar con tu suscripción"
-        description="El laboratorio no usa la API (salía caro). ElevenLabs simula y la evaluación la hace tu Claude o tu ChatGPT: copiás el pedido, lo pegás en el chat y pegás acá la respuesta."
+        description="El simulador corre las charlas con Haiku (centavos, con tope) y la evaluación la hace tu Claude o tu ChatGPT con la suscripción, sin API: copiás el pedido, lo pegás en el chat y pegás acá la respuesta. ElevenLabs no se usa para pruebas."
       />
       {!total ? (
-        <Empty>No hay nada para evaluar. Las charlas aparecen acá cuando ElevenLabs termina una batería, un experimento o «Jugar de paciente».</Empty>
+        <Empty>No hay nada para evaluar. Las charlas aparecen acá cuando el simulador termina una batería, un experimento o «Jugar de paciente», y las charlas reales cuando se cierran.</Empty>
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
