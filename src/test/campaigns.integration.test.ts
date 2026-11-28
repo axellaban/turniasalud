@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { resetTestDatabase, scratchDatabase, testDatabaseUrl } from "./db-setup";
 
 // Campañas para activar la base: importación de pacientes, audiencias con visitas importadas y
@@ -10,6 +10,13 @@ const mocks = vi.hoisted(() => ({
   sendWhatsAppTemplate: vi.fn<(msg: unknown) => Promise<{ conversation_id: string }>>(async () => ({ conversation_id: "conv_campana" })),
 }));
 vi.mock("@/lib/n8n", () => ({ notifyN8n: vi.fn(async () => {}) }));
+// La prueba de las automáticas verifica el envío, no la franja horaria (lunes a viernes de 9 a 20): sin esto
+// falla cuando el CI corre de noche o un fin de semana. Solo esa prueba fuerza la franja abierta.
+const sendWindow = vi.hoisted(() => ({ open: false }));
+vi.mock("@/lib/campaign-limits", async (original) => {
+  const real = await original<typeof import("@/lib/campaign-limits")>();
+  return { ...real, inSendWindow: (...args: Parameters<typeof real.inSendWindow>) => sendWindow.open || real.inSendWindow(...args) };
+});
 vi.mock("@/lib/elevenlabs", async (original) => ({ ...(await original<typeof import("@/lib/elevenlabs")>()), sendWhatsAppTemplate: mocks.sendWhatsAppTemplate }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: (name: string) => (name === "turnia_session" && mocks.session ? { value: mocks.session } : undefined), set: () => {}, delete: () => {} }),
@@ -334,11 +341,10 @@ describe.runIf(base)("campañas para activar la base", () => {
   });
 
   it("las automáticas salen apagadas, corren solo donde se prendieron, retoman lo que dejó el tope y cuentan 14 días", async () => {
-    // Esta prueba verifica el envío, no la franja horaria. Debe pasar también si el CI corre de noche.
-    const originalRunAutomation = campaigns.runAutomation;
-    const noon = new Date();
-    noon.setUTCHours(15, 0, 0, 0); // 12:00 de Buenos Aires.
-    vi.spyOn(campaigns, 'runAutomation').mockImplementation((type, clinicId) => originalRunAutomation(type, clinicId, noon));
+    sendWindow.open = true;
+    onTestFinished(() => {
+      sendWindow.open = false;
+    });
     const { POST } = await import("@/app/api/automations/[job]/route");
     const run = (job: string, body?: unknown) =>
       POST(new Request(`https://turnia.test/api/automations/${job}`, { method: "POST", headers: { "x-turnia-secret": "test-tools" }, body: body ? JSON.stringify(body) : undefined }), {
