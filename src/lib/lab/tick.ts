@@ -7,6 +7,7 @@ import { AXEL_WHATSAPP } from "../sales/contacto-axel";
 import { chatIdForPhone, wahaSendText } from "../waha";
 import { withGeneralWaha } from "../waha-connections";
 import { labJudgeConfigured } from "./judge";
+import { LAB_PAUSED_MESSAGE, labPaused } from "./policy";
 import { generateProposals } from "./proposals";
 import { effectivePrompt, recordPromptVersion } from "./prompt";
 import { fillCoverage } from "./coverage";
@@ -63,6 +64,8 @@ async function setSetting(clinicId: string, patch: LabSettings): Promise<void> {
 }
 
 export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown>> {
+  // Pausa total (policy.ts): el cron no lanza, no trae, no revisa ni manda nada.
+  if (labPaused()) return { pausado: LAB_PAUSED_MESSAGE };
   const started = Date.now();
   const left = () => budgetMs - (Date.now() - started);
   const report: Record<string, unknown> = {};

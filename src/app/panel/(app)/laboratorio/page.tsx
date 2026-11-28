@@ -11,6 +11,7 @@ import { spentToday, type LabSettings } from "@/lib/lab/tick";
 import { labGenerateProposals, labRunBattery, labSettings } from "../../lab-actions";
 import { LabForm } from "./lab-form";
 import { BandBadge, DimBars, LabHeader, RUN_STATUS, RunLink, ScoreRing, fmtScore, modelLabel, scoreTone } from "./lab-ui";
+import { LAB_PAUSED_MESSAGE } from "@/lib/lab/policy";
 
 export const metadata: Metadata = { title: "Laboratorio de Sofi · Panel" };
 export const maxDuration = 300;
@@ -50,6 +51,9 @@ export default async function LabPage() {
         }
       />
 
+      <Notice tone="warning" className="mb-5">
+        <strong>En pausa.</strong> {LAB_PAUSED_MESSAGE}
+      </Notice>
       {!labJudgeConfigured() && (
         <Notice className="mb-5">
           <strong>Regla:</strong> el laboratorio no usa la API de Claude ni de ChatGPT (salía caro). Las simulaciones corren en ElevenLabs; puntuar, revisar las charlas reales y proponer mejoras se hace con tu Claude o tu ChatGPT desde la pestaña <Link href="/panel/laboratorio/evaluar" className="font-medium underline">Evaluar</Link>, sin claves. Hasta entonces, las corridas quedan en «puntuando».

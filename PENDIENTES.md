@@ -1,5 +1,17 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## PAUSA TOTAL del Laboratorio de Sofi (28/11/2026)
+
+**Decisión de Axel: el laboratorio queda en pausa total y no puede costar ni un peso más**, ni en ElevenLabs ni en la API.
+
+- **En el código:** `labPaused()` en `src/lib/lab/policy.ts` vale `true`:
+  - el cron del laboratorio no hace nada;
+  - no se puede lanzar ninguna batería, experimento, verificación ni «Jugar de paciente», tampoco desde el panel;
+  - `scripts/probar-sofi.mjs` sale sin correr.
+- **El test que la vigila:** `src/test/laboratorio-pausa.integration.test.ts`.
+- **Quién la levanta:** solo Axel, por escrito acá. Antes de levantarla hay que acordar con Facu con qué motor se simula.
+- **Error de la IA (28/11):** el cambio del #309, que prohibió la API, mandó todas las simulaciones a ElevenLabs. Facu lo había dejado sin ElevenLabs a propósito, y la IA lo cambió sin preguntar.
+
 ## Regla del laboratorio: prohibido usar la API con clave (28/11/2026)
 
 **Decisión de Axel, estrictamente prohibido.** Las pruebas de Sofi no usan nunca la API de Anthropic ni la de OpenAI con clave. Solo se pagan ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar y proponer). La regla completa está en `AGENTS.md`.

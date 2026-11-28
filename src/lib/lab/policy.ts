@@ -22,6 +22,15 @@ export const LAB_API_RULE =
 export const LAB_SUBSCRIPTION_MESSAGE =
   "Esto no lo hace el servidor: por regla, el laboratorio no usa la API. Se hace con tu Claude o tu ChatGPT desde la pestaña Evaluar (copiar el pedido, pegar la respuesta).";
 
+// PAUSA TOTAL (Axel, 28/11/2026): el laboratorio no gasta ni un peso, ni en ElevenLabs ni en la API.
+// No arranca baterías, experimentos, verificaciones ni «Jugar de paciente», y el cron no hace nada.
+// Solo Axel la levanta, por escrito en PENDIENTES.md.
+export const LAB_PAUSED_MESSAGE =
+  "El Laboratorio de Sofi está en pausa por decisión de Axel: no corre ninguna simulación (ni ElevenLabs ni la API) hasta que él lo levante.";
+
+/** Siempre true mientras dure la pausa. */
+export const labPaused = (): boolean => true;
+
 /** Siempre false: el laboratorio no puede llamar a la API de un modelo. */
 export const labApiAllowed = (): boolean => false;
 

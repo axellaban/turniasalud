@@ -12,6 +12,9 @@ const url = testDatabaseUrl();
 
 const el = vi.hoisted(() => ({ created: [] as Array<Record<string, unknown>>, runs: [] as Array<Record<string, unknown>> }));
 
+// La pausa total (policy.ts) se levanta solo acá, para probar la lógica sin red.
+vi.mock("@/lib/lab/policy", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/lab/policy")>()), labPaused: () => false }));
+
 vi.mock("@/lib/elevenlabs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/elevenlabs")>()),
   elevenlabs: vi.fn(async (path: string, init: RequestInit = {}) => {
