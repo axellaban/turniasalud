@@ -198,31 +198,77 @@ export function automaticChecks(lines: LabLine[]): Verdict[] {
   return verdicts;
 }
 
-export type CaseComparison = { case_id: string; base: number | null; variant: number | null; delta: number | null; baseCritical: boolean; variantCritical: boolean };
+export type CaseVerdict = "mejora" | "empeora" | "igual" | "no_concluyente";
+export type CaseComparison = {
+  case_id: string;
+  base: number | null;
+  variant: number | null;
+  delta: number | null;
+  baseCritical: boolean;
+  variantCritical: boolean;
+  /** Repeticiones puntuadas de cada lado. */
+  baseReps: number;
+  variantReps: number;
+  verdict: CaseVerdict;
+};
+
+/** Diferencia de puntos (o una crítica de un solo lado) que amerita repetir el caso en las dos versiones. */
+export const DECISIVE_GAP = 15;
+
+const scoresOf = (rows: ScoredResult[], id: string) => rows.filter((r) => r.case_id === id && r.score !== null).map((r) => r.score as number);
+const criticalRate = (rows: ScoredResult[], id: string) => {
+  const mine = rows.filter((r) => r.case_id === id && r.score !== null);
+  return mine.length ? mine.filter((r) => r.critical).length / mine.length : 0;
+};
 
 /**
- * Compara dos corridas caso por caso (promedio de las repeticiones). Una regresión es un caso que baja 10
- * puntos o más, o que pasa a tener una falla crítica. Puro.
+ * Si un caso dio muy distinto entre la versión actual y la variante con una sola charla de cada lado, hay
+ * que repetirlo en las dos antes de contarlo: una charla sola puede ser casualidad. Puro.
  */
-export function compareRuns(base: ScoredResult[], variant: ScoredResult[]): { cases: CaseComparison[]; regressions: CaseComparison[]; improved: CaseComparison[] } {
-  const mean = (rows: ScoredResult[], id: string) => {
-    const v = rows.filter((r) => r.case_id === id && r.score !== null).map((r) => r.score as number);
-    return v.length ? round(v.reduce((a, b) => a + b, 0) / v.length) : null;
-  };
+export function needsMoreReps(base: ScoredResult[], variant: ScoredResult[], caseId: string): boolean {
+  const b = scoresOf(base, caseId);
+  const v = scoresOf(variant, caseId);
+  if (!b.length || !v.length || (b.length >= 3 && v.length >= 3)) return false;
+  const gap = Math.abs(v.reduce((x, y) => x + y, 0) / v.length - b.reduce((x, y) => x + y, 0) / b.length);
+  const criticalGap = (criticalRate(base, caseId) > 0) !== (criticalRate(variant, caseId) > 0);
+  return gap >= DECISIVE_GAP || criticalGap;
+}
+
+/**
+ * Compara dos corridas caso por caso. Un caso cuenta como «empeora» o «mejora» solo si la diferencia es de
+ * 10 puntos o más, hay al menos 2 charlas de cada lado y los puntajes no se pisan (todas las de la variante
+ * por debajo, o por encima, de todas las de la actual). Una falla crítica nueva cuenta si aparece en la
+ * mayoría de las charlas de la variante y en ninguna de la actual. Lo que cambia pero no cumple eso es
+ * «no concluyente»: puede ser casualidad y no entra en la decisión. Puro.
+ */
+export function compareRuns(base: ScoredResult[], variant: ScoredResult[]): { cases: CaseComparison[]; regressions: CaseComparison[]; improved: CaseComparison[]; inconclusive: CaseComparison[] } {
   const ids = [...new Set([...base, ...variant].map((r) => r.case_id))];
-  const cases = ids.map((id) => {
-    const b = mean(base, id);
-    const v = mean(variant, id);
-    return {
-      case_id: id,
-      base: b,
-      variant: v,
-      delta: b !== null && v !== null ? round(v - b) : null,
-      baseCritical: base.some((r) => r.case_id === id && r.critical),
-      variantCritical: variant.some((r) => r.case_id === id && r.critical),
-    };
+  const cases: CaseComparison[] = ids.map((id) => {
+    const b = scoresOf(base, id);
+    const v = scoresOf(variant, id);
+    const bm = b.length ? round(b.reduce((x, y) => x + y, 0) / b.length) : null;
+    const vm = v.length ? round(v.reduce((x, y) => x + y, 0) / v.length) : null;
+    const delta = bm !== null && vm !== null ? round(vm - bm) : null;
+    const bc = criticalRate(base, id);
+    const vc = criticalRate(variant, id);
+    const enough = b.length >= 2 && v.length >= 2;
+    let verdict: CaseVerdict = "igual";
+    if (delta !== null) {
+      const newCritical = vc > 0 && bc === 0;
+      const goneCritical = bc > 0 && vc === 0;
+      if (enough && newCritical && vc > 0.5) verdict = "empeora";
+      else if (enough && goneCritical && bc > 0.5) verdict = "mejora";
+      else if (enough && delta <= -10 && Math.max(...v) < Math.min(...b)) verdict = "empeora";
+      else if (enough && delta >= 10 && Math.min(...v) > Math.max(...b)) verdict = "mejora";
+      else if (Math.abs(delta) >= 10 || newCritical || goneCritical) verdict = "no_concluyente";
+    }
+    return { case_id: id, base: bm, variant: vm, delta, baseCritical: bc > 0, variantCritical: vc > 0, baseReps: b.length, variantReps: v.length, verdict };
   });
-  const regressions = cases.filter((c) => (c.delta !== null && c.delta <= -10) || (c.variantCritical && !c.baseCritical));
-  const improved = cases.filter((c) => c.delta !== null && c.delta >= 5 && !regressions.includes(c));
-  return { cases: cases.sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)), regressions, improved };
+  const order: Record<CaseVerdict, number> = { empeora: 0, no_concluyente: 1, igual: 2, mejora: 3 };
+  return {
+    cases: cases.sort((a, b) => order[a.verdict] - order[b.verdict] || (a.delta ?? 0) - (b.delta ?? 0)),
+    regressions: cases.filter((c) => c.verdict === "empeora"),
+    improved: cases.filter((c) => c.verdict === "mejora"),
+    inconclusive: cases.filter((c) => c.verdict === "no_concluyente"),
+  };
 }

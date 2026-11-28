@@ -121,6 +121,27 @@ Pedido de Axel después de medir el consumo en ElevenLabs. Lo principal:
 - **Verificación semanal con producción:** los lunes de 3 a 6, los casos con condiciones críticas (hasta 8) corren en ElevenLabs con el modelo del agente (Opus), para ver si el simulador se aleja de producción.
 - **Batch API para el juez:** no se usa. Ahorraría centavos por batería y demoraría horas.
 
+## v3 (28/11/2026): segunda instancia con Opus, experimentos confiables y reintento
+
+Pedido de Axel después de ver un experimento que daba 92 → 0 por una sola frase.
+- **Segunda instancia con Opus 5.5** (`APPEAL_MODEL`, `LAB_APPEAL_LLM`; `off` la apaga). Opus no evalúa todas las charlas, porque cuesta 40 veces más por token que Haiku (unos USD 0,05 a 0,10 por charla contra 0,002). Entra en tres lugares:
+  1. **Una falla crítica marcada por el juez** (no por un control automático): Opus revisa la charla de cero y su puntaje es el que queda. En Corridas se ve «Revisada por Opus» y qué había dicho el primer juez.
+  2. **Atribución:** en un experimento, Opus dice si lo que empeoró viene del cambio. Revisa como máximo los 4 casos que más empeoran.
+  3. **Reintento:** Opus arma el intento siguiente de una mejora que perdió.
+  Su costo se ve aparte en el consumo de la corrida («Opus (segunda instancia)») y cuenta para los topes.
+- **El juez ve el catálogo primero:** los precios ya no se recortan del contexto.
+- **Experimentos confiables** (`compareRuns`, `needsMoreReps`, `balanceExperiment`):
+  - si un caso da 15 puntos o más de diferencia entre la versión actual y la variante (o una falla crítica de un solo lado), se repite en las dos versiones hasta 3 charlas por lado;
+  - un caso cuenta como «mejora» o «empeora» solo con 2 charlas o más de cada lado, una diferencia de 10 puntos o más y puntajes que no se pisan. Lo demás es «no concluyente» y no entra en la decisión.
+- **Veredicto** (`experimentVerdict`, en `lab_proposals.analysis`):
+  - **gana** si algo mejora y nada empeora por el cambio;
+  - **pierde** si algo empeora por el cambio, o si Opus no pudo decir por qué empeoró;
+  - **sin efecto** si no cambia nada concluyente.
+  Un nivel A con «publicar solas» se publica solo cuando gana.
+- **Reintento:** si una mejora pierde, el laboratorio arma otra más acotada que conserva lo que mejoró y evita lo que se rompió. La prueba sola con los mismos casos y marca como rechazada la que perdió, sin sumar un criterio, porque el problema sigue siendo real. Se prueban hasta 3 intentos (`MAX_ATTEMPTS`); al tercero que pierde, queda pendiente con «necesita que lo mire una persona». Si ya se llegó al tope de gasto del día, no se arma el intento.
+- **Las propuestas nuevas reciben las rechazadas** de los últimos 60 días, con el motivo, para no repetirlas con otras palabras.
+- **Casos armados:** la ficha del paciente simulado es la de la persona del escenario (antes quedaba a nombre de Laura Prueba y salían falsas fallas críticas).
+
 ## Informe para revisar afuera
 
 `GET /api/lab/informe` (últimas corridas, propuestas, criterios y charlas puntuadas) y `GET /api/lab/informe?corrida=<id>` (una corrida charla por charla), con el header `x-lab-token`. La clave se crea en Panel → Laboratorio → Criterios → «Acceso de Claude al informe» (se ve una sola vez; en la base queda solo su hash; se puede revocar). También acepta `LAB_REPORT_TOKEN` si algún día se carga en Vercel. Solo lee el laboratorio. Lo usa Claude Code para revisar las corridas sin entrar al panel: la clave se guarda una vez en el entorno de la sesión (formulario seguro), nunca en el chat.

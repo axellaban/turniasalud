@@ -205,7 +205,7 @@ export const modelLabel = (llm: string | null | undefined, engine?: string | nul
 };
 
 /** El consumo de una corrida en una línea: simulador, ElevenLabs y juez, con el total. */
-export function usageText(usage: { simulador?: { usd: number; charlas: number }; elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; usd?: number }; juez?: { usd: number; llamadas: number } } | null | undefined): string | null {
+export function usageText(usage: { simulador?: { usd: number; charlas: number }; elevenlabs?: { v?: number; simulaciones: number; con_datos: number; creditos: number; usd?: number }; juez?: { usd: number; llamadas: number; segunda_instancia_llamadas?: number; segunda_instancia_usd?: number } } | null | undefined): string | null {
   if (!usage) return null;
   const parts: string[] = [];
   if (usage.simulador) parts.push(`Simulador: USD ${Number(usage.simulador.usd).toFixed(3)} (${usage.simulador.charlas} charlas)`);
@@ -217,7 +217,12 @@ export function usageText(usage: { simulador?: { usd: number; charlas: number };
   } else if (el) {
     parts.push("ElevenLabs: recalculando el consumo…");
   }
-  if (usage.juez) parts.push(`Juez: USD ${Number(usage.juez.usd).toFixed(3)} (${usage.juez.llamadas} evaluaciones)`);
+  if (usage.juez) {
+    const second = Number(usage.juez.segunda_instancia_llamadas ?? 0);
+    const haikuCalls = usage.juez.llamadas - second;
+    parts.push(`Juez: USD ${(Number(usage.juez.usd) - Number(usage.juez.segunda_instancia_usd ?? 0)).toFixed(3)} (${haikuCalls} evaluaciones)`);
+    if (second) parts.push(`Opus (segunda instancia): USD ${Number(usage.juez.segunda_instancia_usd ?? 0).toFixed(3)} (${second} revisiones)`);
+  }
   const total = Number(usage.simulador?.usd ?? 0) + (el?.v === 2 ? el.usd ?? 0 : 0) + Number(usage.juez?.usd ?? 0);
   if (total) parts.push(`Total: USD ${total.toFixed(2)}`);
   return parts.length ? parts.join(" · ") : null;

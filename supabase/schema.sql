@@ -2572,3 +2572,14 @@ begin
     insert into data_migrations (name) values ('2026-11-27-laboratorio-ficha-del-escenario');
   end if;
 end $$;
+
+-- Laboratorio (27/11/2026): segunda instancia con Opus, experimentos que separan lo concluyente del azar y
+-- reintento de las mejoras que pierden.
+-- judge_model: quién puso el puntaje final de la charla (Haiku, u Opus si revisó una falla crítica).
+alter table lab_results add column if not exists judge_model text;
+alter table lab_results add column if not exists first_opinion text;
+-- parent_id/attempt: el intento 2 y 3 de una mejora que perdió apuntan al anterior.
+alter table lab_proposals add column if not exists parent_id uuid;
+alter table lab_proposals add column if not exists attempt int not null default 1;
+-- analysis: el veredicto del experimento (gana, qué mejora, qué empeora y si es por el cambio).
+alter table lab_proposals add column if not exists analysis jsonb;

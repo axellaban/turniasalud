@@ -86,8 +86,21 @@ vi.mock("@/lib/lab/judge", async (importOriginal) => {
   return {
     ...real,
     labJudgeConfigured: () => true,
-    judgeSimulation: vi.fn(async (input: { conditions: Array<{ dim: string; text: string; critical?: boolean }>; transcript: string }) => {
+    judgeSimulation: vi.fn(async (input: { conditions: Array<{ dim: string; text: string; critical?: boolean }>; transcript: string; model?: string }) => {
       const bad = input.transcript.includes("mediados de enero");
+      // El juez barato cree que el precio es inventado; Opus ve que está cargado.
+      if (input.transcript.includes("$48.000")) {
+        const opus = /opus/.test(input.model ?? "");
+        return {
+          verdicts: input.conditions.map((c) => ({ dim: c.dim, text: c.text, critical: c.critical, pass: opus, reason: opus ? "El precio está en el catálogo." : "Inventó el precio." })),
+          judge: { seguridad: null, exactitud: opus ? 95 : 10, resolucion: 90, eficiencia: 90, trato: 95 },
+          judgeCritical: !opus,
+          criticalReason: opus ? null : "Inventó un precio de $48.000.",
+          findings: [],
+          summary: opus ? "Dio el precio cargado." : "Inventó un precio.",
+          usage: { model: input.model ?? "claude-haiku-5-5", input_tokens: 1000, output_tokens: 200, usd: opus ? 0.01 : 0.0002 },
+        };
+      }
       return {
         verdicts: input.conditions.map((c, i) => ({ dim: c.dim, text: c.text, critical: c.critical, pass: !(bad && i === 0), reason: bad && i === 0 ? "Dijo «hasta mediados de enero» sin buscar." : "Bien." })),
         judge: { seguridad: null, exactitud: bad ? 40 : 90, resolucion: 85, eficiencia: 85, trato: bad ? 70 : 95 },
@@ -97,6 +110,13 @@ vi.mock("@/lib/lab/judge", async (importOriginal) => {
         summary: bad ? "Inventó el alcance de la búsqueda." : "Bien.",
       };
     }),
+    attributeRegression: vi.fn(async () => ({ relacionado: true, motivo: "El texto nuevo la empuja a decir «hasta mediados de enero»." })),
+    refineProposal: vi.fn(async () => ({
+      titulo: "Decir hasta qué fecha buscó, sin afirmar de más",
+      por_que: "Conserva el aviso y evita afirmar fechas sin buscar.",
+      reemplazar: SYSTEM_PROMPT.slice(0, 40),
+      por: `${SYSTEM_PROMPT.slice(0, 40)} VARIANTE-LAB`,
+    })),
     judgeRealConversation: vi.fn(async () => ({
       intent: "agendar",
       situation: "mensajes_seguidos",
@@ -146,7 +166,15 @@ vi.mock("@/lib/lab/simulator", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/lab/simulator")>()),
   // Sofi simulada sin API: la variante corrige el «hasta enero».
   simulateConversation: vi.fn(async (input: { prompt: string; scenario: string }) => {
-    const bad = input.scenario.includes("con una mujer") && !input.prompt.includes("VARIANTE-LAB");
+    if (input.scenario.includes("PRECIO-CARGADO")) {
+      return {
+        lines: [{ role: "paciente", text: "Cuánto sale la primera consulta?", tools: [] }, { role: "sofi", text: "La primera consulta sale $48.000.", tools: [] }],
+        usage: { model: "claude-haiku-5-5", sofi: { input: 1000, cache_write: 0, cache_read: 20000, output: 300 }, paciente: { input: 500, cache_write: 0, cache_read: 0, output: 50 }, usd: 0.003 },
+        turns: 1,
+        ended: "paciente",
+      };
+    }
+    const bad = (input.scenario.includes("con una mujer") && !input.prompt.includes("VARIANTE-LAB")) || input.prompt.includes("VARIANTE-MALA");
     return {
       lines: bad
         ? [{ role: "paciente", text: "Busco con una mujer, después de las 17", tools: [] }, { role: "sofi", text: "No tengo turnos después de las 17 hasta mediados de enero.", tools: [] }]
@@ -246,17 +274,22 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
       await runs.advanceRun(variant!.id, 30_000);
     }
     expect((await runs.getRun(base!.id))?.status).toBe("terminada");
-    // En la referencia, el caso que falla se repitió 2 veces más; en la variante, no.
+    // El caso dio muy distinto entre las dos versiones: se repitió en las dos (3 charlas por lado). Un caso
+    // que da igual en las dos se queda con una charla.
     const baseRows = (await runs.runResults(base!.id)).filter((r) => r.case_id === "profesional-mujer-tarde");
     const varRows = (await runs.runResults(variant!.id)).filter((r) => r.case_id === "profesional-mujer-tarde");
     expect(baseRows).toHaveLength(3);
-    expect(varRows).toHaveLength(1);
+    expect(varRows).toHaveLength(3);
+    expect((await runs.getRun(variant!.id))?.status).toBe("terminada");
     const [after] = await sql<Array<{ status: string }>>`select status from lab_proposals where id = ${prompt.id}`;
     expect(after.status).toBe("pendiente");
     const summary = await proposals.experimentSummary(prompt.experiment_run_id);
     expect(summary.ready).toBe(true);
     expect(summary.delta).toBeGreaterThan(0);
     expect(summary.regressions).toBe(0);
+    expect(summary.improved).toBeGreaterThan(0);
+    const [analyzed] = await sql<Array<{ analysis: { resultado: string } }>>`select analysis from lab_proposals where id = ${prompt.id}`;
+    expect(analyzed.analysis.resultado).toBe("gana");
     // El costo del simulador queda registrado por corrida.
     expect(Number((await runs.getRun(variant!.id))?.usage?.simulador?.usd)).toBeGreaterThan(0);
   });
@@ -367,5 +400,53 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
     const link = await findEvidence(clinic.id, "«No tengo turnos después de las 17 hasta mediados de enero»");
     expect(link).toMatchObject({ kind: "laboratorio", case_id: "profesional-mujer-tarde" });
     expect(await findEvidence(clinic.id, "una frase que no está en ninguna charla")).toBeNull();
+  });
+  it("una falla crítica del primer juez la revisa Opus, y Opus tiene la última palabra", async () => {
+    const c = { ...referenceCases()[0], id: "precio-cargado", titulo: "Precio cargado", scenario: "PRECIO-CARGADO: preguntás cuánto sale la primera consulta.", conditions: [{ dim: "exactitud" as const, text: "No inventa importes.", critical: true }] };
+    const id = await runs.startRun({ clinic, kind: "jugar", label: "Segunda instancia", cases: [c], repeat: 1, createdBy: "test" });
+    for (let i = 0; i < 3; i++) await runs.advanceRun(id, 30_000);
+    const [row] = await runs.runResults(id);
+    expect(row.critical).toBe(false);
+    expect(row.judge_model).toMatch(/opus/);
+    expect(row.first_opinion).toContain("Inventó un precio");
+    const usage = (await runs.getRun(id))?.usage as unknown as { juez: { llamadas: number; segunda_instancia_llamadas: number } };
+    expect(usage.juez).toMatchObject({ llamadas: 2, segunda_instancia_llamadas: 1 });
+  });
+
+  it("una mejora que pierde se reintenta sola más acotada, y al tercer intento queda para una persona", async () => {
+    const [p] = await sql<Array<{ id: string }>>`
+      insert into lab_proposals (clinic_id, level, layer, dimension, title, why, change)
+      values (${clinic.id}, 'B', 'prompt', 'exactitud', 'Cambio que rompe', 'Para probar el reintento',
+        ${sql.json({ old_str: SYSTEM_PROMPT.slice(0, 40), new_str: `${SYSTEM_PROMPT.slice(0, 40)} VARIANTE-MALA` })})
+      returning id`;
+    const variantId = await proposals.startExperiment(p.id, "test");
+    const variant = await runs.getRun(variantId);
+    for (let i = 0; i < 8; i++) {
+      await runs.advanceRun(variant!.baseline_run_id as string, 30_000);
+      await runs.advanceRun(variantId, 30_000);
+    }
+    const lost = await proposals.getProposal(p.id);
+    expect(lost?.status).toBe("rechazada");
+    expect(lost?.analysis?.resultado).toBe("pierde");
+    expect(lost?.analysis?.empeoran[0]).toMatchObject({ relacionado: true });
+    const next = await proposals.getProposal(lost?.analysis?.siguiente?.id as string);
+    expect(next).toMatchObject({ attempt: 2, parent_id: p.id, status: "probando" });
+    // El reintento usa los mismos casos que el intento anterior.
+    expect((await runs.getRun(next?.experiment_run_id as string))?.case_ids).toEqual(variant?.case_ids);
+    // Al tercer intento que pierde, no se arma otro: queda para una persona.
+    const [last] = await sql<Array<{ id: string }>>`
+      insert into lab_proposals (clinic_id, level, layer, dimension, title, why, change, attempt, parent_id)
+      values (${clinic.id}, 'B', 'prompt', 'exactitud', 'Tercer intento que rompe', 'Para probar el tope',
+        ${sql.json({ old_str: SYSTEM_PROMPT.slice(0, 40), new_str: `${SYSTEM_PROMPT.slice(0, 40)} VARIANTE-MALA` })}, ${proposals.MAX_ATTEMPTS}, ${next!.id})
+      returning id`;
+    const lastRun = await runs.getRun(await proposals.startExperiment(last.id, "test"));
+    for (let i = 0; i < 8; i++) {
+      await runs.advanceRun(lastRun!.baseline_run_id as string, 30_000);
+      await runs.advanceRun(lastRun!.id, 30_000);
+    }
+    const stuck = await proposals.getProposal(last.id);
+    expect(stuck?.status).toBe("pendiente");
+    expect(stuck?.analysis).toMatchObject({ resultado: "pierde", necesita_persona: true });
+    expect(stuck?.analysis?.siguiente ?? null).toBeNull();
   });
 });

@@ -4,9 +4,9 @@ import { buildDynamicVariables, getClinic } from "../clinic";
 import { elevenlabs } from "../elevenlabs";
 import type { Clinic } from "../types";
 import { referenceCases, resolveCondition, type Condition, type HistoryLine, type Intent, type LabCase, type Mock, type Situation } from "./cases";
-import { judgeSimulation, labJudgeConfigured, type LabFinding } from "./judge";
+import { APPEAL_MODEL, judgeSimulation, labJudgeConfigured, secondInstanceOn, type LabFinding } from "./judge";
 import { applyPatches, effectivePrompt, promptHash } from "./prompt";
-import { aggregateRun, automaticChecks, caseWeights, conversationScore, type Dims, type ScoredResult, type Verdict } from "./score";
+import { aggregateRun, automaticChecks, caseWeights, conversationScore, needsMoreReps, type Dims, type ScoredResult, type Verdict } from "./score";
 import { normalizeTranscript, transcriptText, type LabLine } from "./transcript";
 import { simulateConversation, type SimulationUsage } from "./simulator";
 
@@ -86,6 +86,8 @@ export type LabResult = {
   findings: LabFinding[] | null;
   summary: string | null;
   error: string | null;
+  judge_model?: string | null;
+  first_opinion?: string | null;
 };
 
 const TEST_PREFIX = "Turnia Lab · ";
@@ -402,6 +404,7 @@ export async function advanceRun(runId: string, budgetMs = 60_000): Promise<LabR
     const started = Date.now();
     await simulatePending(run, Math.round(budgetMs * 0.6));
     await judgePending(run, Math.max(10_000, budgetMs - (Date.now() - started)));
+    if (run.kind === "experimento") await balanceExperiment(run);
     await maybeFinish(run.id);
     return getRun(runId);
   }
@@ -520,13 +523,16 @@ export async function fixOldUsage(): Promise<number> {
 }
 
 /** Suma lo que costó el juez de la corrida. */
-async function addJudgeUsage(runId: string, usd: number, input: number, output: number): Promise<void> {
+export async function addJudgeUsage(runId: string, usd: number, input: number, output: number, secondInstance = false): Promise<void> {
+  const extra = secondInstance ? 1 : 0;
   await sql`
     update lab_runs set usage = jsonb_set(coalesce(usage, '{}'::jsonb), '{juez}', jsonb_build_object(
       'usd', coalesce((usage->'juez'->>'usd')::numeric, 0) + ${usd},
       'tokens_entrada', coalesce((usage->'juez'->>'tokens_entrada')::bigint, 0) + ${input},
       'tokens_salida', coalesce((usage->'juez'->>'tokens_salida')::bigint, 0) + ${output},
-      'llamadas', coalesce((usage->'juez'->>'llamadas')::int, 0) + 1))
+      'llamadas', coalesce((usage->'juez'->>'llamadas')::int, 0) + 1,
+      'segunda_instancia_llamadas', coalesce((usage->'juez'->>'segunda_instancia_llamadas')::int, 0) + ${extra},
+      'segunda_instancia_usd', coalesce((usage->'juez'->>'segunda_instancia_usd')::numeric, 0) + ${secondInstance ? usd : 0}))
     where id = ${runId}`;
 }
 
@@ -573,15 +579,30 @@ async function judgeResult(run: LabRun, result: LabResult, clinicContext: string
     return;
   }
   try {
-    const verdict = await judgeSimulation({
-      scenario: c.scenario,
-      conditions: c.conditions,
-      transcript: transcriptText(lines),
-      clinicContext,
-      criteria,
-    });
+    const input = { scenario: c.scenario, conditions: c.conditions, transcript: transcriptText(lines), clinicContext, criteria };
+    let verdict = await judgeSimulation(input);
     if (verdict.usage) await addJudgeUsage(run.id, verdict.usage.usd, verdict.usage.input_tokens, verdict.usage.output_tokens);
-    const scored = conversationScore({ verdicts: [...verdict.verdicts, ...checks], judge: verdict.judge, judgeCritical: verdict.judgeCritical });
+    let scored = conversationScore({ verdicts: [...verdict.verdicts, ...checks], judge: verdict.judge, judgeCritical: verdict.judgeCritical });
+    // Segunda instancia: si el juez (no un control automático) dio falla crítica, Opus la revisa de cero.
+    // Una crítica deja la charla en 0 y la corrida en 69: es la decisión que más pesa, y la que el juez
+    // barato más erró (precios que sí estaban cargados, fichas mal armadas).
+    let firstOpinion: string | null = null;
+    let judgeModel = verdict.usage?.model ?? null;
+    const judgeSaysCritical = verdict.judgeCritical || verdict.verdicts.some((v) => v.critical && !v.pass);
+    if (scored.critical && judgeSaysCritical && secondInstanceOn()) {
+      firstOpinion = (verdict.criticalReason ?? verdict.verdicts.find((v) => v.critical && !v.pass)?.reason ?? verdict.summary).slice(0, 600);
+      try {
+        const second = await judgeSimulation({ ...input, model: APPEAL_MODEL(), firstOpinion });
+        if (second.usage) await addJudgeUsage(run.id, second.usage.usd, second.usage.input_tokens, second.usage.output_tokens, true);
+        verdict = second;
+        judgeModel = second.usage?.model ?? APPEAL_MODEL();
+        scored = conversationScore({ verdicts: [...verdict.verdicts, ...checks], judge: verdict.judge, judgeCritical: verdict.judgeCritical });
+      } catch (e) {
+        // Si la segunda instancia falla, queda lo que dijo el primer juez.
+        console.error("Laboratorio: falló la segunda instancia", errorText(e));
+        firstOpinion = null;
+      }
+    }
     const findings = verdict.judgeCritical && verdict.criticalReason
       ? [{ problema: verdict.criticalReason, cita: "", dimension: "seguridad" as const, gravedad: "alta" as const, mejora: "" }, ...verdict.findings]
       : verdict.findings;
@@ -593,6 +614,8 @@ async function judgeResult(run: LabRun, result: LabResult, clinicContext: string
       critical: scored.critical,
       findings: json(findings),
       summary: verdict.summary,
+      judge_model: judgeModel,
+      first_opinion: firstOpinion,
       error: null,
     });
     // Repetición a demanda: si la primera charla falla, el caso corre 2 veces más para descartar casualidad.
@@ -661,6 +684,36 @@ export const toScored = (r: LabResult): ScoredResult => ({
   critical: r.critical,
   dims: r.dims,
 });
+
+/**
+ * Un experimento son dos corridas con los mismos casos (la versión actual y la variante). Si un caso dio muy
+ * distinto entre las dos con una sola charla de cada lado, se repite en las dos (hasta 3 charlas por lado)
+ * antes de contarlo. Si la otra corrida ya había terminado, se reabre.
+ */
+async function balanceExperiment(run: LabRun): Promise<void> {
+  const [sibling] = run.baseline_run_id
+    ? await sql<LabRun[]>`select * from lab_runs where id = ${run.baseline_run_id}`
+    : await sql<LabRun[]>`select * from lab_runs where baseline_run_id = ${run.id} limit 1`;
+  if (!sibling || sibling.engine !== "simulador") return;
+  const [mine, theirs] = await Promise.all([runResults(run.id), runResults(sibling.id)]);
+  const base = (run.baseline_run_id ? theirs : mine).map(toScored);
+  const variant = (run.baseline_run_id ? mine : theirs).map(toScored);
+  const reopen = new Set<string>();
+  for (const id of new Set(base.map((r) => r.case_id))) {
+    if (!needsMoreReps(base, variant, id)) continue;
+    for (const runId of [run.id, sibling.id]) {
+      for (const rep of [2, 3]) {
+        const added = await sql`
+          insert into lab_results (run_id, case_id, repetition, el_status) values (${runId}, ${id}, ${rep}, 'pendiente')
+          on conflict do nothing returning id`;
+        if (added.length) reopen.add(runId);
+      }
+    }
+  }
+  for (const runId of reopen) {
+    await sql`update lab_runs set status = 'corriendo', finished_at = null where id = ${runId} and status = 'terminada'`;
+  }
+}
 
 /** Las corridas sin terminar (para el cron). */
 export async function openRuns(): Promise<string[]> {

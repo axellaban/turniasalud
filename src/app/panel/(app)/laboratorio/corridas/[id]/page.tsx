@@ -141,6 +141,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-medium uppercase tracking-wider text-brand-900/65">Repetición {r.repetition}</p>
                     <div className="flex items-center gap-2">
+                      {/opus/i.test(r.judge_model ?? "") && <span title="Haiku la marcó como falla crítica y Opus la revisó de cero; el puntaje es el de Opus."><Badge tone="blue">Revisada por Opus</Badge></span>}
                       {r.critical && <Badge tone="red">Falla crítica</Badge>}
                       <span className="rounded-lg px-2 py-1 text-sm font-semibold" style={{ background: `${scoreTone(r.score)}22` }}>
                         {["pendiente", "simulando"].includes(r.el_status ?? "") ? "Simulando…" : r.judged ? (num(r.score) === null ? "Sin puntaje" : `Puntaje ${fmtScore(r.score)}`) : "Puntuando…"}
@@ -148,6 +149,12 @@ export default async function RunPage({ params, searchParams }: PageProps<"/pane
                     </div>
                   </div>
                   {r.error && <Notice tone={r.judged ? "error" : "warning"} className="mb-3">{r.error}</Notice>}
+                  {r.first_opinion && (
+                    <p className="mb-3 rounded-xl bg-[#f6f7fb] px-3 py-2 text-xs text-brand-900/75">
+                      <span className="font-medium">Primer juez (Haiku):</span> {r.first_opinion}
+                      {!r.critical && " Opus no la sostuvo como falla crítica."}
+                    </p>
+                  )}
                   {r.summary && <p className="mb-3 text-sm text-brand-900/80">{r.summary}</p>}
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,300px)]">
                     <Transcript lines={r.transcript} history={normalizeTranscript(selected.c.history)} />

@@ -4,7 +4,7 @@ import { Badge, Card, Empty, Notice, dangerButtonClass, inputClass, secondaryBut
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
 import { findEvidence, labProposals } from "@/lib/lab/panel";
-import { experimentSummary, type LabProposal } from "@/lib/lab/proposals";
+import { MAX_ATTEMPTS, experimentSummary, type LabProposal } from "@/lib/lab/proposals";
 import { DIMENSION_LABEL } from "@/lib/lab/score";
 import { labApprove, labExperiment, labReject, labRevert } from "../../../lab-actions";
 import { LabForm } from "../lab-form";
@@ -146,12 +146,26 @@ export default async function ProposalsPage({ searchParams }: PageProps<"/panel/
                     <p className="text-xs font-medium uppercase tracking-wider text-brand-900/65">Resultado en el laboratorio</p>
                     {current.experiment_run_id && <Link href={`/panel/laboratorio/experimentos?id=${current.experiment_run_id}`} className="text-sm font-medium text-brand-700 hover:underline">Ver experimento</Link>}
                   </div>
+                  {(current.attempt ?? 1) > 1 && (
+                    <p className="mt-2 text-sm text-brand-900/75">
+                      Intento {current.attempt} de {MAX_ATTEMPTS}: lo armó el laboratorio porque{" "}
+                      {current.parent_id ? <Link href={`/panel/laboratorio/mejoras?id=${current.parent_id}`} className="font-medium text-brand-700 hover:underline">el intento anterior</Link> : "el intento anterior"} perdió.
+                    </p>
+                  )}
                   {experiment?.ready ? (
-                    <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
-                      <div><dt className="text-xs text-brand-900/65">Puntaje</dt><dd className="text-xl font-semibold">{fmtScore(experiment.base?.score)} → <span className="text-emerald-700">{fmtScore(experiment.variant?.score)}</span></dd></div>
-                      <div><dt className="text-xs text-brand-900/65">Casos que mejoran</dt><dd className="text-xl font-semibold">{experiment.improved}</dd></div>
-                      <div><dt className="text-xs text-brand-900/65">Casos que empeoran</dt><dd className={`text-xl font-semibold ${experiment.regressions ? "text-red-700" : ""}`}>{experiment.regressions}</dd></div>
-                    </dl>
+                    <>
+                      <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                        <div><dt className="text-xs text-brand-900/65">Puntaje</dt><dd className="text-xl font-semibold">{fmtScore(experiment.base?.score)} → <span className={(experiment.delta ?? 0) >= 0 ? "text-emerald-700" : "text-red-700"}>{fmtScore(experiment.variant?.score)}</span></dd></div>
+                        <div><dt className="text-xs text-brand-900/65">Casos que mejoran</dt><dd className="text-xl font-semibold">{experiment.improved}</dd></div>
+                        <div><dt className="text-xs text-brand-900/65">Casos que empeoran</dt><dd className={`text-xl font-semibold ${experiment.regressions ? "text-red-700" : ""}`}>{experiment.regressions}</dd></div>
+                      </dl>
+                      {current.analysis && <p className={`mt-3 text-sm font-medium ${current.analysis.resultado === "gana" ? "text-emerald-700" : current.analysis.resultado === "pierde" ? "text-red-700" : "text-brand-900/75"}`}>{current.analysis.texto}</p>}
+                      {current.analysis?.siguiente && (
+                        <p className="mt-1 text-sm text-brand-900/75">
+                          Se armó otro intento: <Link href={`/panel/laboratorio/mejoras?id=${current.analysis.siguiente.id}`} className="font-medium text-brand-700 hover:underline">«{current.analysis.siguiente.titulo}»</Link>.
+                        </p>
+                      )}
+                    </>
                   ) : current.experiment_run_id ? (
                     <p className="mt-2 text-sm text-brand-900/70">El experimento está corriendo: la versión actual contra la variante, con los mismos casos.</p>
                   ) : (
