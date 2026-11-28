@@ -14,7 +14,7 @@ import { simulateConversation, type SimulationUsage } from "./simulator";
 // Corridas del Laboratorio de Sofi: arma las simulaciones en ElevenLabs (agent-testing, todas las
 // herramientas simuladas), espera los resultados, los puntúa con el juez y calcula el puntaje.
 //
-//   preparando → corriendo (ElevenLabs simula) → puntuando (el juez evalúa cada charla) → terminada
+//   preparando → corriendo (simula el simulador con Haiku) → la suscripción evalúa cada charla → terminada
 //
 // REGLA (policy.ts): el juez no corre en el servidor. En «puntuando» las charlas esperan a que Claude Code o
 // ChatGPT, con la suscripción, las evalúe por /api/lab/evaluaciones (saveJudgment + maybeFinish).
