@@ -27,7 +27,7 @@ export default async function PlayPage() {
         <Card>
           <h2 className="font-semibold text-brand-950">Que juegue la IA</h2>
           <LabForm action={labPlay} submit="Correr" pending="Armando el caso y la simulación (hasta un minuto)…" className="mt-4 space-y-4">
-            <Field label="Un paciente nuevo, en tus palabras" hint="Claude arma el escenario, lo que devuelven las herramientas y las condiciones a evaluar. Si lo dejás vacío, se usa el caso elegido abajo.">
+            <Field label="Un paciente nuevo, en tus palabras" hint="Por regla, el servidor no usa la API: un caso nuevo en palabras no se arma acá. Elegí un caso existente; el resultado se evalúa en la pestaña Evaluar.">
               <textarea
                 name="descripcion"
                 rows={5}

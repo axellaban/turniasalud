@@ -1,5 +1,22 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
+## Regla del laboratorio: prohibido usar la API con clave (28/11/2026)
+
+**Decisión de Axel, estrictamente prohibido.** Las pruebas de Sofi no usan nunca la API de Anthropic ni la de OpenAI con clave. Solo se pagan ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar y proponer). La regla completa está en `AGENTS.md`.
+
+- **En el código:** `src/lib/lab/policy.ts` (`labApiAllowed` en `false` fijo) bloquea el simulador propio, el juez, la segunda instancia con Opus, las propuestas y el armado de casos, aunque `ANTHROPIC_API_KEY` esté en Vercel. Lo vigila `src/test/laboratorio-sin-api.integration.test.ts`.
+- **Cómo queda, sin claves:**
+  1. Las corridas van por ElevenLabs y quedan en «puntuando».
+  2. En Panel → Laboratorio → **Evaluar**, se copia el pedido. Son tandas de 8 simulaciones y 4 charlas reales, con la rúbrica, el contexto y el formato.
+  3. Se pega en claude.ai o chatgpt.com con la cuenta de la suscripción y se pega la respuesta en el panel.
+  4. El panel calcula el puntaje y cierra las corridas.
+  5. Cuando no quedan charlas, la misma pestaña pide las propuestas de mejora.
+- **Opcional (Axel prefiere no hacerlo):** automatizarlo con Claude Code. Necesita una clave «para evaluar» (Criterios) y el skill `laboratorio-sofi`, que usa `/api/lab/evaluaciones`. Sin esa clave no hay tarea programada: alguien tiene que pasar por Evaluar.
+- **Falta (Facu):**
+  1. Pasar por Evaluar después de cada batería o «Jugar de paciente».
+  2. Comprobar que su Claude o su ChatGPT estén con la cuenta de la suscripción.
+  3. Si no hace falta la batería todas las noches, bajarla a dos o tres por semana para gastar menos ElevenLabs.
+
 ## Laboratorio de Sofi (27/11/2026)
 
 En producción: Panel → Turnia → **Laboratorio de Sofi** ([`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md)). Batería nocturna con 18 casos × 3, puntaje de 1 a 100, revisión de las charlas reales, propuestas diarias de Claude, experimentos (versión actual contra la variante) y publicación con un clic. Guerra–Mininni arranca con el laboratorio y el resumen por WhatsApp prendidos.

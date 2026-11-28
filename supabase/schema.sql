@@ -2583,3 +2583,8 @@ alter table lab_proposals add column if not exists parent_id uuid;
 alter table lab_proposals add column if not exists attempt int not null default 1;
 -- analysis: el veredicto del experimento (gana, qué mejora, qué empeora y si es por el cambio).
 alter table lab_proposals add column if not exists analysis jsonb;
+
+-- Laboratorio (28/11/2026), regla de Axel: prohibido usar la API con clave para las pruebas de Sofi
+-- (src/lib/lab/policy.ts). Evaluar lo hace Claude Code o ChatGPT con la suscripción por /api/lab/evaluaciones,
+-- con una clave de permiso «evaluar». Las claves de antes siguen siendo de solo lectura.
+alter table lab_access_tokens add column if not exists scope text not null default 'lectura';

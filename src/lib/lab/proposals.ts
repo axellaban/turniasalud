@@ -5,7 +5,7 @@ import { setupAgent } from "../agent/setup";
 import { TOOL_DEFINITIONS } from "../agent/tools";
 import type { Clinic } from "../types";
 import { referenceCases, type Condition, type Dimension, type LabCase } from "./cases";
-import { attributeRegression, draftCase, proposeImprovements, refineProposal, type CaseDraftOut, type JudgeUsage, type LabFinding, type ProposalDraft } from "./judge";
+import { attributeRegression, draftCase, labJudgeConfigured, proposeImprovements, refineProposal, type CaseDraftOut, type JudgeUsage, type LabFinding, type ProposalDraft } from "./judge";
 import { effectivePrompt, patchProblem } from "./prompt";
 import { addJudgeUsage, allCases, clinicContextFor, getRun, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabResult, type LabRun } from "./runs";
 import { compareRuns, type CaseComparison } from "./score";
@@ -66,14 +66,14 @@ export function normalizeLevel(draft: Pick<ProposalDraft, "nivel" | "capa" | "di
   return draft.nivel;
 }
 
-async function criteriaFor(clinicId: string): Promise<string[]> {
+export async function criteriaFor(clinicId: string): Promise<string[]> {
   const rows = await sql<Array<{ text: string }>>`
     select text from lab_criteria where clinic_id is null or clinic_id = ${clinicId} order by created_at desc limit 40`;
   return rows.map((r) => r.text);
 }
 
 /** Las fallas recientes en texto, para que Claude proponga. Vacío si no hay nada para mejorar. */
-async function recentFailures(clinicId: string, focusResultId?: string): Promise<string> {
+export async function recentFailures(clinicId: string, focusResultId?: string): Promise<string> {
   const parts: string[] = [];
   const results = await sql<Array<{ case_id: string; titulo: string | null; conditions: Array<{ pass: boolean; text: string; reason?: string }> | null; checks: Array<{ pass: boolean; text: string; reason?: string }> | null; findings: LabFinding[] | null; score: string | null }>>`
     select r.case_id, (select x->>'titulo' from jsonb_array_elements(l.cases) x where x->>'id' = r.case_id limit 1) as titulo,
@@ -103,30 +103,47 @@ async function recentFailures(clinicId: string, focusResultId?: string): Promise
   return text.length > 40_000 ? `${text.slice(0, 40_000)}\n[recortado]` : text;
 }
 
+/** Lo que necesita quien propone: las propuestas abiertas y las rechazadas de 60 días (con el motivo). */
+export async function proposalContext(clinicId: string) {
+  const [pending, rejected] = await Promise.all([
+    sql<Array<{ title: string }>>`
+      select title from lab_proposals where (clinic_id is null or clinic_id = ${clinicId}) and status in ('pendiente', 'probando', 'aprobada')`,
+    sql<Array<{ title: string; decision_reason: string | null }>>`
+      select title, decision_reason from lab_proposals
+      where (clinic_id is null or clinic_id = ${clinicId}) and status = 'rechazada' and created_at > now() - interval '60 days'
+      order by created_at desc limit 30`,
+  ]);
+  return {
+    pending: pending.map((p) => p.title),
+    rejected: rejected.map((r) => `${r.title}${r.decision_reason ? ` — ${r.decision_reason.slice(0, 300)}` : ""}`),
+  };
+}
+
 /** Pide propuestas a Claude y las guarda. Las de prompt que encajan se prueban solas (hasta 2). */
 export async function generateProposals(clinic: Clinic, opts: { focusResultId?: string; actor?: string } = {}): Promise<number> {
   const failures = await recentFailures(clinic.id, opts.focusResultId);
   if (!failures) return 0;
-  const [prompt, pending, rejected, criteria] = await Promise.all([
-    effectivePrompt(),
-    sql<Array<{ title: string }>>`
-      select title from lab_proposals where (clinic_id is null or clinic_id = ${clinic.id}) and status in ('pendiente', 'probando', 'aprobada')`,
-    sql<Array<{ title: string; decision_reason: string | null }>>`
-      select title, decision_reason from lab_proposals
-      where (clinic_id is null or clinic_id = ${clinic.id}) and status = 'rechazada' and created_at > now() - interval '60 days'
-      order by created_at desc limit 30`,
-    criteriaFor(clinic.id),
-  ]);
+  const [prompt, known, criteria] = await Promise.all([effectivePrompt(), proposalContext(clinic.id), criteriaFor(clinic.id)]);
   const drafts = await proposeImprovements({
     prompt: prompt.prompt,
     clinicName: clinic.name,
     clinicInstructions: clinic.agent_context ?? "",
     failures,
-    pending: pending.map((p) => p.title),
-    rejected: rejected.map((r) => `${r.title}${r.decision_reason ? ` — ${r.decision_reason.slice(0, 300)}` : ""}`),
+    pending: known.pending,
+    rejected: known.rejected,
     criteria,
   });
-  const known = new Set(pending.map((p) => p.title.trim().toLowerCase()));
+  return saveProposalDrafts(clinic, drafts, opts.actor ?? "Laboratorio");
+}
+
+/**
+ * Guarda propuestas (las del servidor o las que carga la suscripción por /api/lab/evaluaciones) y prueba
+ * sola la primera de prompt que encaja, con el tope de experimentos automáticos. Devuelve cuántas guardó.
+ */
+export async function saveProposalDrafts(clinic: Clinic, drafts: ProposalDraft[], actor: string): Promise<number> {
+  const prompt = await effectivePrompt();
+  const { pending } = await proposalContext(clinic.id);
+  const known = new Set(pending.map((t) => t.trim().toLowerCase()));
   const created: Array<{ id: string; layer: ProposalLayer; valid: boolean }> = [];
   for (const d of drafts) {
     if (known.has(d.titulo.trim().toLowerCase())) continue;
@@ -152,7 +169,7 @@ export async function generateProposals(clinic: Clinic, opts: { focusResultId?: 
   const { spentToday, dailyCap } = await import("./tick");
   const capLeft = (await spentToday(clinic)) < dailyCap(clinic);
   for (const p of created.filter((c) => c.layer === "prompt" && c.valid).slice(0, capLeft ? Math.max(0, 1 - today) : 0)) {
-    await startExperiment(p.id, opts.actor ?? "Laboratorio").catch((e) => console.error("Laboratorio: no se pudo empezar el experimento", errorText(e)));
+    await startExperiment(p.id, actor).catch((e) => console.error("Laboratorio: no se pudo empezar el experimento", errorText(e)));
   }
   return created.length;
 }
@@ -325,7 +342,8 @@ async function analyzeExperiment(p: LabProposal, summary: ExperimentSummary, bas
   const track = (u: JudgeUsage) => { addJudgeUsage(variant.id, u.usd, u.input_tokens, u.output_tokens, true).catch(() => {}); };
   const attributions: Record<string, { relacionado: boolean; motivo: string }> = {};
   // Las 4 que más empeoran (cada una es una llamada a Opus).
-  const worst = [...comparison.regressions].sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)).slice(0, 4);
+  // Sin la segunda instancia en el servidor (regla de policy.ts), lo que empeora cuenta como del cambio.
+  const worst = labJudgeConfigured() ? [...comparison.regressions].sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)).slice(0, 4) : [];
   for (const c of worst) {
     const v = firstRow(variantRows, c.case_id, true);
     const b = firstRow(baseRows, c.case_id);
@@ -365,6 +383,10 @@ async function retryProposal(p: LabProposal, analysis: ExperimentAnalysis, varia
   if (p.layer !== "prompt" || !p.clinic_id) return;
   if (attempt >= MAX_ATTEMPTS) {
     await note({ necesita_persona: true, texto: `${analysis.texto} Ya se probaron ${MAX_ATTEMPTS} intentos sin ganar en todos los frentes: necesita que lo mire una persona.` });
+    return;
+  }
+  if (!labJudgeConfigured()) {
+    await note({ texto: `${analysis.texto} El intento siguiente lo arma Claude Code o ChatGPT con la suscripción (skill laboratorio-sofi): la API está prohibida para el laboratorio.` });
     return;
   }
   const clinic = await clinicOf(p.clinic_id);

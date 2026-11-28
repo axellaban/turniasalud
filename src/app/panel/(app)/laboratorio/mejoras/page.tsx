@@ -65,7 +65,7 @@ export default async function ProposalsPage({ searchParams }: PageProps<"/panel/
         }
       />
       {!proposals.length ? (
-        <Empty>Todavía no hay propuestas. Claude propone una vez por día, después de la batería; también se pueden pedir desde Resumen o desde una charla.</Empty>
+        <Empty>Todavía no hay propuestas. Se arman en la pestaña Evaluar, con tu Claude o tu ChatGPT, después de puntuar la batería.</Empty>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
           <ul className="space-y-2 self-start">

@@ -15,8 +15,8 @@ export default async function CriteriaPage() {
   const clinic = await getPanelClinic();
   const [criteria, tokens] = await Promise.all([
     labCriteria(clinic.id),
-    sql<Array<{ id: string; label: string; created_at: string; last_used_at: string | null }>>`
-      select id, label, created_at, last_used_at from lab_access_tokens where revoked_at is null order by created_at desc`,
+    sql<Array<{ id: string; label: string; scope: string; created_at: string; last_used_at: string | null }>>`
+      select id, label, scope, created_at, last_used_at from lab_access_tokens where revoked_at is null order by created_at desc`,
   ]);
   return (
     <>
@@ -64,15 +64,15 @@ export default async function CriteriaPage() {
       </div>
 
       <Card className="mt-5">
-        <h2 className="font-semibold text-brand-950">Acceso de Claude al informe</h2>
+        <h2 className="font-semibold text-brand-950">Acceso de Claude Code o ChatGPT</h2>
         <p className="mt-1 max-w-prose text-sm text-brand-900/70">
-          Una clave de solo lectura para que Claude Code lea el laboratorio (corridas, charlas, propuestas) sin entrar al panel. No puede reservar ni cambiar nada. Se ve una sola vez: guardala en el entorno de la sesión de Claude (Network secrets, host <code>turniasalud.app</code>, header <code>x-lab-token</code>), no en el chat.
+          No hace falta para evaluar: eso se hace en la pestaña Evaluar, sin claves. Esto es solo para quien quiera que Claude Code lo haga solo: una clave <strong>para evaluar</strong> (skill <code>laboratorio-sofi</code>) o <strong>de solo lectura</strong> para mirar el informe. Ninguna puede reservar ni tocar pacientes. Se ve una sola vez: guardala en el entorno de la sesión (Network secrets, host <code>turniasalud.app</code>, header <code>x-lab-token</code>) o en tu computadora como <code>LAB_TOKEN</code>, nunca en el chat.
         </p>
         {tokens.length > 0 && (
           <ul className="mt-3 divide-y divide-brand-900/10 text-sm">
             {tokens.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span>{t.label}<span className="block text-xs text-brand-900/60">Creada el {formatDate(t.created_at, clinic.timezone)} · {t.last_used_at ? `usada el ${formatDate(t.last_used_at, clinic.timezone)}` : "sin usar"}</span></span>
+                <span>{t.label} · {t.scope === "evaluar" ? "para evaluar" : "solo lectura"}<span className="block text-xs text-brand-900/60">Creada el {formatDate(t.created_at, clinic.timezone)} · {t.last_used_at ? `usada el ${formatDate(t.last_used_at, clinic.timezone)}` : "sin usar"}</span></span>
                 <LabForm action={labRevokeToken} submit="Revocar" button={smallButtonClass} confirm="¿Revocar esta clave?">
                   <input type="hidden" name="clave" value={t.id} />
                 </LabForm>
@@ -80,9 +80,15 @@ export default async function CriteriaPage() {
             ))}
           </ul>
         )}
-        <LabForm action={labCreateToken} submit="Crear clave" className="mt-3 space-y-2">
-          <input type="hidden" name="etiqueta" value="Claude Code" />
-        </LabForm>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <LabForm action={labCreateToken} submit="Crear clave para evaluar" className="space-y-2">
+            <input type="hidden" name="etiqueta" value="Claude Code o ChatGPT (evaluar)" />
+            <input type="hidden" name="permiso" value="evaluar" />
+          </LabForm>
+          <LabForm action={labCreateToken} submit="Crear clave de solo lectura" button={smallButtonClass} className="space-y-2">
+            <input type="hidden" name="etiqueta" value="Claude Code (lectura)" />
+          </LabForm>
+        </div>
       </Card>
     </>
   );
