@@ -7,7 +7,7 @@ import { AXEL_WHATSAPP } from "../sales/contacto-axel";
 import { chatIdForPhone, wahaSendText } from "../waha";
 import { withGeneralWaha } from "../waha-connections";
 import { labJudgeConfigured } from "./judge";
-import { LAB_PAUSED_MESSAGE, labPaused } from "./policy";
+import { LAB_PAUSED_MESSAGE, labAutoRunsAllowed, labPaused } from "./policy";
 import { generateProposals } from "./proposals";
 import { effectivePrompt, recordPromptVersion } from "./prompt";
 import { fillCoverage } from "./coverage";
@@ -80,7 +80,8 @@ export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown
 
   // 1. La batería nocturna (una charla por caso; las que fallan se repiten solas) y, los lunes, la
   //    verificación con ElevenLabs y el modelo de producción. Nada automático si se pasó el tope del día.
-  for (const clinic of clinics) {
+  // Regla de costos (policy.ts): nada automático. Las corridas se lanzan a mano desde el panel.
+  for (const clinic of labAutoRunsAllowed() ? clinics : []) {
     const hour = localHour(clinic.timezone);
     if (hour < 2 || hour >= 6) continue;
     if (await overDailyCap(clinic)) {
@@ -146,10 +147,12 @@ export async function runLab(budgetMs = 200_000): Promise<Record<string, unknown
   }
 
   // Consumo guardado con la fórmula vieja (27/11): se recalcula desde ElevenLabs.
-  try {
-    await fixOldUsage();
-  } catch {
-    // Se reintenta en la próxima vuelta.
+  if (labAutoRunsAllowed()) {
+    try {
+      await fixOldUsage();
+    } catch {
+      // Se reintenta en la próxima vuelta.
+    }
   }
 
   // 3. Avanzar las corridas abiertas.

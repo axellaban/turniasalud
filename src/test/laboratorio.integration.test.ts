@@ -36,8 +36,13 @@ function sofiSays(caseId: string, prompt: string) {
   ];
 }
 
-// La pausa total (policy.ts) se levanta solo acá, para probar la lógica sin red.
-vi.mock("@/lib/lab/policy", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/lab/policy")>()), labPaused: () => false }));
+// Acá se prueba la lógica completa sin red (ElevenLabs y Claude simulados): se levantan las reglas de costo de
+// policy.ts (ElevenLabs y corridas automáticas), que en producción están apagadas.
+vi.mock("@/lib/lab/policy", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/lab/policy")>()),
+  labElevenLabsAllowed: () => true,
+  labAutoRunsAllowed: () => true,
+}));
 
 vi.mock("@/lib/elevenlabs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/elevenlabs")>()),
@@ -208,7 +213,7 @@ describe.runIf(url)("Laboratorio de Sofi", () => {
   beforeAll(async () => {
     const db = await scratchDatabase(url!, "turnia_laboratorio_test");
     await resetTestDatabase(db);
-    for (const [k, v] of Object.entries({ DATABASE_URL: db, AGENT_TOOLS_SECRET: "s", SESSION_SECRET: "s", APP_URL: "https://turnia.test", ELEVENLABS_API_KEY: "x" })) vi.stubEnv(k, v);
+    for (const [k, v] of Object.entries({ DATABASE_URL: db, AGENT_TOOLS_SECRET: "s", SESSION_SECRET: "s", APP_URL: "https://turnia.test", ELEVENLABS_API_KEY: "x", ANTHROPIC_API_KEY: "x" })) vi.stubEnv(k, v);
     ({ sql } = await import("@/lib/db"));
     runs = await import("@/lib/lab/runs");
     proposals = await import("@/lib/lab/proposals");

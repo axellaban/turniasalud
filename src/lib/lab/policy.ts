@@ -1,38 +1,49 @@
-// REGLA DEL LABORATORIO (Axel, 28/11/2026). ESTRICTAMENTE PROHIBIDO, sin excepciones:
+// REGLAS DE COSTO DEL LABORATORIO DE SOFI (decisión de Axel, 28/11/2026). No se cambian sin una decisión
+// escrita de Axel en PENDIENTES.md.
 //
-//   El Laboratorio de Sofi y cualquier prueba o simulación de Sofi NUNCA usan la API de Anthropic ni la de
-//   OpenAI con clave propia (ANTHROPIC_API_KEY, OPENAI_API_KEY ni otra). Ni el simulador, ni el juez, ni la
-//   segunda instancia, ni las propuestas, ni el armado de casos.
+//   1. Simular (Sofi y el paciente simulado): la ÚNICA excepción a «nada de API». Simulador propio contra la
+//      API de Claude, SOLO con Haiku (unos USD 0,005 por charla), con tope de USD 1 por corrida y USD 2 por
+//      día, que cortan a mitad de corrida. El paciente va con Sofi porque la charla va y viene en cada turno.
+//   2. Evaluar (el jurado), revisar charlas reales y proponer mejoras: NUNCA la API. Lo hace la suscripción
+//      de Claude o ChatGPT desde Panel → Laboratorio → Evaluar (copiar el pedido, pegar la respuesta).
+//      Nada de Opus.
+//   3. ElevenLabs: NUNCA para pruebas (cuesta unas 12 veces más por charla que el simulador).
+//   4. Nada automático: ni batería nocturna, ni verificación semanal, ni experimentos solos. Las corridas se
+//      lanzan a mano desde el panel, antes de publicar un cambio en Sofi.
 //
-// Por qué: las pruebas salieron caras con la API y son simulaciones. Se pagan dos cosas y nada más:
-//   1. ElevenLabs: las simulaciones corren en sus pruebas de agentes (agent-testing).
-//   2. La suscripción de Claude o de ChatGPT: evalúa las charlas, revisa las reales y propone mejoras.
-//      Sin claves: en Panel → Laboratorio → Evaluar se copia el pedido, se pega en claude.ai o chatgpt.com y
-//      se pega la respuesta. (También existe /api/lab/evaluaciones con el skill `laboratorio-sofi`, para
-//      quien quiera automatizarlo con una clave; no hace falta.)
-//
-// Este archivo es el candado: `labApiAllowed` es false fijo y `forbidLabApi` corta antes de crear un cliente
-// de la API. `src/test/laboratorio-sin-api.integration.test.ts` falla si alguien lo afloja. No lo cambies sin
-// una decisión escrita de Axel en PENDIENTES.md.
+// Lo vigila src/test/laboratorio-sin-api.integration.test.ts.
 
 export const LAB_API_RULE =
-  "Regla del laboratorio: prohibido usar la API de Anthropic u OpenAI con clave para las pruebas de Sofi. Las simulaciones corren en ElevenLabs; evaluar, revisar charlas reales y proponer mejoras lo hace Claude o ChatGPT con la suscripción (Panel → Laboratorio → Evaluar).";
+  "Regla del laboratorio: la API de Claude se usa solo para simular, con Haiku y con topes. Evaluar, revisar charlas reales y proponer mejoras lo hace Claude o ChatGPT con la suscripción (Panel → Laboratorio → Evaluar). ElevenLabs nunca se usa para pruebas, y no corre nada automático.";
 
 /** Lo que ve el equipo en el panel cuando algo lo hace la suscripción y no el servidor. */
 export const LAB_SUBSCRIPTION_MESSAGE =
-  "Esto no lo hace el servidor: por regla, el laboratorio no usa la API. Se hace con tu Claude o tu ChatGPT desde la pestaña Evaluar (copiar el pedido, pegar la respuesta).";
+  "Esto no lo hace el servidor: por regla, el laboratorio no usa la API para evaluar ni proponer. Se hace con tu Claude o tu ChatGPT desde la pestaña Evaluar (copiar el pedido, pegar la respuesta).";
 
-// PAUSA TOTAL (Axel, 28/11/2026): el laboratorio no gasta ni un peso, ni en ElevenLabs ni en la API.
-// No arranca baterías, experimentos, verificaciones ni «Jugar de paciente», y el cron no hace nada.
-// Solo Axel la levanta, por escrito en PENDIENTES.md.
+export const LAB_ELEVENLABS_MESSAGE = "Por regla, las pruebas de Sofi no usan ElevenLabs: corren en el simulador (Haiku), con tope de gasto.";
+
+/** Pausa total. Hoy false: el laboratorio anda con las reglas de arriba (se lanza a mano). */
 export const LAB_PAUSED_MESSAGE =
-  "El Laboratorio de Sofi está en pausa por decisión de Axel: no corre ninguna simulación (ni ElevenLabs ni la API) hasta que él lo levante.";
+  "El Laboratorio de Sofi está en pausa por decisión de Axel: no corre ninguna simulación hasta que él lo levante.";
+export const labPaused = (): boolean => false;
 
-/** Siempre true mientras dure la pausa. */
-export const labPaused = (): boolean => true;
-
-/** Siempre false: el laboratorio no puede llamar a la API de un modelo. */
+/** Evaluar, proponer, armar casos o revisar con la API: siempre false. */
 export const labApiAllowed = (): boolean => false;
+
+/** Simular con la API (la única excepción): true, solo con Haiku y con topes. */
+export const labSimulatorAllowed = (): boolean => true;
+
+/** Simular en ElevenLabs: siempre false. */
+export const labElevenLabsAllowed = (): boolean => false;
+
+/** Corridas automáticas (batería nocturna, verificación, experimentos solos): siempre false. */
+export const labAutoRunsAllowed = (): boolean => false;
+
+/** El modelo del simulador: Haiku siempre, aunque una variable pida otro. */
+export function labSimModel(): string {
+  const wanted = process.env.LAB_SIM_LLM || process.env.LAB_LLM;
+  return wanted && /haiku/i.test(wanted) ? wanted : "claude-haiku-5-5";
+}
 
 export class LabApiForbidden extends Error {
   constructor(where: string) {

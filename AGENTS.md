@@ -21,15 +21,17 @@ Toda mejora en los paneles comerciales de habita. se lleva también a Turnia, en
 
 Desde este repositorio: antes de trabajar en la prospección, revisá si hay mejoras de habita. sin traer (en `PENDIENTES.md` o en los PRs recientes de amoblaia y chapa-labs).
 
-## Regla: las pruebas de Sofi nunca usan la API con clave
+## Regla: los costos de las pruebas de Sofi
 
-**Estrictamente prohibido** (Axel, 28/11/2026). Las pruebas salieron caras con la API y son simulaciones.
+**Decisión de Axel (28/11/2026). No se cambia sin otra decisión suya, escrita en `PENDIENTES.md`.**
 
-- **Qué no se hace:** usar la API de Anthropic, la de OpenAI u otra con clave (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) para probar, simular, evaluar o mejorar a Sofi. Vale para el Laboratorio de Sofi, `probar-sofi`, el QA y cualquier script nuevo.
-- **Qué se paga:** solo ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar, revisar charlas y proponer mejoras).
-- **Cómo se corre, sin claves:** Panel → Laboratorio → **Evaluar**. Se copia el pedido, se pega en claude.ai o chatgpt.com con la cuenta de la suscripción y se pega la respuesta. El skill [`laboratorio-sofi`](.claude/skills/laboratorio-sofi/SKILL.md) hace lo mismo desde Claude Code o Codex, pero necesita una clave del laboratorio: es opcional y Axel prefiere no crearla.
-- **El candado:** `labApiAllowed` en `src/lib/lab/policy.ts` es `false` fijo y `src/test/laboratorio-sin-api.integration.test.ts` falla si alguien lo afloja. No lo cambies, ni para «probar rápido», sin una decisión escrita de Axel en `PENDIENTES.md`.
-- **Qué no cambia:** Sofi atendiendo pacientes reales y las funciones de producción que ya usan la API (por ejemplo, leer documentos o armar la ficha de una demo). La regla es para las pruebas.
+- **Simular (Sofi y el paciente):** es la única excepción a «nada de API». Se usa el simulador propio, solo con Haiku, con tope de USD 1 por corrida y USD 2 por día.
+- **Evaluar, revisar charlas reales y proponer mejoras:** nunca con la API ni con Opus. Lo hace la suscripción de Claude o ChatGPT desde Panel → Laboratorio → **Evaluar** (copiar el pedido, pegarlo en claude.ai o chatgpt.com, pegar la respuesta), sin claves.
+- **ElevenLabs:** nunca para pruebas (cuesta unas 12 veces más). `probar-sofi` está apagado.
+- **Automático:** nada, ni batería nocturna, ni verificación, ni experimentos solos. Se lanza a mano antes de publicar un cambio en Sofi.
+- **Tampoco:** scripts nuevos que usen la API o ElevenLabs para probar a Sofi.
+- **El candado:** `src/lib/lab/policy.ts`, vigilado por `src/test/laboratorio-sin-api.integration.test.ts`.
+- **Qué no cambia:** Sofi atendiendo pacientes reales y las funciones de producción que ya usan la API (leer documentos, la ficha de una demo).
 
 ## Contexto del proyecto
 
@@ -51,4 +53,4 @@ Antes de trabajar en este repo leé, en este orden:
 13. [`QA_TURNIA.md`](QA_TURNIA.md): **el QA de producción** (igual que el de habita.): observaciones abiertas, propuestas de usabilidad y el registro de cada corrida. El procedimiento está en `.claude/skills/qa-turnia/SKILL.md`.
 14. [`TAREAS_COMPUTER_USE.md`](TAREAS_COMPUTER_USE.md): **configuración que hace una IA con computer use** en Vercel, ElevenLabs, Google Cloud, PostHog y claude.ai, por prioridad y lista para copiar como prompt.
 15. [`SMILE_CONNECT_API.md`](SMILE_CONNECT_API.md): **Smile Connect por API y avisos al consultorio por WhatsApp** (qué ofrece la API, modos, red de seguridad de la escritura y pasos para activarlo). En producción y apagada por defecto; lo que la API no acepta (motivo y prestación) lo cubre el resumen diario de Sofi.
-16. [`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md): **el Laboratorio de Sofi** (Panel → Turnia): simulaciones nocturnas en ElevenLabs, puntaje de 1 a 100, revisión de las charlas reales, propuestas de mejora con experimento y publicación con un clic. Evaluar y proponer lo hace la suscripción con el skill `laboratorio-sofi`, **nunca la API** (ver la regla de arriba). Si cambiás el prompt, una herramienta o los casos de `probar-sofi`, mirá ahí cómo se mide.
+16. [`PLAN_LABORATORIO_SOFI.md`](PLAN_LABORATORIO_SOFI.md): **el Laboratorio de Sofi** (Panel → Turnia): simulaciones a mano con Haiku, puntaje de 1 a 100, revisión de las charlas reales, propuestas de mejora con experimento y publicación con un clic. Simula con Haiku a mano; evaluar y proponer lo hace la suscripción en la pestaña Evaluar (ver la regla de arriba). Si cambiás el prompt, una herramienta o los casos de `probar-sofi`, mirá ahí cómo se mide.

@@ -81,7 +81,7 @@ export async function labAdvance(_prev: LabFormState, form: FormData): Promise<L
   if (!isUuid(id)) return { ok: false, message: "Falta la corrida." };
   try {
     const run = await advanceRun(id, 100_000);
-    return done(run?.status === "terminada" ? "Terminada." : run?.status === "corriendo" ? "ElevenLabs sigue simulando: probá en un minuto." : "Avanzó: quedan charlas por puntuar.");
+    return done(run?.status === "terminada" ? "Terminada." : run?.status === "corriendo" ? "Sigue simulando: probá en un minuto." : "Avanzó: quedan charlas por puntuar.");
   } catch (e) {
     return fail(e);
   }

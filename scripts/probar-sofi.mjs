@@ -22,9 +22,9 @@ import { readFileSync } from "node:fs";
 import { referenceCases, resolveCondition } from "../src/lib/lab/cases.ts";
 
 const API = "https://api.elevenlabs.io";
-// PAUSA TOTAL del laboratorio (Axel, 28/11/2026, src/lib/lab/policy.ts): esta batería gasta ElevenLabs y no
-// corre hasta que Axel la levante por escrito en PENDIENTES.md.
-console.error("probar-sofi está en pausa por decisión de Axel: no corre ninguna simulación (cuesta ElevenLabs).");
+// Regla de costos (Axel, 28/11/2026, src/lib/lab/policy.ts): las pruebas de Sofi no usan ElevenLabs (cuesta
+// unas 12 veces más por charla). Las pruebas se corren desde Panel → Laboratorio, con el simulador (Haiku).
+console.error("probar-sofi está apagado: las pruebas no usan ElevenLabs. Usá Panel → Laboratorio (simulador con Haiku y topes).");
 process.exit(1);
 
 const KEY = process.env.ELEVENLABS_API_KEY;

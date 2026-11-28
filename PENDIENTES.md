@@ -1,33 +1,25 @@
 # Turnia Salud — qué falta (traspaso para la próxima IA)
 
-## PAUSA TOTAL del Laboratorio de Sofi (28/11/2026)
+## Laboratorio de Sofi: reglas de costo (decisión de Axel, 28/11/2026)
 
-**Decisión de Axel: el laboratorio queda en pausa total y no puede costar ni un peso más**, ni en ElevenLabs ni en la API.
+**Lo decidió Axel después de comparar costos. No se cambia sin otra decisión suya, escrita acá.**
 
-- **En el código:** `labPaused()` en `src/lib/lab/policy.ts` vale `true`:
-  - el cron del laboratorio no hace nada;
-  - no se puede lanzar ninguna batería, experimento, verificación ni «Jugar de paciente», tampoco desde el panel;
-  - `scripts/probar-sofi.mjs` sale sin correr.
-- **El test que la vigila:** `src/test/laboratorio-pausa.integration.test.ts`.
-- **Quién la levanta:** solo Axel, por escrito acá. Antes de levantarla hay que acordar con Facu con qué motor se simula.
-- **Error de la IA (28/11):** el cambio del #309, que prohibió la API, mandó todas las simulaciones a ElevenLabs. Facu lo había dejado sin ElevenLabs a propósito, y la IA lo cambió sin preguntar.
+| Parte | Cómo | Costo |
+|---|---|---|
+| **Simular** (Sofi y el paciente) | Simulador propio, contra la API de Claude, **solo con Haiku**. Es la única excepción a «nada de API». El paciente va con Sofi porque la charla va y viene en cada turno. | ~USD 0,005 por charla, ~USD 0,30 por prueba |
+| **Evaluar** (jurado), charlas reales y propuestas | **La suscripción** de Claude o ChatGPT, en Panel → Laboratorio → Evaluar (copiar el pedido, pegar la respuesta). Nada de API ni de Opus. | $0 |
+| **ElevenLabs** | **Nunca** para pruebas: cuesta unas 12 veces más por charla. `probar-sofi` quedó apagado. | — |
+| **Automático** | **Nada:** ni batería nocturna, ni verificación semanal, ni experimentos solos. Se lanza a mano desde el panel antes de publicar un cambio en Sofi. | — |
+| **Topes** | USD 1 por corrida y USD 2 por día. Cortan a mitad de corrida. | — |
 
-## Regla del laboratorio: prohibido usar la API con clave (28/11/2026)
-
-**Decisión de Axel, estrictamente prohibido.** Las pruebas de Sofi no usan nunca la API de Anthropic ni la de OpenAI con clave. Solo se pagan ElevenLabs (las simulaciones) y la suscripción de Claude Code o ChatGPT (evaluar y proponer). La regla completa está en `AGENTS.md`.
-
-- **En el código:** `src/lib/lab/policy.ts` (`labApiAllowed` en `false` fijo) bloquea el simulador propio, el juez, la segunda instancia con Opus, las propuestas y el armado de casos, aunque `ANTHROPIC_API_KEY` esté en Vercel. Lo vigila `src/test/laboratorio-sin-api.integration.test.ts`.
-- **Cómo queda, sin claves:**
-  1. Las corridas van por ElevenLabs y quedan en «puntuando».
-  2. En Panel → Laboratorio → **Evaluar**, se copia el pedido. Son tandas de 8 simulaciones y 4 charlas reales, con la rúbrica, el contexto y el formato.
-  3. Se pega en claude.ai o chatgpt.com con la cuenta de la suscripción y se pega la respuesta en el panel.
-  4. El panel calcula el puntaje y cierra las corridas.
-  5. Cuando no quedan charlas, la misma pestaña pide las propuestas de mejora.
-- **Opcional (Axel prefiere no hacerlo):** automatizarlo con Claude Code. Necesita una clave «para evaluar» (Criterios) y el skill `laboratorio-sofi`, que usa `/api/lab/evaluaciones`. Sin esa clave no hay tarea programada: alguien tiene que pasar por Evaluar.
-- **Falta (Facu):**
-  1. Pasar por Evaluar después de cada batería o «Jugar de paciente».
-  2. Comprobar que su Claude o su ChatGPT estén con la cuenta de la suscripción.
-  3. Si no hace falta la batería todas las noches, bajarla a dos o tres por semana para gastar menos ElevenLabs.
+- **Cuánto cuesta:** se calculan unos USD 1 a 2 por mes. Con ElevenLabs y batería todas las noches serían unos USD 95.
+- **Cuándo se usa:** las charlas reales se revisan en Evaluar una vez por semana, con costo $0. La simulación se corre solo cuando se cambia a Sofi.
+- **En el código:** `src/lib/lab/policy.ts` (`labApiAllowed`, `labSimulatorAllowed`, `labSimModel`, `labElevenLabsAllowed`, `labAutoRunsAllowed`). Lo vigila `src/test/laboratorio-sin-api.integration.test.ts`.
+- **Historia (28/11):**
+  1. El #309 de la IA prohibió la API y mandó las simulaciones a ElevenLabs, que son 12 veces más caras. Facu las había dejado fuera de ElevenLabs a propósito, y la IA lo cambió sin preguntar.
+  2. El #311 pausó todo.
+  3. Esta decisión reemplaza a las dos.
+- **Qué gastó:** no llegó a correr ninguna simulación en ElevenLabs con esos cambios. La última es del 27/11 a las 17:55.
 
 ## Laboratorio de Sofi (27/11/2026)
 
