@@ -11,6 +11,12 @@ import type { Dims, Verdict } from "./score";
 // Todo el laboratorio corre con Haiku (pedido de Axel, 27/11): el juez, las propuestas y el armado de casos.
 // Las charlas reales las atiende Sofi con su modelo de producción; el laboratorio no lo cambia.
 const MODEL = () => process.env.LAB_LLM || "claude-haiku-5-5";
+// Segunda instancia (pedido de Axel, 27/11): Opus revisa solo lo que decide algo, porque cuesta 40 veces
+// más por token que Haiku. Una charla que Haiku marcó como falla crítica, la atribución de lo que empeora
+// en un experimento y el segundo intento de una mejora que perdió.
+export const APPEAL_MODEL = () => (process.env.LAB_APPEAL_LLM && process.env.LAB_APPEAL_LLM !== "off" ? process.env.LAB_APPEAL_LLM : "claude-opus-5-5");
+/** LAB_APPEAL_LLM=off apaga la segunda instancia (todo queda con Haiku). */
+export const secondInstanceOn = () => process.env.LAB_APPEAL_LLM !== "off";
 
 export const labJudgeConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
@@ -81,9 +87,10 @@ export type JudgeUsage = { model: string; input_tokens: number; output_tokens: n
 // USD por millón de tokens (entrada, salida), precios de lista de Anthropic.
 const PRICES: Array<[RegExp, number, number]> = [[/haiku/, 0.1, 0.5], [/sonnet/, 2, 10], [/opus/, 4, 20], [/fable/, 8, 40]];
 
-export function judgeCost(model: string, input: number, output: number): number {
+export function judgeCost(model: string, input: number, output: number, cacheRead = 0, cacheWrite = 0): number {
   const [, inPrice, outPrice] = PRICES.find(([re]) => re.test(model)) ?? [/./, 4, 20];
-  return Math.round(((input * inPrice + output * outPrice) / 1_000_000) * 1e6) / 1e6;
+  const fresh = Math.max(0, input - cacheRead - cacheWrite);
+  return Math.round(((fresh * inPrice + cacheRead * inPrice * 0.1 + cacheWrite * inPrice * 1.25 + output * outPrice) / 1_000_000) * 1e6) / 1e6;
 }
 
 const onUsage: ((u: JudgeUsage) => void) | null = null;
@@ -94,21 +101,30 @@ export function todayLine(now = new Date()): string {
   return `Hoy es ${f.replace(",", "")} (hora de Argentina). Las charlas simuladas corren hoy: lo que diga Sofi sobre qué día es hoy, si un turno ya pasó o qué fecha cae mañana se compara con esta fecha.`;
 }
 
-async function parse<T extends z.ZodType>(schema: T, rawSystem: string, user: string, effort: "low" | "medium" | "high", maxTokens = 16000, track?: (u: JudgeUsage) => void): Promise<z.infer<T>> {
-  const system = `${todayLine()}\n\n${rawSystem}`;
+type ParseOptions = { model?: string; maxTokens?: number; track?: (u: JudgeUsage) => void; context?: string };
+
+/**
+ * Una llamada con salida estructurada. Lo fijo (la rúbrica y, si viene, el contexto del consultorio) va en
+ * el system con caché: en una corrida se repite en cada charla y se cobra a un décimo.
+ */
+async function parse<T extends z.ZodType>(schema: T, rawSystem: string, user: string, effort: "low" | "medium" | "high", opts: ParseOptions = {}): Promise<z.infer<T>> {
+  const model = opts.model ?? MODEL();
+  const system = [{ type: "text" as const, text: `${todayLine()}\n\n${rawSystem}${opts.context ? `\n\nConsultorio:\n${opts.context}` : ""}`, cache_control: { type: "ephemeral" as const } }];
   const response = await client().beta.messages.parse({
-    model: MODEL(),
-    max_tokens: maxTokens,
+    model,
+    max_tokens: opts.maxTokens ?? 16000,
     // Haiku no tiene respaldo del lado del servidor; Opus y Sonnet sí.
-    ...(/haiku/.test(MODEL()) ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
+    ...(/haiku/.test(model) ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
     output_config: { effort, format: betaZodOutputFormat(schema) },
     system,
     messages: [{ role: "user", content: user }],
   });
   const usage = response.usage as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
-  const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-  const record = { model: MODEL(), input_tokens: input, output_tokens: usage.output_tokens ?? 0, usd: judgeCost(MODEL(), input, usage.output_tokens ?? 0) };
-  (track ?? onUsage)?.(record);
+  const read = usage.cache_read_input_tokens ?? 0;
+  const write = usage.cache_creation_input_tokens ?? 0;
+  const input = (usage.input_tokens ?? 0) + read + write;
+  const record = { model, input_tokens: input, output_tokens: usage.output_tokens ?? 0, usd: judgeCost(model, input, usage.output_tokens ?? 0, read, write) };
+  (opts.track ?? onUsage)?.(record);
   if (response.stop_reason === "refusal") throw new Error("Claude no quiso evaluar esta charla.");
   if (!response.parsed_output) throw new Error(`Claude no devolvió una respuesta válida (${response.stop_reason ?? "sin motivo"}).`);
   return response.parsed_output as z.infer<T>;
@@ -131,17 +147,23 @@ export async function judgeSimulation(input: {
   transcript: string;
   clinicContext: string;
   criteria: string[];
+  /** Por defecto Haiku; la segunda instancia pasa APPEAL_MODEL(). */
+  model?: string;
+  /** Lo que dijo el primer juez, para que la segunda instancia lo revise. */
+  firstOpinion?: string;
 }): Promise<SimulationVerdict> {
   let usage: JudgeUsage | null = null;
+  const appeal = input.firstOpinion
+    ? `\n\nOtro evaluador marcó esta charla como falla crítica: «${input.firstOpinion}». Revisala de cero contra la charla y el consultorio: si de verdad puede dañar al paciente, mantenela; si se apoyó en algo que la charla o el consultorio desmienten (un precio que sí está cargado, un dato que sí es del paciente), corregilo.`
+    : "";
   const out = await parse(
     SimulationJudgment,
     RUBRIC + criteriaText(input.criteria),
-    `Consultorio:\n${input.clinicContext}\n\nEscenario del paciente simulado:\n${input.scenario}\n\nCondiciones que tiene que cumplir Sofi:\n${input.conditions
+    `Escenario del paciente simulado:\n${input.scenario}\n\nCondiciones que tiene que cumplir Sofi:\n${input.conditions
       .map((c, i) => `${i + 1}. [${c.dim}${c.critical ? ", crítica" : ""}] ${c.text}`)
-      .join("\n")}\n\nCharla:\n${input.transcript}\n\nEvaluá cada condición (todas, en orden), puntuá las cinco dimensiones y marcá falla crítica solo si corresponde.`,
+      .join("\n")}\n\nCharla:\n${input.transcript}\n\nEvaluá cada condición (todas, en orden), puntuá las cinco dimensiones y marcá falla crítica solo si corresponde.${appeal}`,
     "medium",
-    16000,
-    (u) => { usage = u; },
+    { model: input.model, context: input.clinicContext, track: (u) => { usage = u; } },
   );
   const verdicts: Verdict[] = input.conditions.map((c, i) => {
     const v = out.condiciones.find((x) => x.numero === i + 1);
@@ -173,8 +195,9 @@ export async function judgeRealConversation(input: { transcript: string; clinicC
   const out = await parse(
     RealJudgment,
     RUBRIC + criteriaText(input.criteria),
-    `Consultorio:\n${input.clinicContext}\n\nCharla real con un paciente:\n${input.transcript}\n\nClasificá el motivo y la situación, puntuá las cinco dimensiones y anotá los problemas que veas.`,
+    `Charla real con un paciente:\n${input.transcript}\n\nClasificá el motivo y la situación, puntuá las cinco dimensiones y anotá los problemas que veas.`,
     "medium",
+    { context: input.clinicContext },
   );
   return {
     intent: out.motivo,
@@ -211,6 +234,8 @@ export async function proposeImprovements(input: {
   clinicInstructions: string;
   failures: string;
   pending: string[];
+  /** Mejoras ya descartadas (por el equipo o porque perdieron en el laboratorio), con el motivo. */
+  rejected?: string[];
   criteria: string[];
 }): Promise<ProposalDraft[]> {
   const out = await parse(
@@ -235,12 +260,116 @@ ${input.prompt}
 Mejoras pendientes de decisión (no las repitas):
 ${input.pending.length ? input.pending.map((p) => `- ${p}`).join("\n") : "(ninguna)"}
 
+Mejoras ya descartadas (no las vuelvas a proponer ni con otras palabras; si el problema sigue, buscá otra forma de resolverlo que evite lo que salió mal):
+${input.rejected?.length ? input.rejected.map((p) => `- ${p}`).join("\n") : "(ninguna)"}
+
 Problemas encontrados:
 ${input.failures}`,
     "high",
-    24000,
+    { maxTokens: 24000 },
   );
   return out.propuestas.slice(0, 4);
+}
+
+// ---------------------------------------------------------------------------
+// Experimentos: ¿lo que empeoró viene del cambio? Y, si la mejora perdió, un segundo intento.
+// ---------------------------------------------------------------------------
+const Attribution = z.object({
+  relacionado: z.boolean().describe("true si es razonable que la falla de la variante venga del texto que cambió"),
+  motivo: z.string().describe("Por qué, en una o dos oraciones, citando la frase de la variante y la parte del cambio que la explica (o por qué no tiene que ver)"),
+});
+export type AttributionOut = z.infer<typeof Attribution>;
+
+/** Dice si un caso que empeoró en la variante empeoró por el cambio o por otra cosa (azar del modelo). */
+export async function attributeRegression(input: {
+  change: { old_str?: string; new_str?: string };
+  caseTitle: string;
+  scenario: string;
+  baseTranscript: string;
+  variantTranscript: string;
+  variantProblems: string;
+  track?: (u: JudgeUsage) => void;
+}): Promise<AttributionOut> {
+  return parse(
+    Attribution,
+    `${RUBRIC}
+
+Ahora revisás un experimento: la versión actual de Sofi contra una variante que cambia un fragmento de su prompt. En un caso, la variante salió peor. Decidí si esa diferencia viene del cambio (el texto nuevo empuja a Sofi a hacer eso) o es independiente (el mismo error podría pasar con la versión actual, o el cambio no habla de nada parecido). Sé concreto y no especules de más.`,
+    `Cambio que prueba la variante:
+<antes>
+${input.change.old_str ?? ""}
+</antes>
+<despues>
+${input.change.new_str ?? ""}
+</despues>
+
+Caso: ${input.caseTitle}
+Escenario: ${input.scenario}
+
+Charla con la versión actual:
+${input.baseTranscript}
+
+Charla con la variante:
+${input.variantTranscript}
+
+Lo que el evaluador marcó en la variante:
+${input.variantProblems}`,
+    "medium",
+    { model: APPEAL_MODEL(), maxTokens: 8000, track: input.track },
+  );
+}
+
+const Refinement = z.object({
+  titulo: z.string().describe("Qué cambia, como acción"),
+  por_que: z.string().describe("Qué conserva del intento anterior y qué corrige, en dos oraciones"),
+  reemplazar: z.string().describe("Fragmento EXACTO y textual del prompt actual a reemplazar (aparece una sola vez)"),
+  por: z.string().describe("El texto nuevo que va en su lugar"),
+});
+export type RefinementOut = z.infer<typeof Refinement>;
+
+/**
+ * Segundo (o tercer) intento de una mejora que perdió: mantiene lo que arregló y evita lo que rompió. El
+ * problema era real; el arreglo se pasó de largo.
+ */
+export async function refineProposal(input: {
+  prompt: string;
+  title: string;
+  why: string;
+  change: { old_str?: string; new_str?: string };
+  improved: string;
+  regressed: string;
+  attempt: number;
+  criteria: string[];
+  track?: (u: JudgeUsage) => void;
+}): Promise<RefinementOut> {
+  return parse(
+    Refinement,
+    `${RUBRIC}
+
+Ahora tu trabajo es corregir una mejora de prompt que perdió en el laboratorio. El problema que quería resolver es real, pero el cambio empeoró otros casos. Proponé un cambio más acotado: que resuelva el mismo problema sin tocar lo que se rompió (por ejemplo, que la regla aplique solo en el momento justo de la charla, o que excluya explícitamente lo que se rompió). Cambios chicos y precisos; «reemplazar» tiene que estar copiado letra por letra del prompt actual (sin el cambio anterior) y aparecer una sola vez.${criteriaText(input.criteria)}`,
+    `Prompt actual de Sofi (sin el cambio que perdió):
+<prompt>
+${input.prompt}
+</prompt>
+
+Intento ${input.attempt - 1}, que perdió: «${input.title}»
+Por qué se propuso: ${input.why}
+Cambio:
+<antes>
+${input.change.old_str ?? ""}
+</antes>
+<despues>
+${input.change.new_str ?? ""}
+</despues>
+
+Casos que mejoraron (conservalo):
+${input.improved || "(ninguno)"}
+
+Casos que empeoraron por el cambio (evitalo):
+${input.regressed || "(ninguno)"}`,
+    "medium",
+    { model: APPEAL_MODEL(), maxTokens: 12000, track: input.track },
+  );
 }
 
 // ---------------------------------------------------------------------------

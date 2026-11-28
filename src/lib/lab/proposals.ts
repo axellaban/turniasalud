@@ -5,10 +5,11 @@ import { setupAgent } from "../agent/setup";
 import { TOOL_DEFINITIONS } from "../agent/tools";
 import type { Clinic } from "../types";
 import { referenceCases, type Condition, type Dimension, type LabCase } from "./cases";
-import { draftCase, proposeImprovements, type CaseDraftOut, type LabFinding, type ProposalDraft } from "./judge";
+import { attributeRegression, draftCase, proposeImprovements, refineProposal, type CaseDraftOut, type JudgeUsage, type LabFinding, type ProposalDraft } from "./judge";
 import { effectivePrompt, patchProblem } from "./prompt";
-import { allCases, clinicContextFor, getRun, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabRun } from "./runs";
-import { compareRuns } from "./score";
+import { addJudgeUsage, allCases, clinicContextFor, getRun, onRunFinished, runResults, startRun, toScored, variantPrompt, type LabResult, type LabRun } from "./runs";
+import { compareRuns, type CaseComparison } from "./score";
+import { normalizeTranscript, transcriptText } from "./transcript";
 
 // Mejoras del Laboratorio de Sofi: Claude las propone a partir de las fallas, se prueban en un experimento
 // (la versión actual contra la variante, con los mismos casos) y el equipo decide. Lo aprobado se aplica
@@ -37,6 +38,23 @@ export type LabProposal = {
   applied_at: string | null;
   apply_error: string | null;
   created_at: string;
+  parent_id?: string | null;
+  attempt?: number;
+  analysis?: ExperimentAnalysis | null;
+};
+
+/** Hasta cuántos intentos se prueba una mejora antes de dejarla para una persona. */
+export const MAX_ATTEMPTS = 3;
+
+export type ExperimentAnalysis = {
+  resultado: "gana" | "pierde" | "sin_efecto";
+  diferencia: number | null;
+  mejoran: string[];
+  empeoran: Array<{ case_id: string; relacionado: boolean | null; motivo: string | null }>;
+  no_concluyentes: string[];
+  texto: string;
+  siguiente?: { id: string; titulo: string } | null;
+  necesita_persona?: boolean;
 };
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 800);
@@ -89,10 +107,14 @@ async function recentFailures(clinicId: string, focusResultId?: string): Promise
 export async function generateProposals(clinic: Clinic, opts: { focusResultId?: string; actor?: string } = {}): Promise<number> {
   const failures = await recentFailures(clinic.id, opts.focusResultId);
   if (!failures) return 0;
-  const [prompt, pending, criteria] = await Promise.all([
+  const [prompt, pending, rejected, criteria] = await Promise.all([
     effectivePrompt(),
     sql<Array<{ title: string }>>`
       select title from lab_proposals where (clinic_id is null or clinic_id = ${clinic.id}) and status in ('pendiente', 'probando', 'aprobada')`,
+    sql<Array<{ title: string; decision_reason: string | null }>>`
+      select title, decision_reason from lab_proposals
+      where (clinic_id is null or clinic_id = ${clinic.id}) and status = 'rechazada' and created_at > now() - interval '60 days'
+      order by created_at desc limit 30`,
     criteriaFor(clinic.id),
   ]);
   const drafts = await proposeImprovements({
@@ -101,6 +123,7 @@ export async function generateProposals(clinic: Clinic, opts: { focusResultId?: 
     clinicInstructions: clinic.agent_context ?? "",
     failures,
     pending: pending.map((p) => p.title),
+    rejected: rejected.map((r) => `${r.title}${r.decision_reason ? ` — ${r.decision_reason.slice(0, 300)}` : ""}`),
     criteria,
   });
   const known = new Set(pending.map((p) => p.title.trim().toLowerCase()));
@@ -171,7 +194,10 @@ export async function startExperiment(proposalId: string, actor: string): Promis
     select r.case_id, r.dims from lab_results r
     where r.run_id = (select id from lab_runs where clinic_id = ${clinic.id} and kind = 'bateria' and status = 'terminada' order by finished_at desc limit 1)
       and r.judged and r.repetition = 1 and (coalesce(r.score, 0) < 85 or r.critical)`;
-  const cases = focusedCases(all, failing, p.dimension);
+  // Un reintento usa los mismos casos que el intento anterior: ahí se vio qué mejoraba y qué se rompía.
+  const parentRun = p.parent_id ? await parentExperimentRun(p.parent_id) : null;
+  const parentIds = new Set(parentRun?.cases.map((c) => c.id) ?? []);
+  const cases = parentIds.size ? all.filter((c) => parentIds.has(c.id)) : focusedCases(all, failing, p.dimension);
   // La versión actual con los mismos casos, para comparar parejo.
   const baseline = await startRun({ clinic, kind: "experimento", label: `Referencia · ${p.title}`, cases, repeat: 1, createdBy: actor });
   const runId = await startRun({
@@ -189,6 +215,11 @@ export async function startExperiment(proposalId: string, actor: string): Promis
   return runId;
 }
 
+async function parentExperimentRun(parentId: string): Promise<LabRun | null> {
+  const parent = await getProposal(parentId);
+  return parent?.experiment_run_id ? getRun(parent.experiment_run_id) : null;
+}
+
 export type ExperimentSummary = {
   ready: boolean;
   base: LabRun | null;
@@ -196,6 +227,7 @@ export type ExperimentSummary = {
   delta: number | null;
   regressions: number;
   improved: number;
+  inconclusive: number;
   comparison: ReturnType<typeof compareRuns> | null;
 };
 
@@ -203,12 +235,52 @@ export async function experimentSummary(variantRunId: string): Promise<Experimen
   const variant = await getRun(variantRunId);
   const base = variant?.baseline_run_id ? await getRun(variant.baseline_run_id) : null;
   if (!variant || !base || variant.status !== "terminada" || base.status !== "terminada") {
-    return { ready: false, base, variant, delta: null, regressions: 0, improved: 0, comparison: null };
+    return { ready: false, base, variant, delta: null, regressions: 0, improved: 0, inconclusive: 0, comparison: null };
   }
   const comparison = compareRuns((await runResults(base.id)).map(toScored), (await runResults(variant.id)).map(toScored));
   const delta = base.score !== null && variant.score !== null ? Math.round((Number(variant.score) - Number(base.score)) * 10) / 10 : null;
-  return { ready: true, base, variant, delta, regressions: comparison.regressions.length, improved: comparison.improved.length, comparison };
+  return { ready: true, base, variant, delta, regressions: comparison.regressions.length, improved: comparison.improved.length, inconclusive: comparison.inconclusive.length, comparison };
 }
+
+/**
+ * Veredicto de un experimento. Gana si algo mejora de forma concluyente y nada empeora por el cambio (lo
+ * que empeora por otra cosa, según la segunda instancia, no cuenta). Pierde si algo empeora por el cambio.
+ * Si no cambia nada concluyente, no tuvo efecto. Puro.
+ */
+export function experimentVerdict(
+  comparison: { improved: CaseComparison[]; regressions: CaseComparison[]; inconclusive: CaseComparison[] },
+  attributions: Record<string, { relacionado: boolean; motivo: string }>,
+  delta: number | null,
+): ExperimentAnalysis {
+  const empeoran = comparison.regressions.map((c) => ({
+    case_id: c.case_id,
+    relacionado: attributions[c.case_id]?.relacionado ?? null,
+    motivo: attributions[c.case_id]?.motivo ?? null,
+  }));
+  const byChange = empeoran.filter((e) => e.relacionado !== false);
+  const resultado = byChange.length ? "pierde" : comparison.improved.length ? "gana" : "sin_efecto";
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  const parts = [
+    `${n(comparison.improved.length, "caso mejora", "casos mejoran")}`,
+    `${n(byChange.length, "empeora por el cambio", "empeoran por el cambio")}`,
+    ...(empeoran.length > byChange.length ? [`${n(empeoran.length - byChange.length, "empeora por otra cosa", "empeoran por otra cosa")} (no cuenta)`] : []),
+    ...(comparison.inconclusive.length ? [`${n(comparison.inconclusive.length, "no es concluyente", "no son concluyentes")}`] : []),
+  ];
+  const head = resultado === "gana" ? "Gana" : resultado === "pierde" ? "Pierde" : "Sin efecto";
+  return {
+    resultado,
+    diferencia: delta,
+    mejoran: comparison.improved.map((c) => c.case_id),
+    empeoran,
+    no_concluyentes: comparison.inconclusive.map((c) => c.case_id),
+    texto: `${head}: ${parts.join(", ")}.`,
+  };
+}
+
+const firstRow = (rows: LabResult[], caseId: string, preferCritical = false) => {
+  const mine = rows.filter((r) => r.case_id === caseId && r.judged && r.transcript?.length).sort((a, b) => a.repetition - b.repetition);
+  return (preferCritical ? mine.find((r) => r.critical) : null) ?? [...mine].sort((a, b) => Number(a.score ?? 0) - Number(b.score ?? 0))[0] ?? null;
+};
 
 /** Cuando termina una corrida: cierra los experimentos que la esperaban. */
 async function resolveExperiments(run: LabRun): Promise<void> {
@@ -223,14 +295,127 @@ async function resolveExperiments(run: LabRun): Promise<void> {
       continue;
     }
     const summary = await experimentSummary(p.experiment_run_id as string);
-    if (!summary.ready) continue;
-    await sql`update lab_proposals set status = 'pendiente' where id = ${p.id} and status = 'probando'`;
-    // Nivel A con «publicar solas» prendido: si no empeora nada, se aplica sin esperar.
-    const [clinic] = await sql<Array<{ lab_settings: { auto_a?: boolean } }>>`select lab_settings from clinics where id = ${p.clinic_id}`;
-    if (p.level === "A" && clinic?.lab_settings?.auto_a && summary.delta !== null && summary.delta >= 0 && !summary.regressions) {
-      await approveProposal(p.id, "Laboratorio (nivel A, sin regresiones)").catch((e) =>
-        console.error("Laboratorio: no se pudo publicar sola la mejora", errorText(e)));
+    if (!summary.ready || !summary.comparison || !variant || !base) continue;
+    // Toma la mejora (si otra vuelta del cron ya la tomó, sigue de largo).
+    const [mine] = await sql`update lab_proposals set status = 'pendiente' where id = ${p.id} and status = 'probando' returning id`;
+    if (!mine) continue;
+    try {
+      const analysis = await analyzeExperiment(p, summary, base, variant);
+      await sql`update lab_proposals set analysis = ${json(analysis)} where id = ${p.id}`;
+      if (analysis.resultado === "gana") {
+        // Nivel A con «publicar solas» prendido: se aplica sin esperar.
+        const [clinic] = await sql<Array<{ lab_settings: { auto_a?: boolean } }>>`select lab_settings from clinics where id = ${p.clinic_id}`;
+        if (p.level === "A" && clinic?.lab_settings?.auto_a) {
+          await approveProposal(p.id, "Laboratorio (nivel A, gana en el experimento)").catch((e) =>
+            console.error("Laboratorio: no se pudo publicar sola la mejora", errorText(e)));
+        }
+      } else if (analysis.resultado === "pierde") {
+        await retryProposal(p, analysis, variant);
+      }
+    } catch (e) {
+      console.error("Laboratorio: no se pudo analizar el experimento", errorText(e));
     }
+  }
+}
+
+/** Compara, pregunta a la segunda instancia si lo que empeoró viene del cambio y arma el veredicto. */
+async function analyzeExperiment(p: LabProposal, summary: ExperimentSummary, base: LabRun, variant: LabRun): Promise<ExperimentAnalysis> {
+  const comparison = summary.comparison as NonNullable<ExperimentSummary["comparison"]>;
+  const [baseRows, variantRows] = await Promise.all([runResults(base.id), runResults(variant.id)]);
+  const track = (u: JudgeUsage) => { addJudgeUsage(variant.id, u.usd, u.input_tokens, u.output_tokens, true).catch(() => {}); };
+  const attributions: Record<string, { relacionado: boolean; motivo: string }> = {};
+  // Las 4 que más empeoran (cada una es una llamada a Opus).
+  const worst = [...comparison.regressions].sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)).slice(0, 4);
+  for (const c of worst) {
+    const v = firstRow(variantRows, c.case_id, true);
+    const b = firstRow(baseRows, c.case_id);
+    const snap = variant.cases.find((x) => x.id === c.case_id);
+    if (!v || !b || !snap) continue;
+    const problems = [
+      ...(v.conditions ?? []).filter((x) => !x.pass).map((x) => `- ${x.text}: ${x.reason ?? ""}`),
+      ...(v.findings ?? []).map((f) => `- ${f.problema}`),
+    ].join("\n");
+    try {
+      attributions[c.case_id] = await attributeRegression({
+        change: p.change,
+        caseTitle: snap.titulo,
+        scenario: snap.scenario,
+        baseTranscript: transcriptText([...normalizeTranscript(snap.history ?? []), ...b.transcript]),
+        variantTranscript: transcriptText([...normalizeTranscript(snap.history ?? []), ...v.transcript]),
+        variantProblems: problems || v.summary || "",
+        track,
+      });
+    } catch (e) {
+      console.error("Laboratorio: no se pudo atribuir la regresión", errorText(e));
+    }
+  }
+  return experimentVerdict(comparison, attributions, summary.delta);
+}
+
+/**
+ * La mejora perdió: si no llegó al tercer intento y hay margen de gasto, se arma uno nuevo más acotado con lo
+ * que se aprendió y se prueba solo. La que perdió queda rechazada (sin sumar un criterio: el problema sigue
+ * siendo real). Al tercer intento, queda para una persona.
+ */
+async function retryProposal(p: LabProposal, analysis: ExperimentAnalysis, variant: LabRun): Promise<void> {
+  const attempt = p.attempt ?? 1;
+  const note = async (extra: Partial<ExperimentAnalysis>) => {
+    await sql`update lab_proposals set analysis = ${json({ ...analysis, ...extra })} where id = ${p.id}`;
+  };
+  if (p.layer !== "prompt" || !p.clinic_id) return;
+  if (attempt >= MAX_ATTEMPTS) {
+    await note({ necesita_persona: true, texto: `${analysis.texto} Ya se probaron ${MAX_ATTEMPTS} intentos sin ganar en todos los frentes: necesita que lo mire una persona.` });
+    return;
+  }
+  const clinic = await clinicOf(p.clinic_id);
+  const { spentToday, dailyCap } = await import("./tick");
+  if ((await spentToday(clinic)) >= dailyCap(clinic)) {
+    await note({ texto: `${analysis.texto} No se armó otro intento porque se llegó al tope de gasto del día; podés probarlo mañana desde acá.` });
+    return;
+  }
+  const variantRows = await runResults(variant.id);
+  const describe = (ids: string[], withAttribution: boolean) => ids.map((id) => {
+    const title = variant.cases.find((c) => c.id === id)?.titulo ?? id;
+    const row = firstRow(variantRows, id, true);
+    const why = withAttribution ? analysis.empeoran.find((e) => e.case_id === id)?.motivo : null;
+    return `- ${title}: ${why ?? row?.summary ?? ""}`;
+  }).join("\n");
+  const track = (u: JudgeUsage) => { addJudgeUsage(variant.id, u.usd, u.input_tokens, u.output_tokens, true).catch(() => {}); };
+  const current = await effectivePrompt();
+  const refined = await refineProposal({
+    prompt: current.prompt,
+    title: p.title,
+    why: p.why,
+    change: p.change,
+    improved: describe(analysis.mejoran, false),
+    regressed: describe(analysis.empeoran.filter((e) => e.relacionado !== false).map((e) => e.case_id), true),
+    attempt: attempt + 1,
+    criteria: await criteriaFor(clinic.id),
+    track,
+  });
+  const change = { old_str: refined.reemplazar, new_str: refined.por };
+  const problem = patchProblem(current.prompt, change);
+  const [row] = await sql<Array<{ id: string }>>`
+    insert into lab_proposals ${sql({
+      clinic_id: p.clinic_id,
+      level: p.level,
+      layer: "prompt",
+      dimension: p.dimension,
+      title: refined.titulo.slice(0, 200),
+      why: refined.por_que,
+      evidence: json(p.evidence),
+      change: json(change),
+      apply_error: problem,
+      parent_id: p.id,
+      attempt: attempt + 1,
+    })} returning id`;
+  await sql`
+    update lab_proposals set status = 'rechazada', decided_by = 'Laboratorio', decided_at = now(),
+      decision_reason = ${`Perdió en el experimento (${analysis.texto}). Se prueba el intento ${attempt + 1}: «${refined.titulo.slice(0, 200)}».`}
+    where id = ${p.id}`;
+  await note({ siguiente: { id: row.id, titulo: refined.titulo.slice(0, 200) } });
+  if (!problem) {
+    await startExperiment(row.id, "Laboratorio").catch((e) => console.error("Laboratorio: no se pudo probar el nuevo intento", errorText(e)));
   }
 }
 onRunFinished(resolveExperiments);

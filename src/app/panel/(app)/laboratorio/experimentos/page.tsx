@@ -4,9 +4,12 @@ import { Badge, Card, Empty } from "@/components/ui";
 import { getPanelClinic, requireAdmin } from "@/lib/panel-clinic";
 import { formatDateTime } from "@/lib/time";
 import { labRuns, num } from "@/lib/lab/panel";
-import { experimentSummary } from "@/lib/lab/proposals";
+import { MAX_ATTEMPTS, experimentSummary, getProposal } from "@/lib/lab/proposals";
+import type { CaseVerdict } from "@/lib/lab/score";
 import { runResults } from "@/lib/lab/runs";
 import { DimBars, LabHeader, RUN_STATUS, RunLink, Transcript, fmtScore } from "../lab-ui";
+
+const VERDICT_LABEL: Record<CaseVerdict, string> = { mejora: "Mejora", empeora: "Empeora", igual: "Igual", no_concluyente: "No concluyente" };
 
 export const metadata: Metadata = { title: "Experimentos · Laboratorio de Sofi" };
 
@@ -18,6 +21,8 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
   const runs = (await labRuns(clinic.id, "experimento")).filter((r) => r.proposal_id);
   const selected = runs.find((r) => r.id === id) ?? runs[0] ?? null;
   const summary = selected ? await experimentSummary(selected.id) : null;
+  const proposal = selected?.proposal_id ? await getProposal(selected.proposal_id) : null;
+  const analysis = proposal?.analysis ?? null;
   const comparison = summary?.comparison ?? null;
   const pickedCase = comparison ? (comparison.cases.find((c) => c.case_id === caso) ?? comparison.cases.find((c) => (c.delta ?? 0) !== 0) ?? comparison.cases[0]) : null;
   const [baseRows, variantRows] = summary?.ready && pickedCase && summary.base && summary.variant
@@ -30,7 +35,7 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
       <LabHeader
         current="/panel/laboratorio/experimentos"
         title="Experimentos"
-        description="Cada mejora de prompt se prueba antes de decidir: la versión actual contra la variante, con los mismos casos y 3 repeticiones de cada una."
+        description="Cada mejora de prompt se prueba antes de decidir: la versión actual contra la variante, con los mismos casos. Lo que da muy distinto se repite en las dos hasta 3 veces, y solo cuenta lo que se sostiene."
       />
       {!runs.length || !selected ? (
         <Empty>Todavía no hay experimentos. Se arman solos con cada mejora de prompt, o desde Mejoras → «Probar en el laboratorio».</Empty>
@@ -53,6 +58,7 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
                 <h2 className="font-display text-xl font-semibold text-brand-950">{selected.label.replace(/^Experimento · /, "")}</h2>
                 <p className="text-sm text-brand-900/65">
                   Empezó el {formatDateTime(selected.created_at, clinic.timezone)}
+                  {(proposal?.attempt ?? 1) > 1 && <> · intento {proposal?.attempt} de {MAX_ATTEMPTS}</>}
                   {selected.proposal_id && <> · <Link href={`/panel/laboratorio/mejoras?id=${selected.proposal_id}`} className="font-medium text-brand-700 hover:underline">ver la mejora</Link></>}
                 </p>
               </div>
@@ -71,12 +77,14 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
                   <dt className="text-xs font-medium uppercase tracking-wider text-brand-700">Variante</dt>
                   <dd className="mt-1 font-display text-4xl font-semibold">{fmtScore(summary.variant?.score)} <span className="text-base font-normal text-brand-900/60">±{fmtScore(summary.variant?.spread)}</span></dd>
                 </div>
-                <div className={`rounded-2xl p-4 ${(summary.delta ?? 0) > 0 && !summary.regressions ? "bg-emerald/10" : "bg-[#f6f7fb]"}`}>
+                <div className={`rounded-2xl p-4 ${analysis?.resultado === "gana" ? "bg-emerald/10" : analysis?.resultado === "pierde" ? "bg-red-50" : "bg-[#f6f7fb]"}`}>
                   <dt className="text-xs font-medium uppercase tracking-wider text-brand-900/65">Diferencia</dt>
                   <dd className="mt-1 font-display text-4xl font-semibold">{summary.delta === null ? "—" : summary.delta > 0 ? `+${summary.delta}` : summary.delta}</dd>
                   <dd className="text-xs text-brand-900/70">
-                    {summary.improved} caso{summary.improved === 1 ? "" : "s"} mejoran, {summary.regressions} empeoran.
-                    {summary.delta !== null && Math.abs(summary.delta) <= Math.max(num(summary.base?.spread) ?? 0, num(summary.variant?.spread) ?? 0) && " Dentro de la variación entre corridas: no es una diferencia clara."}
+                    {analysis ? analysis.texto : <>
+                      {summary.improved} caso{summary.improved === 1 ? "" : "s"} mejoran, {summary.regressions} empeoran{summary.inconclusive ? `, ${summary.inconclusive} no concluyentes` : ""}.
+                      {summary.delta !== null && Math.abs(summary.delta) <= Math.max(num(summary.base?.spread) ?? 0, num(summary.variant?.spread) ?? 0) && " Dentro de la variación entre corridas: no es una diferencia clara."}
+                    </>}
                   </dd>
                 </div>
               </dl>
@@ -87,6 +95,17 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
             )}
           </Card>
 
+          {analysis?.siguiente && (
+            <Card className="mb-5">
+              <p className="text-sm text-brand-900/80">
+                Esta versión perdió y el laboratorio armó otra más acotada con lo aprendido:{" "}
+                <Link href={`/panel/laboratorio/mejoras?id=${analysis.siguiente.id}`} className="font-medium text-brand-700 hover:underline">«{analysis.siguiente.titulo}»</Link>. Se prueba sola con los mismos casos.
+              </p>
+            </Card>
+          )}
+          {analysis?.necesita_persona && (
+            <Card className="mb-5"><p className="text-sm text-brand-900/80">Ya se probaron {MAX_ATTEMPTS} intentos sin ganar en todos los frentes. Mirá los casos que empeoran y decidí si vale la pena o si conviene resolverlo de otra forma (por ejemplo, como regla del consultorio).</p></Card>
+          )}
           {summary?.ready && comparison && (
             <div className="grid gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
               <Card className="self-start">
@@ -102,16 +121,30 @@ export default async function ExperimentsPage({ searchParams }: PageProps<"/pane
                         href={`/panel/laboratorio/experimentos?id=${selected.id}&caso=${encodeURIComponent(c.case_id)}`}
                         className={`grid grid-cols-[minmax(0,1fr)_48px_48px_56px] items-center gap-2 px-5 py-2.5 text-sm ${pickedCase?.case_id === c.case_id ? "bg-brand-50" : "hover:bg-brand-50/50"}`}
                       >
-                        <span className="truncate font-medium">{titleOf(c.case_id)}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{titleOf(c.case_id)}</span>
+                          <span className="block text-xs text-brand-900/60">
+                            {VERDICT_LABEL[c.verdict]}
+                            {c.verdict === "empeora" && analysis?.empeoran.find((e) => e.case_id === c.case_id)?.relacionado === false && " · no por el cambio"}
+                            {(c.baseReps > 1 || c.variantReps > 1) && ` · ${c.baseReps} y ${c.variantReps} charlas`}
+                          </span>
+                        </span>
                         <span className="text-brand-900/70">{fmtScore(c.base)}</span>
                         <span className="font-semibold">{fmtScore(c.variant)}</span>
-                        <span className={`text-right font-semibold ${(c.delta ?? 0) >= 5 ? "text-emerald-700" : (c.delta ?? 0) <= -10 || (c.variantCritical && !c.baseCritical) ? "text-red-700" : "text-brand-900/60"}`}>
+                        <span className={`text-right font-semibold ${c.verdict === "mejora" ? "text-emerald-700" : c.verdict === "empeora" ? "text-red-700" : "text-brand-900/60"}`}>
                           {c.delta === null ? "—" : c.delta > 0 ? `+${c.delta}` : c.delta}
                         </span>
                       </Link>
                     </li>
                   ))}
                 </ul>
+                {pickedCase && analysis?.empeoran.find((e) => e.case_id === pickedCase.case_id)?.motivo && (
+                  <p className="border-t border-brand-900/10 px-5 pt-4 text-sm text-brand-900/80">
+                    <span className="font-medium">¿Es por el cambio? </span>
+                    {analysis.empeoran.find((e) => e.case_id === pickedCase.case_id)?.relacionado ? "Sí. " : "No. "}
+                    {analysis.empeoran.find((e) => e.case_id === pickedCase.case_id)?.motivo}
+                  </p>
+                )}
                 {pickedCase && (
                   <div className="grid gap-4 border-t border-brand-900/10 p-5 xl:grid-cols-2">
                     <div>

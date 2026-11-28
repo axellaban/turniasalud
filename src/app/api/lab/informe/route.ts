@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { isUuid } from "@/lib/clinic";
 import { getRun, runResults } from "@/lib/lab/runs";
-import { experimentSummary } from "@/lib/lab/proposals";
+import { experimentSummary, getProposal } from "@/lib/lab/proposals";
 
 // Informe de solo lectura del Laboratorio de Sofi para revisarlo fuera del panel (por ejemplo, Claude Code).
 // Protegido con su propia clave (header x-lab-token): una creada en Panel → Laboratorio → Criterios, o
@@ -41,10 +41,11 @@ export async function GET(request: Request) {
     if (!run) return NextResponse.json({ ok: false, error: "No existe." }, { status: 404 });
     const results = await runResults(id);
     const experiment = run.kind === "experimento" ? await experimentSummary(id) : null;
+    const proposal = run.proposal_id ? await getProposal(run.proposal_id) : null;
     return NextResponse.json({
       ok: true,
       corrida: { ...run, prompt_override: run.prompt_override ? `${run.prompt_override.length} caracteres` : null },
-      experimento: experiment && { listo: experiment.ready, diferencia: experiment.delta, regresiones: experiment.regressions, mejoran: experiment.improved, casos: experiment.comparison?.cases ?? [] },
+      experimento: experiment && { listo: experiment.ready, diferencia: experiment.delta, regresiones: experiment.regressions, mejoran: experiment.improved, no_concluyentes: experiment.inconclusive, casos: experiment.comparison?.cases ?? [], analisis: proposal?.analysis ?? null, intento: proposal?.attempt ?? 1 },
       resultados: results.map((r) => ({ ...r, transcript: r.transcript })),
     });
   }

@@ -76,20 +76,29 @@ describe("puntaje de una corrida", () => {
     expect(caseWeights([{ id: "a", intent: "agendar" }], {})).toEqual({ a: 1 });
   });
 
-  it("compara dos corridas caso por caso y marca regresiones", () => {
-    const base: ScoredResult[] = [
-      { case_id: "a", repetition: 1, score: 60, critical: false, dims: null },
-      { case_id: "b", repetition: 1, score: 90, critical: false, dims: null },
-      { case_id: "c", repetition: 1, score: 80, critical: false, dims: null },
-    ];
-    const variant: ScoredResult[] = [
-      { case_id: "a", repetition: 1, score: 85, critical: false, dims: null },
-      { case_id: "b", repetition: 1, score: 75, critical: false, dims: null },
-      { case_id: "c", repetition: 1, score: 0, critical: true, dims: null },
-    ];
+  it("con una charla de cada lado, una diferencia grande no es concluyente", () => {
+    const one = (id: string, score: number, critical = false): ScoredResult => ({ case_id: id, repetition: 1, score, critical, dims: null });
+    const cmp = compareRuns([one("a", 60), one("b", 90), one("c", 80), one("d", 90)], [one("a", 85), one("b", 75), one("c", 0, true), one("d", 86)]);
+    expect(cmp.improved).toEqual([]);
+    expect(cmp.regressions).toEqual([]);
+    expect(cmp.inconclusive.map((c) => c.case_id).sort()).toEqual(["a", "b", "c"]);
+    expect(cmp.cases.find((c) => c.case_id === "d")?.verdict).toBe("igual");
+  });
+  it("con repeticiones, cuenta solo lo que no se pisa", () => {
+    const reps = (id: string, scores: number[], critical = false): ScoredResult[] => scores.map((score, i) => ({ case_id: id, repetition: i + 1, score, critical: critical && score === 0, dims: null }));
+    const base = [...reps("a", [60, 62, 58]), ...reps("b", [90, 92, 91]), ...reps("c", [95, 90, 91]), ...reps("e", [90, 60, 85])];
+    const variant = [...reps("a", [85, 88, 90]), ...reps("b", [70, 75, 72]), ...reps("c", [0, 0, 0], true), ...reps("e", [70, 75, 92])];
     const cmp = compareRuns(base, variant);
     expect(cmp.improved.map((c) => c.case_id)).toEqual(["a"]);
     expect(cmp.regressions.map((c) => c.case_id).sort()).toEqual(["b", "c"]);
+    expect(cmp.cases.find((c) => c.case_id === "e")?.verdict).not.toBe("empeora");
+  });
+  it("pide repetir en las dos versiones cuando dan muy distinto", async () => {
+    const { needsMoreReps } = await import("./score");
+    const one = (id: string, score: number, critical = false, repetition = 1): ScoredResult => ({ case_id: id, repetition, score, critical, dims: null });
+    expect(needsMoreReps([one("a", 92)], [one("a", 0, true)], "a")).toBe(true);
+    expect(needsMoreReps([one("a", 92)], [one("a", 88)], "a")).toBe(false);
+    expect(needsMoreReps([one("a", 92), one("a", 90, false, 2), one("a", 91, false, 3)], [0, 0, 0].map((s, i) => one("a", s, true, i + 1)), "a")).toBe(false);
   });
 });
 
@@ -260,5 +269,26 @@ describe("fecha para el juez", () => {
   it("dice qué día es hoy en hora de Argentina", async () => {
     const { todayLine } = await import("./judge");
     expect(todayLine(new Date("2026-11-27T15:00:00Z"))).toContain("viernes 27/11/2026");
+  });
+});
+
+describe("veredicto de un experimento", () => {
+  const c = (case_id: string, verdict: "mejora" | "empeora" | "no_concluyente", delta: number) => ({ case_id, base: 80, variant: 80 + delta, delta, baseCritical: false, variantCritical: false, baseReps: 3, variantReps: 3, verdict });
+  it("gana si mejora algo y lo que empeora no es por el cambio", async () => {
+    const { experimentVerdict } = await import("./proposals");
+    const v = experimentVerdict({ improved: [c("a", "mejora", 15)], regressions: [c("b", "empeora", -20)], inconclusive: [c("x", "no_concluyente", -12)] }, { b: { relacionado: false, motivo: "Azar" } }, 2);
+    expect(v.resultado).toBe("gana");
+    expect(v.texto).toContain("1 empeora por otra cosa (no cuenta)");
+    expect(v.texto).toContain("1 no es concluyente");
+  });
+  it("pierde si algo empeora por el cambio (o sin saber por qué)", async () => {
+    const { experimentVerdict } = await import("./proposals");
+    expect(experimentVerdict({ improved: [c("a", "mejora", 15)], regressions: [c("b", "empeora", -20)], inconclusive: [] }, {}, 1).resultado).toBe("pierde");
+    expect(experimentVerdict({ improved: [], regressions: [], inconclusive: [c("x", "no_concluyente", 12)] }, {}, 0).resultado).toBe("sin_efecto");
+  });
+  it("el costo del juez cobra la caché a un décimo", async () => {
+    const { judgeCost } = await import("./judge");
+    expect(judgeCost("claude-opus-5-5", 10_000, 2_000)).toBeCloseTo(0.08, 5);
+    expect(judgeCost("claude-opus-5-5", 10_000, 2_000, 8_000)).toBeCloseTo(0.0512, 5);
   });
 });
